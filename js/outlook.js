@@ -18,9 +18,9 @@
 (function(){
 'use strict';
 
-/* Na de app-registratie (SETUP-OUTLOOK.md) hier de Application (client) ID
-   plakken. Leeg = alleen de deeplink-laag. */
-const MS_CLIENT_ID = '';
+/* App-registratie "Ploeggenoten CRM" in Entra (30 jul 2026, single tenant). */
+const MS_CLIENT_ID = 'd07d8bf0-82b1-426e-89c6-3ae11393b982';
+const MS_TENANT_ID = 'c0436a3b-5aa8-4ada-bd4d-a3138ec11fa6';
 const MS_SCOPES = ['User.Read','Calendars.ReadWrite','Tasks.ReadWrite'];
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
@@ -54,7 +54,8 @@ function msalLaden(){
     document.head.appendChild(s);
   }).then(() => {
     _msal = new msal.PublicClientApplication({
-      auth:{ clientId: MS_CLIENT_ID, authority:'https://login.microsoftonline.com/organizations',
+      /* Single-tenant app: authority moet de eigen tenant zijn, niet /organizations. */
+      auth:{ clientId: MS_CLIENT_ID, authority:'https://login.microsoftonline.com/' + MS_TENANT_ID,
              redirectUri: location.origin + location.pathname },
       cache:{ cacheLocation:'localStorage' }
     });
