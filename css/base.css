@@ -11,7 +11,7 @@
   --txt:#1a1f0a;
   --txt-2:#5b6544;        /* gedempte tekst op licht */
   --muted:#5b6544;
-  --paper:#f1f3e7;        /* cream, een tint dieper — zakelijker canvas */
+  --paper:#f4f6ec;        /* cream — licht canvas (donkere sidebar geeft het contrast) */
   --card:#ffffff;         /* kaarten */
   --card-2:#eef1e6;       /* cream-2 — subtiele vulling */
   /* Diepte door tinten (wens Tjeerd): componenten tekenen zich als aparte
@@ -38,7 +38,8 @@
   /* Status — gedempt */
   --green:#2f8f5b;  --green-bg:#e9f1ea;  --green-line:#bdd5c4;
   --red:#c0392b;    --red-bg:#f9ecea;    --red-line:#e5c0b9;
-  --amber:#a86a1a;  --amber-bg:#f8f1e2;  --amber-line:#e3d0a8;
+  /* Waarschuwing/urgentie = merkoranje (huisstijl: secundaire actie). */
+  --amber:#d4522a;  --amber-bg:#fbede6;  --amber-line:#eec9b6;
   --blue:#2f6b9a;   --blue-bg:#ebf1f5;   --blue-line:#bfd3e2;
   --purple:#7e5aa6; --purple-bg:#f1edf6; --purple-line:#d2c4e2;
 
@@ -133,7 +134,7 @@ nav.side{
 
 main.content{flex:1;min-width:0;margin-left:var(--nav-w);display:flex;flex-direction:column}
 header.pagehead{
-  background:rgba(241,243,231,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  background:rgba(244,246,236,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
   padding:16px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
   position:sticky;top:0;z-index:20;min-height:64px;
 }
@@ -233,7 +234,7 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 }
 .chip.green{background:var(--green-bg);border-color:var(--green-line);color:#1e6b3f}
 .chip.red{background:var(--red-bg);border-color:var(--red-line);color:#a4301f}
-.chip.amber{background:var(--amber-bg);border-color:var(--amber-line);color:#8a5a1a}
+.chip.amber{background:var(--amber-bg);border-color:var(--amber-line);color:#b03d1c}
 .chip.blue{background:var(--blue-bg);border-color:var(--blue-line);color:#255978}
 .chip.purple{background:var(--purple-bg);border-color:var(--purple-line);color:#6a4a90}
 .chip.solid{background:var(--olive);border-color:var(--olive);color:#fff}
