@@ -120,7 +120,33 @@ function blokPlaatsingen(p, D){
     </div>
     <p class="pf-uitleg meta">Netto volgt exact de definitie van het bord: getekend in de periode min gestopt in de periode.
       Duurzaamheid kijkt naar de lichting die in deze periode tekende — met een garantie van ${GARANTIE_STD} maanden als er niets is ingevuld.</p>
+    ${namenEnNazorg(D)}
   </section>`;
+}
+
+/* Naamlijsten getekend/gestopt + het nazorg-belritme. Verhuisd uit de
+   Recruitment-signaalstrook (wens Tjeerd: dat was daar te chaotisch);
+   de dagelijkse nazorg-acties staan óók in Mijn dag op het dashboard. */
+function namenEnNazorg(D){
+  const naar = c => `CRM.ga('kandidaten',{id:'${h(c.id)}'})`;
+  const rij = (c, extra, klasse='') =>
+    `<button class="pf-naam ${klasse}" onclick="${naar(c)}">${h(c.naam)}<em class="num">${h(extra)}</em></button>`;
+  const get = D.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
+  const stp = D.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
+  const nz = CRM.kandidaten()
+    .filter(k => k.fase==='Gestart' && k.start && !k.gestoptOp)
+    .map(k => ({k, d:CRM.dagenGeleden(k.start)}))
+    .filter(x => x.d != null && x.d >= 0 && x.d <= 32)
+    .map(x => ({c:x.k, d:x.d, cp:[3,14,30].find(n=>n>=x.d), nu:[3,14,30].includes(x.d)}))
+    .sort((a,b)=>(b.nu?1:0)-(a.nu?1:0) || (a.cp||99)-(b.cp||99) || a.d-b.d);
+
+  const kol = (titel, inhoud, leeg) => `<div class="pf-namenkol">
+    <div class="label">${h(titel)}</div>${inhoud || `<div class="meta">${h(leeg)}</div>`}</div>`;
+  return `<div class="pf-namen">
+    ${kol('Getekend', get.map(c=>rij(c, `${c.type||'W&S'} · ${CRM.fmtDateShort(c.geplaatstOp)||'—'}`,'pos')).join(''), 'Nog niemand in deze periode')}
+    ${kol('Gestopt', stp.map(c=>rij(c, CRM.fmtDateShort(c.gestoptOp)||'—','neg')).join(''), 'Niemand — zo houden')}
+    ${kol('Nazorg dag 3 · 14 · 30', nz.map(x=>rij(x.c, x.nu ? `dag ${x.d} — bel vandaag` : `dag ${x.d} → check-in dag ${x.cp||30}`, x.nu?'nu':'')).join(''), 'Geen lopende nazorg')}
+  </div>`;
 }
 
 /* ═══ 2. TREND — 12 maanden ══════════════════════════════════════ */

@@ -173,23 +173,15 @@ function tekenBar(){
   tekenStrook(c);
 }
 
-/* Signaalstrook onder de cijfers: naamchips getekend/gestopt, nazorg-belritme,
-   starts deze week en het instroom-signaal. Alles klikbaar naar de kandidaat. */
+/* Signaalstrook onder de cijfers — bewust compact gehouden (wens Tjeerd):
+   alleen wat vandaag actie vraagt. De maandlijsten (getekend/gestopt) en het
+   nazorg-overzicht staan in Performance; nazorg-acties in Mijn dag. */
 function tekenStrook(c){
   const el = document.getElementById('rc_strook'); if(!el) return;
   c = c || cijfers();
   const naamchip = (k, extra, klasse='') =>
     `<button class="rc-naamchip ${klasse}" data-open="${h(k.id)}">${h(k.naam)}<em>${h(extra)}</em></button>`;
   const rijen = [];
-  const get = c.pm.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
-  const stp = c.pm.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
-  if(get.length) rijen.push(`<div class="rc-strookrij"><span class="label">Getekend deze maand</span>${
-    get.map(k=>naamchip(k, `${k.type||'?'} · ${CRM.fmtDateShort(k.geplaatstOp)||'—'}`,'groen')).join('')}</div>`);
-  if(stp.length) rijen.push(`<div class="rc-strookrij"><span class="label">Gestopt deze maand</span>${
-    stp.map(k=>naamchip(k, CRM.fmtDateShort(k.gestoptOp)||'—','rood')).join('')}</div>`);
-  const nz = nazorgLijst();
-  if(nz.length) rijen.push(`<div class="rc-strookrij"><span class="label">Nazorg dag 3·14·30</span>${
-    nz.map(x=>naamchip(x.c, x.nu ? `dag ${x.d} · bel vandaag` : `dag ${x.d} → check-in dag ${x.cp||30}`, x.nu?'nu':'')).join('')}</div>`);
   if(c.startsWeek.length) rijen.push(`<div class="rc-strookrij"><span class="label">Deze week starten</span>${
     c.startsWeek.slice().sort((a,b)=>(a.start||'').localeCompare(b.start||''))
       .map(k=>naamchip(k, `${CRM.fmtDay(k.start)}${k.klant?' · '+k.klant:''}`)).join('')}</div>`);
@@ -199,15 +191,6 @@ function tekenStrook(c){
   CRM.$$('[data-open]', el).forEach(b => b.onclick = () => snelBewerk(b.dataset.open));
 }
 
-/* Nazorg-belritme: gestart in de laatste ±30 dagen → check-ins op dag 3/14/30. */
-function nazorgLijst(){
-  return CRM.kandidaten()
-    .filter(k => k.fase==='Gestart' && k.start && !k.gestoptOp)
-    .map(k => ({k, d:CRM.dagenGeleden(k.start)}))
-    .filter(x => x.d != null && x.d >= 0 && x.d <= 32)
-    .map(x => ({c:x.k, d:x.d, cp:[3,14,30].find(n=>n>=x.d), nu:[3,14,30].includes(x.d)}))
-    .sort((a,b)=>(b.nu?1:0)-(a.nu?1:0) || (a.cp||99)-(b.cp||99) || a.d-b.d);
-}
 
 /* ═══════════════════════════════════════════════════════════════
    TABS
