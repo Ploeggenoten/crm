@@ -48,6 +48,11 @@ const ZICHT_KEY = 'crm_dash_zicht';
 const zicht    = () => { try{ return localStorage.getItem(ZICHT_KEY)==='week' ? 'week' : 'dag'; }catch(e){ return 'dag'; } };
 const zetZicht = v => { try{ localStorage.setItem(ZICHT_KEY, v); }catch(e){} };
 
+/* Compact (alleen de uren waar iets staat) of de hele dagbaan 08:00–18:00. */
+const DAGVOL_KEY = 'crm_dash_dagvol';
+const dagVol    = () => { try{ return localStorage.getItem(DAGVOL_KEY)==='1'; }catch(e){ return false; } };
+const zetDagVol = v => { try{ localStorage.setItem(DAGVOL_KEY, v?'1':'0'); }catch(e){} };
+
 function groet(){
   const u = new Date().getHours();
   return u < 6 ? 'Goedenacht' : u < 12 ? 'Goedemorgen' : u < 18 ? 'Goedemiddag' : 'Goedenavond';
@@ -294,21 +299,74 @@ function rijHTML(it){
   </div>`;
 }
 
-/* De dagbaan: 08:00–18:00 met een nu-lijntje. */
+/* ─── De dagbaan ─────────────────────────────────────────────────
+   Standaard COMPACT: alleen de uren waar iets staat, plus het huidige
+   uur voor de oriëntatie. Lege stukken worden één regel "niets gepland
+   tot 12:00" die je openklapt als je er alsnog iets in wilt zetten.
+   Met de knop "Hele dag tonen" krijg je de volle baan 08:00–18:00. */
+const uurLabel = n => String(n).padStart(2,'0') + ':00';
+
+function uurRijHTML(u, P, nuUur, nuMin){
+  const isNu = u === nuUur;
+  return `<div class="tl2-uur${u<nuUur?' voorbij':''}${isNu?' nu':''}" data-uur="${u}">
+    <span class="tl2-tijd num">${uurLabel(u)}</span>
+    <div class="tl2-slot">
+      ${isNu?`<div class="tl2-nulijn" style="top:${Math.round(nuMin/60*100)}%"><span>nu</span></div>`:''}
+      <div class="tl2-items">${(P.uren[u]||[]).map(rijHTML).join('')}</div>
+    </div>
+  </div>`;
+}
+
+/* Eén regel voor een dichtgeklapt stuk lege uren (van t/m tot-1). */
+function vouwRijHTML(van, tot){
+  return `<div class="tl2-vouw" data-van="${van}" data-tot="${tot}" role="button" tabindex="0"
+    title="Deze uren tonen om er iets in te plannen">
+    <span class="tl2-tijd num">${uurLabel(van)}</span>
+    <span class="tl2-vouw-t meta">niets gepland${tot-van>1?' tot '+uurLabel(tot):''}</span>
+    <span class="tl2-vouw-x meta">tonen +</span>
+  </div>`;
+}
+
+/* Een dichtgeklapt stuk alsnog openen (klik of Enter, én als er een
+   Outlook-afspraak in dat uur blijkt te vallen). */
+function vouwOpen(el, P){
+  if(!el || !el.dataset) return;
+  const van = Number(el.dataset.van), tot = Number(el.dataset.tot), nuD = new Date();
+  const rijen = [];
+  for(let u=van; u<tot; u++) rijen.push(uurRijHTML(u, P, nuD.getHours(), nuD.getMinutes()));
+  el.outerHTML = rijen.join('');
+}
+
 function dagBaanHTML(P){
   const nuD = new Date(), nuUur = nuD.getHours(), nuMin = nuD.getMinutes();
-  const uurRijen = [];
-  for(let u=START_UUR; u<EIND_UUR; u++){
-    const isNu = u === nuUur;
-    uurRijen.push(`<div class="tl2-uur${u<nuUur?' voorbij':''}${isNu?' nu':''}" data-uur="${u}">
-      <span class="tl2-tijd num">${String(u).padStart(2,'0')}:00</span>
-      <div class="tl2-slot">
-        ${isNu?`<div class="tl2-nulijn" style="top:${Math.round(nuMin/60*100)}%"><span>nu</span></div>`:''}
-        <div class="tl2-items">${(P.uren[u]||[]).map(rijHTML).join('')}</div>
-      </div>
-    </div>`);
+  const vol = dagVol();
+  const uren = [];
+  for(let u=START_UUR; u<EIND_UUR; u++) uren.push(u);
+  const iets = u => (P.uren[u]||[]).length > 0;
+  const getekendIets = uren.some(iets) || P.rest.length > 0;
+
+  let baan = '';
+  if(vol){
+    baan = uren.map(u => uurRijHTML(u, P, nuUur, nuMin)).join('');
+  }else if(getekendIets){
+    /* Toon een uur als er iets in staat, of als het het huidige uur is. */
+    const rijen = [];
+    let leegVan = null;
+    const sluit = tot => { if(leegVan!=null){ rijen.push(vouwRijHTML(leegVan, tot)); leegVan = null; } };
+    uren.forEach(u => {
+      if(iets(u) || u === nuUur){ sluit(u); rijen.push(uurRijHTML(u, P, nuUur, nuMin)); }
+      else if(leegVan==null) leegVan = u;
+    });
+    sluit(EIND_UUR);
+    baan = rijen.join('');
   }
-  return `<div class="tl2-baan">${uurRijen.join('')}</div>
+  /* Niets op de dag én compact: geen tien lege uurregels, alleen de lege staat. */
+  const leegTekst = getekendIets ? '' : (P.tot
+    ? 'Alles voor vandaag is afgerond. Mooi moment om vooruit te werken.'
+    : 'Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.');
+
+  return `${leegTekst?`<div class="tl2-leeg meta">${h(leegTekst)}</div>`:''}
+    ${baan?`<div class="tl2-baan">${baan}</div>`:''}
     ${P.rest.length?`<div class="tl2-rest"><div class="label">Nog in te plannen</div>
       ${P.rest.map(rijHTML).join('')}</div>`:''}`;
 }
@@ -336,14 +394,15 @@ function weekBaanHTML(W){
 
 function tijdlijnKaart(P, W){
   const wk = zicht()==='week';
-  const leeg = !wk && P.tot === 0;
   const pct = P.tot ? Math.round(P.af/P.tot*100) : 0;
   const outlookRij = (CRM.outlook.beschikbaar() && !CRM.outlook.verbonden())
     ? `<div class="tl2-olrow"><span class="meta">Je Outlook-agenda kan hier tussen de afspraken staan.</span>
        <button class="btn ghost sm" id="tl2_ol">Outlook verbinden</button></div>` : '';
 
   return `<div class="card tl2-card">
-    <div class="card-h"><div class="h2">${wk?'Deze week':'Vandaag'}</div>
+    <div class="card-h">
+      <!-- De schakelaar ís de kop: een titel "Vandaag" náást een knop
+           "Vandaag" zou hetzelfde woord twee keer zetten. -->
       <div class="seg tl2-seg">
         <button type="button" data-zicht="dag"${wk?'':' class="on"'}>Vandaag</button>
         <button type="button" data-zicht="week"${wk?' class="on"':''}>Week</button>
@@ -351,10 +410,10 @@ function tijdlijnKaart(P, W){
       ${P.tot?`<div class="tl2-vg"><span class="meta num" id="tl2_vgt">${P.af} van ${P.tot} afgerond${wk?' vandaag':''}</span>
         <div class="bar tl2-vgbar"><i id="tl2_vgb" style="width:${pct}%"></i></div></div>`:''}
       <span class="spacer"></span>
+      ${wk?'':`<button type="button" class="btn sub sm" id="tl2_vol">${dagVol()?'Compact':'Hele dag tonen'}</button>`}
       <button class="btn ghost sm" id="tl2_nieuw">+ Taak</button></div>
     <div class="card-b tl2-b">
       ${outlookRij}
-      ${leeg?`<div class="tl2-leeg meta">Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.</div>`:''}
       ${wk ? weekBaanHTML(W) : dagBaanHTML(P)}
     </div></div>`;
 }
@@ -362,7 +421,8 @@ function tijdlijnKaart(P, W){
 /* ═══ VOORTGANG + AFVINKEN ═══════════════════════════════════════ */
 function vgTeken(){
   const t = document.getElementById('tl2_vgt'), b = document.getElementById('tl2_vgb');
-  if(t) t.textContent = `${_vgAf} van ${_vgTot} afgerond`;
+  /* In weekweergave erbij zeggen dat de teller over vandaag gaat. */
+  if(t) t.textContent = `${_vgAf} van ${_vgTot} afgerond${zicht()==='week'?' vandaag':''}`;
   if(b) b.style.width = (_vgTot ? Math.round(_vgAf/_vgTot*100) : 0) + '%';
 }
 function rijAf(cb){
@@ -370,7 +430,8 @@ function rijAf(cb){
   cb.checked = true; cb.disabled = true;
   const rij = cb.closest('.tl2-item');
   if(rij){ rij.classList.add('af'); rij.classList.remove('urgent'); }
-  _vgAf++; vgTeken();
+  /* Een taak van een andere dag telt niet mee: de voortgang gaat over vandaag. */
+  if(!cb.dataset.buiten){ _vgAf++; vgTeken(); }
 }
 
 async function taakAfvinken(id, cb){
@@ -496,6 +557,113 @@ function cockpitHTML(ck){
     ${ck.saldoDatum?`<span class="meta num">${h(CRM.fmtDateShort(ck.saldoDatum))}</span>`:''}</span>`);
   return `<div class="cockpit klik" data-mod="finance" title="Naar Finance">
     <span class="label">Jouw cockpit</span>${seg.join('<span class="ck-sep"></span>')}</div>`;
+}
+
+/* ═══ JE MAIL — een venster op de inbox, geen samenvatting ═══════
+   Bewust géén interpretatie: alleen afzender, onderwerp en hoe lang het
+   er staat. De toegevoegde waarde zit in de koppeling met het CRM —
+   "dit is Rob van Koomstra" in plaats van een los mailadres. */
+let _mail = null;                       // null = nog niet gelezen
+
+/* Eén hulpje voor álle matching: e-mailadres → CRM-kaart.
+   Hoofdletterongevoelig, spaties eraf, alleen velden die bestaan. */
+const mailSleutel = a => String(a||'').trim().toLowerCase();
+
+function koppelIndex(){
+  const idx = new Map();
+  const zet = (adres, rij) => { const k = mailSleutel(adres); if(k && !idx.has(k)) idx.set(k, rij); };
+  /* Contactpersonen eerst: die zijn het meest specifiek (persoon bij klant). */
+  (CRM.state.contacten||[]).forEach(ct =>
+    zet(ct.email, {label: ct.klant || ct.naam || '', mod:'klanten', id: ct.klant || ''}));
+  (CRM.state.clients||[]).forEach(k =>
+    zet(k.email, {label: k.naam || '', mod:'klanten', id: k.naam || ''}));
+  CRM.kandidaten().forEach(c =>
+    zet(c.email, {label: c.naam || '', mod:'kandidaten', id: c.id, kandidaat:true}));
+  return idx;
+}
+const koppelVan = (idx, mail) => idx.get(mailSleutel(mail && mail.van)) || null;
+
+function mailRijHTML(m, k, compact){
+  const link = /^https:\/\//i.test(String(m.link||'')) ? String(m.link) : '';
+  const naam = m.vanNaam || m.van || 'onbekende afzender';
+  /* Bij een kandidaat is het label vaak dezelfde naam — dan zegt "kandidaat"
+     meer dan die naam nog een keer. */
+  const zelfde = mailSleutel(k && k.label) === mailSleutel(naam);
+  const label  = !k ? '' : (zelfde ? (k.kandidaat ? 'kandidaat' : 'klant') : k.label);
+  const kop = label
+    ? `<span class="mail-koppel" data-kmod="${h(k.mod)}" data-kid="${h(k.id)}" title="Naar de kaart in het CRM">${h(label)}</span>` : '';
+  const binnen = `<span class="mail-stip${m.belangrijk?' hoog':''}"></span>
+    <span class="mail-t">
+      <span class="mail-van"><b>${h(naam)}</b>${kop}</span>
+      <span class="mail-o">${h(m.onderwerp||'(geen onderwerp)')}</span>
+    </span>
+    <span class="mail-w meta num">${h(CRM.geleden(m.op))}</span>`;
+  const kl = 'mail-rij' + (compact ? ' compact' : '');
+  return link ? `<a class="${kl}" href="${h(link)}" target="_blank" rel="noopener">${binnen}</a>`
+              : `<div class="${kl}">${binnen}</div>`;
+}
+
+function mailHTML(lijst){
+  if(!lijst) return '';                                  /* geen koppeling of fout → blok weg */
+  const idx = koppelIndex();
+  const bekend = [], overig = [];
+  lijst.forEach(m => { const k = koppelVan(idx, m); (k ? bekend : overig).push({m, k}); });
+
+  let inhoud;
+  if(!lijst.length){
+    inhoud = `<div class="mail-leeg meta">Niets ongelezen.</div>`;
+  }else if(!bekend.length){
+    /* Niets herkend — dan geen loze kopjes, gewoon één lijst. */
+    inhoud = lijst.map(m => mailRijHTML(m, null, false)).join('');
+  }else{
+    const rest = overig.map(x => mailRijHTML(x.m, null, true));
+    inhoud = `<div class="mail-groep label">Van je klanten en kandidaten</div>
+      ${bekend.map(x => mailRijHTML(x.m, x.k, false)).join('')}`
+      + (rest.length ? `<div class="mail-groep label">Overig</div>
+        ${rest.slice(0,3).join('')}
+        ${rest.length>3 ? `<div class="mail-meer" hidden>${rest.slice(3).join('')}</div>
+          <button type="button" class="mail-meerknop" id="mail_meer">Toon alle ${rest.length} →</button>` : ''}` : '');
+  }
+
+  const n = lijst.length;
+  const kop = n
+    ? `<div class="mail-kop meta"><b class="num">${n}</b> ongelezen${bekend.length?` — waarvan <b class="num">${bekend.length}</b> uit je pijplijn`:''}
+       <span class="mail-per">· laatste 3 dagen</span></div>` : '';
+  return `<div class="dash-sec">
+    <div class="label sec-kop rij">Je mail
+      <button type="button" class="mail-ver" id="mail_ver" title="Mail opnieuw ophalen">↻</button></div>
+    <div class="card"><div class="card-b mail-b">${kop}${inhoud}</div></div></div>`;
+}
+
+/* Ophalen. Stil: mailInbox vraagt nooit om een login en geeft null
+   terug als de koppeling er niet is. */
+async function mailLezen(){
+  if(_mail) return _mail;
+  try{ return (_mail = {lijst: await CRM.outlook.mailInbox({ongelezen:true, aantal:8, sindsUren:72})}); }
+  catch(e){ console.warn('mailInbox', e); return (_mail = {lijst:null}); }
+}
+
+function mailVullen(mount){
+  const el = mount.querySelector('#dash_mail');
+  if(!el || CRM.view!=='dashboard') return;
+  el.innerHTML = mailHTML(_mail ? _mail.lijst : null);
+  const meer = el.querySelector('#mail_meer');
+  if(meer) meer.onclick = () => {
+    const blok = el.querySelector('.mail-meer');
+    if(blok) blok.hidden = false;
+    meer.remove();
+  };
+  const ver = el.querySelector('#mail_ver');
+  if(ver) ver.onclick = async () => {
+    ver.disabled = true; _mail = null;
+    await mailLezen();
+    mailVullen(mount);
+  };
+  /* Het koppel-label zit ín de mail-link: klik hem apart af naar het CRM. */
+  CRM.$$('.mail-koppel', el).forEach(s => s.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    if(s.dataset.kmod) CRM.ga(s.dataset.kmod, s.dataset.kid ? {id:s.dataset.kid} : {});
+  });
 }
 
 /* ═══ RECHTERKOLOM ═══════════════════════════════════════════════ */
@@ -636,28 +804,42 @@ function waakhondBlok(){
     </div></div></div>`;
 }
 
+/* Mailkoppeling aan? Alleen dan reserveren we de plek; anders geen leeg kader. */
+const mailAan = () => { try{ return !!CRM.outlook?.verbonden?.(); }catch(e){ return false; } };
+const mailPlek = () => mailAan()
+  ? `<div id="dash_mail">${_mail ? '' : `<div class="dash-sec"><div class="label sec-kop">Je mail</div>
+      <div class="card"><div class="card-b mail-b"><div class="meta">Laden…</div></div></div></div>`}</div>` : '';
+
 function kolomRechts(){
   const functie = (CRM.profile?.functie||'am');
   if(functie === 'marketeer')
-    return `<div id="dash_posten">${_mkt ? postenHTML(_mkt)
+    return mailPlek()
+      + `<div id="dash_posten">${_mkt ? postenHTML(_mkt)
       : `<div class="dash-sec"><div class="label sec-kop">Vandaag posten</div><div class="card"><div class="card-b zij-b"><div class="meta">Laden…</div></div></div></div>`}</div>`
       + waakhondBlok() + meldingenBlok();
-  return hotBlok() + meldingenBlok() + maandBlok() + instroomBlok();
+  return mailPlek() + hotBlok() + meldingenBlok() + maandBlok();
 }
 
-/* ═══ WAT LOOPT ER — één rustige regel onderaan ═════════════════ */
+/* ═══ WAT LOOPT ER — één rustige regel onderaan ═════════════════
+   Deze regel nam de tellingen over van de losse metaregel bóven de
+   dagbaan (die stond er dubbel) en van het kaartje "Signaal". */
 function looptRegel(){
   const cs = CRM.kandidaten(), wk = weekBereik();
   const kansen  = (CRM.state.kansen||[]).filter(k => (k.status||'open')==='open').length;
   const traject = (CRM.state.clients||[]).filter(k => CRM.SALES_ACTIEF.includes(k.fase)).length;
   const openLeads = (CRM.state.leads||[]).filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
   const pijp = cs.filter(c => actief(c) && !CRM.PLACED.includes(c.fase)).length;
+  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
+  const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
   const leadsWeek = (CRM.state.leads||[]).filter(l => inBereik(l.binnen_op, wk.van, wk.tot)).length;
-  const seg = (mod, txt) => `<button type="button" class="loopt-i" data-mod="${h(mod)}">${h(txt)} →</button>`;
+  const vroeg = cs.filter(c => ['Voorselectie','Voorgesteld'].includes(c.fase)).length;
+  const seg = (mod, txt, kl='') => `<button type="button" class="loopt-i${kl}" data-mod="${h(mod)}">${h(txt)} →</button>`;
   return `<div class="loopt meta">
     ${seg('sales', `Sales: ${kansen} open kansen, ${traject} klanten in traject`)}
     ${seg('recruitment', `Recruitment: ${openLeads} sollicitanten, ${pijp} in de pijplijn`)}
+    ${seg('hot', `Vacatures: ${vacs.length} open (${posities} posities)`)}
     ${seg('marketing', `Marketing: ${leadsWeek} leads deze week`)}
+    ${vroeg < 3 ? seg('recruitment', `Let op: maar ${vroeg} in voorselectie of voorgesteld`, ' sig') : ''}
   </div>`;
 }
 
@@ -674,6 +856,9 @@ CRM.registerModule('dashboard', {
 
   render(mount, acties){
     const P = bouwDag();
+    const week = zicht()==='week';
+    const W = week ? bouwWeek() : null;
+    /* De voortgang gaat áltijd over vandaag, ook in weekweergave. */
     _vgTot = P.tot; _vgAf = P.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
 
@@ -687,7 +872,7 @@ CRM.registerModule('dashboard', {
           ${motivatieHTML()}
         </section>
         <div class="dash2-grid">
-          <div class="dash2-hoofd">${tijdlijnKaart(P)}</div>
+          <div class="dash2-hoofd">${tijdlijnKaart(P, W)}</div>
           <div class="zij">${kolomRechts()}</div>
         </div>
         ${looptRegel()}
@@ -725,6 +910,21 @@ CRM.registerModule('dashboard', {
     /* Afvinken in de tijdlijn. */
     vinkHandlers(mount);
 
+    /* Vandaag ↔ Week. De keuze staat in localStorage en overleeft een herlaad. */
+    CRM.$$('.tl2-seg button', mount).forEach(b => b.onclick = () => {
+      if(b.classList.contains('on')) return;
+      zetZicht(b.dataset.zicht);
+      CRM.render();
+    });
+
+    /* Compact ↔ hele dagbaan, en losse lege stukken openklappen. */
+    const volKnop = document.getElementById('tl2_vol');
+    if(volKnop) volKnop.onclick = () => { zetDagVol(!dagVol()); CRM.render(); };
+    CRM.$$('.tl2-vouw', mount).forEach(v => {
+      v.onclick = () => vouwOpen(v, P);
+      v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
+    });
+
     /* Meldingen: ✓ handelt af, klik op de regel navigeert naar de bron. */
     CRM.$$('[data-af]', mount).forEach(b => b.onclick = async e => {
       e.stopPropagation();
@@ -748,28 +948,69 @@ CRM.registerModule('dashboard', {
       };
     });
 
-    /* Outlook: verbinden, of de afspraken van vandaag in de uren mengen. */
+    /* Outlook: verbinden, of de afspraken erbij mengen. Ontbreekt de
+       koppeling, dan blijven dag én week gewoon de CRM-items tonen. */
     const ob = document.getElementById('tl2_ol');
     if(ob) ob.onclick = async () => { if(await CRM.outlook.verbind()) CRM.render(); };
     if(CRM.outlook.beschikbaar() && CRM.outlook.verbonden()){
-      CRM.outlook.agenda(1).then(items => {
-        if(!items || !items.length || CRM.view!=='dashboard') return;
-        let geplaatst = 0;
-        items.forEach(ev => {
-          const tijd = String(ev.start||'').slice(11,16);
-          const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
-          const slot = mount.querySelector(`.tl2-uur[data-uur="${uur}"] .tl2-items`);
-          if(!slot) return;
-          const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
-            titel: ev.titel||'(zonder onderwerp)', tijd,
-            subHtml: 'Outlook' + (ev.locatie?' · '+h(ev.locatie):'') +
-              (ev.online?` · <a href="${h(ev.online)}" target="_blank" rel="noopener">Teams</a>`:'') };
-          it.af = sessieKlaar.has(sk(it.sesKey));
-          slot.insertAdjacentHTML('afterbegin', rijHTML(it));
-          geplaatst++; if(it.af) _vgAf++;
-        });
-        if(geplaatst){ _vgTot += geplaatst; vgTeken(); vinkHandlers(mount); }
-      }).catch(()=>{});
+      const olSub = ev => 'Outlook' + (ev.locatie?' · '+h(ev.locatie):'') +
+        (ev.online?` · <a href="${h(ev.online)}" target="_blank" rel="noopener">Teams</a>`:'');
+
+      if(!week){
+        CRM.outlook.agenda(1).then(items => {
+          if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='dag') return;
+          let geplaatst = 0;
+          items.forEach(ev => {
+            const tijd = String(ev.start||'').slice(11,16);
+            const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
+            const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
+              titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev) };
+            it.af = sessieKlaar.has(sk(it.sesKey));
+            (P.uren[uur] = P.uren[uur] || []).unshift(it);
+            geplaatst++; if(it.af) _vgAf++;
+          });
+          if(!geplaatst) return;
+          _vgTot += geplaatst;
+          /* De baan opnieuw tekenen: dan komt een uur dat compact was
+             weggevouwen er vanzelf bij staan. */
+          const body = mount.querySelector('.tl2-card .card-b.tl2-b');
+          if(body){
+            body.innerHTML = dagBaanHTML(P);
+            CRM.$$('.tl2-vouw', body).forEach(v => {
+              v.onclick = () => vouwOpen(v, P);
+              v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
+            });
+          }
+          vgTeken(); vinkHandlers(mount);
+        }).catch(()=>{});
+      }else{
+        /* agenda(7) loopt vanaf nu; alles buiten deze week valt vanzelf af. */
+        CRM.outlook.agenda(7).then(items => {
+          if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='week') return;
+          let raak = 0;
+          items.forEach(ev => {
+            const d = (W||[]).find(x => x.iso === String(ev.start||'').slice(0,10));
+            if(!d) return;
+            d.items.push({ soort:'outlook', geenVink:true,
+              titel: ev.titel||'(zonder onderwerp)', tijd:String(ev.start||'').slice(11,16),
+              subHtml: olSub(ev) });
+            raak++;
+          });
+          if(!raak) return;
+          W.forEach(sorteerDag);
+          /* De hele weekbaan opnieuw tekenen: dan komt een weekenddag die
+             alleen een Outlook-afspraak heeft er ook echt bij. */
+          const baan = mount.querySelector('.tl2-week');
+          if(baan) baan.outerHTML = weekBaanHTML(W);
+          vinkHandlers(mount);
+        }).catch(()=>{});
+      }
+    }
+
+    /* Je mail: één stille aanroep bij het openen van het dashboard. */
+    if(mailAan()){
+      if(_mail) mailVullen(mount);
+      else mailLezen().then(() => mailVullen(mount)).catch(()=>{});
     }
 
     /* Cockpitregel bewust VERWIJDERD (wens Tjeerd): banksaldo/omzet horen in

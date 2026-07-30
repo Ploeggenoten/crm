@@ -18,6 +18,8 @@
 .pf-doelbar .meta{white-space:nowrap}
 .pf-tempo{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;
   margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+/* Bij het team staat het tempo bovenaan de kaart — dan geen streep erboven. */
+.pf-tempo:first-child{margin-top:0;padding-top:0;border-top:none}
 .pf-tempo-t{display:flex;flex-direction:column;gap:4px}
 .pf-tempo-t b{font-size:24px;font-weight:600;color:var(--ink);line-height:1.2}
 .pf-tempo-t .meta{font-size:11.5px;line-height:1.45}

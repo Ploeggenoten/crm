@@ -434,6 +434,7 @@
       }catch(e){ return 0; }
     },
     render(mount, acties){
+      _kandCache = null;                       // altijd verse data bij een paginawissel
       acties.innerHTML = `<button class="btn" id="hot_add">+ Hot maken</button>`;
       acties.querySelector('#hot_add').onclick = hotMakenModal;
       draw(mount);

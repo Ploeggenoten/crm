@@ -318,14 +318,16 @@ function tekenKolommen(){
     </div>`;
   }).join('');
 
-  /* Zoek je op iemand die (nog) geen fase heeft — bijvoorbeeld een import
-     uit het oude ATS — dan hoort hij niet op het bord. Dat zeggen we er
-     liever bij dan dat je naar een leeg bord staart. */
-  const buitenBord = alle.filter(c => !c.fase).length;
+  /* Zoek of filter je op iemand die (nog) geen fase heeft — bijvoorbeeld een
+     import uit het oude ATS — dan hoort hij niet op het bord. Dat zeggen we
+     er liever bij dan dat je naar een leeg bord staart. Alleen bij een actief
+     filter: zonder filter is het bord gewoon het bord. */
+  const filterActief = !!(P.q || P.klant || P.rec || P.vac || P.type || P.mijn);
+  const buitenBord = filterActief ? alle.filter(c => !c.fase).length : 0;
   const hint = document.getElementById('pp_geenfase');
   if(hint){
     hint.innerHTML = buitenBord
-      ? `<span class="meta">${buitenBord} kandidaat${buitenBord===1?'':'en'} in je selectie ${buitenBord===1?'heeft':'hebben'} geen fase
+      ? `<span class="meta">${buitenBord} ${buitenBord===1?'kandidaat in je selectie heeft':'kandidaten in je selectie hebben'} geen fase
          en ${buitenBord===1?'staat':'staan'} dus niet op het bord — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
   }
 
@@ -388,4 +390,11 @@ function fasePicker(id){
       });
     }});
 }
+
+/* VERZOEK AAN CORE: de vacatures-tabel heeft in productie voor alle 50 rijen
+   een lege `locatie`. Daardoor valt bij CRM.matchScore() de reisafstand altijd
+   terug op naamvergelijking en scoort elke match puur op functiewoorden. Het
+   bord merkt dat niet, maar de Sourcing-kaart en de matchpercentages worden er
+   minder waard van. Vacatures een locatie geven (of overnemen van de klant)
+   maakt CRM.afstandKm() pas echt bruikbaar.                                   */
 })();

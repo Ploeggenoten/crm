@@ -293,8 +293,14 @@ function tekenLijst(){
   if(telling) telling.textContent = rijen.length + ' van ' + leads().length + ' sollicitanten';
 
   if(!rijen.length){
-    wrap.innerHTML = CRM.ui.leeg('Geen sollicitanten gevonden',
-      'Pas je filters aan, voeg er zelf een toe met + Sollicitant, of importeer uit de sheet.');
+    /* Onderscheid maken tussen "nog niets binnengekomen" en "je filters
+       verbergen alles" — anders stuurt de lege staat je naar filters die
+       je helemaal niet hebt aanstaan. */
+    wrap.innerHTML = leads().length
+      ? CRM.ui.leeg('Geen sollicitanten met deze filters',
+          'Er staan er wel ' + leads().length + ' in het systeem. Verruim je zoekterm, bron, vacature of status.')
+      : CRM.ui.leeg('Nog geen sollicitanten binnen',
+          'Zodra er iemand reageert via Meta, Indeed of het formulier komt hij hier binnen. Je kunt er ook zelf een toevoegen met + Sollicitant, of een lijst importeren.');
     return;
   }
   const toon = rijen.slice(0,200);
@@ -2227,7 +2233,7 @@ function ooModal(sid){
       m.querySelector('#oo_del').onclick = async () => {
         if(!huidige) return;
         const n = sessLeden(huidige).length;
-        const ja = await CRM.bevestig('O&O-sessie verwijderen?', n ? `${n} kandidaat${n===1?' raakt':'en raken'} los van de sessie (de kaarten blijven staan).` : '');
+        const ja = await CRM.bevestig('O&O-sessie verwijderen?', n ? `${n} ${n===1?'kandidaat raakt':'kandidaten raken'} los van de sessie (de kaarten blijven staan).` : '');
         if(!ja) return;
         for(const c of CRM.kandidaten().filter(x => String(x.ooId) === String(huidige)))
           await bewaarKand(c.id, {oo_id:null});

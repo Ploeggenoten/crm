@@ -337,7 +337,7 @@ CRM.kaartRender = async function(container, opts){
         <span class="src-leg"><i class="src-dot sm" style="background:${K.blue}"></i>kandidaat</span>
         <span class="meta">klik op een klant-pin voor passende kandidaten binnen 30 km</span>
       </div>` + (topOnbekend.length ? `<details class="src-buiten">
-        <summary>${onbekendeWoonplaats} kandidaat${onbekendeWoonplaats===1?'':'en'} met een plaats die het systeem niet kent</summary>
+        <summary>${onbekendeWoonplaats} ${onbekendeWoonplaats===1?'kandidaat':'kandidaten'} met een plaats die het systeem niet kent</summary>
         <div class="src-buitenlijst">${topOnbekend.map(([p,n]) =>
           `<span class="chip">${h(p)} <b class="num">${n}</b></span>`).join('')}
           ${Object.keys(onbekendeNamen).length > topOnbekend.length
@@ -446,7 +446,7 @@ CRM.kaartRender = async function(container, opts){
           : `<p class="sub" style="margin:0">Geen kandidaten binnen 30 km die door de filters komen — verruim de filters hierboven.</p>`}
         ${nietTeMeten ? `<p class="meta" style="margin:10px 0 0">${
           klantBekend
-            ? `${nietTeMeten} kandidaat${nietTeMeten===1?'':'en'} kon${nietTeMeten===1?'':'den'} niet meegerekend worden: hun woonplaats staat niet in de afstandentabel.`
+            ? `${nietTeMeten===1 ? '1 kandidaat kon' : nietTeMeten + ' kandidaten konden'} niet op afstand beoordeeld worden: hun woonplaats is leeg of staat niet in de afstandentabel.`
             : `De afstand is hier niet te berekenen — de locatie van ${h(k.naam)} (${h(k.locatie||'leeg')}) staat niet in de afstandentabel.`
         }</p>` : ''}
       </div></div>`;
@@ -483,6 +483,30 @@ CRM.kaartRender = async function(container, opts){
 /* ─── Eigen zijbalk-module: Sourcing ──────────────────────────
    Op verzoek van Tjeerd een eigen navigatie-item onder Kandidaten
    (niet langer een tab binnen de Kandidaten-module).             */
+/* VERZOEK AAN CORE (data.js): CRM.isActiefLopend() geeft `true` voor een
+   kandidaat met fase '' — leeg staat immers niet in CRM.DONE. Sinds de import
+   van het oude ATS zijn dat 235 rijen, die daardoor als "actief lopend" gelden
+   terwijl ze in geen enkele pijplijn staan. Hier in bronKandidaten() vangen we
+   dat af met een extra `c.fase &&`, maar js/kandidaten.js (regel ~313) heeft
+   precies dezelfde aanroep. Netter is één regel in data.js:
+     CRM.isActiefLopend = c => !!c.fase && (!CRM.DONE.includes(c.fase) || …)   */
+
+/* VERZOEK AAN CORE (data.js): CRM.PLAATSEN mist plaatsen die wél in de echte
+   data staan. 61 unieke namen op 84 rijen (kandidaten + klanten); die vallen nu
+   buiten elk radiusfilter en van de kaart. Meest voorkomend:
+   Hellevoetsluis(3), Soest(3), Aalsmeer(2), Bergschenhoek(2), Leiderdorp(2),
+   Drunen(2), 's-Gravenzande(2), Ter Aar(2), Katwijk aan Zee(2),
+   Hazerswoude-Dorp(2), Maasvlakte Rotterdam(2), Mijdrecht(2), Leimuiden(2),
+   Oudheusden, Nieuwe Wetering, Oss, Berkel-Enschot, Maarssen, Abbenbroek,
+   Leerdam, Zandvoort, Poeldijk, Rozenburg, Voorhout, Vierpolders, Oostzaan,
+   Gouderak, Hoek van Holland, Nieuwerbrug, Hoogvliet, Alblasserdam, Pernis,
+   Dongen, Nieuwe-Tonge, Moerdijk, Halsteren, Drachten, Oudenhoorn, Werkendam,
+   Zoeterwoude, Steenbergen, Honselersdijk, Stellendam, Hulst, Benthuizen,
+   Moerkapelle, Opmeer, Koudekerk aan den Rijn, Warmond, Zaandijk, Emst.
+   Daarnaast staan er verminkte/afgekorte invoeren in de data die géén nieuwe
+   coördinaat verdienen maar een opschoning van de rijen zelf: 'Alphen'(5) en
+   'Haag'(5), plus 'Hague', 'S-Gravennage', 'Rijswik' en 'Capelle'.            */
+
 CRM.registerModule('source', {
   title:'Sourcing', icon:'◎', onderschrift:'Kaart: actieve klanten en passende kandidaten',
   render(mount){
