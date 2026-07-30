@@ -602,7 +602,11 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   window.addEventListener('hashchange', () => {
     const hash = (location.hash||'').replace('#','').split('/');
-    if(CRM.modules[hash[0]] && hash[0] !== CRM.view) CRM.ga(hash[0], hash[1]?{id:decodeURIComponent(hash[1])}:{});
+    if(!CRM.modules[hash[0]]) return;
+    const nieuwId = hash[1] ? decodeURIComponent(hash[1]) : undefined;
+    // Ook renderen als alleen het id wijzigt binnen dezelfde module
+    if(hash[0] !== CRM.view || nieuwId !== (CRM.params||{}).id)
+      CRM.ga(hash[0], nieuwId ? {id:nieuwId} : {});
   });
   document.addEventListener('keydown', e => {
     if(e.key==='Escape'){ if(document.getElementById('modal')?.classList.contains('on')) CRM.modal.close(); else CRM.drawer.close(); }

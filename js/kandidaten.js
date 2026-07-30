@@ -1185,3 +1185,9 @@ CRM.registerModule('kandidaten', {
   }
 });
 })();
+
+/* VERZOEK AAN CORE: de hashchange-listener in core.js rendert alleen als de
+   módule wisselt (hash[0] !== CRM.view). Een link naar #kandidaten/<id> doet
+   daardoor niets als je al op Kandidaten staat; modules moeten nu overal eigen
+   click-handlers zetten die CRM.ga(...) aanroepen. Fijner: in core ook op een
+   gewijzigd id binnen dezelfde module opnieuw renderen. */
