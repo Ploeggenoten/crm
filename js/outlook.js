@@ -21,7 +21,15 @@
 /* App-registratie "Ploeggenoten CRM" in Entra (30 jul 2026, single tenant). */
 const MS_CLIENT_ID = 'd07d8bf0-82b1-426e-89c6-3ae11393b982';
 const MS_TENANT_ID = 'c0436a3b-5aa8-4ada-bd4d-a3138ec11fa6';
-const MS_SCOPES = ['User.Read','Calendars.ReadWrite','Tasks.ReadWrite','Mail.Read','Mail.Send'];
+/* Kern: alleen wat zeker is toegekend. Staat hier iets in wat de tenant
+   niet heeft, dan mislukt élke tokenaanvraag — dus bewust minimaal. */
+const MS_KERN = ['User.Read','Calendars.ReadWrite'];
+/* Extra's: toegevoegd in Entra op 30 jul 2026. Wordt er één geweigerd,
+   dan valt token() terug op de kern in plaats van de koppeling te breken. */
+const MS_EXTRA = ['Tasks.ReadWrite','Mail.Read','Mail.Send','Contacts.ReadWrite',
+  'Files.Read.All','Sites.Read.All','ChatMessage.Send','OnlineMeetings.Read',
+  'MailboxSettings.Read','User.ReadBasic.All'];
+const MS_SCOPES = MS_KERN.concat(MS_EXTRA);
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
 let _msal = null, _account = null, _laadBelofte = null;
@@ -73,17 +81,23 @@ async function token(interactiefOk = true){
   await msalLaden();
   if(!_account){
     if(!interactiefOk) return null;
-    const r = await _msal.loginPopup({scopes: MS_SCOPES});
+    /* Volledige set proberen; ontbreekt er één machtiging in de tenant,
+       dan alsnog inloggen met de kern zodat agenda blijft werken. */
+    let r;
+    try{ r = await _msal.loginPopup({scopes: MS_SCOPES}); }
+    catch(e){ console.warn('login met alle scopes mislukt, terugval op kern', e);
+              r = await _msal.loginPopup({scopes: MS_KERN}); }
     _account = r.account;
   }
-  try{
-    const r = await _msal.acquireTokenSilent({scopes: MS_SCOPES, account: _account});
-    return r.accessToken;
-  }catch(e){
-    if(!interactiefOk) return null;
-    const r = await _msal.acquireTokenPopup({scopes: MS_SCOPES, account: _account});
-    return r.accessToken;
+  for(const set of [MS_SCOPES, MS_KERN]){
+    try{ return (await _msal.acquireTokenSilent({scopes:set, account:_account})).accessToken; }
+    catch(e){
+      if(!interactiefOk) continue;
+      try{ return (await _msal.acquireTokenPopup({scopes:set, account:_account})).accessToken; }
+      catch(e2){ /* volgende set proberen */ }
+    }
   }
+  return null;
 }
 
 async function graph(pad, opties = {}, interactiefOk = true){
@@ -226,6 +240,64 @@ CRM.outlook = {
       saveToSentItems: true
     }});
     return {ok:true};
+  },
+
+  /* ─── Teams ─────────────────────────────────────────────────
+     Meldingen landen waar het team de hele dag kijkt. Berichten gaan
+     namens de ingelogde gebruiker (jij wees de taak toe), niet namens
+     een bot. Werkt pas als ChatMessage.Send is toegekend; anders stil. */
+  async teamsBericht(email, tekst){
+    if(!CRM.outlook.beschikbaar() || !_account || !email || !tekst) return null;
+    try{
+      /* Bestaande 1-op-1 chat zoeken, anders aanmaken. */
+      const chats = await graph(`/me/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`, {}, false);
+      const mijn = (_account.username||'').toLowerCase(), zoek = String(email).toLowerCase();
+      let id = (chats?.value||[]).find(c =>
+        (c.members||[]).some(m => (m.email||'').toLowerCase() === zoek))?.id;
+      if(!id){
+        const nieuw = await graph('/chats', {method:'POST', body:{
+          chatType:'oneOnOne',
+          members:[mijn, zoek].map(e => ({
+            '@odata.type':'#microsoft.graph.aadUserConversationMember',
+            roles:['owner'],
+            'user@odata.bind':`https://graph.microsoft.com/v1.0/users('${e}')`
+          }))
+        }}, false);
+        id = nieuw?.id;
+      }
+      if(!id) return null;
+      await graph(`/chats/${id}/messages`, {method:'POST',
+        body:{ body:{ contentType:'html', content: tekst } }}, false);
+      return {ok:true};
+    }catch(e){ console.warn('teamsBericht', e); return null; }
+  },
+
+  /* Bericht in een teamkanaal (bv. "getekend bij X"). Kanaal wordt één
+     keer gekozen en onthouden in localStorage crm_teams_kanaal. */
+  async kanaalBericht(tekst){
+    if(!CRM.outlook.beschikbaar() || !_account || !tekst) return null;
+    let doel = null;
+    try{ doel = JSON.parse(localStorage.getItem('crm_teams_kanaal')||'null'); }catch(e){}
+    if(!doel?.team || !doel?.kanaal) return null;
+    try{
+      await graph(`/teams/${doel.team}/channels/${doel.kanaal}/messages`, {method:'POST',
+        body:{ body:{ contentType:'html', content: tekst } }}, false);
+      return {ok:true};
+    }catch(e){ console.warn('kanaalBericht', e); return null; }
+  },
+
+  /* Teams en kanalen ophalen zodat de gebruiker er één kan kiezen. */
+  async teamsKanalen(){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    try{
+      const teams = await graph('/me/joinedTeams?$select=id,displayName', {}, false);
+      const uit = [];
+      for(const t of (teams?.value||[]).slice(0,10)){
+        const ch = await graph(`/teams/${t.id}/channels?$select=id,displayName`, {}, false);
+        (ch?.value||[]).forEach(c => uit.push({team:t.id, teamNaam:t.displayName, kanaal:c.id, kanaalNaam:c.displayName}));
+      }
+      return uit;
+    }catch(e){ console.warn('teamsKanalen', e); return null; }
   },
 
   /* Kant-en-klare deeplink (voor gewone <a href>-knoppen). */
