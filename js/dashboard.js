@@ -573,7 +573,6 @@ CRM.registerModule('dashboard', {
           <div class="h1">${h(groet())}${naam?', '+h(naam):''}</div>
           ${motivatieHTML()}
         </section>
-        ${CRM.canSeeMoney()?'<div id="dash_cockpit"></div>':''}
         <div class="dash2-grid">
           <div class="dash2-hoofd">${tijdlijnKaart(P)}</div>
           <div class="zij">${kolomRechts()}</div>
@@ -660,13 +659,8 @@ CRM.registerModule('dashboard', {
       }).catch(()=>{});
     }
 
-    /* Cockpitregel — alleen de eigenaar, en alleen als het lukt (faal stil). */
-    if(CRM.canSeeMoney()){
-      cockpitLezen().then(ck => {
-        const el = document.getElementById('dash_cockpit');
-        if(el && CRM.view==='dashboard') el.innerHTML = cockpitHTML(ck);
-      }).catch(()=>{});
-    }
+    /* Cockpitregel bewust VERWIJDERD (wens Tjeerd): banksaldo/omzet horen in
+       Finance — het dashboard staat vaak open waar collega's meekijken. */
 
     /* Marketeer: geplande posts nalezen (defensief, geen module-duplicatie). */
     if((CRM.profile?.functie||'') === 'marketeer'){
