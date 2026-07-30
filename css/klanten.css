@@ -4,14 +4,17 @@
 /* ─── Overzicht: klantkaartje ─────────────────────────────────── */
 /* auto-fill i.p.v. auto-fit: één resultaat blijft kolombreed staan */
 #kl_lijst .grid.c3{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
-/* Dunne rand in plaats van schaduw: hover verdiept alleen de rand. */
-.kl-kaart{cursor:pointer;transition:border-color .12s,background .12s}
-.kl-kaart:hover{border-color:var(--olive-l);background:var(--card)}
-/* Kopzone met tint (diepteladder): naam + fase tekenen zich af als kop. */
-.kl-kkop{background:var(--card-2);border-bottom:1px solid var(--line);
-  border-radius:var(--r-l) var(--r-l) 0 0;padding:13px 16px 11px}
-.kl-kkop .chip{background:var(--card)}
-.kl-klijf .kl-stats{margin:0 0 12px;padding:0 0 12px;border-top:0}
+/* Duidelijk gelaagde kaart (wens Tjeerd: verschillen moeten zichtbaar zijn):
+   fasekleur als bovenrand, getinte kop, wit middenstuk, getinte voetstrook. */
+.kl-kaart{cursor:pointer;transition:border-color .12s;border-color:var(--line-2);
+  border-top:3px solid var(--fk,var(--muted));overflow:hidden}
+.kl-kaart:hover{border-color:var(--olive-l);border-top-color:var(--fk,var(--olive-l))}
+.kl-kkop{background:var(--well-2);border-bottom:1px solid var(--line-2);padding:13px 16px 11px}
+.kl-kkop .chip{background:var(--card);border-color:var(--line-2)}
+.kl-klijf .kl-stats{margin:0 0 0;padding:14px 0;border-top:0;border-bottom:0}
+.kl-klijf{padding:0 16px}
+.kl-klijf .kl-foot{background:var(--card-2);margin:0 -16px;padding:10px 16px;
+  border-top:1px solid var(--line)}
 .kl-kop{display:flex;align-items:flex-start;gap:11px}
 .kl-naam{font-weight:600;font-size:14.5px;color:var(--ink);line-height:1.3}
 .kl-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 12px;

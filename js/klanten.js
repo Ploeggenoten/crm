@@ -247,7 +247,7 @@ function lijst(mount){
   } else {
     wrap.innerHTML = `<div class="grid c3">${rijen.map(({k,c,lc}) => {
       const d = CRM.dagenGeleden(lc);
-      return `<div class="card kl-kaart" data-k="${h(k.naam)}">
+      return `<div class="card kl-kaart" data-k="${h(k.naam)}" style="--fk:${CRM.salesKleur(k.fase)}">
         <div class="kl-kkop">
           <div class="kl-kop">
             <div style="min-width:0;flex:1">
