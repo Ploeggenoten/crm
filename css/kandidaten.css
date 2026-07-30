@@ -1,2 +1,61 @@
 /* Extra stijl voor de module kandidaten. Alleen deze module schrijft hier.
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
+
+/* ─── Overzicht ───────────────────────────────────────────────── */
+.kd-vol{display:flex;align-items:center;gap:9px;min-width:132px}
+.kd-vol .bar{flex:1}
+.kd-let{color:var(--red);font-weight:600}
+.kd-warn{color:var(--amber);font-weight:600}
+
+/* ─── Kaart: kop ──────────────────────────────────────────────── */
+.kd-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.kd-contact{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
+.kd-meter{flex:0 0 236px;min-width:200px;border-left:1px solid var(--line);padding-left:18px}
+.kd-meter b{font-size:14px;color:var(--ink);min-width:38px;text-align:right}
+.kd-kolommen{align-items:start}
+
+/* ─── Veldenlijst (inline bewerkbaar) ─────────────────────────── */
+.kd-velden{display:flex;flex-direction:column;gap:1px}
+.kd-veld{display:grid;grid-template-columns:150px 1fr;align-items:baseline;gap:12px;
+  padding:7px 0;border-bottom:1px solid #f0f2e8;font-size:13px}
+.kd-veld:last-child{border-bottom:none}
+.kd-veld > .label{margin:0}
+.kd-w{cursor:text;border-radius:4px;padding:2px 6px;margin-left:-6px;
+  border:1px solid transparent;display:inline-block;min-width:60px;color:var(--txt)}
+.kd-w:hover{background:var(--card-2);border-color:var(--line)}
+.kd-w:focus{outline:none;background:var(--card-2);border-color:var(--olive-l)}
+.kd-w.leeg{color:var(--muted);font-style:italic}
+.kd-inp{max-width:280px;padding:4px 8px !important;font-size:13px !important}
+
+/* ─── CV ──────────────────────────────────────────────────────── */
+.kd-cvlijst{display:flex;flex-direction:column;gap:2px;margin-top:8px}
+.kd-cvrij{display:grid;grid-template-columns:1fr auto;gap:2px 14px;padding:8px 0;border-bottom:1px solid #f0f2e8}
+.kd-cvrij:last-child{border-bottom:none}
+.kd-cvrij b{font-size:13px}
+.kd-cvrij .sub{grid-column:1;grid-row:2}
+.kd-cvrij .meta{grid-column:2;grid-row:1/3;align-self:center}
+
+/* ─── Kansen ──────────────────────────────────────────────────── */
+.kd-kans{border:1px solid var(--line);border-radius:var(--r-s);padding:13px 15px;margin-bottom:10px;background:var(--card-2)}
+.kd-kans:last-child{margin-bottom:0}
+.kd-kans b{font-size:13.5px;color:var(--ink)}
+.kd-score{flex:0 0 108px;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.kd-score .bar{width:100%}
+.kd-uitleg{margin:9px 0 11px;line-height:1.5}
+
+/* ─── Traject-stappen ─────────────────────────────────────────── */
+.kd-stappen{display:flex;gap:3px;margin:16px 0 8px}
+.kd-stappen i{flex:1;height:6px;border-radius:99px;background:#e8ecdf}
+
+/* ─── Taken ───────────────────────────────────────────────────── */
+.kd-taken{display:flex;flex-direction:column;gap:2px}
+label.kd-taak{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:var(--r-s);cursor:pointer}
+label.kd-taak:hover{background:var(--card-2)}
+label.kd-taak b{font-size:13px;font-weight:600}
+label.kd-taak.klaar b{text-decoration:line-through;color:var(--muted);font-weight:500}
+label.kd-taak input{margin-top:3px}
+
+@media (max-width:900px){
+  .kd-meter{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;flex:1 1 100%}
+  .kd-veld{grid-template-columns:1fr}
+}

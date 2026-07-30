@@ -1,2 +1,57 @@
 /* Extra stijl voor de module marketing. Alleen deze module schrijft hier.
-   Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
+   Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist.
+   Geen eigen kleuren — alles via de variabelen uit :root. */
+
+/* ─── Adviesregels van de waakhond ───────────────────────────── */
+.mkt-advies{
+  display:flex;align-items:flex-start;gap:11px;
+  padding:12px 20px;border-bottom:1px solid #f0f2e8;
+}
+.mkt-advies:last-child{border-bottom:none}
+.mkt-advies > .dot{margin-top:6px}
+.mkt-a-t{flex:1;min-width:0}
+.mkt-a-t b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.mkt-a-t .meta{line-height:1.45}
+.mkt-a-k{flex:0 0 auto;padding-top:2px}
+
+/* ─── Uitklapbare campagnetabel ──────────────────────────────── */
+.mkt-caret{
+  display:inline-block;width:14px;color:var(--muted);font-size:10px;
+  transition:transform .12s;transform-origin:center;
+}
+.mkt-caret.op{transform:rotate(90deg)}
+.mkt-r1{background:#fcfdf9}
+.mkt-r2{background:var(--card-2)}
+.mkt-n1{padding-left:28px !important}
+.mkt-n2{padding-left:56px !important;color:var(--txt-2)}
+
+/* ─── Dag-voor-dag-strook ────────────────────────────────────── */
+.mkt-dagen{display:flex;gap:7px;align-items:flex-end}
+.mkt-dag{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px}
+.mkt-dagtop{font-size:11px;color:var(--txt-2);height:15px;line-height:15px}
+.mkt-dagbar{
+  width:100%;height:84px;background:#eef1e7;border-radius:5px;
+  display:flex;align-items:flex-end;overflow:hidden;
+}
+.mkt-dagbar > i{display:block;width:100%;background:var(--olive-l);border-radius:5px 5px 0 0}
+.mkt-dag.we .mkt-dagbar > i{background:var(--line-2)}
+.mkt-daglbl{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.25}
+.mkt-daglbl b{display:block;font-weight:600;color:var(--txt-2)}
+
+/* ─── Keten: uitgegeven → leads → kandidaten → plaatsing ─────── */
+.mkt-keten{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.mkt-stap{flex:1 1 120px;min-width:112px;padding:2px 4px}
+.mkt-stap .big{font-size:24px;color:var(--ink);margin-top:4px}
+.mkt-stap .meta{margin-top:2px}
+.mkt-pijl{
+  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;
+  color:var(--line-2);font-size:15px;padding:0 8px;
+}
+.mkt-pijl span{font-size:11px;color:var(--muted);white-space:nowrap}
+
+@media (max-width:900px){
+  .mkt-advies{flex-wrap:wrap}
+  .mkt-a-k{width:100%;padding-left:19px}
+  .mkt-dagen{gap:4px}
+  .mkt-daglbl span{display:none}
+}

@@ -1,2 +1,90 @@
 /* Extra stijl voor de module klanten. Alleen deze module schrijft hier.
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
+
+/* ─── Overzicht: klantkaartje ─────────────────────────────────── */
+/* auto-fill i.p.v. auto-fit: één resultaat blijft kolombreed staan */
+#kl_lijst .grid.c3{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.kl-kaart{cursor:pointer;transition:box-shadow .12s,border-color .12s}
+.kl-kaart:hover{box-shadow:var(--sh-2);border-color:var(--line-2)}
+.kl-kop{display:flex;align-items:flex-start;gap:11px}
+.kl-naam{font-weight:600;font-size:14.5px;color:var(--ink);line-height:1.3}
+.kl-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 12px;
+  padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.kl-stats div{display:flex;flex-direction:column;gap:1px}
+.kl-stats b{font-size:19px;font-weight:600;color:var(--ink);line-height:1.1}
+.kl-stats span{font-size:11px;color:var(--muted);line-height:1.3}
+.kl-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.let{color:var(--amber);font-weight:600}
+
+/* ─── Klantkaart: kop ─────────────────────────────────────────── */
+.kl-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.kl-contact{margin-top:9px;font-size:13px;color:var(--txt-2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.kl-sep{color:var(--line-2)}
+
+/* ─── Signalen ────────────────────────────────────────────────── */
+ul.kl-sig{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+ul.kl-sig li{font-size:13px;color:var(--txt-2);line-height:1.5;padding-left:18px;position:relative}
+ul.kl-sig li::before{content:'•';position:absolute;left:4px;top:-1px;color:var(--amber);font-size:15px}
+ul.kl-sig b{color:var(--ink)}
+
+/* ─── Vacatures (uitklapbaar) ─────────────────────────────────── */
+details.kl-vac{border:1px solid var(--line);border-radius:var(--r-s);margin-bottom:10px;background:var(--card)}
+details.kl-vac:last-child{margin-bottom:0}
+details.kl-vac > summary{
+  list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:9px;
+  flex-wrap:wrap;border-radius:var(--r-s);
+}
+details.kl-vac > summary::-webkit-details-marker{display:none}
+details.kl-vac > summary:hover{background:var(--card-2)}
+details.kl-vac[open] > summary{border-bottom:1px solid var(--line);border-radius:var(--r-s) var(--r-s) 0 0}
+details.kl-vac > summary b{font-size:13.5px;color:var(--ink)}
+.kl-vac-b{padding:12px 14px}
+
+/* ─── Kandidaatregels (in vacature en in de tab) ──────────────── */
+.kl-kandlijst{display:flex;flex-direction:column;gap:1px}
+a.kl-kand{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-s);
+  color:var(--txt);text-decoration:none;border:1px solid transparent;
+}
+a.kl-kand:hover{background:var(--card-2);border-color:var(--line);text-decoration:none}
+a.kl-kand b{font-size:13px;font-weight:600;display:block}
+.kl-rec{min-width:56px;text-align:right}
+.kl-when{min-width:104px;text-align:right}
+.kl-groep{margin-bottom:20px}
+.kl-groep:last-child{margin-bottom:0}
+.kl-groep > .label{margin-bottom:6px}
+
+/* ─── Contactpersonen ─────────────────────────────────────────── */
+.kl-contacten{display:flex;flex-direction:column;gap:2px}
+.kl-ct{display:flex;align-items:flex-start;gap:12px;padding:12px 10px;border-radius:var(--r-s)}
+.kl-ct + .kl-ct{border-top:1px solid var(--line)}
+.kl-ct b{font-size:13.5px}
+
+/* ─── Evaluaties ──────────────────────────────────────────────── */
+.kl-evverloop{margin-bottom:20px}
+.kl-evrij{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px}
+.kl-evtick{min-width:74px;display:flex;flex-direction:column;gap:4px}
+.kl-evtick .num{font-size:13px;font-weight:600;color:var(--ink)}
+.kl-eval{border:1px solid var(--line);border-radius:var(--r-s);padding:14px 16px;margin-bottom:12px;background:var(--card-2)}
+.kl-eval:last-child{margin-bottom:0}
+.kl-evcrit{display:flex;flex-direction:column;gap:8px}
+.kl-evc{display:grid;grid-template-columns:190px 1fr 24px;align-items:center;gap:12px}
+.kl-evc .num{text-align:right;font-weight:600;font-size:13px}
+.kl-evtxt{margin-top:14px}
+.kl-evtxt p{margin:4px 0 0;font-size:13px;color:var(--txt-2);line-height:1.55;white-space:pre-wrap}
+.kl-evinput{display:grid;grid-template-columns:1fr 84px;align-items:center;gap:12px}
+.kl-evinput > label{font-size:13px}
+
+/* ─── Taken ───────────────────────────────────────────────────── */
+.kl-taken{display:flex;flex-direction:column;gap:2px}
+label.kl-taak{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:var(--r-s);cursor:pointer}
+label.kl-taak:hover{background:var(--card-2)}
+label.kl-taak b{font-size:13px;font-weight:600}
+label.kl-taak.klaar b{text-decoration:line-through;color:var(--muted);font-weight:500}
+label.kl-taak input{margin-top:3px}
+
+@media (max-width:700px){
+  .kl-evc{grid-template-columns:1fr 60px}
+  .kl-evc .sub{grid-column:1/-1}
+  .kl-rec{display:none}
+}

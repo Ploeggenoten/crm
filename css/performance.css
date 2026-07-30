@@ -1,2 +1,70 @@
 /* Extra stijl voor de module performance. Alleen deze module schrijft hier.
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
+
+.pf{display:flex;flex-direction:column;gap:30px;max-width:1240px}
+.pf-sec{display:flex;flex-direction:column;gap:12px}
+.pf-kop{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.pf-kop .meta{margin-left:auto}
+.pf-uitleg{margin:12px 0 0;line-height:1.55;max-width:760px}
+.pf-sec > .pf-uitleg{margin:2px 0 0}
+.pf .kpi .big{display:flex;align-items:baseline;gap:4px}
+.pf .kpi .pf-eh{font-size:14px;font-weight:500;color:var(--muted)}
+
+/* ─── Periodekiezer in de paginakop ──────────────────────────── */
+.pf-kiezer{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pf-kiezer .pf-eigen input[type=date]{width:auto;padding:5px 8px;font-size:12.5px}
+
+/* ─── Trend: staafgrafiek, puur HTML/CSS ─────────────────────── */
+.pf-kols{display:flex;align-items:flex-end;gap:6px}
+.pf-kol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:7px}
+.pf-area{position:relative;display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%}
+.pf-area > i{display:block;width:13px;border-radius:3px 3px 0 0}
+.pf-area > i.get{background:var(--olive-l)}
+.pf-area > i.stop{background:var(--red-line)}
+.pf-area .pf-tick{position:absolute;left:8%;right:8%;height:0;border-top:1px dashed var(--line-2)}
+.pf-net{font-size:12.5px;font-weight:600;color:var(--txt-2)}
+.pf-net.goed{color:var(--green)}
+.pf-net.slecht{color:var(--red)}
+.pf-mnd{font-size:11px;color:var(--muted);text-transform:capitalize}
+
+.pf-leg{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);margin-left:auto}
+.pf-leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-left:8px}
+.pf-leg i:first-child{margin-left:0}
+.pf-leg i.get{background:var(--olive-l)}
+.pf-leg i.stop{background:var(--red-line)}
+.pf-leg i.tick{width:14px;height:0;border-top:1px dashed var(--line-2);border-radius:0}
+
+/* ─── Tabellen ───────────────────────────────────────────────── */
+.pf-tbl td.pf-balk{width:110px;min-width:90px}
+.pf-tbl td.pf-balk .bar{height:6px}
+.pf-tbl tfoot td{background:var(--card-2);border-top:1px solid var(--line);font-weight:600;padding:10px 14px}
+.pf-tbl .chip{font-size:11px}
+
+/* ─── Trechter ───────────────────────────────────────────────── */
+.pf-funnel{display:flex;flex-direction:column;gap:7px}
+.pf-fr{display:flex;align-items:center;gap:12px}
+.pf-fl{flex:0 0 158px;font-size:12.5px;color:var(--txt-2)}
+.pf-fb{flex:1;min-width:0;position:relative;height:22px;background:#f0f3e9;border-radius:4px;display:flex;align-items:center}
+.pf-fb > i{display:block;height:100%;border-radius:4px;opacity:.82;min-width:2px}
+.pf-fn{position:absolute;left:9px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 2px rgba(20,30,15,.35)}
+.pf-fd{flex:0 0 78px;text-align:right;font-size:11.5px}
+
+.pf-ratios{display:flex;gap:34px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.pf-ratios > div{display:flex;flex-direction:column;gap:3px}
+.pf-ratios b{font-size:22px;font-weight:600;color:var(--ink);line-height:1.2}
+.pf-ratios .meta{font-size:11.5px}
+
+/* ─── Redenenlijstjes (uitval, top-klanten) ──────────────────── */
+.pf-redenen{display:flex;flex-direction:column;gap:11px}
+.pf-reden{display:flex;align-items:center;gap:11px}
+.pf-reden .pf-rl{flex:1;min-width:0;font-size:12.5px;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-reden .pf-rb{flex:0 0 88px}
+.pf-reden .pf-rb .bar{height:6px}
+.pf-reden .pf-rn{flex:0 0 auto;font-size:12.5px;font-weight:600;color:var(--ink);min-width:24px;text-align:right}
+
+@media (max-width:760px){
+  .pf-fl{flex:0 0 108px;font-size:11.5px}
+  .pf-fd{flex:0 0 60px}
+  .pf-area > i{width:9px}
+  .pf-kiezer .seg button{padding:5px 8px;font-size:11.5px}
+}

@@ -1,2 +1,79 @@
 /* Extra stijl voor de module sales. Alleen deze module schrijft hier.
-   Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
+   Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist.
+   Sales draait op volleBreedte:true — de pagina heeft dus geen padding en
+   de module regelt zijn eigen marges. */
+
+/* TIJDELIJKE REPARATIE — hoort in base.css thuis, zie VERZOEK AAN CORE in
+   js/sales.js. Een gesloten scrim (modal/drawer) blijft nu over het scherm
+   liggen met opacity:0 maar vangt wél alle muiskliks, waardoor de hele app
+   na één modal onklikbaar wordt. Deze regel zet dat recht. */
+.scrim:not(.on){pointer-events:none}
+
+/* Blok met eigen padding (het bord brengt zijn eigen padding mee). */
+.s-wrap{padding:20px 26px 0}
+.s-wrap:last-child{padding-bottom:50px}
+
+/* Tabbalk met knoppen ernaast, op één onderlijn. */
+.s-top{
+  display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);margin-bottom:18px;
+}
+.s-top .tabs{border-bottom:none;margin-bottom:0;flex:1}
+.s-top .s-acts{padding-bottom:9px}
+
+/* Zes smalle KPI-tegels op één rij op breed scherm, netjes afbrekend daaronder. */
+.grid.c3.s-kpi{margin-bottom:2px;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:12px}
+.s-kpi .kpi{padding:14px 15px}
+.s-kpi .kpi .big{font-size:24px}
+
+/* Fase met kleurstip — één rustige manier om de fase te tonen. */
+.s-fase{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt-2);white-space:nowrap}
+.s-fase i{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+
+/* Hint onder een lege bordkolom: legt uit wat er in die fase hoort. */
+.s-kolomleeg{
+  font-size:11.5px;color:var(--muted);line-height:1.45;text-align:center;
+  padding:14px 10px;border:1px dashed var(--line-2);border-radius:8px;background:rgba(255,255,255,.4);
+}
+
+/* Volgende taak op een bordkaart. */
+.bcard .s-taak{
+  margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);
+  font-size:11.5px;color:var(--txt-2);
+}
+
+/* Rij in het detailpaneel (contactpersoon, document, kans, vacature). */
+.s-ct{
+  display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid #f0f2e8;
+}
+.s-ct:last-child{border-bottom:none}
+.s-ct b{font-size:13.5px;font-weight:600;display:block}
+
+/* Knoppenbalk boven een tabblad in het detailpaneel. */
+.s-actbar{margin-bottom:12px}
+
+/* Takenlijst in het detailpaneel. */
+.s-taakrij{
+  display:flex;align-items:center;gap:10px;padding:9px 2px;
+  border-bottom:1px solid #f0f2e8;font-size:13.5px;cursor:pointer;
+}
+.s-taakrij:last-child{border-bottom:none}
+.s-taakrij.af{color:var(--muted);text-decoration:line-through}
+.s-taakrij.af .chip{text-decoration:none}
+
+/* Afgesloten kans in de kansentabel: aanwezig, maar niet luid. */
+table.tbl tbody tr.s-dicht td{color:var(--muted)}
+table.tbl tbody tr.s-dicht td:first-child{font-weight:500}
+
+@media (max-width:900px){
+  .s-wrap{padding:16px 14px 0}
+  .s-top{align-items:stretch}
+  .s-top .s-acts{padding-bottom:10px}
+  .s-top .s-acts .btn{flex:1;justify-content:center}
+  /* Twee KPI's naast elkaar — anders scroll je op mobiel eindeloos
+     langs de tegels voordat je het bord ziet. */
+  .grid.c3.s-kpi{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .grid.c3.s-kpi .kpi{padding:12px 13px}
+  .grid.c3.s-kpi .kpi .big{font-size:21px}
+  .grid.c3.s-kpi .kpi .kd{font-size:11.5px}
+}

@@ -308,8 +308,13 @@ CRM.render = () => {
   mount.className = 'view' + (m.volleBreedte ? ' pad0' : '');
   mount.innerHTML = CRM.ui.laden();
   navActief();
+  const toonFout = e => {
+    console.error('Module '+CRM.view, e);
+    mount.innerHTML = `<div class="note err">Deze module gaf een fout: ${h(e.message)}<br><span class="meta">Details staan in de console.</span></div>`;
+  };
   try{
-    m.render(mount, document.getElementById('pageacties'), CRM.params||{});
+    const r = m.render(mount, document.getElementById('pageacties'), CRM.params||{});
+    if(r && typeof r.catch === 'function') r.catch(toonFout);   // async modules
   }catch(e){
     console.error('Module '+CRM.view, e);
     mount.innerHTML = `<div class="note err">Deze module gaf een fout: ${h(e.message)}<br><span class="meta">Details staan in de console.</span></div>`;
