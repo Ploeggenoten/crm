@@ -177,7 +177,10 @@ function kpiHTML(alle){
   /* Doorlooptijd = hoe lang de lopende trajecten al in hun huidige fase staan. */
   const dagen = actief.map(k=>CRM.dagenGeleden(k.fase_sinds)).filter(n=>n!=null);
   const gem = dagen.length ? Math.round(dagen.reduce((a,b)=>a+b,0)/dagen.length) : null;
-  const hangen = actief.filter(k=>{ const d=CRM.dagenGeleden(k.fase_sinds); return d!=null && d>HANGT_NA; }).length;
+  /* 'Stil' telt niet in de fase Lead — anders domineert de bak geïmporteerde
+     leads dit signaal en zie je echte stilvallers niet meer. */
+  const hangen = actief.filter(k=>{ if(faseVan(k)==='Lead') return false;
+    const d=CRM.dagenGeleden(k.fase_sinds); return d!=null && d>HANGT_NA; }).length;
 
   const inBeeld = new Set(alle.map(k=>k.naam));
   const open = (CRM.state.kansen||[]).filter(o=>(o.status||'open')==='open' && inBeeld.has(o.klant));
@@ -201,7 +204,10 @@ function kpiHTML(alle){
 function kaartHTML(k){
   const d = CRM.dagenGeleden(k.fase_sinds);
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
-  const hangt = actief && d!=null && d>HANGT_NA;
+  /* In de fase Lead is lang liggen normaal (117 stuks na de import) — daar
+     blijft de teller neutraal, anders is heel het bord oranje en betekent
+     oranje niets meer. Amber alleen bij actieve trajecten die stilvallen. */
+  const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
   const vac = openVacatures(k.naam);
   const kans = openKansen(k.naam).length;
   const taak = volgendeTaak(k.naam);
@@ -277,7 +283,7 @@ function lijstHTML(klanten){
       sortering.veld===c.k?` ${sortering.op>0?'↑':'↓'}`:''}</th>`).join('')}</tr></thead>
     <tbody>${rijen.map(k=>{
       const d = CRM.dagenGeleden(k.fase_sinds);
-      const hangt = CRM.SALES_ACTIEF.includes(faseVan(k)) && d!=null && d>HANGT_NA;
+      const hangt = CRM.SALES_ACTIEF.includes(faseVan(k)) && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
       return `<tr class="clickable" data-klant="${h(k.naam)}">
         <td><div style="font-weight:600">${h(k.naam)}</div>
           <div class="rowsub">${h(k.locatie||'')}</div></td>

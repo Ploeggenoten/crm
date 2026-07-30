@@ -328,6 +328,8 @@ CRM.render = () => {
     <div class="row tight" id="pageacties"></div>`;
   document.getElementById('menubtn').onclick = () => document.querySelector('nav.side').classList.toggle('open');
   mount.className = 'view' + (m.volleBreedte ? ' pad0' : '');
+  /* Zachte binnenkomer bij elke paginawissel (rustig, 140ms). */
+  mount.classList.remove('v-in'); void mount.offsetWidth; mount.classList.add('v-in');
   mount.innerHTML = CRM.ui.laden();
   navActief();
   const toonFout = e => {

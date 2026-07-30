@@ -148,6 +148,10 @@ header.pagehead .ph-t{display:flex;flex-direction:column;gap:2px;margin-right:au
 header.pagehead .ph-t .h1{font-size:22px}
 .view{padding:22px 26px 60px;flex:1}
 .view.pad0{padding:0}
+/* Paginawissel: subtiele fade + 3px lift — voelt verzorgd, leidt niet af. */
+.view.v-in{animation:v-in .14s ease-out}
+@keyframes v-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.view.v-in{animation:none}}
 
 /* ─── Knoppen — pill-vormig, ALTIJD Inter ────────────────────── */
 .btn{
@@ -392,13 +396,15 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 #toast.err{background:#fbeae7;border-color:var(--red-line);color:#a4301f}
 #toast.ok{background:var(--green-bg);border-color:var(--green-line);color:#1e6b3f}
 
-/* ─── Login ──────────────────────────────────────────────────── */
+/* ─── Login — het merkmoment waarmee elke werkdag begint ─────── */
 #loginscreen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  background:var(--dark-ink);padding:20px;z-index:50}
-#loginscreen .lbox{background:var(--card);border-radius:var(--r-l);padding:34px 32px;width:380px;max-width:94vw;box-shadow:var(--sh-3)}
-#loginscreen img{height:26px;margin-bottom:6px}
-#loginscreen h1{font-family:var(--disp);font-weight:400;font-size:21px;letter-spacing:.03em;margin:10px 0 4px}
-#loginscreen p.li{color:var(--txt-2);font-size:13px;margin:0 0 22px}
+  background:linear-gradient(160deg,var(--dark-ink) 0%,#1c2c0d 55%,#2b4700 130%);
+  padding:20px;z-index:50}
+#loginscreen .lbox{background:var(--card);border-radius:var(--r-l);padding:40px 36px 32px;width:400px;max-width:94vw;
+  box-shadow:var(--sh-3);border-top:4px solid var(--olive);animation:v-in .25s ease-out}
+#loginscreen img{height:32px;margin-bottom:8px}
+#loginscreen h1{font-family:var(--disp);font-weight:400;font-size:22px;letter-spacing:.5px;text-transform:uppercase;margin:12px 0 4px}
+#loginscreen p.li{color:var(--txt-2);font-size:13px;margin:0 0 24px}
 #loginscreen .err{color:var(--red);font-size:12.5px;min-height:17px;margin-top:9px}
 #loginscreen .lnk{background:none;border:none;color:var(--txt-2);font-size:12px;cursor:pointer;padding:0;text-decoration:underline;font-family:var(--body)}
 
