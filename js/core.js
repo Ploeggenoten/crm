@@ -410,9 +410,29 @@ CRM.meld = async (voor, soort, tekst, entiteit='', ref='') => {
   if(!CRM.demo){
     const {error} = await sb.from('crm_meldingen').insert(rij);
     if(error) console.warn('melding opslaan', error);
+    /* Ook in Teams laten landen — daar kijkt het team de hele dag.
+       Best effort: lukt het niet, dan blijft de CRM-melding staan. */
+    teamsMelding(voor, tekst, entiteit, ref);
   }
   return rij;
 };
+
+/* Teams-bericht bij een melding. Adres komt uit het profiel van de collega;
+   het bericht gaat namens de ingelogde gebruiker (jij wees de taak toe). */
+function teamsMelding(voor, tekst, entiteit, ref){
+  try{
+    if(!CRM.outlook?.verbonden?.()) return;
+    if(localStorage.getItem('crm_teams_uit') === '1') return;
+    const p = (CRM.state.profiles||[]).find(x => x.naam === voor);
+    const adres = p?.email || p?.mail;
+    if(!adres) return;
+    const url = location.origin + location.pathname +
+      (entiteit && ref ? '#' + ({klant:'klanten',kandidaat:'kandidaten',lead:'recruitment',taak:'dashboard'}[entiteit] || 'dashboard') +
+        (entiteit==='taak' ? '' : '/' + encodeURIComponent(ref)) : '#dashboard');
+    const body = `${h(tekst)}<br><a href="${h(url)}">Openen in het CRM</a>`;
+    CRM.outlook.teamsBericht(adres, body);
+  }catch(e){ console.warn('teamsMelding', e); }
+}
 CRM.mijnMeldingen = (ongelezen=true) =>
   CRM.state.meldingen.filter(m => m.voor === CRM.me() && (!ongelezen || !m.gelezen));
 CRM.meldingGelezen = async (id) => {

@@ -39,6 +39,8 @@ alter table clients add column if not exists fase_sinds  date;
 alter table profiles add column if not exists foto_url   text default '';
 -- Functie bepaalt welk dashboard iemand ziet: am | recruiter | marketeer
 alter table profiles add column if not exists functie    text default '';
+-- Werk-e-mailadres: nodig om een Teams-melding bij de juiste collega te krijgen.
+alter table profiles add column if not exists email      text default '';
 -- Aanmaakdatum en fasehistorie: nodig om echte doorlooptijden en conversie
 -- per cohort te kunnen tonen in plaats van een momentopname.
 alter table clients add column if not exists aangemaakt  date default current_date;

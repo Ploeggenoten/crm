@@ -27,8 +27,8 @@ const MS_KERN = ['User.Read','Calendars.ReadWrite'];
 /* Extra's: toegevoegd in Entra op 30 jul 2026. Wordt er één geweigerd,
    dan valt token() terug op de kern in plaats van de koppeling te breken. */
 const MS_EXTRA = ['Tasks.ReadWrite','Mail.Read','Mail.Send','Contacts.ReadWrite',
-  'Files.Read.All','Sites.Read.All','ChatMessage.Send','OnlineMeetings.Read',
-  'MailboxSettings.Read','User.ReadBasic.All'];
+  'Files.Read.All','Sites.Read.All','ChatMessage.Send','Chat.Read','ChatMessage.Read',
+  'OnlineMeetings.Read','MailboxSettings.Read','User.ReadBasic.All','offline_access'];
 const MS_SCOPES = MS_KERN.concat(MS_EXTRA);
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
