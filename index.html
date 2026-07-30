@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="nl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ploeggenoten CRM</title>
+<link rel="icon" href="assets/logo-lime.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/dashboard.css">
+<link rel="stylesheet" href="css/sales.css">
+<link rel="stylesheet" href="css/klanten.css">
+<link rel="stylesheet" href="css/recruitment.css">
+<link rel="stylesheet" href="css/kandidaten.css">
+<link rel="stylesheet" href="css/marketing.css">
+<link rel="stylesheet" href="css/performance.css">
+<link rel="stylesheet" href="css/finance.css">
+
+<!-- ─── Login ────────────────────────────────────────────────── -->
+<div id="loginscreen" style="display:none">
+  <div class="lbox">
+    <img src="assets/logo-lime.png" alt="Ploeggenoten">
+    <h1>Welkom terug</h1>
+    <p class="li">Log in met je Ploeggenoten-account.</p>
+    <form id="loginform">
+      <div class="f-row"><label for="login_email">E-mailadres</label>
+        <input type="email" id="login_email" autocomplete="username" required placeholder="jij@ploeggenoten.nl"></div>
+      <div class="f-row"><label for="login_pw">Wachtwoord</label>
+        <input type="password" id="login_pw" autocomplete="current-password" required placeholder="••••••••"></div>
+      <button class="btn block lg" type="submit">Inloggen</button>
+      <div class="err" id="login_err"></div>
+      <div style="text-align:center;margin-top:6px"><button type="button" class="lnk" id="login_reset">Wachtwoord vergeten?</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- ─── App ──────────────────────────────────────────────────── -->
+<div id="app">
+  <nav class="side">
+    <div class="brand">
+      <img src="assets/logo-lime.png" alt="Ploeggenoten">
+      <div class="bs">CRM</div>
+    </div>
+    <div class="navscroll" id="navscroll"></div>
+    <div class="navfoot">
+      <div class="avatar" id="whoava">?</div>
+      <div class="who"><b id="whoname">—</b><span id="whorol"></span></div>
+      <button class="out" id="logoutbtn" title="Uitloggen">⏻</button>
+    </div>
+  </nav>
+
+  <main class="content">
+    <header class="pagehead" id="pagehead"></header>
+    <div class="view" id="viewmount"></div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<!-- Core eerst: definieert het CRM-object waar modules zich bij melden. -->
+<script src="js/core.js"></script>
+<!-- Gedeelde rekenlogica die meerdere modules gebruiken. -->
+<script src="js/data.js"></script>
+<!-- Demo-testdata: doet alleen iets op localhost met ?demo=1 -->
+<script src="js/demo.js"></script>
+<!-- Modules: elk bestand registreert zichzelf via CRM.registerModule(). -->
+<script src="js/dashboard.js"></script>
+<script src="js/sales.js"></script>
+<script src="js/klanten.js"></script>
+<script src="js/recruitment.js"></script>
+<script src="js/kandidaten.js"></script>
+<script src="js/marketing.js"></script>
+<script src="js/performance.js"></script>
+<script src="js/finance.js"></script>
+</html>
