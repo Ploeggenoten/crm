@@ -159,9 +159,20 @@
 }
 .loopt-i:hover{color:var(--olive)}
 
+/* ─── Sparklines — dun olijflijntje, richting zonder woorden ─────
+   Geen assen, geen raster, geen tooltip: het is richting, geen grafiek. */
+.tl2-sparks{display:flex;gap:26px;flex-wrap:wrap;align-items:center;padding:0 2px 10px}
+.tl2-spark{display:inline-flex;align-items:center;gap:8px}
+.tl2-spark svg,.zij-spark svg{display:block;opacity:.85;flex:0 0 auto}
+.zij-spark{display:flex;align-items:center;gap:8px;margin-top:10px}
+
 /* ─── Mobiel: tijdlijn boven, rechterkolom eronder ───────────── */
 @media (max-width:1000px){
   .dash2-grid{grid-template-columns:1fr}
+}
+@media (max-width:900px){
+  /* Op klein scherm dringt de sparkline-rij tussen meta en tijdlijn — dan liever weg. */
+  .tl2-sparks{display:none}
 }
 @media (max-width:700px){
   .dash-hero .h1{font-size:23px}

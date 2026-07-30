@@ -38,6 +38,31 @@ function dagenTussen(a,b){
 }
 const gem = arr => arr.length ? Math.round(arr.reduce((s,n)=>s+n,0)/arr.length) : null;
 
+/* ═══ SPARKLINE — dun olijflijntje dat richting toont ════════════
+   Geen assen, geen raster, geen tooltip: richting, geen grafiek.
+   Let op: deze functie staat LETTERLIJK ook in dashboard.js
+   (modules delen geen code, afspraak §1) — wijzig je hem, wijzig beide. */
+function sparkline(waarden){
+  const v = (waarden||[]).map(Number).filter(n => isFinite(n));
+  if(v.length < 2 || v.every(n => n === 0)) return '';
+  const B = 100, H = 24, P = 3;
+  const min = Math.min(...v), span = (Math.max(...v) - min) || 1;
+  const x = i => P + i * (B - 2*P) / (v.length - 1);
+  const y = n => H - P - (n - min) / span * (H - 2*P);
+  const pts = v.map((n,i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${B} ${H}" width="${B}" height="${H}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="var(--olive)" stroke-width="1.5"
+      stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${x(v.length-1).toFixed(1)}" cy="${y(v[v.length-1]).toFixed(1)}" r="2" fill="var(--olive)"/></svg>`;
+}
+
+/* Maandsleutels van de laatste n maanden, oud → nieuw (voor sparklines). */
+function laatsteMaanden(n=6){
+  const nu = new Date(), mks = [];
+  for(let i=n-1;i>=0;i--) mks.push(new Date(nu.getFullYear(), nu.getMonth()-i, 1).toLocaleDateString('sv-SE').slice(0,7));
+  return mks;
+}
+
 /* Percentage met eerlijke n bij kleine aantallen. */
 function pctTxt(deel, totaal, grens=10){
   if(!totaal) return '<span class="meta">—</span>';
@@ -104,14 +129,24 @@ function blokPlaatsingen(p, D){
   const tijdTotStop = gestoptCohort.map(c => dagenTussen(c.geplaatstOp, c.gestoptOp)).filter(n => n!=null && n>=0);
   const gemStop = gem(tijdTotStop);
 
+  /* Sparklines: getekend en netto per maand (laatste 6) — richting naast
+     het periodecijfer. Eén lijntje per tegel, altijd olijf (één accent);
+     de plus/min-kleur zit al in het cijfer zelf. */
+  const perGet = [], perNet = [];
+  laatsteMaanden(6).forEach(mk => {
+    const m = CRM.plaatsingenMaand(mk);
+    perGet.push(m.getekend.length); perNet.push(m.netto);
+  });
+  const sGet = sparkline(perGet), sNet = sparkline(perNet);
+
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Plaatsingen</span>
       <span class="meta">${h(p.lbl)} · ${h(CRM.fmtDateShort(p.van))} — ${h(CRM.fmtDateShort(p.tot))}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Getekend', `<span class="num">${D.getekend.length}</span>`,
-        `<span class="meta num">${ws} W&amp;S · ${flex} Flex</span>`, 'accent')}
+        `<span class="meta num">${ws} W&amp;S · ${flex} Flex</span>${sGet?`<div class="pf-spark">${sGet}</div>`:''}`, 'accent')}
       ${CRM.ui.kpi('Netto', CRM.plusMin(D.netto),
-        `<span class="meta num">${D.getekend.length} getekend − ${D.gestopt.length} gestopt</span>`)}
+        `<span class="meta num">${D.getekend.length} getekend − ${D.gestopt.length} gestopt</span>${sNet?`<div class="pf-spark">${sNet}</div>`:''}`)}
       ${CRM.ui.kpi('Duurzaam', D.cohort.length ? pctTxt(duur.length, D.cohort.length) : '<span class="meta">—</span>',
         `<span class="meta num">${duur.length} van ${D.cohort.length} nog aan het werk of voorbij de garantie</span>`)}
       ${CRM.ui.kpi('Tijd tot stop', gemStop!=null ? `<span class="num">${gemStop}</span><span class="pf-eh"> dagen</span>` : '<span class="meta">—</span>',
@@ -597,6 +632,15 @@ function blokDoel(fin){
     .filter(t => { const d = kort(t.factuurdatum || t.geplande_datum); return d && d >= start && d <= vandaag; })
     .reduce((s,t)=>s+(Number(t.bedrag_excl)||0),0);
 
+  /* Sparkline: gefactureerde omzet per maand (laatste 6). Staat alleen in
+     dit blok, dat al strikt achter CRM.canSeeMoney() zit — het team ziet
+     dit lijntje dus nooit. Olijf, geen bedragen erbij: richting. */
+  const perOmzet = laatsteMaanden(6).map(mk => (fin.termijnen||[])
+    .filter(t => ['gefactureerd','betaald'].includes(t.status)
+      && kort(t.factuurdatum || t.geplande_datum).slice(0,7) === mk)
+    .reduce((s,t)=>s+(Number(t.bedrag_excl)||0),0));
+  const sOmzet = sparkline(perOmzet);
+
   const teGaan = Math.max(0, doelOmzet - omzet);
   const pct = Math.min(100, Math.round(omzet / doelOmzet * 100));
   const mndRest = Math.max(0.25, (new Date(doelDatum) - new Date(vandaag)) / 86400000 / 30.44);
@@ -622,7 +666,8 @@ function blokDoel(fin){
         <div><span class="label">Omzetdoel</span><div class="big num">${h(CRM.euro(doelOmzet))}</div>
           <span class="meta">t/m ${h(dLbl)}</span></div>
         <div><span class="label">Gerealiseerd</span><div class="big num">${h(CRM.euro(omzet))}</div>
-          <span class="meta">gefactureerd sinds ${h(CRM.fmtDateShort(start))}</span></div>
+          <span class="meta">gefactureerd sinds ${h(CRM.fmtDateShort(start))}</span>
+          ${sOmzet?`<div class="pf-spark">${sOmzet}<span class="meta">per maand</span></div>`:''}</div>
         <div><span class="label">Nog te gaan</span><div class="big num">${h(CRM.euro(teGaan))}</div>
           <span class="meta num">${mndRest.toFixed(1).replace('.',',')} maanden resterend</span></div>
         <span class="spacer"></span>

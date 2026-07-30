@@ -42,6 +42,46 @@ function groet(){
   return u < 6 ? 'Goedenacht' : u < 12 ? 'Goedemorgen' : u < 18 ? 'Goedemiddag' : 'Goedenavond';
 }
 
+/* ═══ SPARKLINE — dun olijflijntje dat richting toont ════════════
+   Geen assen, geen raster, geen tooltip: richting, geen grafiek.
+   Let op: deze functie staat LETTERLIJK ook in performance.js
+   (modules delen geen code, afspraak §1) — wijzig je hem, wijzig beide. */
+function sparkline(waarden){
+  const v = (waarden||[]).map(Number).filter(n => isFinite(n));
+  if(v.length < 2 || v.every(n => n === 0)) return '';
+  const B = 100, H = 24, P = 3;
+  const min = Math.min(...v), span = (Math.max(...v) - min) || 1;
+  const x = i => P + i * (B - 2*P) / (v.length - 1);
+  const y = n => H - P - (n - min) / span * (H - 2*P);
+  const pts = v.map((n,i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${B} ${H}" width="${B}" height="${H}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="var(--olive)" stroke-width="1.5"
+      stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${x(v.length-1).toFixed(1)}" cy="${y(v[v.length-1]).toFixed(1)}" r="2" fill="var(--olive)"/></svg>`;
+}
+
+/* Sparkline-rij onder de metaregel: instroom en plaatsingen per week,
+   laatste 8 weken. Instroom telt bron 'Import oud ATS' bewust NIET mee:
+   de import van het oude ATS gaf 235 kandidaten een since-datum in
+   feb–jul en zou hier een absurde piek tekenen die niets over echte
+   instroom zegt. */
+function sparkRij(){
+  const cs = CRM.kandidaten();
+  const d0 = new Date(); d0.setHours(0,0,0,0);
+  const ma = new Date(d0.getTime() - ((d0.getDay()+6)%7)*DAG);   // maandag deze week
+  const weken = [];
+  for(let i=7;i>=0;i--) weken.push({
+    van: dISO(new Date(ma.getTime()-i*7*DAG)),
+    tot: dISO(new Date(ma.getTime()-(i-1)*7*DAG))
+  });
+  const tel = f => weken.map(w => cs.filter(c => { const s = f(c); return s && s >= w.van && s < w.tot; }).length);
+  const sIn = sparkline(tel(c => c.bron==='Import oud ATS' ? '' : kort(c.since)));
+  const sPl = sparkline(tel(c => kort(c.geplaatstOp)));
+  if(!sIn && !sPl) return '';
+  const seg = (svg,lbl) => svg ? `<span class="tl2-spark">${svg}<span class="meta">${h(lbl)}</span></span>` : '';
+  return `<div class="tl2-sparks">${seg(sIn,'instroom per week')}${seg(sPl,'geplaatst per week')}</div>`;
+}
+
 /* ═══ MOTIVATIEZIN — elke dag een andere, nuchter en recruitment ═ */
 const ZINNEN = [
   'Vandaag maak je iemand aan het werk.',
@@ -240,6 +280,7 @@ function tijdlijnKaart(P){
       <button class="btn ghost sm" id="tl2_nieuw">+ Taak</button></div>
     <div class="card-b tl2-b">
       <div class="tl2-meta meta num">${pijp} in de pijplijn · ${openLeads} nieuwe sollicitanten · ${vacs.length} open vacatures (${posities} posities)</div>
+      ${sparkRij()}
       ${outlookRij}
       ${leeg?`<div class="tl2-leeg meta">Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.</div>`:''}
       <div class="tl2-baan">${uurRijen.join('')}</div>
@@ -460,11 +501,19 @@ function maandBlok(){
   const ams = (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
   const aandeel = Math.max(1, Math.round(target/ams));
   const pct = Math.max(0, Math.min(100, Math.round(netto/aandeel*100)));
+  /* Sparkline: eigen plaatsingen per maand, laatste 6 — richting, geen grafiek. */
+  const nu = new Date(), perMnd = [];
+  for(let i=5;i>=0;i--){
+    const m2 = new Date(nu.getFullYear(), nu.getMonth()-i, 1).toLocaleDateString('sv-SE').slice(0,7);
+    perMnd.push(cs.filter(c => c.rec===mij && CRM.PLACED.includes(c.fase) && kort(c.geplaatstOp).slice(0,7)===m2).length);
+  }
+  const spark = sparkline(perMnd);
   return `<div class="dash-sec"><div class="label sec-kop">Jouw maand</div>
     <div class="card klik" data-mod="performance" title="Naar Performance"><div class="card-b zij-b">
       <div class="zij-maand"><span class="big">${CRM.plusMin(netto)}</span><span class="zij-van num">/ ${aandeel}</span></div>
       ${CRM.ui.bar(pct, pct>=100?'green':'')}
       <div class="meta num" style="margin-top:8px">${get} getekend · ${stop} gestopt · jouw aandeel van teamtarget ${target}</div>
+      ${spark?`<div class="zij-spark">${spark}<span class="meta">jouw plaatsingen per maand</span></div>`:''}
     </div></div></div>`;
 }
 
