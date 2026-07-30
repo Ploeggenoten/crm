@@ -40,19 +40,17 @@
    de paginakop en scrollt zelf bij overloop, zodat contactpersonen en
    taken altijd in beeld blijven terwijl je rechts van tab wisselt. ─ */
 .kl-dossier{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
-/* De rail zelf is een verdiept vlak (--well-2); de blokken erbinnen zijn
-   witte kaarten die eruit springen — één component, drie duidelijke blokken. */
+/* De rail: losse witte blokken, geen extra vlak eromheen — Tjeerd wilde
+   de rustige opzet van optie A houden; tint zit alleen in de kaartkoppen. */
 .kl-rail{display:flex;flex-direction:column;gap:12px;
-  background:var(--well-2);border:1px solid var(--line-2);border-radius:var(--r-l);padding:12px;
   position:sticky;top:84px;max-height:calc(100vh - 100px);overflow-y:auto;
   scrollbar-width:thin;min-width:0}
-.kl-rail > .card{border-color:var(--line-2)}
 .kl-werk{min-width:0;display:flex;flex-direction:column;gap:14px}
 
-/* Werkruimte: de tab-inhoud ligt op een licht sectievlak (--well); de
-   items erop (vacatures, kandidaatrijen, evaluaties) zijn witte kaarten. */
-#k_tabinhoud{background:var(--well);border:1px solid var(--line);border-radius:var(--r-l);padding:16px}
-#k_tabinhoud .card{border-color:var(--line-2)}
+/* Werkruimte: tab-inhoud gewoon op de pagina-achtergrond; de items
+   (vacatures, kandidaatrijen, evaluaties) zijn witte kaarten met een
+   getinte kopregel — dáár zit het gevraagde tintverschil. */
+#k_tabinhoud{padding:2px}
 .kl-tabkop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;min-height:30px}
 .kl-tabkop .h2{font-size:14px}
 
