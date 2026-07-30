@@ -176,3 +176,10 @@ label.kl-taak input{margin-top:3px}
   .kl-fil > .chip{flex:0 0 auto}
   .kl-fil > .meta{margin-left:auto}
 }
+
+/* Rail: notities — gezamenlijk geheugen, altijd in beeld */
+.rn-item{padding:8px 0;border-bottom:1px solid #eef0e4}
+.rn-item:last-of-type{border-bottom:none}
+.rn-item .rn-tekst{font-size:12.5px;line-height:1.45;word-break:break-word}
+.rn-item .meta{margin-top:3px}
+#rn_tekst{font-size:12.5px;min-height:52px}

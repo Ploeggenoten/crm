@@ -154,6 +154,11 @@ function overzicht(mount, acties){
           <div class="searchbox" style="flex:1;max-width:300px">
             <input type="search" id="kl_zoek" autocomplete="off" placeholder="Zoek op naam, plaats of branche…" value="${h(F.zoek)}">
           </div>
+          <select id="kl_fase" style="width:auto">
+            <option value="">Alle fases</option>
+            ${CRM.SALES_FASES.map(f=>`<option value="${h(f.k)}"${F.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('')}
+            <option value="__geen"${F.fase==='__geen'?' selected':''}>Zonder fase</option>
+          </select>
           <select id="kl_eig" style="width:auto">
             <option value="">Alle eigenaren</option>
             ${eigenaren.map(e=>`<option value="${h(e)}"${F.eigenaar===e?' selected':''}>${h(e)}</option>`).join('')}
@@ -168,8 +173,8 @@ function overzicht(mount, acties){
             <option value="vacatures"${F.sort==='vacatures'?' selected':''}>Meeste open vacatures</option>
             <option value="traject"${F.sort==='traject'?' selected':''}>Meeste lopende kandidaten</option>
           </select>
-          <span class="chip btn-like${F.mijn?' on':''}" id="kl_mijn">Mijn klanten</span>
-          <span class="chip btn-like${F.actief?' on':''}" id="kl_act">Alleen actieve klanten</span>
+          <span class="chip btn-like${F.mijn?' on':''}" id="kl_mijn">Mijn relaties</span>
+          <span class="chip btn-like${F.actief?' on':''}" id="kl_act">Alleen klanten (actief)</span>
           <span class="spacer"></span>
           <span class="meta num" id="kl_telling"></span>
         </div>
@@ -179,6 +184,7 @@ function overzicht(mount, acties){
 
   const zoekEl = mount.querySelector('#kl_zoek');
   zoekEl.oninput = CRM.debounce(() => { zet('zoek', zoekEl.value); lijst(mount); }, 200);
+  mount.querySelector('#kl_fase').onchange = e => { zet('fase',     e.target.value); lijst(mount); };
   mount.querySelector('#kl_eig').onchange  = e => { zet('eigenaar', e.target.value); lijst(mount); };
   mount.querySelector('#kl_br').onchange   = e => { zet('branche',  e.target.value); lijst(mount); };
   mount.querySelector('#kl_sort').onchange = e => { zet('sort',     e.target.value); lijst(mount); };
@@ -191,6 +197,8 @@ function gefilterd(){
   const actieveNamen = new Set(CRM.actieveKlanten().map(c=>c.naam));
   const q = String(F.zoek||'').trim().toLowerCase();
   const rijen = CRM.state.clients.filter(k => {
+    if(F.fase === '__geen'){ if(k.fase) return false; }
+    else if(F.fase && k.fase !== F.fase) return false;
     if(F.eigenaar && k.eigenaar !== F.eigenaar) return false;
     if(F.branche  && k.branche  !== F.branche)  return false;
     if(F.mijn     && !CRM.isVanMij(k))          return false;
@@ -213,10 +221,10 @@ function lijst(mount){
   const rijen = gefilterd();
   const wrap = mount.querySelector('#kl_lijst');
   const tel  = mount.querySelector('#kl_telling');
-  if(tel) tel.textContent = rijen.length + (rijen.length === 1 ? ' klant' : ' klanten');
+  if(tel) tel.textContent = rijen.length + (rijen.length === 1 ? ' relatie' : ' relaties');
 
   if(!rijen.length){
-    wrap.innerHTML = CRM.ui.leeg('Geen klanten gevonden','Pas je zoekopdracht of filters aan.');
+    wrap.innerHTML = CRM.ui.leeg('Geen relaties gevonden','Pas je zoekopdracht of filters aan.');
     return;
   }
 
@@ -303,6 +311,7 @@ function kaart(mount, acties, naam){
           ${gegevensHtml(k)}
           ${contactBlokHtml()}
           ${takenBlokHtml()}
+          ${notitiesBlokHtml()}
         </aside>
         <div class="kl-werk">
           ${signalenHtml(k, c, laatsteContact(k))}
@@ -334,6 +343,10 @@ function kaart(mount, acties, naam){
   /* Rail: open taken */
   mount.querySelector('#rt_nieuw').onclick = () => nieuweTaak(k);
   railTaken(mount.querySelector('#rt_lijst'), k);
+
+  /* Rail: notities — altijd zichtbaar zodat AM's van elkaar weten wat er
+     gezegd is, ongeacht in welke tab je werkt. */
+  railNotities(mount, k);
 
   mount.querySelectorAll('#k_tabs .tab').forEach(b => b.onclick = () => {
     tabActief = b.dataset.t;
@@ -415,6 +428,56 @@ function takenBlokHtml(){
     <div class="card-h"><div class="h2">Open taken</div><span class="spacer"></span>
       <button class="btn sm" id="rt_nieuw">+ Taak</button></div>
     <div class="card-b" id="rt_lijst"></div></div>`;
+}
+
+/* ─── Rail: notities — het gezamenlijke geheugen van de relatie ── */
+function notitiesBlokHtml(){
+  return `<div class="card kl-railkaart">
+    <div class="card-h"><div class="h2">Notities</div></div>
+    <div class="card-b">
+      <div class="f-row" style="margin-bottom:10px">
+        <textarea id="rn_tekst" rows="2" placeholder="Korte notitie… (@naam meldt een collega)"></textarea>
+        <button class="btn sm" id="rn_opslaan" style="align-self:flex-end">Opslaan</button>
+      </div>
+      <div id="rn_lijst"></div>
+    </div></div>`;
+}
+
+function railNotities(mount, k){
+  const el = mount.querySelector('#rn_lijst'); if(!el) return;
+  const teken = () => {
+    /* Notities én gespreksverslagen, ook die bij contactpersonen van deze
+       relatie — iedereen ziet hetzelfde beeld. */
+    const ctIds = new Set((CRM.state.contacten||[]).filter(x => x.klant === k.naam).map(c => String(c.id)));
+    const alle = CRM.state.activiteiten
+      .filter(a => (a.entiteit==='klant' && a.ref===k.naam && ['notitie','gesprek'].includes(a.soort))
+                || (a.entiteit==='contact' && ctIds.has(String(a.ref)) && ['notitie','gesprek'].includes(a.soort)))
+      .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+    const top = alle.slice(0, 5);
+    el.innerHTML = top.length ? top.map(a => `
+      <div class="rn-item">
+        <div class="rn-tekst">${h(a.tekst)}</div>
+        <div class="meta num">${h(a.door||'—')} · ${h(CRM.geleden(a.op))}${a.extra?.verslag?' · verslag':''}</div>
+      </div>`).join('') + (alle.length > 5
+        ? `<button class="btn sub sm" id="rn_alle">Alle ${alle.length} in de tijdlijn →</button>` : '')
+      : `<div class="meta">Nog geen notities — wat hier staat ziet het hele team.</div>`;
+    const alleBtn = el.querySelector('#rn_alle');
+    if(alleBtn) alleBtn.onclick = () => {
+      tabActief = 'activiteiten';
+      mount.querySelectorAll('#k_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'activiteiten'));
+      tabInhoud(mount, k);
+    };
+  };
+  const inp = mount.querySelector('#rn_tekst');
+  mount.querySelector('#rn_opslaan').onclick = async () => {
+    const tekst = inp.value.trim(); if(!tekst) return;
+    await CRM.logActiviteit('klant', k.naam, 'notitie', tekst);
+    CRM.verwerkTags(tekst, 'klant', k.naam);
+    inp.value = '';
+    teken();
+    CRM.toast('Notitie opgeslagen','ok');
+  };
+  teken();
 }
 
 function railTaken(el, k){
@@ -1136,7 +1199,7 @@ function vacatureModal(k, v){
 
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('klanten', {
-  title:'Klanten', icon:'▣', onderschrift:'Klantkaarten en accountbeheer',
+  title:'Relaties', icon:'▣', onderschrift:'Van lead tot klant — relatiekaarten en accountbeheer',
   render(mount, acties, params){
     zorgContacten();
     if(params && params.id) kaart(mount, acties, String(params.id));
