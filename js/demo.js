@@ -12,7 +12,7 @@
   const alsAdmin = new URLSearchParams(location.search).get('demo') !== 'team';
   const vandaag = new Date();
   const d = n => new Date(vandaag.getTime() + n*86400000).toLocaleDateString('sv-SE');
-  const mnd = vandaag.toISOString().slice(0,7);
+  const mnd = vandaag.toLocaleDateString('sv-SE').slice(0,7);   // lokale maand
 
   const KLANTEN = [
     ['Starcuisine','Afgerond','Tjeerd','Bodegraven','Voedingsmiddelen'],
@@ -99,7 +99,12 @@
       afval_type: fase==='Afgevallen' ? (i%2?'offer_afgewezen':'niet_gekwalificeerd'):'',
       afval_categorie: fase==='Afgevallen' ? (i%2?'Salaris te laag':'Taal'):'',
       stop_door: fase==='Gestopt'?'kandidaat':'', stop_categorie: fase==='Gestopt'?'Ander werk gevonden':'',
-      reden:'', cv: i%3===0 ? {functie:v.functie, ervaringJaren:2+(i%6), skills:['heftruck','VCA','productie'], talen:['Nederlands','Engels']} : null
+      reden:'', cv: i%3===0 ? {functie:v.functie, ervaringJaren:2+(i%6), skills:['heftruck','VCA','productie'], talen:['Nederlands','Engels']} : null,
+      ster: [0,3,4,5,2,4][i%6], beschikbaar: ['direct','in overleg','','direct',''][i%5],
+      ploegen: ['geen','2-ploegen','3-ploegen','wisselend',''][i%5],
+      talen: ['NL','NL, EN','PL, EN','NL, EN, PL','RO, EN'][i%5],
+      rijbewijs: ['B','B + heftruck','geen','B','heftruck'][i%5],
+      vervoer: ['auto','ov','auto','fiets','auto'][i%5]
     };
   });
 
@@ -156,6 +161,15 @@
     telefoon:'06 2345 67'+(10+i), email:'contact'+i+'@bedrijf.nl', hoofd:true, note:''
   }));
 
+  const MELDINGEN = [
+    {id:'m1', voor: alsAdmin?'Tjeerd':'Bryan', van:'Tjerk', soort:'taak',
+     tekst:'Tjerk heeft je een taak gegeven: "SWO Kontent nabellen vóór vrijdag"', entiteit:'taak', ref:'t2',
+     gelezen:false, created_at:new Date(Date.now()-3600000).toISOString()},
+    {id:'m2', voor: alsAdmin?'Tjeerd':'Bryan', van:'Rajesh', soort:'tag',
+     tekst:'Rajesh noemde je: "@'+(alsAdmin?'Tjeerd':'Bryan')+' kun jij het tarief van Koomstra checken?"',
+     entiteit:'klant', ref:'Koomstra & Co', gelezen:false, created_at:new Date(Date.now()-7200000).toISOString()}
+  ];
+
   /* ── Data injecteren en auth overslaan ── */
   window.addEventListener('DOMContentLoaded', async () => {
     CRM.user = {id:'demo-user', email: alsAdmin ? 'tjeerd@ploeggenoten.nl' : 'bryan@ploeggenoten.nl'};
@@ -168,7 +182,7 @@
     };
     Object.assign(CRM.state, {
       cands:CANDS, clients:KLANTEN, vacs:VACS, leads:LEADS, activiteiten:ACTS,
-      taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN,
+      taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN, meldingen:MELDINGEN,
       profiles:RECS.map((n,i)=>({id:'p'+i,naam:n,rol:i===0?'admin':'user'})),
       targets:[{maand:mnd,aantal:8},{maand:'__default__',aantal:8}], _loaded:true, _demo:true
     });

@@ -57,7 +57,7 @@ function mijnDag(){
   cs.filter(c => actief(c) && (kort(c.datum)===nu || kort(c.datum)===mor))
     .sort((a,b)=> String(a.datum+a.tijd).localeCompare(String(b.datum+b.tijd)))
     .forEach(c => G.afspraken.push({
-      ico:'🤝', titel:c.naam,
+      titel:c.naam,
       sub:(c.functie||'') + (c.klant?' · '+c.klant:''),
       wanneer:(kort(c.datum)===nu?'Vandaag':'Morgen') + (c.tijd?' '+c.tijd:''),
       urgent: kort(c.datum)===nu,
@@ -71,7 +71,7 @@ function mijnDag(){
     .forEach(t => {
       const over = kort(t.datum) < nu;
       G.taken.push({
-        ico:'✅', titel:t.tekst, sub:t.ref||'',
+        titel:t.tekst, sub:t.ref||'',
         wanneer: over ? 'Achterstallig · '+CRM.fmtDateShort(t.datum) : 'Vandaag',
         urgent: over, taak:t,
         go: t.entiteit==='klant' ? {mod:'klanten', id:t.ref}
@@ -91,7 +91,7 @@ function mijnDag(){
     .filter(Boolean)
     .sort((a,b)=>b.dagen-a.dagen)
     .forEach(x => G.leads.push({
-      ico:'📞', titel:x.l.naam,
+      titel:x.l.naam,
       sub:(x.l.functie||'') + (x.l.bron?' · '+x.l.bron:''),
       wanneer: x.gepland ? 'Opvolgen ingepland' : 'Binnen ' + CRM.geleden(x.l.binnen_op),
       urgent: x.dagen >= 3,
@@ -102,7 +102,7 @@ function mijnDag(){
   cs.filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
     .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)))
     .forEach(c => G.acties.push({
-      ico:'⏱', titel:c.volgendeActie, sub:c.naam + (c.fase?' · '+c.fase:''),
+      titel:c.volgendeActie, sub:c.naam + (c.fase?' · '+c.fase:''),
       wanneer:'Stond op ' + CRM.fmtDateShort(c.actieDatum), urgent:true,
       kandidaat:c, go:{mod:'kandidaten', id:c.id}
     }));
@@ -115,7 +115,7 @@ function mijnDag(){
     const mijlpaal = [3,14,30].find(m => n===m || n===m+1);
     if(!mijlpaal) return;
     G.nazorg.push({
-      ico:'💬', titel:'Nazorg dag '+mijlpaal+' — '+c.naam,
+      titel:'Nazorg dag '+mijlpaal+' — '+c.naam,
       sub:(c.klant||'') + (c.functie?' · '+c.functie:''),
       wanneer:'Gestart ' + CRM.geleden(start), urgent:false,
       go:{mod:'kandidaten', id:c.id}
@@ -126,17 +126,28 @@ function mijnDag(){
   return G;
 }
 
-/* Eén regel uit "Mijn dag". */
+/* Eén regel uit "Mijn dag" — tekst, geen plaatjes. Regels zonder afvinkbare
+   taak krijgen een klein neutraal stipje zodat de kolom blijft uitlijnen. */
 function dagRegel(it){
   const vink = it.taak      ? `<input type="checkbox" class="dag-vink" data-taak="${h(it.taak.id)}" title="Afvinken">`
              : it.kandidaat ? `<input type="checkbox" class="dag-vink" data-cactie="${h(it.kandidaat.id)}" title="Afvinken">`
-             : `<span class="dag-ico">${it.ico}</span>`;
+             : `<span class="dag-stip${it.urgent?' urgent':''}"></span>`;
   const klik = it.go ? ` data-mod="${h(it.go.mod)}" data-id="${h(it.go.id||'')}"` : '';
   return `<div class="dag-item${it.go?' klik':''}${it.urgent?' urgent':''}"${klik}>
     ${vink}
     <div class="dag-t"><b>${h(it.titel)}</b>${it.sub?`<span class="dag-s">${h(it.sub)}</span>`:''}</div>
     <span class="dag-w num">${h(it.wanneer||'')}</span>
   </div>`;
+}
+
+/* Welke groepen staan uitgeklapt? Bewaard per gebruiker in localStorage. */
+const UITKLAP_KEY = 'crm_dash_uitklap';
+function uitklapLezen(){
+  try{ const v = JSON.parse(localStorage.getItem(UITKLAP_KEY)); return (v && typeof v==='object') ? v : null; }
+  catch(e){ return null; }
+}
+function uitklapBewaren(st){
+  try{ localStorage.setItem(UITKLAP_KEY, JSON.stringify(st)); }catch(e){}
 }
 
 function dagBlok(G){
@@ -149,15 +160,33 @@ function dagBlok(G){
     return `<div class="card"><div class="card-h"><div class="h2">Mijn dag</div></div>
       <div class="card-b">${CRM.ui.leeg('Niets openstaand','Geen afspraken, taken of achterstallige acties voor vandaag. Mooi moment om nieuwe leads te bellen.')}</div></div>`;
   }
+
+  /* Standaard: de eerste twee groepen met inhoud open, de rest dicht.
+     Een eerder gekozen stand (localStorage) wint van de standaard. */
+  const bewaard = uitklapLezen();
+  const open = k => {
+    if(bewaard && k in bewaard) return !!bewaard[k];
+    return groepen.findIndex(([g]) => g===k) < 2;
+  };
+
   return `<div class="card dag-card">
     <div class="card-h"><div class="h2">Mijn dag</div>
-      <span class="chip">${G.totaal} ${G.totaal===1?'punt':'punten'}</span></div>
+      <span class="chip">${G.totaal} ${G.totaal===1?'punt':'punten'}</span>
+      ${CRM.outlook.beschikbaar() && !CRM.outlook.verbonden()
+        ? '<span class="spacer"></span><button class="btn ghost sm" id="dash_outlook">Outlook verbinden</button>' : ''}</div>
     <div class="card-b dag-b">
-      ${groepen.map(([k,lbl]) => `<div class="dag-groep">
-        <div class="dag-kop"><span class="label">${h(lbl)}</span><span class="meta num">${G[k].length}</span></div>
-        ${G[k].slice(0,8).map(dagRegel).join('')}
-        ${G[k].length>8?`<div class="dag-meer meta">en nog ${G[k].length-8} …</div>`:''}
-      </div>`).join('')}
+      ${groepen.map(([k,lbl]) => {
+        const op = open(k);
+        return `<div class="dag-groep${op?'':' dicht'}" data-groep="${h(k)}">
+        <button type="button" class="dag-kop" data-klap="${h(k)}" aria-expanded="${op}">
+          <span class="dag-chev">${op?'▾':'▸'}</span>
+          <span class="label">${h(lbl)}</span><span class="meta num">${G[k].length}</span>
+        </button>
+        <div class="dag-inhoud">
+          ${G[k].slice(0,8).map(dagRegel).join('')}
+          ${G[k].length>8?`<div class="dag-meer meta">en nog ${G[k].length-8} …</div>`:''}
+        </div>
+      </div>`;}).join('')}
     </div></div>`;
 }
 
@@ -361,11 +390,57 @@ CRM.registerModule('dashboard', {
     const ver = document.getElementById('dash_ver');
     if(ver) ver.onclick = () => CRM.herlaad();
 
+    /* Outlook: verbinden-knop, en bij een verbonden account de afspraken van
+       vandaag stilletjes bijmengen in de groep Afspraken. */
+    const ob = document.getElementById('dash_outlook');
+    if(ob) ob.onclick = async () => { if(await CRM.outlook.verbind()) CRM.render(); };
+    if(CRM.outlook.beschikbaar() && CRM.outlook.verbonden()){
+      CRM.outlook.agenda(1).then(items => {
+        if(!items || !items.length || CRM.view!=='dashboard') return;
+        const rijen = items.map(e => {
+          const tijd = String(e.start||'').slice(11,16);
+          return `<div class="dag-item">
+            <span class="dag-stip"></span>
+            <div class="dag-t"><b>${h(e.titel||'(zonder onderwerp)')}</b>
+              <span class="dag-s">Outlook${e.locatie?' · '+h(e.locatie):''}${
+                e.online?` · <a href="${h(e.online)}" target="_blank" rel="noopener">Teams</a>`:''}</span></div>
+            <span class="dag-w num">${h(tijd)}</span>
+          </div>`;
+        }).join('');
+        const groep = mount.querySelector('.dag-groep[data-groep="afspraken"] .dag-inhoud');
+        if(groep) groep.insertAdjacentHTML('afterbegin', rijen);
+        else {
+          const b = mount.querySelector('.dag-b');
+          if(b) b.insertAdjacentHTML('afterbegin', `<div class="dag-groep">
+            <button type="button" class="dag-kop" disabled style="cursor:default">
+              <span class="dag-chev">▾</span><span class="label">Agenda vandaag</span>
+              <span class="meta num">${items.length}</span></button>
+            <div class="dag-inhoud">${rijen}</div></div>`);
+        }
+      }).catch(()=>{});
+    }
+
     /* Doorklikken naar de juiste module. */
     CRM.$$('[data-mod]', mount).forEach(el => {
       el.onclick = e => {
         if(e.target.classList && e.target.classList.contains('dag-vink')) return;
         CRM.ga(el.dataset.mod, el.dataset.id ? {id:el.dataset.id} : {});
+      };
+    });
+
+    /* Groepen in- en uitklappen; de stand wordt onthouden. */
+    CRM.$$('[data-klap]', mount).forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        const k = btn.dataset.klap;
+        const groep = btn.closest('.dag-groep');
+        const dicht = groep.classList.toggle('dicht');
+        btn.setAttribute('aria-expanded', String(!dicht));
+        const chev = btn.querySelector('.dag-chev');
+        if(chev) chev.textContent = dicht ? '▸' : '▾';
+        const st = uitklapLezen() || {};
+        st[k] = !dicht;
+        uitklapBewaren(st);
       };
     });
 

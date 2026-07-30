@@ -18,10 +18,21 @@
 
 /* ─── Mijn dag ───────────────────────────────────────────────── */
 .dag-card .card-b.dag-b{padding:6px 20px 14px}
-.dag-groep{padding:12px 0 4px;border-top:1px solid var(--line)}
+.dag-groep{padding:4px 0;border-top:1px solid var(--line)}
 .dag-groep:first-child{border-top:none}
-.dag-kop{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+/* Kopregel is een knop: hele regel klikbaar om de groep in/uit te klappen. */
+button.dag-kop{
+  display:flex;align-items:baseline;gap:8px;width:100%;background:none;border:none;
+  padding:8px 2px;margin:0;cursor:pointer;font-family:var(--body);text-align:left;
+}
+button.dag-kop:hover .label{color:var(--ink)}
 .dag-kop .meta{margin-left:auto;font-size:11.5px}
+.dag-chev{width:12px;flex:0 0 12px;font-size:10px;color:var(--muted);align-self:center}
+.dag-groep.dicht .dag-inhoud{display:none}
+.dag-inhoud{padding-bottom:6px}
+/* Neutraal stipje voor regels zonder afvinkvak — houdt de kolom uitgelijnd. */
+.dag-stip{width:6px;height:6px;border-radius:50%;background:var(--line-2);flex:0 0 6px;margin:0 7px}
+.dag-item.urgent .dag-stip{background:var(--amber)}
 
 .dag-item{
   display:flex;align-items:center;gap:11px;padding:8px 10px;margin:0 -10px;
@@ -29,7 +40,6 @@
 }
 .dag-item.klik{cursor:pointer}
 .dag-item.klik:hover{background:#f7f9f1}
-.dag-item .dag-ico{width:20px;text-align:center;font-size:14px;flex:0 0 20px;opacity:.85}
 .dag-item .dag-vink{width:15px;height:15px;flex:0 0 15px;margin:0 3px;cursor:pointer}
 .dag-item .dag-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .dag-item .dag-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

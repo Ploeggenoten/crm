@@ -182,6 +182,24 @@ CRM.besteMatches = (kandidaat, n=5) => CRM.state.vacs
   .filter(m => m.score >= 30)
   .sort((a,b)=>b.score-a.score).slice(0,n);
 
+/* ─── Kwalificatie- en zoekhelpers (filters, Source-kaart) ────── */
+CRM.BESCHIKBAAR = ['direct','in overleg','niet'];
+CRM.PLOEGEN     = ['geen','2-ploegen','3-ploegen','5-ploegen','wisselend'];
+CRM.VERVOER     = ['auto','ov','fiets','geen'];
+CRM.sterren = n => { const s=Math.max(0,Math.min(5,Number(n)||0));
+  return s ? '★'.repeat(s)+'☆'.repeat(5-s) : '—'; };
+/* Woont deze kandidaat binnen X km van een plaats? Onbekende plaats telt
+   NIET mee (eerlijk blijven — liever geen resultaat dan een gok). */
+CRM.binnenRadius = (kandidaat, plaats, km) => {
+  const d = CRM.afstandKm(kandidaat?.woonplaats, plaats);
+  return d != null && d <= km;
+};
+/* Beschikbare pool = niet in een lopend traject: afgevallen-maar-recyclebaar
+   of expliciet beschikbaar gemarkeerd. Actief lopend = in de pijplijn. */
+CRM.isActiefLopend = c => !CRM.DONE.includes(c.fase) || CRM.PLACED.includes(c.fase) && !c.gestoptOp;
+CRM.isBeschikbaar  = c => c.beschikbaar === 'direct' || c.beschikbaar === 'in overleg'
+  || (c.fase === 'Afgevallen' && c.recyclebaar === true);
+
 /* Kandidaat-volledigheid: tegen vervuiling in het systeem. */
 CRM.VELDEN_VERPLICHT = [
   {k:'naam', lbl:'Naam'}, {k:'telefoon', lbl:'Telefoonnummer'}, {k:'woonplaats', lbl:'Woonplaats'},

@@ -217,7 +217,7 @@ function blokRecruiters(p, D){
         ${kop('gesprekken','Gesprekken','n')}
       </tr></thead>
       <tbody>${rijen.map(r=>`<tr>
-        <td><div class="row tight">${CRM.avatar(r.naam,'sm')}<b>${h(r.naam)}</b></div></td>
+        <td><b>${h(r.naam)}</b></td>
         <td class="n num">${r.plaatsingen}</td>
         <td class="pf-balk">${CRM.ui.bar(Math.round(r.plaatsingen/maxP*100))}</td>
         <td class="n num">${r.netto>0?'+':''}${r.netto}</td>

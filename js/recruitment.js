@@ -275,7 +275,7 @@ function rijHtml(l){
     <td><span class="rc-prio" title="Prioriteit ${h(l.prioriteit||'onbekend')}" style="background:${prioKleur(l.prioriteit)}"></span></td>
     <td>
       <div class="rc-naam">${h(l.naam)}</div>
-      <div class="rowsub">${h(l.woonplaats||'—')}${l.cv?' · 📄 cv':''}</div>
+      <div class="rowsub">${h(l.woonplaats||'—')}${l.cv?' · cv':''}</div>
     </td>
     <td>
       ${l.telefoon ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>
@@ -314,7 +314,47 @@ async function zetStatus(lead, nieuw){
     geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${oud} → ${nieuw}`);
   CRM.toast(geenGehoor ? `Belpoging ${poging} genoteerd` : 'Status bijgewerkt', 'ok');
   tekenBar(); tekenTabs(); tekenLijst(); CRM.navBadges();
+  if(nieuw === 'Intake gepland') return intakePlannen(lead);
   if(document.getElementById('drawer')?.classList.contains('on')) openLead(lead.id);
+}
+
+/* Bij "Intake gepland": datum/tijd vastleggen en desgewenst meteen in de
+   eigen agenda zetten (Outlook of vooringevulde deeplink). */
+function intakePlannen(l){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Intake plannen</div>
+      <p class="sub" style="margin:6px 0 0">${h(l.naam)}</p></div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label>Datum</label><input type="date" id="ip_datum" value="${h(l.opvolgen_op||CRM.todayISO())}"></div>
+        <div class="f-row"><label>Tijd</label><input type="time" id="ip_tijd" value="10:00"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="ip_agenda" checked> Zet ook in mijn agenda</label>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Overslaan</button>
+      <button class="btn" id="ip_ok">Vastleggen</button></div>`, {onOpen(m){
+    m.querySelector('#ip_ok').onclick = async () => {
+      const datum = m.querySelector('#ip_datum').value, tijd = m.querySelector('#ip_tijd').value || '10:00';
+      if(!datum) return CRM.toast('Kies een datum','err');
+      const agenda = m.querySelector('#ip_agenda').checked;
+      CRM.modal.close();
+      await bewaarLead(l, {opvolgen_op:datum});
+      await CRM.logActiviteit('lead', l.id, 'systeem', `Intake gepland op ${CRM.fmtDate(datum)} ${tijd}`);
+      if(agenda){
+        try{
+          const r = await CRM.outlook.maakAfspraak({
+            titel:`Videointake — ${l.naam}`, datum, tijd, duurMin:30, teams:true,
+            deelnemers:[l.email].filter(Boolean),
+            body:`Video-intake${l.functie?' voor '+l.functie:''}${l.klant?' bij '+l.klant:''}.`
+          });
+          if(r.via==='deeplink') CRM.toast('Outlook geopend — klik daar op Opslaan','ok');
+          else CRM.toast('In je agenda gezet','ok');
+        }catch(e){ CRM.fout('Agenda-afspraak mislukt', e); }
+      }
+      tekenBar(); tekenLijst();
+      if(document.getElementById('drawer')?.classList.contains('on')) openLead(l.id);
+    };
+  }});
 }
 /* ─── Leaddetail ──────────────────────────────────────────────── */
 function qaHtml(antwoorden){
@@ -346,14 +386,13 @@ function openLead(id){
   const v = vacById(l.vacature_id);
   const notities = Array.isArray(l.notities) ? l.notities : [];
   const doorgeschoten = l.status === 'Doorgeschoten' && l.kandidaat_id;
-  const tijdlijn = notities.map(n => ({ico:'📝', titel:n.door||'Notitie', wanneer:CRM.fmtDate(n.op), tekst:n.tekst}))
+  const tijdlijn = notities.map(n => ({titel:n.door||'Notitie', wanneer:CRM.fmtDate(n.op), tekst:n.tekst}))
     .concat(CRM.activiteitenVoor('lead', l.id).map(a => ({
-      ico:(CRM.ACT_SOORTEN[a.soort]||{}).ico || '•', titel:a.door||'Systeem',
+      titel:a.door||'Systeem',
       wanneer:CRM.fmtDate(a.op), tekst:a.tekst})));
 
   CRM.drawer.open(`
     <div class="drawer-h">
-      ${CRM.avatar(l.naam,'lg')}
       <div style="flex:1;min-width:0">
         <div class="h2">${h(l.naam)}</div>
         <div class="sub">${h(l.woonplaats||'—')} · ${h(l.bron||'onbekende bron')}${l.campagne?' · '+h(l.campagne):''}</div>
@@ -394,7 +433,7 @@ function openLead(id){
 
       <div class="card" style="margin-top:16px">
         <div class="card-h"><div class="h2">CV</div><div class="spacer"></div>
-          <button class="btn ghost sm" id="rc_cvbtn">📄 CV toevoegen</button></div>
+          <button class="btn ghost sm" id="rc_cvbtn">CV toevoegen</button></div>
         <div class="card-b">${cvHtml(l.cv)}</div></div>
 
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Opvolging</div></div>
@@ -489,6 +528,7 @@ function doorschietForm(lead){
       </div>
       <div class="f-row"><label for="ds_rec">Recruiter</label>
         <input type="text" id="ds_rec" value="${h(lead.eigenaar || CRM.me())}"></div>
+      <label class="check"><input type="checkbox" id="ds_agenda" checked> Zet de video-intake ook in mijn agenda</label>
       <div class="note err" id="ds_err" style="display:none"></div>
     </div>
     <div class="modal-f">
@@ -534,6 +574,17 @@ function doorschietForm(lead){
         await bewaarLead(lead, {status:'Doorgeschoten', kandidaat_id:cand.id, laatst_actie:new Date().toISOString()});
         await CRM.logActiviteit('lead', lead.id, 'systeem', `Doorgeschoten naar de pijplijn — video-intake ${CRM.fmtDate(cand.datum)} ${cand.tijd}`);
         await CRM.logActiviteit('kandidaat', cand.id, 'systeem', `Aangemaakt vanuit lead (${cand.bron}) — video-intake ${CRM.fmtDate(cand.datum)} ${cand.tijd}`);
+        if(m.querySelector('#ds_agenda').checked){
+          try{
+            const r = await CRM.outlook.maakAfspraak({
+              titel:`Videointake — ${cand.naam}`, datum:cand.datum, tijd:cand.tijd,
+              duurMin:30, teams:true, deelnemers:[cand.email].filter(Boolean),
+              body:`Video-intake voor ${cand.functie||'vacature'}${cand.klant?' bij '+cand.klant:''}.`
+            });
+            if(r.via==='deeplink') CRM.toast('Outlook geopend — klik daar op Opslaan','ok');
+            if(r.online) await CRM.logActiviteit('kandidaat', cand.id, 'notitie', 'Teams-link: ' + r.online);
+          }catch(e){ console.warn('agenda', e); }
+        }
         CRM.modal.close(); CRM.drawer.close();
         tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges();
         toastLink(`${cand.naam} staat in Voorselectie`, 'Open kandidaatkaart →', () => CRM.ga('kandidaten',{id:cand.id}));
@@ -1029,8 +1080,8 @@ function kaartHtml(c){
       ${c.noShows?`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`:''}
       ${dg!=null?`<span class="chip num" title="Dagen in deze fase">${dg}d</span>`:''}
     </div>
-    ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${over?'⚠ ':''}${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
-    ${kanIntake?`<button class="btn ghost sm rc-intakebtn" data-intake="${h(c.id)}">🎥 Video-intake</button>`:''}
+    ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
+    ${kanIntake?`<button class="btn ghost sm rc-intakebtn" data-intake="${h(c.id)}">Video-intake</button>`:''}
   </div>`;
 }
 
@@ -1172,14 +1223,13 @@ function snelBewerk(id){
   const c = CRM.kandidaat(id); if(!c) return;
   const v = vacById(c.vacatureId);
   const kanIntake = ['Voorselectie','Voorgesteld'].includes(c.fase);
-  const tijdlijn = (c.notities||[]).map(n => ({ico:'📝', titel:n.door||'Notitie', wanneer:CRM.fmtDate(n.op), tekst:n.tekst}))
+  const tijdlijn = (c.notities||[]).map(n => ({titel:n.door||'Notitie', wanneer:CRM.fmtDate(n.op), tekst:n.tekst}))
     .concat(CRM.activiteitenVoor('kandidaat', c.id).map(a => ({
-      ico:(CRM.ACT_SOORTEN[a.soort]||{}).ico||'•', titel:a.door||'Systeem',
+      titel:a.door||'Systeem',
       wanneer:CRM.fmtDate(a.op), tekst:a.tekst})));
 
   CRM.drawer.open(`
     <div class="drawer-h">
-      ${CRM.avatar(c.naam,'lg')}
       <div style="flex:1;min-width:0">
         <div class="h2">${h(c.naam)}</div>
         <div class="sub">${h(c.functie||'—')}${c.klant?' @ '+h(c.klant):''}${c.woonplaats?' · '+h(c.woonplaats):''}</div>
@@ -1209,7 +1259,8 @@ function snelBewerk(id){
           <div class="f-row"><label for="sb_note">Notitie toevoegen</label>
             <textarea id="sb_note" placeholder="Kort en feitelijk"></textarea></div>
           <div class="row"><button class="btn" id="sb_ok">Opslaan</button>
-            ${kanIntake?`<button class="btn ghost" id="sb_intake">🎥 Video-intake invullen</button>`:''}</div>
+            <button class="btn ghost" id="sb_plan">Inplannen</button>
+            ${kanIntake?`<button class="btn ghost" id="sb_intake">Video-intake invullen</button>`:''}</div>
         </div></div>
       ${v?`<div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Gekoppelde vacature</div></div>
         <div class="card-b"><div class="rc-kv"><span class="label">Vacature</span><span>${h(v.functie)}</span></div>
@@ -1223,6 +1274,7 @@ function snelBewerk(id){
       <button class="btn ghost" id="sb_volledig">Volledige kandidaatkaart →</button>
     </div>`, {onOpen(dr){
       dr.querySelector('#sb_volledig').onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:c.id}); };
+      dr.querySelector('#sb_plan').onclick = () => planAfspraak(c);
       const ib = dr.querySelector('#sb_intake'); if(ib) ib.onclick = () => intakeForm(c.id);
       dr.querySelector('#sb_ok').onclick = async () => {
         const g = id => dr.querySelector('#sb_'+id).value;
@@ -1243,6 +1295,55 @@ function snelBewerk(id){
         }
       };
     }});
+}
+
+/* ─── Afspraak inplannen vanuit de pijplijn-drawer ────────────── */
+function planAfspraak(c){
+  const titel = c.fase==='Voorselectie'
+    ? `Videointake — ${c.naam}`
+    : `Gesprek — ${c.naam}${c.klant?' @ '+c.klant:''}`;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Inplannen</div>
+      <p class="sub" style="margin:6px 0 0">${h(c.naam)}</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="pa_titel" value="${h(titel)}"></div>
+      <div class="f-grid">
+        <div class="f-row"><label>Datum</label><input type="date" id="pa_datum" value="${h(String(c.datum||'').slice(0,10)||CRM.todayISO())}"></div>
+        <div class="f-row"><label>Tijd</label><input type="time" id="pa_tijd" value="${h(c.tijd||'10:00')}"></div>
+        <div class="f-row"><label>Duur</label><select id="pa_duur">
+          <option value="30">30 minuten</option>
+          <option value="45" selected>45 minuten</option>
+          <option value="60">60 minuten</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="pa_teams"> Teams-videocall</label>
+      <div class="f-row" style="margin-top:10px"><label>Notitie</label>
+        <textarea id="pa_body" placeholder="Voor in de uitnodiging…"></textarea></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="pa_ok">Inplannen</button></div>`, {onOpen(m){
+    m.querySelector('#pa_ok').onclick = async () => {
+      const d = {
+        titel:m.querySelector('#pa_titel').value.trim(),
+        datum:m.querySelector('#pa_datum').value, tijd:m.querySelector('#pa_tijd').value || '10:00',
+        duurMin:Number(m.querySelector('#pa_duur').value)||45,
+        teams:m.querySelector('#pa_teams').checked,
+        body:m.querySelector('#pa_body').value.trim(),
+        deelnemers:[c.email].filter(Boolean)
+      };
+      if(!d.titel) return CRM.toast('Vul een onderwerp in','err');
+      if(!d.datum) return CRM.toast('Kies een datum','err');
+      CRM.modal.close();
+      try{
+        const r = await CRM.outlook.maakAfspraak(d);
+        CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
+        await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
+          `Afspraak ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
+        if(r.online) await CRM.logActiviteit('kandidaat', c.id, 'notitie', 'Teams-link: ' + r.online);
+        await bewaarKand(c.id, {datum:d.datum, tijd:d.tijd});
+        tekenKolommen(); snelBewerk(c.id);
+      }catch(e){ CRM.fout('Inplannen mislukt', e); }
+    };
+  }});
 }
 
 /* ─── Video-intakeformulier ───────────────────────────────────── */

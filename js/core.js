@@ -27,7 +27,7 @@ const CRM = window.CRM = {
   view:null,            // huidige module-key
   state:{               // gedeelde data (via CRM.load())
     cands:[], clients:[], vacs:[], profiles:[], targets:[],
-    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[],
+    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[], meldingen:[],
     _loaded:false
   },
   _rt:null, _subs:[]
@@ -95,10 +95,9 @@ CRM.avaKleur = naam => AVA_KLEUREN[Math.abs(String(naam||'').split('').reduce((a
 CRM.avatar = (naam,klasse='',foto='') => foto
   ? `<div class="ava ${klasse} foto"><img src="${h(foto)}" alt="" loading="lazy"></div>`
   : `<div class="ava ${klasse}" style="background:${CRM.avaKleur(naam)}">${h(CRM.initialen(naam))}</div>`;
-CRM.klantAvatar = (klant,klasse='') => {
-  const k = typeof klant==='string' ? CRM.klant(klant) : klant;
-  return CRM.avatar(k?.naam||klant, klasse, k?.logo_url||'');
-};
+/* Klanten krijgen géén beeldje — geen initialen en geen logo (wens Tjeerd:
+   lijsten zijn tekst). De functie blijft bestaan zodat modules niet breken. */
+CRM.klantAvatar = () => '';
 
 /* ─── Toast ───────────────────────────────────────────────────── */
 let _tt;
@@ -225,7 +224,7 @@ async function veilig(promise, naam){
 
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten] = await Promise.all([
+  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
     veilig(sb.from('vacatures').select('*'), 'vacatures'),
@@ -236,9 +235,10 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_taken').select('*').order('datum'), 'crm_taken'),
     veilig(sb.from('crm_documenten').select('*').order('op',{ascending:false}), 'crm_documenten'),
     veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen'),
-    veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten')
+    veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten'),
+    veilig(sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200), 'crm_meldingen')
   ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, _loaded:true});
+  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, _loaded:true});
   return CRM.state;
 };
 CRM.herlaad = async () => { await CRM.load(true); CRM.render(); };
@@ -259,7 +259,9 @@ CRM.rowToCand = r => ({
   overigPct:r.overig_pct==null?null:Number(r.overig_pct), herstartVan:r.herstart_van||'',
   ooId:r.oo_id||null, vervangt:r.vervangt||'', rec:r.rec||'', note:r.note||'',
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
-  cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||''
+  cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
+  ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
+  talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||''
 });
 CRM.candToRow = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
@@ -274,7 +276,9 @@ CRM.candToRow = c => ({
   overig_pct:c.overigPct==null?null:c.overigPct, herstart_van:c.herstartVan||'',
   oo_id:c.ooId||null, vervangt:c.vervangt||'', rec:c.rec||'', note:c.note||'',
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
-  vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||''
+  vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
+  ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
+  talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||''
 });
 
 /* ─── Activiteiten (gedeeld: sales, klant, kandidaat) ─────────── */
@@ -367,6 +371,102 @@ function navBadges(){
 }
 CRM.navBadges = navBadges;
 
+/* ─── Meldingen (taak toegewezen, @-tag) ──────────────────────── */
+CRM.teamNamen = () => CRM.state.profiles.map(p => p.naam).filter(Boolean);
+
+CRM.meld = async (voor, soort, tekst, entiteit='', ref='') => {
+  if(!voor || voor === CRM.me()) return null;      // jezelf hoef je niet te melden
+  const rij = { id:CRM.uid(), voor, van:CRM.me(), soort, tekst, entiteit, ref,
+                gelezen:false, created_at:new Date().toISOString() };
+  CRM.state.meldingen.unshift(rij);
+  if(!CRM.demo){
+    const {error} = await sb.from('crm_meldingen').insert(rij);
+    if(error) console.warn('melding opslaan', error);
+  }
+  return rij;
+};
+CRM.mijnMeldingen = (ongelezen=true) =>
+  CRM.state.meldingen.filter(m => m.voor === CRM.me() && (!ongelezen || !m.gelezen));
+CRM.meldingGelezen = async (id) => {
+  const m = CRM.state.meldingen.find(m => m.id === id);
+  if(m) m.gelezen = true;
+  if(!CRM.demo) await sb.from('crm_meldingen').update({gelezen:true}).eq('id', id);
+  navBadges();
+};
+
+/* @-tags in notities/activiteiten: "@Tjerk kijk jij hiernaar?" → melding
+   voor Tjerk. Matcht op voornaam uit profiles, hoofdletterongevoelig. */
+CRM.verwerkTags = (tekst, entiteit='', ref='') => {
+  const namen = CRM.teamNamen();
+  const getagd = new Set();
+  String(tekst||'').replace(/@([\wÀ-ž-]+)/g, (_, naam) => {
+    const wie = namen.find(n => n.toLowerCase() === naam.toLowerCase()
+                             || n.toLowerCase().startsWith(naam.toLowerCase()));
+    if(wie && wie !== CRM.me()) getagd.add(wie);
+    return _;
+  });
+  getagd.forEach(wie => CRM.meld(wie, 'tag',
+    `${CRM.me()} noemde je: "${String(tekst).slice(0,120)}"`, entiteit, ref));
+  return [...getagd];
+};
+
+/* ─── Gedeeld taakvenster — DE manier om een taak te maken ──────
+   Elke module gebruikt dit (geen eigen taakformulieren), zodat
+   toewijzen aan een collega, prioriteit en Outlook overal werkt.
+   opts: {entiteit, ref, refLabel, tekst, datum, voor}              */
+CRM.taakModal = (opts = {}) => new Promise(res => {
+  const team = CRM.teamNamen();
+  const outlookOk = CRM.outlook?.verbonden?.();
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe taak</div>
+      ${opts.refLabel ? `<div class="meta" style="margin-top:2px">bij ${h(opts.refLabel)}</div>` : ''}</div>
+    <div class="modal-b">
+      <div class="f-row"><label>Wat moet er gebeuren?</label>
+        <input type="text" id="tk_tekst" value="${h(opts.tekst||'')}" placeholder="Bijv. terugbellen over het voorstel">
+        <div class="hint">Tip: noem een collega met @naam in een notitie om diegene een melding te sturen.</div></div>
+      <div class="f-grid">
+        <div class="f-row"><label>Voor wie</label>
+          <select id="tk_voor">${team.map(n =>
+            `<option value="${h(n)}"${n===CRM.me()?' selected':''}>${h(n)}${n===CRM.me()?' (ik)':''}</option>`).join('')}
+          </select></div>
+        <div class="f-row"><label>Datum</label>
+          <input type="date" id="tk_datum" value="${h(opts.datum || CRM.todayISO())}"></div>
+        <div class="f-row"><label>Prioriteit</label>
+          <select id="tk_prio"><option value="">Normaal</option><option value="Hoog">Hoog</option></select></div>
+      </div>
+      ${outlookOk ? `<label class="check"><input type="checkbox" id="tk_outlook" checked> Ook in mijn Outlook To Do</label>` : ''}
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="tk_save">Taak aanmaken</button>
+    </div>`, {onOpen(m){
+      const inp = m.querySelector('#tk_tekst'); setTimeout(()=>inp.focus(),60);
+      m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
+      m.querySelector('#tk_save').onclick = async () => {
+        const tekst = inp.value.trim();
+        if(!tekst){ inp.focus(); return; }
+        const voor = m.querySelector('#tk_voor').value;
+        const rij = { id:CRM.uid(), tekst, datum:m.querySelector('#tk_datum').value || null,
+          klaar:false, entiteit:opts.entiteit||'', ref:String(opts.ref||''),
+          voor, door:CRM.me(), prioriteit:m.querySelector('#tk_prio').value,
+          created_at:new Date().toISOString() };
+        CRM.state.taken.push(rij);
+        if(!CRM.demo){
+          const {error} = await sb.from('crm_taken').insert(rij);
+          if(error){ CRM.fout('Taak opslaan mislukt', error); return; }
+        }
+        if(voor !== CRM.me())
+          CRM.meld(voor, 'taak', `${CRM.me()} heeft je een taak gegeven: "${tekst}"${opts.refLabel?` (bij ${opts.refLabel})`:''}`, 'taak', rij.id);
+        if(outlookOk && m.querySelector('#tk_outlook')?.checked && voor === CRM.me())
+          CRM.outlook.maakTaak({titel:tekst, datum:rij.datum, notities:opts.refLabel||''}).catch(()=>{});
+        CRM.modal.close();
+        CRM.toast(voor === CRM.me() ? 'Taak aangemaakt' : `Taak aangemaakt voor ${voor} — die krijgt een melding`, 'ok');
+        navBadges();
+        res(rij);
+      };
+    }});
+});
+
 /* ─── Eigen profielfoto ───────────────────────────────────────── */
 CRM.tekenEigenAvatar = () => {
   const el = document.getElementById('whoava'); if(!el) return;
@@ -429,10 +529,11 @@ function realtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'crm_leads'},  () => sync('crm_leads'))
     .on('postgres_changes',{event:'*',schema:'public',table:'crm_activiteiten'}, () => sync('crm_activiteiten'))
     .on('postgres_changes',{event:'*',schema:'public',table:'crm_taken'},  () => sync('crm_taken'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'crm_meldingen'}, () => sync('crm_meldingen'))
     .subscribe();
 }
 const sync = CRM.debounce(async tabel => {
-  const map = {candidates:'cands', crm_leads:'leads', crm_activiteiten:'activiteiten', crm_taken:'taken'};
+  const map = {candidates:'cands', crm_leads:'leads', crm_activiteiten:'activiteiten', crm_taken:'taken', crm_meldingen:'meldingen'};
   const veld = map[tabel]; if(!veld) return;
   const d = await veilig(sb.from(tabel).select('*'), tabel);
   CRM.state[veld] = d;

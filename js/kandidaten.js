@@ -258,8 +258,7 @@ function lijst(mount){
     </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
       return `<tr class="clickable" data-id="${h(String(c.id))}">
-        <td><div class="row tight" style="flex-wrap:nowrap">${CRM.avatar(c.naam,'sm')}
-          <div style="min-width:0"><b>${h(c.naam)}</b><div class="rowsub">${h(c.functie||'—')}</div></div></div></td>
+        <td><b>${h(c.naam)}</b><div class="rowsub">${h(c.functie||'—')}</div></td>
         <td class="sub">${h(c.klant||'—')}</td>
         <td>${faseChip(c.fase)}</td>
         <td class="sub">${h(c.woonplaats||'—')}</td>
@@ -323,8 +322,10 @@ function kaart(mount, acties, id){
     <button class="btn ghost sm" id="c_bel">Gebeld</button>
     <button class="btn ghost sm" id="c_app">Geappt</button>
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
+    <button class="btn ghost sm" id="c_plan">Inplannen</button>
     <button class="btn sm" id="c_taak">Taak</button>`;
   acties.querySelector('#c_terug').onclick   = () => CRM.ga('kandidaten');
+  acties.querySelector('#c_plan').onclick    = () => planModal(c);
   acties.querySelector('#c_bel').onclick     = () => logVia(c,'bel','Wat is er besproken?');
   acties.querySelector('#c_app').onclick     = () => logVia(c,'whatsapp','Wat heb je gestuurd?');
   acties.querySelector('#c_notitie').onclick = () => notitieToevoegen(c);
@@ -371,7 +372,6 @@ function kopHtml(c){
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
   const besch = (c.cv && c.cv.beschikbaar) || (c.start ? 'Start ' + CRM.fmtDate(c.start) : '');
   return `<div class="card"><div class="card-b kd-hero">
-    ${CRM.avatar(c.naam,'lg')}
     <div style="min-width:0;flex:1">
       <div class="h1" style="font-size:24px">${h(c.naam)}</div>
       <div class="sub" style="margin-top:3px">
@@ -629,7 +629,6 @@ function tabActiviteiten(el, c){
   const items = CRM.activiteitenVoor('kandidaat', c.id)
     .slice().sort((a,b) => new Date(b.op) - new Date(a.op))
     .map(a => ({
-      ico:(CRM.ACT_SOORTEN[a.soort]||{}).ico || '•',
       titel:((CRM.ACT_SOORTEN[a.soort]||{}).lbl || a.soort) + (a.door ? ' · ' + a.door : ''),
       wanneer:CRM.fmtDate(a.op) + ' · ' + CRM.geleden(a.op),
       tekst:a.tekst
@@ -672,6 +671,56 @@ function tabTaken(el, c){
   });
 }
 
+/* ─── Inplannen in Outlook (of deeplink als de koppeling nog uit staat) ── */
+function planModal(c){
+  const titel = c.fase==='Voorselectie'
+    ? `Videointake — ${c.naam}`
+    : `Gesprek — ${c.naam}${c.klant?' @ '+c.klant:''}`;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Inplannen</div>
+      <p class="sub" style="margin:6px 0 0">${h(c.naam)}</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="pl_titel" value="${h(titel)}"></div>
+      <div class="f-grid">
+        <div class="f-row"><label>Datum</label><input type="date" id="pl_datum" value="${h(String(c.datum||'').slice(0,10)||CRM.todayISO())}"></div>
+        <div class="f-row"><label>Tijd</label><input type="time" id="pl_tijd" value="${h(c.tijd||'10:00')}"></div>
+        <div class="f-row"><label>Duur</label><select id="pl_duur">
+          <option value="30">30 minuten</option>
+          <option value="45" selected>45 minuten</option>
+          <option value="60">60 minuten</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="pl_teams"> Teams-videocall</label>
+      <div class="f-row" style="margin-top:10px"><label>Notitie</label>
+        <textarea id="pl_body" placeholder="Voor in de uitnodiging…"></textarea></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="pl_ok">Inplannen</button></div>`, {onOpen(m){
+    m.querySelector('#pl_ok').onclick = async () => {
+      const d = {
+        titel:m.querySelector('#pl_titel').value.trim(),
+        datum:m.querySelector('#pl_datum').value, tijd:m.querySelector('#pl_tijd').value || '10:00',
+        duurMin:Number(m.querySelector('#pl_duur').value)||45,
+        teams:m.querySelector('#pl_teams').checked,
+        body:m.querySelector('#pl_body').value.trim(),
+        deelnemers:[c.email].filter(Boolean)
+      };
+      if(!d.titel) return CRM.toast('Vul een onderwerp in','err');
+      if(!d.datum) return CRM.toast('Kies een datum','err');
+      CRM.modal.close();
+      try{
+        const r = await CRM.outlook.maakAfspraak(d);
+        CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
+        await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
+          `Afspraak ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
+        if(r.online) await CRM.logActiviteit('kandidaat', c.id, 'notitie', 'Teams-link: ' + r.online);
+        /* Datum/tijd ook op de kaart, zodat bord en dashboard het tonen. */
+        await bewaarKandidaat(Object.assign({}, c, {datum:d.datum, tijd:d.tijd}));
+        CRM.render();
+      }catch(e){ CRM.fout('Inplannen mislukt', e); }
+    };
+  }});
+}
+
 function taakModal(c){
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Nieuwe taak</div>
@@ -683,6 +732,7 @@ function taakModal(c){
         <div class="f-row"><label>Voor wie</label><input type="text" id="kt_voor" value="${h(c.rec||CRM.me())}"></div>
       </div>
       <label class="check"><input type="checkbox" id="kt_hoog"> Hoge prioriteit</label>
+      ${CRM.outlook.verbonden()?'<label class="check"><input type="checkbox" id="kt_todo" checked> Ook in mijn Outlook To Do</label>':''}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="kt_ok">Taak opslaan</button></div>`, {onOpen(m){
@@ -692,8 +742,11 @@ function taakModal(c){
         entiteit:'kandidaat', ref:String(c.id), voor:m.querySelector('#kt_voor').value.trim(),
         door:CRM.me(), prioriteit:m.querySelector('#kt_hoog').checked ? 'Hoog' : ''};
       if(!rij.tekst) return CRM.toast('Omschrijf de taak','err');
+      const todo = m.querySelector('#kt_todo');
       CRM.modal.close();
       await bewaarRij('crm_taken','taken', rij, false);
+      if(todo && todo.checked)
+        CRM.outlook.maakTaak({titel:rij.tekst, datum:rij.datum, notities:'Kandidaat: '+c.naam}).catch(()=>{});
       tabActief = 'taken'; CRM.render();
     };
   }});
@@ -705,7 +758,7 @@ function tabNotities(el, c){
     <div class="card-h"><div class="h2">Notities</div><span class="spacer"></span>
       <button class="btn sm" id="kn_nieuw">Notitie toevoegen</button></div>
     <div class="card-b">${CRM.ui.tijdlijn(notities.map(n => ({
-      ico:'📝', titel:n.door||'—', wanneer:CRM.fmtDate(n.op)+' · '+CRM.geleden(n.op), tekst:n.tekst
+      titel:n.door||'—', wanneer:CRM.fmtDate(n.op)+' · '+CRM.geleden(n.op), tekst:n.tekst
     })))}</div></div>`;
   el.querySelector('#kn_nieuw').onclick = () => notitieToevoegen(c);
 }
@@ -726,7 +779,7 @@ function tabHistorie(el, c){
     const volgend = hist[i+1] ? hist[i+1].op : null;
     const dagen = volgend ? Math.round((new Date(volgend) - new Date(x.op)) / 86400000) : CRM.dagenGeleden(x.op);
     return {
-      ico:'↗', titel:x.fase,
+      titel:x.fase,
       wanneer:CRM.fmtDate(x.op) + (dagen != null && dagen >= 0 ? ' · ' + dagen + ' dagen in deze fase' : ''),
       tekst:''
     };

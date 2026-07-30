@@ -85,12 +85,12 @@ CRM.registerModule('finance', {
     const target        = CRM.maandTarget(mk);
 
     const acts = [];
-    if(concepten.length) acts.push({ico:'📋', titel:`${concepten.length} plaatsing${concepten.length>1?'en':''} nog te bevestigen`,
+    if(concepten.length) acts.push({titel:`${concepten.length} plaatsing${concepten.length>1?'en':''} nog te bevestigen`,
       tekst:'Fee en factuurschema invullen in de finance-app.'});
-    if(teFactureren.length) acts.push({ico:'🧾', titel:`${teFactureren.length} termijn${teFactureren.length>1?'en':''} klaar om te factureren`,
+    if(teFactureren.length) acts.push({titel:`${teFactureren.length} termijn${teFactureren.length>1?'en':''} klaar om te factureren`,
       tekst:CRM.euro(teFactureren.reduce((s,i)=>s+bedragVan(i),0)) + ' aan facturen die vandaag of eerder gepland stonden.'});
     const laatsteFlex = f.flex.map(w=>w.week).sort().pop();
-    if(laatsteFlex && CRM.dagenGeleden(laatsteFlex) > 21) acts.push({ico:'📄', titel:'Margefactuur Pronkert ontbreekt',
+    if(laatsteFlex && CRM.dagenGeleden(laatsteFlex) > 21) acts.push({titel:'Margefactuur Pronkert ontbreekt',
       tekst:`Laatste verwerkte week is ${CRM.fmtDate(laatsteFlex)} — dat is ${CRM.dagenGeleden(laatsteFlex)} dagen geleden.`});
 
     mount.innerHTML = `
@@ -108,7 +108,7 @@ CRM.registerModule('finance', {
         <div class="card">
           <div class="card-h"><div class="h2">Wat vraagt aandacht</div></div>
           <div class="card-b">
-            ${acts.length ? CRM.ui.tijdlijn(acts.map(a=>({ico:a.ico, titel:a.titel, tekst:a.tekst, wanneer:''})))
+            ${acts.length ? CRM.ui.tijdlijn(acts.map(a=>({titel:a.titel, tekst:a.tekst, wanneer:''})))
                           : `<div class="note ok">Niets open — facturatie en plaatsingen zijn bij.</div>`}
             ${acts.length ? `<a class="btn" style="margin-top:14px" href="${FIN_APP}" target="_blank" rel="noopener">Afhandelen in de finance-app ↗</a>` : ''}
           </div>
@@ -119,7 +119,7 @@ CRM.registerModule('finance', {
           <div class="card-b">
             ${pl.getekend.length ? `<div class="tblwrap" style="border:none">
               <table class="tbl"><tbody>
-              ${pl.getekend.map(c=>`<tr><td style="width:38px">${CRM.avatar(c.naam,'sm')}</td>
+              ${pl.getekend.map(c=>`<tr>
                 <td><b>${CRM.h(c.naam)}</b><div class="rowsub">${CRM.h(c.functie)} · ${CRM.h(c.klant)}</div></td>
                 <td class="n"><span class="num meta">${CRM.fmtDateShort(c.geplaatstOp)}</span></td></tr>`).join('')}
               </tbody></table></div>`

@@ -61,6 +61,9 @@ function formModal(titel, velden, knop='Opslaan'){
         }).join('')}</select>`;
       else if(v.type==='textarea')
         inp = `<textarea id="${id}" placeholder="${h(v.ph||'')}">${h(v.waarde||'')}</textarea>`;
+      else if(v.type==='check')
+        return `<div class="f-row" style="grid-column:1/-1">
+          <label class="check"><input type="checkbox" id="${id}"${v.waarde?' checked':''}> ${h(v.lbl)}</label></div>`;
       else
         inp = `<input type="${v.type||'text'}" id="${id}" value="${h(v.waarde==null?'':v.waarde)}" placeholder="${h(v.ph||'')}">`;
       return `<div class="f-row"${v.breed?' style="grid-column:1/-1"':''}>
@@ -74,7 +77,9 @@ function formModal(titel, velden, knop='Opslaan'){
         <button class="btn" id="fm_ok">${h(knop)}</button></div>`,
       {onOpen(m){
         m.querySelector('#fm_ok').onclick = () => {
-          const uit = {}; velden.forEach(v => uit[v.k] = (m.querySelector('#fm_'+v.k).value||'').trim());
+          const uit = {}; velden.forEach(v => uit[v.k] = v.type==='check'
+            ? m.querySelector('#fm_'+v.k).checked
+            : (m.querySelector('#fm_'+v.k).value||'').trim());
           CRM.modal.close(); res(uit);
         };
         m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
@@ -206,7 +211,7 @@ function kaartHTML(k){
   const kans = openKansen(k.naam).length;
   const taak = volgendeTaak(k.naam);
   return `<div class="bcard" draggable="true" data-klant="${h(k.naam)}">
-    <div class="bc-t">${CRM.avatar(k.naam,'sm')}
+    <div class="bc-t">
       <div style="flex:1;min-width:0">
         <div class="bc-n trunc">${h(k.naam)}</div>
         <div class="bc-s trunc">${h(k.eigenaar||'geen eigenaar')}${k.locatie?' · '+h(k.locatie):''}</div>
@@ -216,7 +221,7 @@ function kaartHTML(k){
       ${kans?`<span class="chip blue">${kans} kans${kans===1?'':'en'}</span>`:''}
       ${d==null?'':`<span class="chip${hangt?' amber':''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn</span>`}
     </div>
-    ${taak?`<div class="s-taak trunc" title="${h(taak.tekst)}">✅ ${h(taak.tekst)} <span class="meta num">${h(CRM.fmtDateShort(taak.datum))}</span></div>`:''}
+    ${taak?`<div class="s-taak trunc" title="${h(taak.tekst)}">${h(taak.tekst)} <span class="meta num">${h(CRM.fmtDateShort(taak.datum))}</span></div>`:''}
   </div>`;
 }
 
@@ -279,9 +284,8 @@ function lijstHTML(klanten){
       const d = CRM.dagenGeleden(k.fase_sinds);
       const hangt = CRM.SALES_ACTIEF.includes(faseVan(k)) && d!=null && d>HANGT_NA;
       return `<tr class="clickable" data-klant="${h(k.naam)}">
-        <td><div class="row tight" style="flex-wrap:nowrap">${CRM.avatar(k.naam,'sm')}
-          <div style="min-width:0"><div style="font-weight:600">${h(k.naam)}</div>
-          <div class="rowsub">${h(k.locatie||'')}</div></div></div></td>
+        <td><div style="font-weight:600">${h(k.naam)}</div>
+          <div class="rowsub">${h(k.locatie||'')}</div></td>
         <td><span class="s-fase"><i style="background:${CRM.salesKleur(faseVan(k))}"></i>${h(faseVan(k))}</span>
           ${hangt?`<div class="rowsub" style="color:var(--amber)"><span class="num">${d}</span> dagen stil</div>`:''}</td>
         <td>${h(k.eigenaar||'—')}</td>
@@ -405,7 +409,6 @@ function tekenDrawer(dr, naam){
   };
   dr.innerHTML = `
     <div class="drawer-h">
-      ${CRM.avatar(naam,'lg')}
       <div style="min-width:0;flex:1">
         <div class="h2" style="font-size:19px">${h(naam)}</div>
         <div class="row tight" style="margin-top:6px">
@@ -427,6 +430,7 @@ function tekenDrawer(dr, naam){
     </div>
     <div class="drawer-f">
       <button class="btn ghost" data-volledig>Volledige klantkaart openen →</button>
+      <button class="btn ghost" data-plan>Inplannen</button>
       <div class="spacer"></div>
       <label class="meta" for="sd_fase">Fase</label>
       <select id="sd_fase" style="width:auto;min-width:190px">${
@@ -436,6 +440,7 @@ function tekenDrawer(dr, naam){
   CRM.$$('[data-close]', dr).forEach(b=>b.onclick=()=>CRM.drawer.close());
   CRM.$$('[data-dtab]', dr).forEach(b=>b.onclick=()=>{ dTab=b.dataset.dtab; tekenDrawer(dr, naam); });
   dr.querySelector('[data-volledig]').onclick = () => { CRM.drawer.close(); CRM.ga('klanten',{id:naam}); };
+  dr.querySelector('[data-plan]').onclick = () => planKennismaking(k);
   dr.querySelector('#sd_fase').onchange = e => { zetFase(naam, e.target.value).then(()=>tekenDrawer(dr,naam)); };
 
   const body = dr.querySelector('#sd_body');
@@ -474,7 +479,7 @@ function tabInhoud(naam){
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Contactpersonen</div>
         <span class="meta">${cts.length} bekend</span></div>
         <div class="card-b" style="padding-top:6px">${
-          cts.length ? cts.map(c=>`<div class="s-ct">${CRM.avatar(c.naam,'sm')}
+          cts.length ? cts.map(c=>`<div class="s-ct">
             <div style="flex:1;min-width:0"><b>${h(c.naam)}</b>${c.hoofd?' <span class="chip green">hoofdcontact</span>':''}
               <div class="meta">${h(c.functie||'')}</div></div>
             <div class="meta num" style="text-align:right">${h(c.telefoon||'')}<br>${h(c.email||'')}</div></div>`).join('')
@@ -490,10 +495,10 @@ function tabInhoud(naam){
   if(dTab==='activiteiten'){
     const items = CRM.activiteitenVoor('klant', naam)
       .slice().sort((a,b)=>String(b.op).localeCompare(String(a.op)))
-      .map(a=>{ const s = CRM.ACT_SOORTEN[a.soort]||{ico:'•',lbl:a.soort};
-        return {ico:s.ico, titel:s.lbl+(a.door?' · '+a.door:''), wanneer:CRM.geleden(a.op), tekst:a.tekst}; });
+      .map(a=>{ const s = CRM.ACT_SOORTEN[a.soort]||{lbl:a.soort};
+        return {titel:s.lbl+(a.door?' · '+a.door:''), wanneer:CRM.geleden(a.op), tekst:a.tekst}; });
     return `<div class="row tight s-actbar">
-        ${[['bel','📞 Gebeld'],['mail','✉️ Mail'],['gesprek','🤝 Gesprek'],['notitie','📝 Notitie']]
+        ${[['bel','Gebeld'],['mail','Mail'],['gesprek','Gesprek'],['notitie','Notitie']]
           .map(([s,l])=>`<button class="btn ghost sm" data-act="${s}">${l}</button>`).join('')}
       </div>
       <div class="card"><div class="card-b">${
@@ -524,7 +529,7 @@ function tabInhoud(naam){
     const docs = docsVan(naam);
     return `<div class="row tight s-actbar">
         <select id="doc_soort" style="width:auto">${DOC_SOORTEN.map(s=>`<option>${h(s)}</option>`).join('')}</select>
-        <label class="btn sm ghost" for="doc_file">📎 Bestand kiezen</label>
+        <label class="btn sm ghost" for="doc_file">Bestand kiezen</label>
         <input type="file" id="doc_file" style="display:none">
         ${CRM.demo?'<span class="meta">Demo: uploads worden niet echt opgeslagen.</span>':''}
       </div>
@@ -579,15 +584,18 @@ function bindTab(body, dr, naam){
     await taakKlaar(c.dataset.taak, c.checked); tekenDrawer(dr, naam); teken();
   });
   CRM.$$('[data-nieuwetaak]', body).forEach(b=>b.onclick=async ()=>{
-    const uit = await formModal('Nieuwe taak bij '+naam, [
+    const velden = [
       {k:'tekst', lbl:'Wat moet er gebeuren?', ph:'Bijv. nabellen over de SWO', breed:true},
       {k:'datum', lbl:'Datum', type:'date', waarde:CRM.todayISO()},
       {k:'prioriteit', lbl:'Prioriteit', type:'select', opts:[{v:'',l:'Normaal'},{v:'Hoog',l:'Hoog'}]},
       {k:'voor', lbl:'Voor wie', waarde:CRM.me()}
-    ], 'Taak opslaan');
+    ];
+    if(CRM.outlook.verbonden()) velden.push({k:'todo', lbl:'Ook in mijn Outlook To Do', type:'check', waarde:true});
+    const uit = await formModal('Nieuwe taak bij '+naam, velden, 'Taak opslaan');
     if(!uit || !uit.tekst) return;
     await bewaarTaak({id:CRM.uid(), tekst:uit.tekst, datum:uit.datum||null, klaar:false,
       entiteit:'klant', ref:naam, voor:uit.voor||CRM.me(), door:CRM.me(), prioriteit:uit.prioriteit||''});
+    if(uit.todo) CRM.outlook.maakTaak({titel:uit.tekst, datum:uit.datum||null, notities:'Klant: '+naam}).catch(()=>{});
     tekenDrawer(dr, naam); teken();
   });
 
@@ -600,6 +608,34 @@ function bindTab(body, dr, naam){
     await uploadDoc(naam, f, soort);
     tekenDrawer(dr, naam);
   };
+}
+
+/* ─── Kennismaking inplannen (Outlook of vooringevulde deeplink) ── */
+async function planKennismaking(k){
+  const velden = [
+    {k:'titel', lbl:'Onderwerp', waarde:'Kennismaking — '+k.naam, breed:true},
+    {k:'datum', lbl:'Datum', type:'date', waarde:CRM.todayISO()},
+    {k:'tijd',  lbl:'Tijd',  type:'time', waarde:'10:00'},
+    {k:'duur',  lbl:'Duur',  type:'select', waarde:'45',
+      opts:[{v:'30',l:'30 minuten'},{v:'45',l:'45 minuten'},{v:'60',l:'60 minuten'}]},
+    {k:'locatie', lbl:'Locatie', waarde:k.locatie||''},
+    {k:'teams', lbl:'Teams-videocall', type:'check', waarde:false},
+    {k:'body',  lbl:'Notitie', type:'textarea', ph:'Voor in de uitnodiging…', breed:true}
+  ];
+  const uit = await formModal('Inplannen — '+k.naam, velden, 'Inplannen');
+  if(!uit || !uit.titel) return;
+  if(!uit.datum) return CRM.toast('Kies een datum','err');
+  try{
+    const r = await CRM.outlook.maakAfspraak({
+      titel:uit.titel, datum:uit.datum, tijd:uit.tijd||'10:00',
+      duurMin:Number(uit.duur)||45, locatie:uit.locatie, teams:uit.teams,
+      body:uit.body, deelnemers:[k.email].filter(Boolean)
+    });
+    CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
+    await CRM.logActiviteit('klant', k.naam, 'gesprek',
+      `Afspraak ingepland: ${uit.titel} op ${CRM.fmtDate(uit.datum)} ${uit.tijd||'10:00'}`);
+    if(r.online) await CRM.logActiviteit('klant', k.naam, 'notitie', 'Teams-link: ' + r.online);
+  }catch(e){ CRM.fout('Inplannen mislukt', e); }
 }
 
 async function uploadDoc(naam, bestand, soort){
@@ -668,7 +704,7 @@ function paneelHTML(){
           <div class="f-row"><label for="li_grootte">Bedrijfsgrootte</label>
             <input type="text" id="li_grootte" placeholder="50–500 medewerkers"></div>
         </div>
-        <button class="btn" id="li_zoek" disabled>🔎 Zoeken op LinkedIn</button>
+        <button class="btn" id="li_zoek" disabled>Zoeken op LinkedIn</button>
         <span class="hint" style="margin-left:10px">Werkt zodra de koppeling er is. Je zoekopdracht wordt bewaard.</span>
         </div></div>
 
@@ -820,7 +856,7 @@ function tekenInhoud(){
         <button class="tab${tab==='kansen'?' on':''}" data-tab="kansen">Kansen<span class="cnt num">${kansenN}</span></button>
       </div>
       <div class="row tight s-acts">
-        <button class="btn ghost" data-linkedin>🔎 Leads zoeken op LinkedIn</button>
+        <button class="btn ghost" data-linkedin>Leads zoeken op LinkedIn</button>
         <button class="btn" data-nieuwekans>+ Nieuwe kans</button>
       </div>
     </div>`;
@@ -837,7 +873,7 @@ function tekenInhoud(){
             zoek||mijn||eigFilter ? 'Je filters verbergen alles. Wis ze om de hele pijplijn te zien.'
                                   : 'Voeg je eerste bedrijven toe via de leadverkenner.',
             zoek||mijn||eigFilter ? '<button class="btn ghost" data-wis>Filters wissen</button>'
-                                  : '<button class="btn" data-linkedin>🔎 Leads zoeken</button>')}</div>`
+                                  : '<button class="btn" data-linkedin>Leads zoeken</button>')}</div>`
         : bordHTML(klanten));
   }
   bindInhoud();

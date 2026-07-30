@@ -12,6 +12,13 @@ alter table candidates add column if not exists woonplaats  text default '';
 alter table candidates add column if not exists vacature_id text default '';
 alter table candidates add column if not exists lead_id     text default '';
 alter table candidates add column if not exists cv          jsonb;
+-- Kwalificatie- en zoekvelden (filters, radiuszoeken, Source-kaart)
+alter table candidates add column if not exists ster        int  default 0;   -- 0 = nog niet beoordeeld, 1-5
+alter table candidates add column if not exists beschikbaar text default '';  -- direct | in overleg | niet
+alter table candidates add column if not exists ploegen     text default '';  -- geen | 2 | 3 | 5 | wisselend
+alter table candidates add column if not exists talen       text default '';  -- bv. 'NL, EN, PL'
+alter table candidates add column if not exists rijbewijs   text default '';  -- bv. 'B', 'B + heftruck'
+alter table candidates add column if not exists vervoer     text default '';  -- auto | ov | fiets | geen
 
 -- Klanten: salesfase, eigenaar (AM), contactgegevens.
 alter table clients add column if not exists fase        text default '';
@@ -24,7 +31,6 @@ alter table clients add column if not exists sinds       date;
 alter table clients add column if not exists laatst_contact date;
 alter table clients add column if not exists note        text default '';
 alter table clients add column if not exists fase_sinds  date;
-alter table clients add column if not exists logo_url    text default '';
 
 -- Profielfoto per gebruiker (zichtbaar voor het team).
 alter table profiles add column if not exists foto_url   text default '';
@@ -108,6 +114,20 @@ create table if not exists crm_taken (
 create index if not exists crm_taken_datum on crm_taken(datum);
 create index if not exists crm_taken_voor  on crm_taken(voor);
 
+-- ─── 4b. Meldingen (taak toegewezen, @-tag in een notitie) ────
+create table if not exists crm_meldingen (
+  id         text primary key,
+  voor       text not null,               -- naam van de collega die het moet zien
+  van        text default '',             -- wie het veroorzaakte
+  soort      text default '',             -- taak | tag | systeem
+  tekst      text default '',
+  entiteit   text default '',             -- doorklik: klant | kandidaat | lead | taak
+  ref        text default '',
+  gelezen    boolean default false,
+  created_at timestamptz default now()
+);
+create index if not exists crm_meld_voor on crm_meldingen(voor, gelezen);
+
 -- ─── 5. Documenten (bestanden bij klant/kandidaat) ────────────
 create table if not exists crm_documenten (
   id        text primary key,
@@ -165,7 +185,7 @@ create index if not exists crm_contacten_klant on crm_contacten(klant);
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten']
+  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten','crm_meldingen']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists team_all on %I', t);
@@ -177,7 +197,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_kansen']
+  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_kansen','crm_meldingen']
   loop
     begin execute format('alter publication supabase_realtime add table %I', t);
     exception when duplicate_object then null; end;
