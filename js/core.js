@@ -604,7 +604,9 @@ if(!DEMO) sb.auth.onAuthStateChange(async (event, session) => {
 });
 
 window.addEventListener('DOMContentLoaded', () => {
-  if(!DEMO) document.getElementById('loginscreen').style.display='flex';
+  /* Alleen tonen als er (nog) geen gebruiker is — de sessie kan al hersteld
+     zijn vóór DOMContentLoaded nu de bibliotheek lokaal (sneller) laadt. */
+  if(!DEMO && !CRM.user) document.getElementById('loginscreen').style.display='flex';
   document.getElementById('loginform').onsubmit = async e => {
     e.preventDefault();
     const err = document.getElementById('login_err'); err.textContent='';
