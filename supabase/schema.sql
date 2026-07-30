@@ -19,6 +19,9 @@ alter table candidates add column if not exists ploegen     text default '';  --
 alter table candidates add column if not exists talen       text default '';  -- bv. 'NL, EN, PL'
 alter table candidates add column if not exists rijbewijs   text default '';  -- bv. 'B', 'B + heftruck'
 alter table candidates add column if not exists vervoer     text default '';  -- auto | ov | fiets | geen
+-- Golden candidate: goede kandidaat zonder passende vacature op dit moment.
+-- Geen fase maar een vlag — zo raken we ze nooit meer uit het oog.
+alter table candidates add column if not exists golden      boolean default false;
 
 -- Klanten: salesfase, eigenaar (AM), contactgegevens.
 alter table clients add column if not exists fase        text default '';
@@ -34,6 +37,8 @@ alter table clients add column if not exists fase_sinds  date;
 
 -- Profielfoto per gebruiker (zichtbaar voor het team).
 alter table profiles add column if not exists foto_url   text default '';
+-- Functie bepaalt welk dashboard iemand ziet: am | recruiter | marketeer
+alter table profiles add column if not exists functie    text default '';
 -- Aanmaakdatum en fasehistorie: nodig om echte doorlooptijden en conversie
 -- per cohort te kunnen tonen in plaats van een momentopname.
 alter table clients add column if not exists aangemaakt  date default current_date;

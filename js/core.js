@@ -350,7 +350,7 @@ CRM.pageActies = html => { const el = document.getElementById('pageacties'); if(
 const NAV_GROEPEN = [
   {titel:'Overzicht', keys:['dashboard']},
   {titel:'Commercie', keys:['sales','klanten']},
-  {titel:'Recruitment', keys:['recruitment','hot','kandidaten','source']},
+  {titel:'Recruitment', keys:['recruitment','pijplijn','hot','kandidaten','source']},
   {titel:'Groei', keys:['marketing','performance']},
   {titel:'Alleen voor jou', keys:['finance','instellingen']}
 ];
@@ -359,7 +359,8 @@ const NAV_ICONEN = {
   dashboard:   '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   sales:       '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>',
   klanten:     '<path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M4 21h16M16 9h3a1 1 0 0 1 1 1v11M8 7h4M8 11h4M8 15h4"/>',
-  recruitment: '<rect x="3" y="3" width="5" height="18" rx="1.5"/><rect x="10" y="3" width="5" height="12" rx="1.5"/><rect x="17" y="3" width="4" height="8" rx="1.5"/>',
+  recruitment: '<path d="M12 3v4M12 7l-6 5v9h12v-9l-6-5zM9 21v-5h6v5"/>',
+  pijplijn:    '<rect x="3" y="3" width="5" height="18" rx="1.5"/><rect x="10" y="3" width="5" height="12" rx="1.5"/><rect x="17" y="3" width="4" height="8" rx="1.5"/>',
   hot:         '<path d="M12 3c1 4-4 5.5-4 10a4 4 0 0 0 8 0c0-2-1-3.5-2-4.5 0 2-1 2.5-2 3-0.5-2.5 1-5.5 0-8.5z"/>',
   kandidaten:  '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.5-3.6 2.8-5.5 5.5-5.5S14 16.4 14.5 20M15.5 5.5a3.2 3.2 0 1 1 0 5.4M16.5 14.8c2.2.5 3.6 2.3 4 5.2"/>',
   source:      '<path d="M12 21s-6.5-5.6-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.4"/>',
