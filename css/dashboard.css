@@ -1,35 +1,148 @@
 /* Extra stijl voor de module dashboard. Alleen deze module schrijft hier.
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist. */
 
-.dash{display:flex;flex-direction:column;gap:22px;max-width:1240px}
+.dash2{display:flex;flex-direction:column;gap:18px;max-width:1240px}
 
-/* ─── Begroeting ─────────────────────────────────────────────── */
+/* ─── Begroeting + motivatiezin ──────────────────────────────── */
 .dash-hero{padding:2px 2px 0}
-/* Datum in Inter (nooit Anton — condensed leest vaag bij cijfers). */
 .dash-hero .dash-datum{margin-bottom:8px;letter-spacing:.01em}
 /* Alleen de eerste letter met een hoofdletter — capitalize zou ook "Juli" doen. */
 .dash-hero .dash-datum::first-letter{text-transform:uppercase}
 .dash-hero .h1{font-size:27px}
-.dash-hero .dash-zin{margin:7px 0 0;font-size:14.5px;color:var(--txt-2);max-width:640px;line-height:1.55}
 
-/* ─── Sectiekop ──────────────────────────────────────────────── */
-.dash-sec{display:flex;flex-direction:column;gap:11px}
+/* De motivatiezin is het enige speelse element: groot Caveat, verder rust. */
+.mot{display:flex;align-items:flex-start;gap:10px;margin-top:10px}
+.mot .mot-zin{font-size:28px;line-height:1.15;transform:rotate(-1.2deg)}
+.mot-x{
+  background:none;border:none;padding:2px 6px;margin-top:4px;cursor:pointer;
+  color:var(--muted);font-size:12px;line-height:1;border-radius:999px;
+}
+.mot-x:hover{color:var(--ink);background:var(--card-2)}
+
+/* ─── Teamtarget-chip in de paginakop ────────────────────────── */
+.team-chip{
+  display:inline-flex;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--line-2);border-radius:999px;padding:6px 14px;
+  font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--txt-2);
+  cursor:pointer;white-space:nowrap;transition:border-color .12s;
+}
+.team-chip:hover{border-color:var(--olive-l)}
+.team-chip .tc-van{color:var(--muted);font-weight:500}
+.team-chip .bar.tc-bar{width:56px;flex:0 0 56px;height:4px}
+
+/* ─── Cockpitregel (alleen eigenaar) ─────────────────────────── */
+.cockpit{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 18px;
+}
+.cockpit.klik{cursor:pointer;transition:border-color .12s}
+.cockpit.klik:hover{border-color:var(--olive-l)}
+.cockpit .ck-seg{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap}
+.cockpit .ck-seg b{font-size:14px}
+.cockpit .bar.ck-bar{width:64px;height:4px;align-self:center}
+.cockpit .ck-sep{width:1px;height:16px;background:var(--line);align-self:center}
+.cockpit.stil{background:var(--well)}
+
+/* ─── Hoofdindeling: tijdlijn + smalle rechterkolom ──────────── */
+.dash2-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:18px;align-items:start}
+.dash2-hoofd{min-width:0}
+.zij{display:flex;flex-direction:column;gap:16px;min-width:0}
+.dash-sec{display:flex;flex-direction:column;gap:9px}
 .dash-sec .sec-kop{display:block}
+
+/* ─── Tijdlijnkaart ──────────────────────────────────────────── */
+.tl2-card .card-b.tl2-b{padding:8px 20px 18px}
+.tl2-vg{display:flex;align-items:center;gap:10px;min-width:0}
+.tl2-vg .meta{white-space:nowrap}
+.bar.tl2-vgbar{width:96px;flex:0 0 96px;height:5px}
+.tl2-meta{padding:6px 2px 10px}
+.tl2-leeg{padding:2px 2px 10px}
+.tl2-olrow{display:flex;align-items:center;gap:12px;padding:8px 2px 10px;flex-wrap:wrap}
+
+/* Zachte nadruk als een melding naar de tijdlijn springt. */
+.tl2-card.flits{border-color:var(--olive-l);transition:border-color .5s}
+
+/* Eén uur = tijdlabel links + slot rechts. */
+.tl2-uur{display:flex;gap:12px;border-top:1px solid var(--line);min-height:44px}
+.tl2-tijd{width:44px;flex:0 0 44px;padding-top:8px;font-size:11px;color:var(--muted);font-weight:500}
+.tl2-slot{flex:1;min-width:0;position:relative;padding:3px 0}
+.tl2-uur.voorbij .tl2-tijd{color:var(--line-2)}
+.tl2-uur.voorbij .tl2-items{opacity:.55}
+
+/* Dun olijf "nu"-lijntje in het huidige uur. */
+.tl2-nulijn{position:absolute;left:-56px;right:0;border-top:1px solid var(--olive);z-index:2;pointer-events:none}
+.tl2-nulijn span{
+  position:absolute;left:0;top:-8px;background:var(--olive);color:#fff;
+  font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  border-radius:999px;padding:1px 7px;line-height:1.4;
+}
+
+/* Regels in de tijdlijn. */
+.tl2-item{
+  display:flex;align-items:center;gap:10px;padding:6px 8px;margin:2px -8px;
+  border-radius:var(--r-s);transition:background .12s;position:relative;z-index:1;
+}
+.tl2-item.klik{cursor:pointer}
+.tl2-item.klik:hover{background:#f7f9f1}
+.tl2-vink{width:15px;height:15px;flex:0 0 15px;margin:0 2px;cursor:pointer}
+.tl2-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.tl2-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl2-s{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl2-w{font-size:12px;color:var(--txt-2);white-space:nowrap;flex:0 0 auto}
+/* Oranje alléén voor urgentie (over datum, deadline vandaag). */
+.tl2-item.urgent .tl2-w,.tl2-w.oranje{color:var(--amber);font-weight:600}
+
+/* Suggestieblok: voorgesteld werk in een leeg uur — gestippeld, gedempt. */
+.tl2-item.sug{border:1px dashed var(--line-2);background:var(--card-2);margin:3px 0;padding:6px 10px}
+.tl2-item.sug:hover{background:#eaeddd;border-color:var(--olive-l)}
+.tl2-item.sug .tl2-t b{font-weight:500;color:var(--txt)}
+.tl2-ruimte{color:var(--txt-2);font-weight:600;font-size:12px;letter-spacing:.02em}
+
+/* Afgevinkt: doorgestreept en gedempt, blijft staan. */
+.tl2-item.af{opacity:.6}
+.tl2-item.af .tl2-t b,.tl2-item.af .tl2-s{color:var(--muted);text-decoration:line-through}
+.tl2-item.af .tl2-w{color:var(--muted);font-weight:400}
+
+/* Nog in te plannen — onderaan de tijdlijn. */
+.tl2-rest{border-top:1px solid var(--line);margin-top:2px;padding-top:12px}
+.tl2-rest .label{margin-bottom:4px}
+
+/* ─── Rechterkolom ───────────────────────────────────────────── */
+.zij .card-b.zij-b{padding:12px 18px}
+.zij .card.klik{cursor:pointer;transition:border-color .12s}
+.zij .card.klik:hover{border-color:var(--olive-l)}
+.zij-rij{display:flex;flex-direction:column;gap:5px;padding:9px 0;border-top:1px solid var(--line)}
+.zij-rij:first-child{border-top:none;padding-top:4px}
+.zij-rij.klik{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:var(--r-s);transition:background .12s}
+.zij-rij.klik:hover{background:#f7f9f1}
+.zij-t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.zij-t b{font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zij-s{font-size:11.5px;color:var(--muted)}
+.zij-urgent{color:var(--amber);font-weight:600}
+.zij-rij{position:relative}
+.zij-rij .zij-w{position:absolute;right:8px;top:10px;font-size:11.5px;color:var(--txt-2)}
+.bar.zij-bar{height:4px}
+.zij-maand{display:flex;align-items:baseline;gap:6px;margin-bottom:10px}
+.zij-maand .big{font-size:28px}
+.zij-van{font-size:15px;color:var(--muted);font-weight:500}
+.zij-sig .card-b b{font-size:13.5px}
+.zij-sig .sub{margin-top:3px}
 
 /* ─── Meldingen ("Voor jou") — collegiaal, geen alarm ────────── */
 .meld-card{border-left:2px solid var(--olive)}
-.meld-card .card-b.meld-b{padding:8px 20px}
+.meld-card .card-b.meld-b{padding:8px 18px}
 .meld-rij{
-  display:flex;align-items:center;gap:11px;padding:9px 10px;margin:0 -10px;
+  display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 -8px;
   border-top:1px solid var(--line);border-radius:var(--r-s);
   cursor:pointer;transition:background .12s;
 }
 .meld-rij:first-child{border-top:none}
 .meld-rij:hover{background:#f7f9f1}
 .meld-stip{width:7px;height:7px;border-radius:50%;background:var(--olive-l);flex:0 0 7px}
-.meld-t{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px}
-.meld-tekst{font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.meld-w{white-space:nowrap;flex:0 0 auto}
+.meld-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.meld-tekst{font-size:12.5px;color:var(--ink);line-height:1.4}
+.meld-w{white-space:nowrap}
 .meld-af{
   width:26px;height:26px;flex:0 0 26px;display:inline-flex;align-items:center;justify-content:center;
   background:none;border:1px solid var(--line-2);border-radius:999px;
@@ -38,86 +151,24 @@
 }
 .meld-af:hover{border-color:var(--olive);color:var(--olive);background:#fff}
 
-/* ─── Voortgang van mijn taken (in de Mijn dag-kop) ──────────── */
-.dag-vg{display:flex;align-items:center;gap:10px;min-width:0}
-.dag-vg .meta{white-space:nowrap}
-.bar.dag-vgbar{width:96px;flex:0 0 96px;height:5px}
-
-/* Afgevinkte regel: doorgestreept en gedempt, blijft even staan. */
-.dag-item.af{opacity:.72}
-.dag-item.af .dag-t b,.dag-item.af .dag-s{color:var(--muted);text-decoration:line-through}
-.dag-item.af .dag-w{color:var(--muted);font-weight:400}
-
-/* Zachte nadruk als een melding naar de takengroep springt. */
-.dag-groep.flits{background:#f4f7ea;border-radius:var(--r-s);transition:background .5s}
-
-/* ─── Mijn dag ───────────────────────────────────────────────── */
-.dag-card .card-b.dag-b{padding:6px 20px 14px}
-.dag-groep{padding:4px 0;border-top:1px solid var(--line)}
-.dag-groep:first-child{border-top:none}
-/* Kopregel is een knop: hele regel klikbaar om de groep in/uit te klappen. */
-button.dag-kop{
-  display:flex;align-items:baseline;gap:8px;width:100%;background:none;border:none;
-  padding:8px 2px;margin:0;cursor:pointer;font-family:var(--body);text-align:left;
+/* ─── Wat loopt er — één rustige regel onderaan ──────────────── */
+.loopt{display:flex;gap:6px 22px;flex-wrap:wrap;align-items:center;padding:2px 2px 0;border-top:1px solid var(--line);padding-top:14px}
+.loopt-i{
+  background:none;border:none;padding:0;margin:0;cursor:pointer;
+  font-family:var(--body);font-size:12px;color:var(--muted);
 }
-button.dag-kop:hover .label{color:var(--ink)}
-.dag-kop .meta{margin-left:auto;font-size:11.5px}
-.dag-chev{width:12px;flex:0 0 12px;font-size:10px;color:var(--muted);align-self:center}
-.dag-groep.dicht .dag-inhoud{display:none}
-.dag-inhoud{padding-bottom:6px}
-/* Neutraal stipje voor regels zonder afvinkvak — houdt de kolom uitgelijnd. */
-.dag-stip{width:6px;height:6px;border-radius:50%;background:var(--line-2);flex:0 0 6px;margin:0 7px}
-.dag-item.urgent .dag-stip{background:var(--amber)}
+.loopt-i:hover{color:var(--olive)}
 
-.dag-item{
-  display:flex;align-items:center;gap:11px;padding:8px 10px;margin:0 -10px;
-  border-radius:var(--r-s);transition:background .12s;
+/* ─── Mobiel: tijdlijn boven, rechterkolom eronder ───────────── */
+@media (max-width:1000px){
+  .dash2-grid{grid-template-columns:1fr}
 }
-.dag-item.klik{cursor:pointer}
-.dag-item.klik:hover{background:#f7f9f1}
-.dag-item .dag-vink{width:15px;height:15px;flex:0 0 15px;margin:0 3px;cursor:pointer}
-.dag-item .dag-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.dag-item .dag-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dag-item .dag-s{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dag-item .dag-w{font-size:12px;color:var(--txt-2);white-space:nowrap;flex:0 0 auto}
-.dag-item.urgent .dag-w{color:var(--amber);font-weight:600}
-.dag-meer{padding:4px 0 0;font-size:12px}
-
-/* ─── Kerncijfers ────────────────────────────────────────────── */
-/* Flex slikt de spatie vóór "/ target" op; de gap zet die weer terug. */
-.dash-kpis .kpi .big{display:flex;align-items:baseline;gap:4px}
-.dash-kpis .kpi-van{font-size:16px;font-weight:500;color:var(--muted)}
-.dash-kpis .kpi .kd .bar{margin:2px 0 6px}
-.dash-geld .kpi .big{font-size:24px}
-
-/* ─── Wat loopt er ───────────────────────────────────────────── */
-/* Dunne rand in plaats van schaduw: hover verdiept alleen de rand. */
-.mod-kaart{cursor:pointer;transition:border-color .12s}
-.mod-kaart:hover{border-color:var(--olive-l)}
-.mod-kaart .mod-kop{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-.mod-kaart .mod-link{margin-left:auto;font-size:12px;color:var(--olive);font-weight:600}
-.mod-kaart .mod-cijfers{display:flex;gap:22px}
-.mod-kaart .mod-cijfers > div{min-width:0}
-.mod-kaart .mod-n{font-size:21px;font-weight:600;color:var(--ink);line-height:1.2}
-.mod-kaart .mod-cijfers .meta{font-size:11.5px;line-height:1.35;margin-top:2px}
-
-/* ─── Signalen ───────────────────────────────────────────────── */
-.sig-b{padding:6px 20px}
-.sig{display:flex;align-items:flex-start;gap:11px;padding:12px 10px;margin:0 -10px;
-  border-top:1px solid var(--line);border-radius:var(--r-s)}
-.sig:first-child{border-top:none}
-.sig.klik{cursor:pointer;transition:background .12s}
-.sig.klik:hover{background:#f7f9f1}
-.sig .sig-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:0 0 7px;margin-top:6px}
-.sig .sig-t{flex:1;min-width:0}
-.sig .sig-t b{font-size:13.5px;font-weight:600;color:var(--ink)}
-.sig .sig-t .sub{margin-top:2px}
-.sig .sig-pijl{color:var(--muted);font-size:14px;align-self:center}
-
 @media (max-width:700px){
-  .mod-kaart .mod-cijfers{gap:16px}
-  .dag-item .dag-w{font-size:11.5px}
-  /* Smal scherm: de tekst van de voortgang volstaat, de balk mag weg. */
-  .bar.dag-vgbar{display:none}
-  .meld-tekst{white-space:normal}
+  .dash-hero .h1{font-size:23px}
+  .mot .mot-zin{font-size:23px}
+  .bar.tl2-vgbar{display:none}
+  .tl2-tijd{width:38px;flex:0 0 38px}
+  .tl2-nulijn{left:-50px}
+  .cockpit{gap:12px}
+  .team-chip .bar.tc-bar{display:none}
 }

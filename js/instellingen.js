@@ -73,12 +73,17 @@ function sectieTargets(){
 
 /* ─── Team en rollen (openAdmin van het bord) ─────────────────── */
 const ROLLEN = [['am','Account Manager'],['admin','Beheerder']];
+/* Functie stuurt de dashboard-variant (marketeer krijgt een eigen kolom). */
+const FUNCTIES = [['am','AM'],['recruiter','Recruiter'],['marketeer','Marketeer']];
 function sectieTeam(){
   const profielen = (CRM.state.profiles||[]).slice().sort((a,b)=>String(a.naam||'').localeCompare(String(b.naam||'')));
   const rij = p => {
     const bekend = ROLLEN.some(([k]) => k === p.rol);
     return `<tr>
       <td><b>${h(p.naam||'—')}</b>${p.email?`<div class="rowsub">${h(p.email)}</div>`:''}</td>
+      <td class="n"><select data-functie="${h(p.id)}" style="width:auto;min-width:130px">
+        ${FUNCTIES.map(([k,l])=>`<option value="${k}" ${(p.functie||'am')===k?'selected':''}>${l}</option>`).join('')}
+      </select></td>
       <td class="n"><select data-rol="${h(p.id)}" style="width:auto;min-width:170px">
         ${bekend ? '' : `<option value="${h(p.rol||'')}" selected>${h(p.rol||'—')} (huidig)</option>`}
         ${ROLLEN.map(([k,l])=>`<option value="${k}" ${p.rol===k?'selected':''}>${l}</option>`).join('')}
@@ -87,7 +92,7 @@ function sectieTeam(){
   return `<div class="card" style="margin-top:20px"><div class="card-h"><div class="h2">Team en rollen</div></div>
     <div class="card-b">
       ${profielen.length ? `<div class="tblwrap"><table class="tbl">
-        <thead><tr><th>Gebruiker</th><th class="n">Rol</th></tr></thead>
+        <thead><tr><th>Gebruiker</th><th class="n">Functie</th><th class="n">Rol</th></tr></thead>
         <tbody>${profielen.map(rij).join('')}</tbody></table></div>`
       : CRM.ui.leeg('Geen gebruikers gevonden','Profielen verschijnen na de eerste login.')}
       <div class="note info" style="margin-top:14px"><b>Nieuwe collega uitnodigen:</b> Supabase-dashboard →
@@ -226,6 +231,16 @@ CRM.registerModule('instellingen', {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
       CRM.render();                                  // verschil-kolom meteen bijwerken
+    });
+    CRM.$$('[data-functie]', mount).forEach(sel => sel.onchange = async () => {
+      const p = (CRM.state.profiles||[]).find(x => String(x.id) === String(sel.dataset.functie));
+      if(!p) return;
+      p.functie = sel.value;
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('profiles').update({functie:sel.value}).eq('id', p.id);
+        if(error) return CRM.fout('Functie opslaan mislukt', error);
+      }
+      CRM.toast(`Functie van ${p.naam||'gebruiker'} → ${sel.value}`, 'ok');
     });
     CRM.$$('[data-rol]', mount).forEach(sel => sel.onchange = async () => {
       const p = (CRM.state.profiles||[]).find(x => String(x.id) === String(sel.dataset.rol));
