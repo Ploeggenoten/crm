@@ -354,6 +354,22 @@ const NAV_GROEPEN = [
   {titel:'Groei', keys:['marketing','performance']},
   {titel:'Alleen voor jou', keys:['finance','instellingen']}
 ];
+/* Strakke lijn-iconen voor de zijbalk (geen emoji): 18px, stroke = tekstkleur. */
+const NAV_ICONEN = {
+  dashboard:   '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  sales:       '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>',
+  klanten:     '<path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M4 21h16M16 9h3a1 1 0 0 1 1 1v11M8 7h4M8 11h4M8 15h4"/>',
+  recruitment: '<rect x="3" y="3" width="5" height="18" rx="1.5"/><rect x="10" y="3" width="5" height="12" rx="1.5"/><rect x="17" y="3" width="4" height="8" rx="1.5"/>',
+  hot:         '<path d="M12 3c1 4-4 5.5-4 10a4 4 0 0 0 8 0c0-2-1-3.5-2-4.5 0 2-1 2.5-2 3-0.5-2.5 1-5.5 0-8.5z"/>',
+  kandidaten:  '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.5-3.6 2.8-5.5 5.5-5.5S14 16.4 14.5 20M15.5 5.5a3.2 3.2 0 1 1 0 5.4M16.5 14.8c2.2.5 3.6 2.3 4 5.2"/>',
+  source:      '<path d="M12 21s-6.5-5.6-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.4"/>',
+  marketing:   '<path d="M3 11v3l4 1 2 5 2.5-1-1.5-4 10 3V4L7 9.5 3 11z"/>',
+  performance: '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
+  finance:     '<circle cx="12" cy="12" r="8.5"/><path d="M15 9a4 4 0 1 0 0 6M8.5 11h5M8.5 13.5h5"/>',
+  instellingen:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>'
+};
+const navIcoon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICONEN[k]||'<circle cx="12" cy="12" r="8"/>'}</svg>`;
+
 function bouwNav(){
   const wrap = document.getElementById('navscroll');
   wrap.innerHTML = NAV_GROEPEN.map(g => {
@@ -361,7 +377,7 @@ function bouwNav(){
     if(!items.length) return '';
     return (g.titel?`<div class="navgroup">${h(g.titel)}</div>`:'<div style="height:4px"></div>') +
       items.map(m => `<a class="nav${m.adminOnly?' adm':''}" data-go="${m.key}">
-        <span>${h(m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
+        ${navIcoon(m.key)}<span>${h(m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
   }).join('');
   CRM.$$('[data-go]', wrap).forEach(a => a.onclick = () => CRM.ga(a.dataset.go));
   navActief(); navBadges();
