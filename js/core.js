@@ -82,6 +82,14 @@ CRM.geleden = iso => {                       // "3 dagen geleden"
 };
 CRM.euro = (n,dec=0) => (n==null||isNaN(n)) ? '—' :
   '€' + Number(n).toLocaleString('nl-NL',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+/* Cijfer met lading: positief olijf, negatief rood, nul neutraal.
+   fmt is optioneel (bv. CRM.euro); default gewoon het getal met +/−. */
+CRM.plusMin = (n, fmt) => {
+  const v = Number(n)||0;
+  const klass = v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+  const tekst = fmt ? fmt(v) : (v > 0 ? '+' : '') + v.toLocaleString('nl-NL');
+  return `<span class="num ${klass}">${tekst}</span>`;
+};
 CRM.pct = (n,dec=0) => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('nl-NL',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + '%';
 
 /* Initialen + stabiele kleur per naam (avatars). */

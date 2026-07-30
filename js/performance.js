@@ -110,7 +110,7 @@ function blokPlaatsingen(p, D){
     <div class="grid c4">
       ${CRM.ui.kpi('Getekend', `<span class="num">${D.getekend.length}</span>`,
         `<span class="meta num">${ws} W&amp;S · ${flex} Flex</span>`, 'accent')}
-      ${CRM.ui.kpi('Netto', `<span class="num">${D.netto>0?'+':''}${D.netto}</span>`,
+      ${CRM.ui.kpi('Netto', CRM.plusMin(D.netto),
         `<span class="meta num">${D.getekend.length} getekend − ${D.gestopt.length} gestopt</span>`)}
       ${CRM.ui.kpi('Duurzaam', D.cohort.length ? pctTxt(duur.length, D.cohort.length) : '<span class="meta">—</span>',
         `<span class="meta num">${duur.length} van ${D.cohort.length} nog aan het werk of voorbij de garantie</span>`)}
@@ -153,7 +153,7 @@ function blokTrend(){
             <i class="get" style="height:${px(r.get)}px"></i>
             <i class="stop" style="height:${px(r.stop)}px"></i>
           </div>
-          <div class="pf-net num ${r.netto>=r.target?'goed':(r.netto<0?'slecht':'')}">${r.netto>0?'+':''}${r.netto}</div>
+          <div class="pf-net num ${r.netto>0?'pos':(r.netto<0?'neg':'')}">${r.netto>0?'+':''}${r.netto}</div>
           <div class="pf-mnd">${h(r.lbl)}</div>
         </div>`).join('')}
       </div>
@@ -220,7 +220,7 @@ function blokRecruiters(p, D){
         <td><b>${h(r.naam)}</b></td>
         <td class="n num">${r.plaatsingen}</td>
         <td class="pf-balk">${CRM.ui.bar(Math.round(r.plaatsingen/maxP*100))}</td>
-        <td class="n num">${r.netto>0?'+':''}${r.netto}</td>
+        <td class="n">${CRM.plusMin(r.netto)}</td>
         <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
         <td class="n num">${r.pijplijn}</td>
         <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>

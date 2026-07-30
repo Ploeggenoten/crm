@@ -78,6 +78,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
 .h2{font-family:var(--body);font-weight:700;font-size:15px;letter-spacing:-.01em;color:var(--ink)}
 .label{font-family:var(--body);font-weight:600;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2)}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:600}
+/* Cijfers met lading: positief in de merkkleur, negatief in rood. */
+.pos{color:var(--olive)!important}
+.neg{color:var(--red)!important}
 .big{font-family:var(--disp);font-weight:400;font-size:30px;line-height:1;letter-spacing:.5px;color:var(--ink)}
 /* Handschrift-accent: hooguit 1–2 per pagina. */
 .hand{font-family:var(--hand);font-weight:600;font-size:1.25em;color:var(--olive);
@@ -199,8 +202,8 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .kpi .label{margin-bottom:10px}
 .kpi .big{color:var(--ink)}
 .kpi .kd{font-size:12px;margin-top:8px;color:var(--txt-2)}
-.kpi .kd.up{color:var(--green)}
-.kpi .kd.down{color:var(--oranje)}
+.kpi .kd.up{color:var(--olive)}
+.kpi .kd.down{color:var(--red)}
 .kpi.accent{border-left:2px solid var(--olive)}
 
 /* ─── Chips / badges ─────────────────────────────────────────── */

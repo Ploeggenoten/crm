@@ -273,7 +273,7 @@ function kerncijfers(){
   const pct = target>0 ? Math.round(netto/target*100) : 0;
 
   return `<div class="grid c4 dash-kpis">
-    ${CRM.ui.kpi('Plaatsingen deze maand', `<span class="num">${netto}</span><span class="kpi-van"> / ${target}</span>`,
+    ${CRM.ui.kpi('Plaatsingen deze maand', `<span class="num${netto<0?' neg':netto>0?' pos':''}">${netto}</span><span class="kpi-van"> / ${target}</span>`,
       `${CRM.ui.bar(pct, pct>=100?'green':(pct>=60?'':'amber'))}
        <span class="meta num">${getekend.length} getekend · ${gestopt.length} gestopt</span>`, 'accent')}
     ${CRM.ui.kpi('In de pijplijn', `<span class="num">${pijplijn}</span>`,

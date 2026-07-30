@@ -55,6 +55,9 @@ Regels (huisstijlbrief Tjeerd, 30 jul 2026):
 - Kleur is betekenis, geen decoratie: hooguit één accent per scherm.
 - Veel witruimte, rustige dichtheid. Liever een lege staat dan een vol scherm.
 - Handschrift-accent `.hand` (Caveat): hooguit 1–2 per pagina, spaarzaam.
+- **Cijfers met lading**: positieve waarden in olijf, negatieve in rood — gebruik
+  `CRM.plusMin(n, fmt?)` of de klassen `.pos`/`.neg`. Neutrale cijfers blijven
+  gewoon donker (kleur alleen als het richting uitdrukt).
 
 ## 4. Helpers (uit `js/core.js` en `js/data.js`)
 

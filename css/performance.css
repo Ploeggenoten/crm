@@ -35,9 +35,7 @@
 .pf-area > i.get{background:var(--olive-l)}
 .pf-area > i.stop{background:var(--red-line)}
 .pf-area .pf-tick{position:absolute;left:8%;right:8%;height:0;border-top:1px dashed var(--line-2)}
-.pf-net{font-size:12.5px;font-weight:600;color:var(--txt-2)}
-.pf-net.goed{color:var(--green)}
-.pf-net.slecht{color:var(--red)}
+.pf-net{font-size:12.5px;font-weight:600;color:var(--txt-2)} /* richting via .pos/.neg (base.css) */
 .pf-mnd{font-size:11px;color:var(--muted);text-transform:capitalize}
 
 .pf-leg{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);margin-left:auto}

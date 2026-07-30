@@ -218,7 +218,7 @@ function tabVandaag(el, f){
         omzetMaand ? `waarvan ${CRM.euro(omzetMaandGefact)} al gefactureerd of betaald` : 'geen termijnen gepland')}
       ${CRM.ui.kpi('Openstaand', CRM.euro(openBedrag),
         yukiDeb ? `Yuki meldt ${CRM.euro(yukiDeb)} open (incl. btw)` : `${gefactureerd.length} factu${gefactureerd.length===1?'ur':'ren'} verstuurd`)}
-      ${CRM.ui.kpi('Plaatsingen', `<span class="num">${pl.netto}</span> <span style="font-size:15px;color:var(--muted)">/ ${target}</span>`,
+      ${CRM.ui.kpi('Plaatsingen', `<span class="num${pl.netto<0?' neg':pl.netto>0?' pos':''}">${pl.netto}</span> <span style="font-size:15px;color:var(--muted)">/ ${target}</span>`,
         `${pl.getekend.length} getekend · ${pl.gestopt.length} gestopt`)}
     </div>
 
@@ -385,7 +385,7 @@ function tabFlex(el, f){
       <td class="n num">${r.b.uurloon!=null ? CRM.euro(r.b.uurloon,2) : '—'}</td>
       <td class="n num">${r.b.margePerUur!=null ? CRM.euro(r.b.margePerUur,2) : '<span class="meta">factor?</span>'}</td>
       <td class="n num">${r.b.uren!=null ? Math.round(r.b.uren)+' u' : '—'}</td>
-      <td class="n">${r.b.verdiend!=null ? `<span class="num" style="color:var(--green)">${CRM.euro(r.b.verdiend)}</span>${r.b.margeWerkelijk!=null?' <span class="meta" title="werkelijke marge uit de Pronkert-facturen">✓</span>':''}` : '<span class="meta">—</span>'}</td>
+      <td class="n">${r.b.verdiend!=null ? `<span class="num">${CRM.euro(r.b.verdiend)}</span>${r.b.margeWerkelijk!=null?' <span class="meta" title="werkelijke marge uit de Pronkert-facturen">✓</span>':''}` : '<span class="meta">—</span>'}</td>
     </tr>`;
 
   const tabel = (rows, afgerond) => `<div class="tblwrap" style="border:none">
@@ -460,7 +460,7 @@ function tabCashflow(el, f){
       ${CRM.ui.kpi('Startpunt', saldoStart!=null ? CRM.euro(saldoStart) : '—',
         f.saldi[0] ? `banksaldo van ${CRM.fmtDate(f.saldi[0].datum)}` : 'nog geen banksaldo bekend', 'accent')}
       ${CRM.ui.kpi('Flex run-rate', CRM.euro(flexPm), 'per maand, meegeteld in elke maand')}
-      ${CRM.ui.kpi('Verwacht saldo over 6 mnd', CRM.euro(rijen[rijen.length-1].saldo),
+      ${CRM.ui.kpi('Verwacht saldo over 6 mnd', `<span class="num${rijen[rijen.length-1].saldo<0?' neg':''}">${CRM.euro(rijen[rijen.length-1].saldo)}</span>`,
         rijen.some(r=>r.saldo<0) ? 'let op: de projectie duikt onder nul' : 'op basis van geplande termijnen en budget')}
     </div>
 
@@ -478,8 +478,8 @@ function tabCashflow(el, f){
             <td class="n num">${CRM.euro(r.ws)}</td>
             <td class="n num">${CRM.euro(flexPm)}</td>
             <td class="n num">−${CRM.euro(r.kosten).replace('€','€')}</td>
-            <td class="n num" style="color:${r.netto<0?'var(--red)':'var(--green)'}">${r.netto<0?'−':'+'}${CRM.euro(Math.abs(r.netto))}</td>
-            <td class="n"><span class="num" style="font-weight:700;color:${r.saldo<0?'var(--red)':'var(--ink)'}">${CRM.euro(r.saldo)}</span></td>
+            <td class="n num ${r.netto<0?'neg':r.netto>0?'pos':''}">${r.netto<0?'−':'+'}${CRM.euro(Math.abs(r.netto))}</td>
+            <td class="n"><span class="num${r.saldo<0?' neg':''}" style="font-weight:700">${CRM.euro(r.saldo)}</span></td>
           </tr>`).join('')}
           </tbody></table></div>
       </div>
@@ -512,18 +512,20 @@ function tabKosten(el, f){
             ${maanden.map(m=>{
               const bud = budgetVoorMaand(f, m);
               const act = actueelVoorMaand(f, m);
-              const diff = act ? act.bedrag - bud : null;
+              /* Verschil = budget min werkelijk: positief = onder budget (olijf),
+                 negatief = overschrijding (rood) — huisstijlregel plus/min. */
+              const diff = act ? bud - act.bedrag : null;
               return `<tr>
                 <td><b>${mkLabel(m)}</b>${m===mk0?'<div class="rowsub">lopende maand</div>':''}</td>
                 <td class="n num">${CRM.euro(bud)}</td>
                 <td class="n">${act ? `<span class="num">${CRM.euro(act.bedrag)}</span>${act.yuki?' <span class="meta" title="Werkelijk totaal (Yuki) — leidend">✓ Yuki</span>':''}` : '<span class="meta">nog niet bekend</span>'}</td>
                 <td class="n">${diff==null ? '<span class="meta">—</span>' :
-                  `<span class="num" style="color:${diff>0?'var(--red)':'var(--green)'}">${diff>0?'+':'−'}${CRM.euro(Math.abs(diff))}</span>`}</td>
+                  `<span class="num ${diff<0?'neg':diff>0?'pos':''}">${diff<0?'−':'+'}${CRM.euro(Math.abs(diff))}</span>`}</td>
               </tr>`;
             }).join('')}
             </tbody></table></div>
         </div>
-        <div class="card-f"><span class="meta">Werkelijk = de regel 'Werkelijk totaal (Yuki)' waar aanwezig (✓, automatisch per afgesloten maand), anders de som van handmatige posten.</span></div>
+        <div class="card-f"><span class="meta">Werkelijk = de regel 'Werkelijk totaal (Yuki)' waar aanwezig (✓, automatisch per afgesloten maand), anders de som van handmatige posten. Verschil = budget min werkelijk: negatief betekent overschrijding.</span></div>
       </div>
 
       <div class="card">

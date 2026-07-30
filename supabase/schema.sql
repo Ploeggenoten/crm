@@ -128,6 +128,27 @@ create table if not exists crm_meldingen (
 );
 create index if not exists crm_meld_voor on crm_meldingen(voor, gelezen);
 
+-- ─── 4c. Leadradar (bedrijven die nu blue-collar werven) ──────
+-- Gevuld door de Edge Function 'lead-radar' (Adzuna, dagelijks) en
+-- door de wekelijkse Claude-research-routine. Sales beoordeelt.
+create table if not exists crm_leadradar (
+  id          text primary key,
+  bedrijf     text not null,
+  plaats      text default '',
+  functies    text default '',            -- 'Operator, Orderpicker'
+  vacatures   int  default 1,
+  bron        text default '',            -- adzuna | claude-research | handmatig
+  url         text default '',
+  salaris_ind text default '',
+  gevonden_op date default current_date,
+  laatst_gezien date default current_date,
+  status      text default 'nieuw',       -- nieuw | toegevoegd | genegeerd
+  status_door text default '',
+  notitie     text default ''
+);
+create unique index if not exists crm_leadradar_bedrijf on crm_leadradar(lower(bedrijf));
+create index if not exists crm_leadradar_status on crm_leadradar(status, laatst_gezien desc);
+
 -- ─── 5. Documenten (bestanden bij klant/kandidaat) ────────────
 create table if not exists crm_documenten (
   id        text primary key,
@@ -185,7 +206,7 @@ create index if not exists crm_contacten_klant on crm_contacten(klant);
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten','crm_meldingen']
+  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten','crm_meldingen','crm_leadradar']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists team_all on %I', t);
