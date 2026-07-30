@@ -628,7 +628,7 @@ function mailHTML(lijst){
   const n = lijst.length;
   const kop = n
     ? `<div class="mail-kop meta"><b class="num">${n}</b> ongelezen${bekend.length?` — waarvan <b class="num">${bekend.length}</b> uit je pijplijn`:''}
-       <span class="mail-per">· laatste 3 dagen</span></div>` : '';
+       <span class="mail-per">laatste 3 dagen</span></div>` : '';
   return `<div class="dash-sec">
     <div class="label sec-kop rij">Je mail
       <button type="button" class="mail-ver" id="mail_ver" title="Mail opnieuw ophalen">↻</button></div>

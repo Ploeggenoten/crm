@@ -139,7 +139,31 @@ CRM.PLAATSEN = {
   'amersfoort':[52.156,5.388], 'apeldoorn':[52.211,5.970], 'arnhem':[51.985,5.899],
   'nijmegen':[51.842,5.853], 'breda':[51.586,4.776], 'shertogenbosch':[51.697,5.304],
   'eindhoven':[51.441,5.470], 'tilburg':[51.560,5.091], 'gorinchem':[51.837,4.975],
-  'vianen':[51.988,5.093], 'culemborg':[51.955,5.226], 'veenendaal':[52.028,5.554]
+  'vianen':[51.988,5.093], 'culemborg':[51.955,5.226], 'veenendaal':[52.028,5.554],
+  /* Aangevuld 30 jul 2026 na de ATS-import: plaatsen die in de echte data
+     voorkwamen maar hier ontbraken (kandidaten en klanten). */
+  'hellevoetsluis':[51.832,4.135], 'soest':[52.174,5.291], 'aalsmeer':[52.263,4.749],
+  'bergschenhoek':[51.994,4.494], 'leiderdorp':[52.161,4.539], 'drunen':[51.683,5.132],
+  'sgravenzande':[51.999,4.163], 'hazerswoudedorp':[52.093,4.611], 'maasvlakterotterdam':[51.951,4.052],
+  'mijdrecht':[52.207,4.866], 'leimuiden':[52.209,4.660], 'oudheusden':[51.712,5.100],
+  'nieuwewetering':[52.199,4.632], 'oss':[51.765,5.518], 'berkelenschot':[51.581,5.150],
+  'maarssen':[52.139,5.039], 'abbenbroek':[51.841,4.252], 'leerdam':[51.893,5.092],
+  'zandvoort':[52.371,4.533], 'poeldijk':[52.010,4.212], 'rozenburg':[51.903,4.248],
+  'voorhout':[52.224,4.485], 'vierpolders':[51.871,4.153], 'oostzaan':[52.432,4.873],
+  'gouderak':[51.968,4.720], 'hoekvanholland':[51.979,4.132], 'nieuwerbrug':[52.092,4.786],
+  'hoogvliet':[51.863,4.363], 'alblasserdam':[51.865,4.661], 'pernis':[51.888,4.391],
+  'dongen':[51.626,4.939], 'nieuwetonge':[51.752,4.203], 'moerdijk':[51.700,4.610],
+  'halsteren':[51.532,4.278], 'drachten':[53.107,6.099], 'oudenhoorn':[51.833,4.203],
+  'werkendam':[51.809,4.897], 'zoeterwoude':[52.121,4.500], 'steenbergen':[51.588,4.318],
+  'honselersdijk':[51.997,4.219], 'stellendam':[51.822,4.033], 'hulst':[51.280,4.052],
+  'benthuizen':[52.071,4.528], 'moerkapelle':[52.021,4.578], 'opmeer':[52.708,4.950],
+  'koudekerka/drijn':[52.121,4.598], 'warmond':[52.198,4.500], 'zaandijk':[52.463,4.809],
+  'emst':[52.311,5.959], 'zevenhoven':[52.202,4.720], 'hendrikidoambacht':[51.843,4.640],
+  /* Veelvoorkomende schrijfwijzen uit de oude data — beter matchen dan
+     stilzwijgend van de kaart vallen. */
+  'alphen':[52.129,4.655], 'haag':[52.078,4.288], 'hague':[52.078,4.288],
+  'sgravennage':[52.078,4.288], 'rijswik':[52.036,4.325], 'capelle':[51.930,4.577],
+  'alphenandenrijn':[52.129,4.655], 'krimpenandenijssel':[51.917,4.593]
 };
 CRM.plaatsSleutel = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
   .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
@@ -196,7 +220,10 @@ CRM.binnenRadius = (kandidaat, plaats, km) => {
 };
 /* Beschikbare pool = niet in een lopend traject: afgevallen-maar-recyclebaar
    of expliciet beschikbaar gemarkeerd. Actief lopend = in de pijplijn. */
-CRM.isActiefLopend = c => !CRM.DONE.includes(c.fase) || CRM.PLACED.includes(c.fase) && !c.gestoptOp;
+/* Actief lopend vereist een ÉCHTE fase: geïmporteerde kandidaten (fase '')
+   staan niet in een traject en mogen hier nooit in meetellen. */
+CRM.isActiefLopend = c => !!c.fase &&
+  (!CRM.DONE.includes(c.fase) || CRM.PLACED.includes(c.fase) && !c.gestoptOp);
 CRM.isBeschikbaar  = c => c.beschikbaar === 'direct' || c.beschikbaar === 'in overleg'
   || (c.fase === 'Afgevallen' && c.recyclebaar === true);
 

@@ -30,6 +30,10 @@ const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).loc
 /* Microsoft-koppeling van déze gebruiker. Staat die uit, dan verschijnen
    de Outlook-onderdelen op de kaart helemaal niet. */
 const outlookAan = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.() && CRM.outlook.verbonden?.());
+/* Voor het videocall-venster telt maar één vraag: schrijft dit straks
+   rechtstreeks in de agenda, of opent Outlook met een deeplink? */
+const agendaGekoppeld = () => !!(CRM.outlook && CRM.outlook.verbonden?.()
+  && (CRM.outlook.beschikbaar ? CRM.outlook.beschikbaar() : true));
 
 /* ─── Golden candidates ───────────────────────────────────────────
    Goede kandidaten waar nú geen passende vacature voor is — die
@@ -484,15 +488,20 @@ function kaart(mount, acties, id){
   }
   if(kandOpen !== String(id)){ kandOpen = String(id); tabActief = 'activiteiten'; }
 
+  /* Eén inplan-knop, niet twee. "Inplannen" was vaag én het venster stond
+     standaard op een gesprek zonder video, terwijl de videocall juist de
+     eerste stap is na binnenkomst. De knop heet nu wat hij doet, staat als
+     enige gevulde knop rechts (primaire vervolgstap) en het venster kan
+     nog steeds een gewone afspraak maken: Teams-vinkje uit. */
   acties.innerHTML = `
     <button class="btn ghost sm" id="c_terug">← Overzicht</button>
     <button class="btn ghost sm" id="c_bel">Gebeld</button>
     <button class="btn ghost sm" id="c_app">Geappt</button>
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
-    <button class="btn ghost sm" id="c_plan">Inplannen</button>
-    <button class="btn sm" id="c_taak">Taak</button>`;
+    <button class="btn ghost sm" id="c_taak">Taak</button>
+    <button class="btn sm" id="c_video">Videocall inplannen</button>`;
   acties.querySelector('#c_terug').onclick   = () => CRM.ga('kandidaten');
-  acties.querySelector('#c_plan').onclick    = () => planModal(c);
+  acties.querySelector('#c_video').onclick   = () => videocallModal(c);
   acties.querySelector('#c_bel').onclick     = () => logVia(c,'bel','Wat is er besproken?');
   acties.querySelector('#c_app').onclick     = () => logVia(c,'whatsapp','Wat heb je gestuurd?');
   acties.querySelector('#c_notitie').onclick = () => notitieToevoegen(c);
@@ -523,6 +532,7 @@ function kaart(mount, acties, id){
 
   bindVelden(mount, c);
   bindSterren(mount, c);
+  bindMist(mount, c);
 
   /* Mail: pas ophalen nu de kaart daadwerkelijk openstaat — in de
      lijstweergave wordt er nooit mail opgevraagd. */
