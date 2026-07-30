@@ -102,6 +102,23 @@ async function bewaarKlant(naam, wijziging){
   }
   CRM.toast('Opgeslagen','ok');
 }
+/* Team opslaan — clients.team bestaat pas na supabase/import-aanvulling.sql.
+   Ontbreekt de kolom nog, dan lokaal bijhouden en netjes uitleggen in
+   plaats van een kale databasefout. */
+async function bewaarTeam(k, team){
+  const i = CRM.state.clients.findIndex(c => c.naam === k.naam);
+  if(i >= 0) CRM.state.clients[i].team = team;
+  k.team = team;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('clients').update({team}).eq('naam', k.naam);
+    if(error){
+      if(/team.*(column|schema)|column.*team|schema cache/i.test(error.message||''))
+        return CRM.toast('Kolom "team" bestaat nog niet — draai eerst supabase/import-aanvulling.sql','err');
+      return CRM.fout('Opslaan mislukt', error);
+    }
+  }
+  CRM.toast('Opgeslagen','ok');
+}
 async function bewaarRij(tabel, veld, rij, bestaat){
   const lijst = CRM.state[veld];
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
@@ -339,6 +356,59 @@ function kaart(mount, acties, naam){
   /* Rail: gegevens bewerken */
   mount.querySelector('#gg_bewerk').onclick = () => klantModal(k);
 
+  /* Rail: fase wisselen — zelfde gedrag als het salesbord:
+     fase + fase_sinds bijwerken en de wissel loggen. */
+  const faseBtn = mount.querySelector('#gg_fase');
+  if(faseBtn) faseBtn.onclick = () => {
+    const sel = document.createElement('select');
+    sel.className = 'kl-fasesel';
+    sel.innerHTML = `<option value=""${!k.fase?' selected':''}>Zonder fase</option>` +
+      CRM.SALES_FASES.map(f => `<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('');
+    faseBtn.replaceWith(sel); sel.focus();
+    let klaar = false;
+    const sluit = async bewaren => {
+      if(klaar) return; klaar = true;
+      const nieuw = sel.value;
+      if(bewaren && nieuw !== (k.fase||'')){
+        const oud = k.fase || '—';
+        await bewaarKlant(k.naam, {fase:nieuw, fase_sinds:CRM.todayISO()});
+        CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oud} → ${nieuw||'—'}`);
+      }
+      CRM.render();
+    };
+    sel.onchange  = () => sluit(true);
+    sel.onblur    = () => sluit(false);
+    sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); sluit(false); } };
+  };
+
+  /* Rail: team — inline bewerken in dezelfde stijl als de kandidaatvelden. */
+  const teamEl = mount.querySelector('#gg_team');
+  if(teamEl){
+    const startTeam = () => {
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.className = 'kl-gg-inp'; inp.value = k.team || '';
+      teamEl.replaceWith(inp); inp.focus(); inp.select();
+      let klaar = false;
+      const sluit = async bewaren => {
+        if(klaar) return; klaar = true;
+        if(bewaren){
+          const nieuw = inp.value.trim();
+          if(nieuw !== (k.team||'')) await bewaarTeam(k, nieuw);
+        }
+        inp.replaceWith(teamEl);
+        teamEl.textContent = k.team || 'invullen…';
+        teamEl.classList.toggle('leeg', !k.team);
+      };
+      inp.onblur = () => sluit(true);
+      inp.onkeydown = e => {
+        if(e.key === 'Enter'){ e.preventDefault(); sluit(true); }
+        if(e.key === 'Escape'){ e.preventDefault(); sluit(false); }
+      };
+    };
+    teamEl.onclick = startTeam;
+    teamEl.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); startTeam(); } };
+  }
+
   /* Rail: contactpersonen — live zoeken zonder het hele scherm te hertekenen */
   const ctLijst = mount.querySelector('#ct_lijst');
   const ctZoek  = mount.querySelector('#ct_zoek');
@@ -405,6 +475,8 @@ function gegevensHtml(k){
     <div class="card-h"><div class="h2">Gegevens</div><span class="spacer"></span>
       <button class="btn sub sm" id="gg_bewerk">Bewerken</button></div>
     <div class="card-b kl-gg">
+      ${rij('Fase', `<button type="button" class="chip btn-like kl-fasechip" id="gg_fase"
+        title="Klik om de fase te wisselen"><i class="dot" style="background:${CRM.salesKleur(k.fase)}"></i>${h(k.fase||'Zonder fase')}</button>`)}
       ${rij('Telefoon', k.telefoon ? `<a class="num" href="tel:${h(String(k.telefoon).replace(/\s/g,''))}">${h(k.telefoon)}</a>` : '')}
       ${rij('E-mail',   k.email ? `<a href="mailto:${h(k.email)}" title="${h(k.email)}">${h(k.email)}</a>` : '')}
       ${rij('Website',  web ? `<a href="${h(web)}" target="_blank" rel="noopener">${h(webTekst)}</a>` : '')}
@@ -412,6 +484,9 @@ function gegevensHtml(k){
       ${rij('Plaats',   k.locatie ? h(k.locatie) : '')}
       ${rij('Sinds',    k.sinds ? `<span class="num">${h(maandJaar(k.sinds))}</span>` : '')}
       ${rij('Eigenaar', k.eigenaar ? h(k.eigenaar) : '')}
+      ${rij('Team', `<span class="kl-gg-w${k.team?'':' leeg'}" id="gg_team" tabindex="0" role="button"
+        title="Klik om te wijzigen">${k.team ? h(k.team) : 'invullen…'}</span>`)}
+      ${rij('Aangemaakt', k.aangemaakt ? `<span class="num">${h(CRM.fmtDate(k.aangemaakt))}</span>` : '')}
     </div></div>`;
 }
 
@@ -1125,6 +1200,7 @@ function klantModal(k){
         <div class="f-row"><label>Fase</label><select id="g_fase">
           ${CRM.SALES_FASES.map(f=>`<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
         <div class="f-row"><label>Eigenaar (AM)</label><input type="text" id="g_eig" value="${h(k.eigenaar||'')}"></div>
+        <div class="f-row"><label>Team</label><input type="text" id="g_team" value="${h(k.team||'')}" placeholder="Bijv. Tjeerd of Tjerk"></div>
         <div class="f-row"><label>Branche</label><input type="text" id="g_br" value="${h(k.branche||'')}"></div>
         <div class="f-row"><label>Locatie</label><input type="text" id="g_loc" value="${h(k.locatie||'')}"></div>
         <div class="f-row"><label>Telefoon</label><input type="tel" id="g_tel" value="${h(k.telefoon||'')}"></div>
@@ -1142,7 +1218,13 @@ function klantModal(k){
         telefoon:m.querySelector('#g_tel').value.trim(), email:m.querySelector('#g_mail').value.trim(),
         website:m.querySelector('#g_web').value.trim(), laatst_contact:m.querySelector('#g_lc').value || null
       };
-      CRM.modal.close(); await bewaarKlant(k.naam, w); CRM.render();
+      /* Team los opslaan: de kolom kan ontbreken zolang de aanvulling-SQL
+         niet gedraaid is — dan mag de rest van de wijziging niet sneuvelen. */
+      const team = m.querySelector('#g_team').value.trim();
+      CRM.modal.close();
+      await bewaarKlant(k.naam, w);
+      if(team !== (k.team||'')) await bewaarTeam(k, team);
+      CRM.render();
     };
   }});
 }

@@ -69,6 +69,17 @@
 .kl-gg-lbl{color:var(--muted);flex:0 0 auto}
 .kl-gg-val{min-width:0;text-align:right;color:var(--txt)}
 
+/* Rail: fase-wissel en team (aanvulling geïmporteerd oud ATS). */
+button.kl-fasechip{font-family:var(--body);font-size:11.5px;padding:1px 9px;max-width:100%}
+button.kl-fasechip .dot{width:7px;height:7px;flex-basis:7px}
+.kl-fasesel{font-size:12px;padding:3px 6px;max-width:180px}
+.kl-gg-w{cursor:text;border-radius:4px;padding:1px 6px;margin-right:-6px;
+  border:1px solid transparent;display:inline-block}
+.kl-gg-w:hover{background:var(--card-2);border-color:var(--line)}
+.kl-gg-w:focus{outline:none;background:var(--card-2);border-color:var(--olive-l)}
+.kl-gg-w.leeg{color:var(--muted);font-style:italic}
+.kl-gg-inp{max-width:150px;font-size:12.5px !important;padding:3px 8px !important}
+
 /* ─── Signalen ────────────────────────────────────────────────── */
 ul.kl-sig{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
 ul.kl-sig li{font-size:13px;color:var(--txt-2);line-height:1.5;padding-left:18px;position:relative}

@@ -384,7 +384,9 @@ function lijst(wrap){
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
       const km = radiusBekend ? CRM.afstandKm(c.woonplaats, F.plaats) : null;
       return `<tr class="clickable" data-id="${h(String(c.id))}">
-        <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}</div></td>
+        <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}${
+          c.cv && c.cv.werkgever ? ' · '+h(c.cv.werkgever) : ''}${
+          c.bron==='Import oud ATS' ? ' <span class="kd-bronimp">Import oud ATS</span>' : ''}</div></td>
         <td><span class="kd-ster num" title="${c.ster?c.ster+' van 5':'nog geen beoordeling'}">${h(CRM.sterren(c.ster))}</span></td>
         <td class="sub">${h(c.klant||'—')}</td>
         <td>${faseChip(c.fase)}</td>
@@ -411,16 +413,47 @@ const VELDEN = [
   {k:'email',       lbl:'E-mail',            t:'email'},
   {k:'woonplaats',  lbl:'Woonplaats',        t:'text'},
   {k:'functie',     lbl:'Gezochte functie',  t:'text'},
-  {k:'bron',        lbl:'Bron',              t:'select', opts:['', ...CRM.LEAD_BRONNEN]},
   {k:'beschikbaar', lbl:'Beschikbaar',       t:'select', opts:['', ...CRM.BESCHIKBAAR]},
   {k:'ploegen',     lbl:'Ploegendiensten',   t:'select', opts:['', ...CRM.PLOEGEN]},
   {k:'talen',       lbl:'Talen',             t:'text'},
   {k:'rijbewijs',   lbl:'Rijbewijs',         t:'text'},
   {k:'vervoer',     lbl:'Vervoer',           t:'select', opts:['', ...CRM.VERVOER]},
   {k:'maandloon',   lbl:'Maandloon',         t:'number', toon:v => v ? CRM.euro(v) : ''},
-  {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''},
-  {k:'cv.salariswens', lbl:'Salariswens',    t:'text'}
+  {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''}
 ];
+
+/* ─── Blok "Huidige situatie" ─────────────────────────────────────
+   De velden uit het oude ATS (import, cv-jsonb) plus herkomst. Bron
+   en salariswens zijn hierheen verhuisd uit Kandidaatgegevens zodat
+   niets dubbel staat. Salaris van een kandidaat is een arbeids-
+   voorwaarde en mag het team zien — bewust géén canSeeMoney. */
+
+/* Opzegtermijn uit het oude ATS staat in het Engels — vertaal bij tonen. */
+const opzegNL = v => {
+  const s = String(v == null ? '' : v).trim();
+  if(!s) return '';
+  if(/^immediately$/i.test(s)) return 'per direct';
+  const m = s.match(/^(\d+)\s*days?$/i);
+  return m ? m[1] + ' dagen' : s;
+};
+/* Salaris tonen als euro per maand; niet-numerieke oude invoer blijft staan. */
+const euroMnd = v => {
+  if(v == null || v === '') return '';
+  const n = Number(v);
+  return isNaN(n) ? String(v) : CRM.euro(n) + ' p/mnd';
+};
+const SITUATIE_VELDEN = [
+  {k:'functie',          lbl:'Huidige functie',  t:'text'},
+  {k:'cv.werkgever',     lbl:'Huidig bedrijf',   t:'text'},
+  {k:'cv.opzegtermijn',  lbl:'Opzegtermijn',     t:'text', toon:opzegNL},
+  {k:'cv.huidigSalaris', lbl:'Huidig salaris',   t:'text', toon:euroMnd},
+  {k:'cv.salariswens',   lbl:'Salariswens',      t:'text', toon:euroMnd},
+  {k:'since',            lbl:'Binnengekomen op', t:'date', toon:v => CRM.fmtDate(v)},
+  {k:'rec',              lbl:'Eigenaar',         t:'text'},
+  {k:'bron',             lbl:'Bron',             t:'select', opts:['', 'Import oud ATS', ...CRM.LEAD_BRONNEN]}
+];
+/* Eén lijst voor het opzoeken bij inline bewerken (beide blokken). */
+const ALLE_VELDEN = VELDEN.concat(SITUATIE_VELDEN);
 function lees(c, pad){
   if(pad.indexOf('cv.') === 0) return (c.cv || {})[pad.slice(3)];
   return c[pad];
@@ -467,6 +500,7 @@ function kaart(mount, acties, id){
       <div class="grid c2 kd-kolommen">
         <div class="stack">
           ${gegevensHtml(c)}
+          ${situatieHtml(c)}
           ${cvHtml(c)}
           ${intakeHtml(c)}
         </div>
@@ -583,6 +617,21 @@ function gegevensHtml(c){
     }).join('')}</div></div></div>`;
 }
 
+/* ─── Huidige situatie (inline bewerkbaar, zelfde stijl) ──────────
+   Waar de kandidaat nú zit: functie, werkgever, opzegtermijn en
+   salaris uit het geïmporteerde oude ATS, plus herkomst (since,
+   eigenaar, bron). cv.*-velden schrijven het cv-jsonb bij. */
+function situatieHtml(c){
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Huidige situatie</div>
+      <span class="meta">klik een waarde om te wijzigen</span></div>
+    <div class="card-b"><div class="kd-velden">${SITUATIE_VELDEN.map(f => {
+      const w = toonWaarde(f, lees(c, f.k));
+      return `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
+        <span><span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span></span></div>`;
+    }).join('')}</div></div></div>`;
+}
+
 function bindVelden(mount, c){
   mount.querySelectorAll('.kd-w').forEach(span => {
     span.onclick = () => bewerkVeld(span, c);
@@ -593,7 +642,7 @@ function bindVelden(mount, c){
 function bewerkVeld(span, c){
   if(span.dataset.bezig) return;
   span.dataset.bezig = '1';
-  const veld = VELDEN.find(f => f.k === span.dataset.veld);
+  const veld = ALLE_VELDEN.find(f => f.k === span.dataset.veld);
   const ruw  = lees(c, veld.k);
   const start = veld.lijst ? (Array.isArray(ruw) ? ruw.join(', ') : (ruw||'')) : (ruw == null ? '' : String(ruw));
   const el = veld.t === 'select'
@@ -625,7 +674,16 @@ function bewerkVeld(span, c){
     el.replaceWith(nieuwSpan);
     nieuwSpan.onclick = () => bewerkVeld(nieuwSpan, c);
     nieuwSpan.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); bewerkVeld(nieuwSpan, c); } };
-    if(bewaren) meterBij(c);
+    if(bewaren){
+      /* Hetzelfde veld kan in twee blokken staan (bv. functie in
+         Kandidaatgegevens én Huidige situatie) — houd ze gelijk. */
+      document.querySelectorAll('.kd-w[data-veld="' + CSS.escape(veld.k) + '"]').forEach(s => {
+        if(s === nieuwSpan) return;
+        s.textContent = w || 'invullen…';
+        s.classList.toggle('leeg', !w);
+      });
+      meterBij(c);
+    }
   };
   el.onblur = () => sluit(true);
   el.onkeydown = e => {

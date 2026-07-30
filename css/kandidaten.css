@@ -10,6 +10,12 @@
 /* Sterren: functioneel, gedempt olijf — geen fel geel. */
 .kd-ster{color:var(--olive);opacity:.65;letter-spacing:1.5px;font-size:13px;white-space:nowrap;font-weight:400}
 
+/* Bron-chip "Import oud ATS" in de lijst: 235 stuks — bewust bijna
+   onzichtbaar (gedempt, gestippelde rand) zodat er geen muur ontstaat. */
+.kd-bronimp{display:inline-block;font-size:10px;line-height:1.5;padding:0 7px;margin-left:4px;
+  color:var(--muted);border:1px dashed var(--line);border-radius:999px;
+  vertical-align:1px;white-space:nowrap;opacity:.85}
+
 /* ─── Filterpaneel + chips ────────────────────────────────────── */
 .kd-filaan{border-color:var(--olive-l) !important;color:var(--olive)}
 .kd-fpaneel{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
