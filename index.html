@@ -4,7 +4,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ploeggenoten CRM</title>
 <link rel="icon" href="assets/logo-lime.png">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
+<!-- Supabase-bibliotheek zelf gehost: de CDN bleek onbetrouwbaar (wisselende
+     404's), en zonder deze file doet de hele app — inclusief inloggen — niets. -->
+<script src="assets/supabase.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=Caveat:wght@600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/base.css">
