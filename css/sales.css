@@ -21,7 +21,8 @@
 .s-top .tabs{border-bottom:none;margin-bottom:0;flex:1}
 .s-top .s-acts{padding-bottom:9px}
 
-/* Zes smalle KPI-tegels op één rij op breed scherm, netjes afbrekend daaronder. */
+/* Vier KPI-tegels op één rij — een aantal dat op elke breedte heel opgaat,
+   zodat er nooit één losse tegel onder de rij bungelt. */
 .grid.c3.s-kpi{margin-bottom:2px;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:12px}
 .s-kpi .kpi{padding:14px 15px}
 .s-kpi .kpi .big{font-size:24px}

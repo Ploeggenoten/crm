@@ -170,9 +170,9 @@ function overzicht(mount, acties){
   mount.innerHTML = `
     <div class="stack">
       <div class="card pad">
-        <div class="row">
+        <div class="row kd-fil">
           <div class="searchbox" style="flex:1;max-width:290px">
-            <input type="search" id="kd_zoek" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
+            <input type="search" id="kd_zoek" autocomplete="off" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
           </div>
           <select id="kd_status" style="width:auto">
             <option value="lopend"${F.status==='lopend'?' selected':''}>Lopende trajecten</option>

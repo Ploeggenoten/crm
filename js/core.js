@@ -327,7 +327,7 @@ CRM.pageActies = html => { const el = document.getElementById('pageacties'); if(
 
 /* ─── Navigatie opbouwen ──────────────────────────────────────── */
 const NAV_GROEPEN = [
-  {titel:'', keys:['dashboard']},
+  {titel:'Overzicht', keys:['dashboard']},
   {titel:'Commercie', keys:['sales','klanten']},
   {titel:'Recruitment', keys:['recruitment','kandidaten']},
   {titel:'Groei', keys:['marketing','performance']},

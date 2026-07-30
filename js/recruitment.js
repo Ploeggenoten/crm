@@ -37,7 +37,8 @@ const uurGeleden = iso => {
   if(ms < 86400000) return Math.round(ms/3600000) + ' uur';
   return CRM.geleden(iso);
 };
-const prioKleur = p => ({Hoog:'#c0392b', Midden:'#a86a1a', Laag:'#8a927c'})[p] || '#c8ccbc';
+/* Alleen kleuren uit :root — geen losse hexcodes in een module. */
+const prioKleur = p => ({Hoog:'var(--red)', Midden:'var(--amber)', Laag:'var(--muted)'})[p] || 'var(--line-2)';
 
 /* Toast met doorklik-link (de core-toast kan alleen tekst). */
 function toastLink(tekst, label, fn){

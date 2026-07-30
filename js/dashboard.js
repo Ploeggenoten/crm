@@ -32,6 +32,9 @@ let _fin = null;
 async function finLezen(){
   if(_fin) return _fin;
   if(!CRM.canSeeMoney()) return (_fin = {ok:false});
+  /* In demo blijft de echte database buiten beeld — anders staan er
+     bij een nog actieve sessie zomaar echte omzetcijfers op een testscherm. */
+  if(CRM.demo) return (_fin = {ok:false});
   try{
     const [p,i] = await Promise.all([
       CRM.sb.from('fin_placements').select('id,klant,fee_excl,contract_datum,gestopt_op'),
@@ -167,7 +170,6 @@ function kerncijfers(){
   const pijplijn = cs.filter(c => actief(c) && !CRM.PLACED.includes(c.fase)).length;
   const lopend   = cs.filter(c => CRM.PLACED.includes(c.fase)).length;
   const nieuweLeads = (CRM.state.leads||[]).filter(l => inBereik(l.binnen_op, wk.van, wk.tot)).length;
-  const gesprekken  = cs.filter(c => actief(c) && inBereik(c.datum, wk.van, wk.tot)).length;
   const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
   const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
   const pct = target>0 ? Math.round(netto/target*100) : 0;
@@ -180,8 +182,6 @@ function kerncijfers(){
       `<span class="meta num">${lopend} geplaatst en lopend</span>`)}
     ${CRM.ui.kpi('Nieuwe leads deze week', `<span class="num">${nieuweLeads}</span>`,
       `<span class="meta">${h(CRM.fmtDateShort(wk.van))} — ${h(CRM.fmtDateShort(wk.tot))}</span>`)}
-    ${CRM.ui.kpi('Gesprekken deze week', `<span class="num">${gesprekken}</span>`,
-      `<span class="meta">ingeplande afspraken</span>`)}
     ${CRM.ui.kpi('Open vacatures', `<span class="num">${vacs.length}</span>`,
       `<span class="meta num">${posities} posities te vullen</span>`)}
   </div>`;
@@ -346,7 +346,7 @@ CRM.registerModule('dashboard', {
     mount.innerHTML = `
       <div class="dash">
         <section class="dash-hero">
-          <div class="label">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div>
+          <div class="meta num dash-datum">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div>
           <div class="h1">${h(groet())}${naam?', '+h(naam):''}</div>
           <p class="dash-zin">${h(dagZin(G))}</p>
         </section>

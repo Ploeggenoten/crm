@@ -26,6 +26,14 @@ function zet(k,v){ F[k]=v; P.set(k,v); }
 
 /* ─── Kleine helpers ──────────────────────────────────────────── */
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
+/* Alleen http(s) doorlaten: een geplakte `javascript:`-link mag nooit uitgevoerd
+   worden. Een adres zonder protocol krijgt netjes https:// ervoor. */
+const veiligeUrl = u => {
+  const s = String(u||'').trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  return /^[a-z][a-z0-9+.-]*:/i.test(s) ? '' : 'https://' + s;
+};
 const faseChip = fase => fase
   ? `<span class="chip"><i class="dot" style="background:${CRM.salesKleur(fase)}"></i>${h(fase)}</span>` : '';
 const EVAL_CRIT = [
@@ -134,9 +142,9 @@ function overzicht(mount, acties){
   mount.innerHTML = `
     <div class="stack">
       <div class="card pad">
-        <div class="row">
+        <div class="row kl-fil">
           <div class="searchbox" style="flex:1;max-width:300px">
-            <input type="search" id="kl_zoek" placeholder="Zoek op naam, plaats of branche…" value="${h(F.zoek)}">
+            <input type="search" id="kl_zoek" autocomplete="off" placeholder="Zoek op naam, plaats of branche…" value="${h(F.zoek)}">
           </div>
           <select id="kl_eig" style="width:auto">
             <option value="">Alle eigenaren</option>
@@ -304,7 +312,7 @@ function kopHtml(k, lc){
   const contact = [
     k.telefoon ? `<a href="tel:${h(String(k.telefoon).replace(/\s/g,''))}" class="num">${h(k.telefoon)}</a>` : '',
     k.email    ? `<a href="mailto:${h(k.email)}">${h(k.email)}</a>` : '',
-    k.website  ? `<a href="${h(k.website)}" target="_blank" rel="noopener">Website</a>` : ''
+    veiligeUrl(k.website) ? `<a href="${h(veiligeUrl(k.website))}" target="_blank" rel="noopener">Website</a>` : ''
   ].filter(Boolean).join('<span class="kl-sep">·</span>');
   return `<div class="card"><div class="card-b kl-hero">
       ${CRM.avatar(k.naam,'lg')}
@@ -445,7 +453,7 @@ function vacatureHtml(v, k){
       </div>
       ${sal}
       <span class="chip${open?' green':''}">${h(v.status||'Open')}</span>
-      ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> d</span>` : ''}
+      ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
       <button class="btn sub sm" data-vbew="${h(String(v.id))}">Bewerken</button>
     </summary>
     <div class="kl-vac-b">
@@ -717,7 +725,7 @@ function tabDocumenten(el, k){
     <div class="card-b">${docs.length ? `<div class="tblwrap"><table class="tbl"><thead><tr>
         <th>Document</th><th>Soort</th><th>Toegevoegd</th><th>Door</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr>
-          <td><a href="${h(d.url)}" target="_blank" rel="noopener">${h(d.naam)}</a></td>
+          <td>${veiligeUrl(d.url) ? `<a href="${h(veiligeUrl(d.url))}" target="_blank" rel="noopener">${h(d.naam)}</a>` : h(d.naam)}</td>
           <td class="sub">${h(d.soort||'—')}</td>
           <td class="sub num">${h(CRM.fmtDate(d.op))}</td>
           <td class="sub">${h(d.door||'—')}</td>

@@ -6,43 +6,49 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root{
-  /* Basis */
-  --ink:#1b2113;          /* donkerste tekst / sidebar-diep */
-  --txt:#252c19;          /* body-tekst */
-  --txt-2:#5c6650;        /* secundaire tekst */
-  --muted:#8a927c;        /* labels, meta */
-  --paper:#f5f7f0;        /* pagina-achtergrond */
-  --card:#ffffff;         /* kaarten, panelen */
-  --card-2:#fafbf6;       /* subtiele vulling (tabelkop, lege staat) */
-  --line:#e4e8d8;         /* randen */
-  --line-2:#cfd6bd;       /* sterkere rand */
+  /* Basis — warme crème, exact volgens de huisstijlbrief */
+  --ink:#1a1f0a;          /* tekst op licht */
+  --txt:#1a1f0a;
+  --txt-2:#5b6544;        /* gedempte tekst op licht */
+  --muted:#5b6544;
+  --paper:#f6f7f1;        /* cream — pagina-achtergrond */
+  --card:#ffffff;         /* kaarten */
+  --card-2:#eef1e6;       /* cream-2 — subtiele vulling */
+  --line:#e0e5d2;         /* dé rand, overal */
+  --line-2:#d3dabf;       /* iets sterker, alleen voor invoervelden */
 
   /* Merk */
-  --olive:#3d6400;        /* primaire merkkleur */
-  --olive-d:#2c4a00;
+  --olive:#3d6400;        /* hoofdaccent — spaarzaam */
+  --olive-d:#2b4700;      /* alleen in gradients */
   --olive-l:#6fa03c;
-  --lime:#c8f135;         /* accent, spaarzaam */
-  --sidebar:#1e2818;
-  --sidebar-2:#26331d;
+  --lime:#c8f135;         /* ALLEEN op donkere vlakken; tekst erop #171d08 */
+  --sidebar:#eef1e6;      /* lichte sidebar in cream-2 */
+  --oranje:#d4522a;       /* secundaire actie / waarschuwing */
+  --whatsapp:#25d366;
 
-  /* Status */
-  --green:#2f8f5b;  --green-bg:#e6f2ea;  --green-line:#a8d0b6;
-  --red:#c0392b;    --red-bg:#fbeae7;    --red-line:#e5b3a9;
-  --amber:#a86a1a;  --amber-bg:#fbf1de;  --amber-line:#e2c894;
-  --blue:#2f6b9a;   --blue-bg:#e8f0f6;   --blue-line:#a9c6db;
-  --purple:#7e5aa6; --purple-bg:#f0eaf6; --purple-line:#c8b3dc;
+  /* Donkere vlakken (spaarzaam) */
+  --dark-ink:#0e1207; --dark-card:#1b2211; --dark-line:#2a3618;
+  --dark-txt:#f6f7f1; --dark-muted:#9aa781;
 
-  /* Vorm */
-  --r-s:6px; --r:10px; --r-l:14px;
-  --sh:0 1px 2px rgba(30,40,20,.05);
-  --sh-2:0 4px 16px rgba(30,40,20,.08);
-  --sh-3:0 20px 60px rgba(20,30,15,.28);
+  /* Status — gedempt */
+  --green:#2f8f5b;  --green-bg:#e9f1ea;  --green-line:#bdd5c4;
+  --red:#c0392b;    --red-bg:#f9ecea;    --red-line:#e5c0b9;
+  --amber:#a86a1a;  --amber-bg:#f8f1e2;  --amber-line:#e3d0a8;
+  --blue:#2f6b9a;   --blue-bg:#ebf1f5;   --blue-line:#bfd3e2;
+  --purple:#7e5aa6; --purple-bg:#f1edf6; --purple-line:#d2c4e2;
+
+  /* Vorm — dunne randen, nauwelijks schaduw */
+  --r-s:8px; --r:11px; --r-l:14px;
+  --sh:none;
+  --sh-2:0 2px 10px rgba(26,31,10,.05);
+  --sh-3:0 16px 48px rgba(14,18,7,.16);
 
   /* Type */
   --disp:'Anton','Inter',system-ui,sans-serif;
   --body:'Inter',system-ui,-apple-system,sans-serif;
+  --hand:'Caveat',cursive;
 
-  --nav-w:236px;
+  --nav-w:232px;
 }
 
 *{box-sizing:border-box}
@@ -55,14 +61,27 @@ a{color:var(--olive);text-decoration:none}
 a:hover{text-decoration:underline}
 h1,h2,h3,h4{margin:0}
 
+/* Eén focusring voor het hele systeem. Elke module had knoppen, tabs en
+   segmentschakelaars met de standaard blauwe browserring of helemaal geen
+   zichtbaar merk — dat hoort in het design-system te staan, niet per module.
+   Alleen bij toetsenbordgebruik (:focus-visible), dus muisklikken blijven rustig. */
+:focus-visible{
+  outline:2px solid var(--olive-l);outline-offset:2px;border-radius:var(--r-s);
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
+
 /* ─── Typografie-helpers ─────────────────────────────────────── */
-/* Anton (--disp) ALLEEN voor koppen en kleine labels — NOOIT voor
-   datums of cijferdata (condensed leest vaag bij getallen). */
-.h1{font-family:var(--disp);font-weight:400;font-size:26px;letter-spacing:.02em;color:var(--ink)}
-.h2{font-family:var(--disp);font-weight:400;font-size:18px;letter-spacing:.03em;color:var(--ink)}
-.label{font-family:var(--disp);font-weight:400;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-.big{font-size:28px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
+/* Anton (--disp) SPAARZAAM: alleen paginatitels (.h1) en grote
+   kerncijfers (.big). Al het functionele — knoppen, labels, tabellen,
+   tussenkoppen — is Inter. Datums en kleine cijfers: Inter + .num.  */
+.h1{font-family:var(--disp);font-weight:400;font-size:24px;letter-spacing:.5px;line-height:1;text-transform:uppercase;color:var(--ink)}
+.h2{font-family:var(--body);font-weight:700;font-size:15px;letter-spacing:-.01em;color:var(--ink)}
+.label{font-family:var(--body);font-weight:600;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2)}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:600}
+.big{font-family:var(--disp);font-weight:400;font-size:30px;line-height:1;letter-spacing:.5px;color:var(--ink)}
+/* Handschrift-accent: hooguit 1–2 per pagina. */
+.hand{font-family:var(--hand);font-weight:600;font-size:1.25em;color:var(--olive);
+  display:inline-block;transform:rotate(-2deg)}
 .sub{font-size:12.5px;color:var(--txt-2)}
 .meta{font-size:12px;color:var(--muted)}
 .mono{font-variant-numeric:tabular-nums}
@@ -72,39 +91,40 @@ h1,h2,h3,h4{margin:0}
 #app{display:none;min-height:100%}
 #app.on{display:flex}
 
+/* Lichte sidebar die in dezelfde warme tint zweeft; dunne rand rechts. */
 nav.side{
-  width:var(--nav-w);flex:0 0 var(--nav-w);background:var(--sidebar);color:#e9eddf;
+  width:var(--nav-w);flex:0 0 var(--nav-w);background:var(--sidebar);color:var(--txt);
+  border-right:1px solid var(--line);
   display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:30;
 }
-.side .brand{padding:18px 18px 15px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid #33422a}
-.side .brand img{width:100%;max-width:152px;height:auto;display:block}
-.side .brand .bs{font-family:var(--disp);font-size:10px;color:#8fa079;letter-spacing:.22em;text-transform:uppercase}
-.side .navscroll{flex:1;overflow-y:auto;padding:10px 10px 16px}
-.side .navgroup{font-family:var(--disp);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7c8a68;padding:14px 10px 6px}
+.side .brand{padding:20px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.side .brand img{width:100%;max-width:140px;height:auto;display:block}
+.side .brand .bs{font-size:10px;font-weight:600;color:var(--txt-2);letter-spacing:.2em;text-transform:uppercase}
+.side .navscroll{flex:1;overflow-y:auto;padding:8px 12px 16px}
+.side .navgroup{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--txt-2);opacity:.75;padding:16px 10px 6px}
 .side a.nav{
-  display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;
-  color:#d5ddc6;font-size:13.5px;font-weight:500;cursor:pointer;text-decoration:none;
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
+  color:var(--txt-2);font-size:13.5px;font-weight:500;cursor:pointer;text-decoration:none;
   transition:background .12s,color .12s;position:relative;
 }
-.side a.nav:hover{background:#2b3823;color:#f2f6e8;text-decoration:none}
-.side a.nav.on{background:#33452a;color:#fff}
-.side a.nav.on::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--lime)}
-.side a.nav .ic{width:18px;text-align:center;font-size:14.5px;opacity:.92}
-.side a.nav .cnt{margin-left:auto;background:#3f5233;color:#dbe6c8;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
-.side a.nav.on .cnt{background:var(--lime);color:#26331d}
-.side a.nav.adm .ic{color:var(--lime)}
-.side .navfoot{border-top:1px solid #33422a;padding:12px 14px;display:flex;align-items:center;gap:9px}
-.side .avatar{width:28px;height:28px;border-radius:50%;background:var(--olive-l);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex:0 0 28px}
+.side a.nav:hover{background:#e5e9d8;color:var(--ink);text-decoration:none}
+.side a.nav.on{background:#e2e8d0;color:var(--olive);font-weight:600}
+.side a.nav .ic{width:18px;text-align:center;font-size:14px;opacity:.85}
+.side a.nav.on .ic{color:var(--olive);opacity:1}
+.side a.nav .cnt{margin-left:auto;background:#e0e5d2;color:var(--txt-2);border-radius:999px;font-size:11px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.side a.nav.on .cnt{background:var(--olive);color:#fff}
+.side .navfoot{border-top:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:9px}
+.side .avatar{width:28px;height:28px;border-radius:50%;background:var(--olive);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex:0 0 28px}
 .side .who{flex:1;min-width:0}
-.side .who b{display:block;font-size:12.5px;font-weight:600;color:#eef2e4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.side .who span{font-size:10.5px;color:#8d9a79}
-.side .out{background:none;border:none;color:#8d9a79;cursor:pointer;font-size:14px;padding:4px}
-.side .out:hover{color:#e9eddf}
+.side .who b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .who span{font-size:10.5px;color:var(--txt-2)}
+.side .out{background:none;border:none;color:var(--txt-2);cursor:pointer;font-size:14px;padding:4px}
+.side .out:hover{color:var(--ink)}
 
 main.content{flex:1;min-width:0;margin-left:var(--nav-w);display:flex;flex-direction:column}
 header.pagehead{
-  background:rgba(255,255,255,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
-  padding:16px 26px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:rgba(246,247,241,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  padding:16px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
   position:sticky;top:0;z-index:20;min-height:64px;
 }
 header.pagehead .ph-t{display:flex;flex-direction:column;gap:2px;margin-right:auto}
@@ -112,10 +132,10 @@ header.pagehead .ph-t .h1{font-size:22px}
 .view{padding:22px 26px 60px;flex:1}
 .view.pad0{padding:0}
 
-/* ─── Knoppen ────────────────────────────────────────────────── */
+/* ─── Knoppen — pill-vormig, ALTIJD Inter ────────────────────── */
 .btn{
   background:var(--olive);color:#fff;border:1px solid var(--olive);
-  border-radius:var(--r-s);padding:8px 14px;font-family:var(--body);font-size:13px;
+  border-radius:999px;padding:8px 16px;font-family:var(--body);font-size:13px;
   font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
   transition:filter .12s,background .12s;white-space:nowrap;
 }
@@ -124,13 +144,17 @@ header.pagehead .ph-t .h1{font-size:22px}
 .btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
 .btn.ghost{background:var(--card);color:var(--txt);border-color:var(--line-2)}
 .btn.ghost:hover{background:var(--card-2);filter:none;border-color:var(--olive-l)}
-.btn.sub{background:transparent;color:var(--txt-2);border-color:transparent;padding:6px 9px}
-.btn.sub:hover{background:#eceee4;filter:none}
-.btn.danger{background:var(--red);border-color:var(--red)}
-.btn.sm{padding:5px 10px;font-size:12px}
-.btn.lg{padding:11px 20px;font-size:14px}
+.btn.sub{background:transparent;color:var(--txt-2);border-color:transparent;padding:6px 11px}
+.btn.sub:hover{background:#eaedde;filter:none}
+.btn.danger{background:var(--oranje);border-color:var(--oranje)}
+/* Donkere knop: de enige plek waar lime mag leven op een lichte pagina. */
+.btn.dark{background:var(--dark-ink);border-color:var(--dark-ink);color:var(--lime)}
+.btn.dark:hover{background:#171d0c;filter:none}
+.btn.whatsapp{background:var(--whatsapp);border-color:var(--whatsapp);color:#fff}
+.btn.sm{padding:5px 12px;font-size:12px}
+.btn.lg{padding:11px 22px;font-size:14px}
 .btn.block{width:100%;justify-content:center}
-.btn.icon{padding:6px 8px;font-size:13px}
+.btn.icon{padding:6px 10px;font-size:13px}
 
 /* ─── Formulier ──────────────────────────────────────────────── */
 .f-row{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
@@ -155,13 +179,13 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .searchbox input{padding-left:30px}
 .searchbox::before{content:'🔍';position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.5;pointer-events:none}
 
-/* ─── Kaart / paneel ─────────────────────────────────────────── */
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
-.card.pad{padding:18px 20px}
-.card-h{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* ─── Kaart / paneel — dunne rand, royale padding, geen schaduw ─ */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-l)}
+.card.pad{padding:20px 24px}
+.card-h{padding:16px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .card-h .h2{margin-right:auto}
-.card-b{padding:18px 20px}
-.card-f{padding:12px 20px;border-top:1px solid var(--line);background:var(--card-2);border-radius:0 0 var(--r) var(--r)}
+.card-b{padding:20px 24px}
+.card-f{padding:12px 24px;border-top:1px solid var(--line);background:var(--card-2);border-radius:0 0 var(--r-l) var(--r-l)}
 .grid{display:grid;gap:16px}
 .grid.c2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
 .grid.c3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
@@ -171,14 +195,14 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .spacer{flex:1}
 .stack{display:flex;flex-direction:column;gap:14px}
 
-/* KPI-tegel */
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--sh)}
-.kpi .label{margin-bottom:8px}
+/* KPI-tegel: groot kerncijfer in Anton, label eronder gedempt in Inter. */
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px 20px 16px}
+.kpi .label{margin-bottom:10px}
 .kpi .big{color:var(--ink)}
-.kpi .kd{font-size:12px;margin-top:5px;color:var(--txt-2)}
+.kpi .kd{font-size:12px;margin-top:8px;color:var(--txt-2)}
 .kpi .kd.up{color:var(--green)}
-.kpi .kd.down{color:var(--red)}
-.kpi.accent{border-left:3px solid var(--olive)}
+.kpi .kd.down{color:var(--oranje)}
+.kpi.accent{border-left:2px solid var(--olive)}
 
 /* ─── Chips / badges ─────────────────────────────────────────── */
 .chip{
@@ -215,21 +239,21 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .tabs .tab .cnt{background:var(--card-2);border:1px solid var(--line);border-radius:999px;font-size:11px;padding:0 6px;font-variant-numeric:tabular-nums}
 .tabs .tab.on .cnt{background:var(--green-bg);border-color:var(--green-line);color:#1e6b3f}
 /* Segment-schakelaar (bord/lijst) */
-.seg{display:inline-flex;background:var(--card-2);border:1px solid var(--line-2);border-radius:var(--r-s);padding:2px}
-.seg button{background:none;border:none;border-radius:4px;padding:5px 12px;font-size:12.5px;font-weight:500;color:var(--txt-2);cursor:pointer;font-family:var(--body)}
-.seg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:var(--sh)}
+.seg{display:inline-flex;background:var(--card-2);border:1px solid var(--line);border-radius:999px;padding:2px}
+.seg button{background:none;border:none;border-radius:999px;padding:5px 14px;font-size:12.5px;font-weight:500;color:var(--txt-2);cursor:pointer;font-family:var(--body)}
+.seg button.on{background:#fff;color:var(--ink);font-weight:600;border:1px solid var(--line);margin:-1px}
 
 /* ─── Tabel ──────────────────────────────────────────────────── */
 .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 table.tbl th{
-  background:var(--card-2);text-align:left;padding:9px 14px;font-family:var(--disp);
-  font-weight:400;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  background:var(--card-2);text-align:left;padding:10px 16px;font-family:var(--body);
+  font-weight:600;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--txt-2);
   border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;
 }
 table.tbl th.sortable{cursor:pointer}
 table.tbl th.sortable:hover{color:var(--olive)}
-table.tbl td{padding:10px 14px;border-bottom:1px solid #f0f2e8;vertical-align:middle}
+table.tbl td{padding:12px 16px;border-bottom:1px solid #eef0e4;vertical-align:middle}
 table.tbl tbody tr:last-child td{border-bottom:none}
 table.tbl tbody tr.clickable{cursor:pointer}
 table.tbl tbody tr.clickable:hover{background:#f7f9f1}
@@ -237,19 +261,20 @@ table.tbl td.n,table.tbl th.n{text-align:right;font-variant-numeric:tabular-nums
 table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 
 /* ─── Pijplijnbord (kolommen) ────────────────────────────────── */
-.board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:4px 26px 30px;min-height:60vh}
-.bcol{flex:0 0 268px;width:268px;background:#eef1e7;border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
-.bcol.over{background:#e4ecd6;border-color:var(--olive-l)}
-.bcol-h{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;border-top:3px solid var(--ph,var(--muted));border-radius:var(--r) var(--r) 0 0;background:var(--card-2)}
-.bcol-h b{font-family:var(--disp);font-weight:400;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);flex:1;line-height:1.3}
-.bcol-h .cnt{background:var(--ph,var(--muted));color:#fff;border-radius:999px;font-size:11px;font-weight:600;padding:1px 8px;font-variant-numeric:tabular-nums}
+.board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:4px 28px 32px;min-height:60vh}
+.bcol{flex:0 0 268px;width:268px;background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
+.bcol.over{background:#e6ebd8;border-color:var(--olive-l)}
+.bcol-h{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;border-radius:var(--r) var(--r) 0 0}
+.bcol-h b{font-family:var(--body);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-2);flex:1;line-height:1.3;display:flex;align-items:center;gap:7px}
+.bcol-h b::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--ph,var(--muted));flex:0 0 7px}
+.bcol-h .cnt{background:transparent;color:var(--txt-2);border:1px solid var(--line-2);border-radius:999px;font-size:11px;font-weight:600;padding:0 7px;font-variant-numeric:tabular-nums}
 .bcol-h .sum{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.bcol-b{padding:9px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;min-height:70px}
+.bcol-b{padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;min-height:70px}
 .bcard{
-  background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 11px;
-  box-shadow:var(--sh);cursor:grab;transition:box-shadow .12s,transform .12s;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 13px;
+  cursor:grab;transition:border-color .12s;
 }
-.bcard:hover{box-shadow:var(--sh-2);border-color:var(--line-2)}
+.bcard:hover{border-color:var(--olive-l)}
 .bcard:active{cursor:grabbing}
 .bcard.drag{opacity:.4}
 .bcard .bc-t{display:flex;align-items:flex-start;gap:8px}
@@ -335,7 +360,7 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 
 /* ─── Login ──────────────────────────────────────────────────── */
 #loginscreen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  background:var(--sidebar);padding:20px;z-index:50}
+  background:var(--dark-ink);padding:20px;z-index:50}
 #loginscreen .lbox{background:var(--card);border-radius:var(--r-l);padding:34px 32px;width:380px;max-width:94vw;box-shadow:var(--sh-3)}
 #loginscreen img{height:26px;margin-bottom:6px}
 #loginscreen h1{font-family:var(--disp);font-weight:400;font-size:21px;letter-spacing:.03em;margin:10px 0 4px}

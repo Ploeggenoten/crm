@@ -59,3 +59,16 @@ label.kd-taak input{margin-top:3px}
   .kd-meter{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;flex:1 1 100%}
   .kd-veld{grid-template-columns:1fr}
 }
+
+/* ─── Filterbalk op mobiel ────────────────────────────────────── */
+/* Zonder deze regels krijgt elke select zijn eigen breedte en ontstaat er een
+   scheve trap van zes losse regels die het halve scherm vult. Twee kolommen
+   met gelijke randen: drie regels in plaats van zes. */
+@media (max-width:700px){
+  .kd-fil{gap:8px}
+  .kd-fil > .searchbox{flex:1 1 100% !important;max-width:none !important;min-width:0}
+  .kd-fil > select{flex:1 1 calc(50% - 4px);min-width:0;text-overflow:ellipsis}
+  .kd-fil > .spacer{display:none}
+  .kd-fil > .chip{flex:0 0 auto}
+  .kd-fil > .meta{margin-left:auto}
+}

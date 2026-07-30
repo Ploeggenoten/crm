@@ -9,6 +9,9 @@
    eens staan. Dubbele grens: database én interface.
    ═══════════════════════════════════════════════════════════════ */
 
+(function(){
+'use strict';
+
 const FIN_APP = 'https://ploeggenoten.github.io/ploeggenoten-finance/';
 let _fin = null, _finFout = null;
 
@@ -32,10 +35,13 @@ async function finLaad(){
   return _fin;
 }
 
+/* Let op: de finance-app noemt de kolom `bedrag_excl`, niet `bedrag`. */
+const bedragVan = i => Number(i.bedrag_excl||0);
+
 function finMaandOmzet(f, mk){
   return (f.installments||[])
     .filter(i => String(i.geplande_datum||'').slice(0,7)===mk && i.status!=='vervallen')
-    .reduce((s,i)=>s+Number(i.bedrag||0),0);
+    .reduce((s,i)=>s+bedragVan(i),0);
 }
 
 CRM.registerModule('finance', {
@@ -64,15 +70,17 @@ CRM.registerModule('finance', {
       return;
     }
 
-    const mk = new Date().toISOString().slice(0,7);
+    const mk = CRM.todayISO().slice(0,7);          // lokale maand, geen UTC-verschuiving
     const saldo = f.saldi[0];
     const openTermijnen = f.installments.filter(i => i.status==='te_factureren');
     const gefactureerd  = f.installments.filter(i => i.status==='gefactureerd');
-    const openBedrag    = gefactureerd.reduce((s,i)=>s+Number(i.bedrag||0),0);
+    const openBedrag    = gefactureerd.reduce((s,i)=>s+bedragVan(i),0);
     const teFactureren  = openTermijnen.filter(i => String(i.geplande_datum||'') <= CRM.todayISO());
     const concepten     = f.placements.filter(p => p.concept);
     const omzetMaand    = finMaandOmzet(f, mk);
-    const yukiOpen      = f.yukiOpen.reduce((s,r)=>s+Number(r.open_bedrag||r.openamount||0),0);
+    /* Yuki bevat debiteuren én crediteuren; hier gaat het om wat klanten nog moeten betalen. */
+    const yukiOpen      = f.yukiOpen.filter(r => r.soort === 'debiteur')
+                                    .reduce((s,r)=>s+Number(r.open_bedrag||0),0);
     const pl            = CRM.plaatsingenMaand(mk);
     const target        = CRM.maandTarget(mk);
 
@@ -80,14 +88,14 @@ CRM.registerModule('finance', {
     if(concepten.length) acts.push({ico:'📋', titel:`${concepten.length} plaatsing${concepten.length>1?'en':''} nog te bevestigen`,
       tekst:'Fee en factuurschema invullen in de finance-app.'});
     if(teFactureren.length) acts.push({ico:'🧾', titel:`${teFactureren.length} termijn${teFactureren.length>1?'en':''} klaar om te factureren`,
-      tekst:CRM.euro(teFactureren.reduce((s,i)=>s+Number(i.bedrag||0),0)) + ' aan facturen die vandaag of eerder gepland stonden.'});
+      tekst:CRM.euro(teFactureren.reduce((s,i)=>s+bedragVan(i),0)) + ' aan facturen die vandaag of eerder gepland stonden.'});
     const laatsteFlex = f.flex.map(w=>w.week).sort().pop();
     if(laatsteFlex && CRM.dagenGeleden(laatsteFlex) > 21) acts.push({ico:'📄', titel:'Margefactuur Pronkert ontbreekt',
       tekst:`Laatste verwerkte week is ${CRM.fmtDate(laatsteFlex)} — dat is ${CRM.dagenGeleden(laatsteFlex)} dagen geleden.`});
 
     mount.innerHTML = `
       <div class="grid c4" style="margin-bottom:18px">
-        ${CRM.ui.kpi('Banksaldo', saldo ? CRM.euro(saldo.bedrag) : '—',
+        ${CRM.ui.kpi('Banksaldo', saldo ? CRM.euro(saldo.saldo) : '—',
           saldo ? `stand van ${CRM.fmtDate(saldo.datum)}` : 'nog geen saldo bekend', 'accent')}
         ${CRM.ui.kpi('Gepland deze maand', CRM.euro(omzetMaand), 'som van de geplande termijnen')}
         ${CRM.ui.kpi('Openstaand', CRM.euro(openBedrag),
@@ -128,3 +136,5 @@ CRM.registerModule('finance', {
       </div>`;
   }
 });
+
+})();

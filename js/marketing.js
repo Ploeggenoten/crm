@@ -25,6 +25,10 @@
   /* ─── Kleine helpers ──────────────────────────────────────── */
   const N     = n => Number(n)||0;
   const fmtN  = n => Math.round(N(n)).toLocaleString('nl-NL');
+  /* Advertentiebudget is een bedrijfscijfer: alleen Tjeerd ziet euro's.
+     Het team krijgt hetzelfde verhaal in aantallen en verhoudingen. */
+  const geld  = () => CRM.canSeeMoney();
+  const maal  = (a,b) => (b ? (a/b) : 0).toFixed(1).replace('.',',');
   const isoT  = d => new Date(Date.now() - d*864e5).toLocaleDateString('sv-SE');
   const DAGKORT = ['zo','ma','di','wo','do','vr','za'];
 
@@ -104,23 +108,30 @@
       const sVor = stat(rows.filter(r => (r.datum||'') >= d14 && (r.datum||'') < d7));
       const s30  = stat(rows);
       if(s7.spend < 20) continue;                        // te weinig om over te oordelen
-      const cijfers = `7 dagen: ${CRM.euro(s7.spend)} · ${s7.leads} ${s7.leads===1?'lead':'leads'}`
-        + (s7.cpl ? ` · ${CRM.euro(s7.cpl,2)} per lead` : '')
-        + (s7.cpc ? ` · CPC ${CRM.euro(s7.cpc,2)}` : '')
-        + (s7.ctr!=null ? ` · CTR ${CRM.pct(s7.ctr,2)}` : '');
+      const cijfers = geld()
+        ? `7 dagen: ${CRM.euro(s7.spend)} · ${s7.leads} ${s7.leads===1?'lead':'leads'}`
+          + (s7.cpl ? ` · ${CRM.euro(s7.cpl,2)} per lead` : '')
+          + (s7.cpc ? ` · CPC ${CRM.euro(s7.cpc,2)}` : '')
+          + (s7.ctr!=null ? ` · CTR ${CRM.pct(s7.ctr,2)}` : '')
+        : `7 dagen: ${s7.leads} ${s7.leads===1?'lead':'leads'} · ${fmtN(s7.kliks)} kliks`
+          + (s7.ctr!=null ? ` · CTR ${CRM.pct(s7.ctr,2)}` : '');
       const A = (kleur, titel, uitleg, keuzes) =>
         uit.push({kleur, titel, uitleg, cijfers, campagne, advertentie, keuzes});
 
       if(s7.leads === 0 && s7.spend >= 25){
-        A('red','Geld op, geen enkele lead', `${CRM.euro(s7.spend)} in zeven dagen zonder één lead.`, ['stop','negeer']); continue;
+        A('red','Geld op, geen enkele lead', geld()
+          ? `${CRM.euro(s7.spend)} in zeven dagen zonder één lead.`
+          : `Zeven dagen budget verbruikt zonder één lead.`, ['stop','negeer']); continue;
       }
       if(s7.cpl && acc.cpl && s7.cpl > 2.5*acc.cpl){
-        A('red','Kosten per lead uit de bocht',
-          `${CRM.euro(s7.cpl,2)} per lead tegen ${CRM.euro(acc.cpl,2)} gemiddeld (${(s7.cpl/acc.cpl).toFixed(1).replace('.',',')}× zo duur).`, ['stop','negeer']); continue;
+        A('red','Kosten per lead uit de bocht', geld()
+          ? `${CRM.euro(s7.cpl,2)} per lead tegen ${CRM.euro(acc.cpl,2)} gemiddeld (${maal(s7.cpl, acc.cpl)}× zo duur).`
+          : `Deze advertentie kost ${maal(s7.cpl, acc.cpl)}× zoveel per lead als het gemiddelde.`, ['stop','negeer']); continue;
       }
       if(s7.cpc && s30.cpc && s7.cpc > 1.5*s30.cpc){
-        A('amber','CPC loopt op — de creative slijt',
-          `CPC ${CRM.euro(s7.cpc,2)} tegen ${CRM.euro(s30.cpc,2)} eigen 30-daags gemiddelde. Zet er een verse variant naast.`, ['stop','negeer']); continue;
+        A('amber','CPC loopt op — de creative slijt', geld()
+          ? `CPC ${CRM.euro(s7.cpc,2)} tegen ${CRM.euro(s30.cpc,2)} eigen 30-daags gemiddelde. Zet er een verse variant naast.`
+          : `De klikprijs ligt ${maal(s7.cpc, s30.cpc)}× hoger dan het eigen 30-daags gemiddelde. Zet er een verse variant naast.`, ['stop','negeer']); continue;
       }
       if(s7.ctr!=null && acc.ctr && s7.ctr < 0.6*acc.ctr){
         A('amber','CTR blijft achter',
@@ -131,8 +142,9 @@
           `${fmtN(s7.bereik)} bereik tegen ${fmtN(sVor.bereik)} vorige week — het publiek raakt verzadigd.`, ['stop','negeer']); continue;
       }
       if(s7.cpl && acc.cpl && s7.cpl < 0.6*acc.cpl && s7.leads >= 3){
-        A('green','Winnaar — overweeg op te schalen',
-          `${CRM.euro(s7.cpl,2)} per lead, ver onder het gemiddelde van ${CRM.euro(acc.cpl,2)}.`, ['opschalen','negeer']);
+        A('green','Winnaar — overweeg op te schalen', geld()
+          ? `${CRM.euro(s7.cpl,2)} per lead, ver onder het gemiddelde van ${CRM.euro(acc.cpl,2)}.`
+          : `Deze advertentie levert leads voor ${maal(acc.cpl, s7.cpl)}× minder dan het gemiddelde.`, ['opschalen','negeer']);
       }
     }
     const orde = {red:0, amber:1, green:2};
@@ -276,12 +288,15 @@
     return `
       ${adviesHtml(adv)}
       <div class="grid c4" style="margin-bottom:18px">
-        ${CRM.ui.kpi('Uitgegeven', `<span class="num">${CRM.euro(s.spend)}</span>`, `laatste ${M.periode} dagen`, 'accent')}
+        ${geld()
+          ? CRM.ui.kpi('Uitgegeven', `<span class="num">${CRM.euro(s.spend)}</span>`, `laatste ${M.periode} dagen`, 'accent')
+          : CRM.ui.kpi('Bereik', `<span class="num">${fmtN(s.bereik)}</span>`, `laatste ${M.periode} dagen`, 'accent')}
         ${CRM.ui.kpi('Leads', `<span class="num">${fmtN(s.leads)}</span>`, s.leads ? 'via Meta-formulieren' : 'nog geen leads')}
-        ${CRM.ui.kpi('Kosten per lead', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`, 'gemiddeld over de periode')}
-        ${CRM.ui.kpi('Kliks', `<span class="num">${fmtN(s.kliks)}</span>`, `${fmtN(s.imp)} impressies`)}
-        ${CRM.ui.kpi('CPC', `<span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span>`, 'richtlijn NL: € 0,30 – 0,40')}
-        ${CRM.ui.kpi('CTR', `<span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span>`, 'kliks per impressie')}
+        ${geld()
+          ? CRM.ui.kpi('Kosten per lead', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`, 'gemiddeld over de periode')
+          : CRM.ui.kpi('Leads per 100 kliks', `<span class="num">${s.kliks?CRM.pct(s.leads/s.kliks*100,1):'—'}</span>`, 'hoe goed het formulier omzet')}
+        ${CRM.ui.kpi('Kliks', `<span class="num">${fmtN(s.kliks)}</span>`,
+          `<span class="num">${fmtN(s.imp)}</span> impressies${geld()?` · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span>`:''} · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span>`)}
       </div>
 
       <div class="card" style="margin-bottom:18px">
@@ -290,9 +305,9 @@
         <div class="tblwrap" style="border:none;border-radius:0 0 var(--r) var(--r)">
           <table class="tbl">
             <thead><tr>
-              <th>Campagne</th><th class="n">Uitgegeven</th><th style="width:96px">Aandeel</th>
-              <th class="n">Leads</th><th class="n">€ / lead</th><th class="n">Kliks</th>
-              <th class="n">CPC</th><th class="n">CTR</th>
+              <th>Campagne</th>${geld()?'<th class="n">Uitgegeven</th>':''}<th style="width:96px">Aandeel</th>
+              <th class="n">Leads</th>${geld()?'<th class="n">€ / lead</th>':''}<th class="n">Kliks</th>
+              ${geld()?'<th class="n">CPC</th>':''}<th class="n">CTR</th>
             </tr></thead>
             <tbody id="mkt_camp">${campagneRijen()}</tbody>
           </table>
@@ -309,7 +324,9 @@
   function leegMeta(){
     const knop = `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`;
     return CRM.ui.leeg('Nog geen Meta-data gesynchroniseerd',
-      'Zodra de dagelijkse Meta-synchronisatie draait, verschijnen hier de uitgaven, kliks, CPC en kosten per lead. De koppeling en de tabel worden vanuit het marketingbord beheerd.', knop);
+      geld()
+        ? 'Zodra de dagelijkse Meta-synchronisatie draait, verschijnen hier de uitgaven, kliks, CPC en kosten per lead. De koppeling en de tabel worden vanuit het marketingbord beheerd.'
+        : 'Zodra de dagelijkse Meta-synchronisatie draait, verschijnen hier het bereik, de kliks en de leads per campagne. De koppeling en de tabel worden vanuit het marketingbord beheerd.', knop);
   }
 
   function adviesHtml(adv){
@@ -356,17 +373,18 @@
   }
   function cijferCellen(s, totaal){
     const aandeel = totaal ? s.spend/totaal*100 : 0;
-    return `<td class="n num">${CRM.euro(s.spend)}</td>
+    return `${geld()?`<td class="n num">${CRM.euro(s.spend)}</td>`:''}
       <td>${CRM.ui.bar(aandeel)}</td>
       <td class="n num">${fmtN(s.leads)}</td>
-      <td class="n num">${s.cpl?CRM.euro(s.cpl,2):'—'}</td>
+      ${geld()?`<td class="n num">${s.cpl?CRM.euro(s.cpl,2):'—'}</td>`:''}
       <td class="n num">${fmtN(s.kliks)}</td>
-      <td class="n num">${s.cpc?CRM.euro(s.cpc,2):'—'}</td>
+      ${geld()?`<td class="n num">${s.cpc?CRM.euro(s.cpc,2):'—'}</td>`:''}
       <td class="n num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</td>`;
   }
   function campagneRijen(){
     const camps = [...boom().values()];
-    if(!camps.length) return `<tr><td colspan="8" class="meta" style="padding:18px 14px">Geen uitgaven in deze periode.</td></tr>`;
+    if(!camps.length) return `<tr><td colspan="${geld()?8:5}" style="padding:0">${CRM.ui.leeg('Geen uitgaven in deze periode',
+      'Er liep geen advertentie in dit venster. Kies hierboven een langere periode of zet een campagne aan in Ads Manager.')}</td></tr>`;
     const totaal = camps.reduce((t,c) => t + stat(c.rows).spend, 0);
     let html = '';
     camps.sort((a,b) => stat(b.rows).spend - stat(a.rows).spend).forEach(c => {
@@ -403,19 +421,25 @@
       const dt = isoT(i);
       dagen.push(Object.assign({datum:dt}, per.get(dt) || {spend:0, kliks:0, leads:0}));
     }
-    const max = Math.max(...dagen.map(d => d.spend), 1);
-    if(!dagen.some(d => d.spend > 0)) return `<div class="meta">Geen uitgaven in de laatste 14 dagen.</div>`;
+    /* Zonder geldrechten is de staaf het aantal kliks — zelfde vorm van het
+       verhaal, zonder dat er een bedrag uit af te leiden is. */
+    const waarde = d => geld() ? d.spend : d.kliks;
+    const max = Math.max(...dagen.map(waarde), 1);
+    if(!dagen.some(d => d.spend > 0)) return CRM.ui.leeg('Twee weken zonder uitgaven',
+      'Er stond geen advertentie aan. Zonder advertenties komen er geen Meta-leads binnen — zet een campagne aan in Ads Manager.');
     return `<div class="mkt-dagen">${dagen.map(d => {
       const dag = new Date(d.datum + 'T12:00'), wknd = [0,6].includes(dag.getDay());
       const cpl = d.leads ? d.spend/d.leads : null;
-      const titel = `${CRM.fmtDay(d.datum)} — ${CRM.euro(d.spend,2)} · ${d.kliks} kliks · ${d.leads} leads${cpl?` · ${CRM.euro(cpl,2)} per lead`:''}`;
+      const titel = geld()
+        ? `${CRM.fmtDay(d.datum)} — ${CRM.euro(d.spend,2)} · ${d.kliks} kliks · ${d.leads} leads${cpl?` · ${CRM.euro(cpl,2)} per lead`:''}`
+        : `${CRM.fmtDay(d.datum)} — ${d.kliks} kliks · ${d.leads} leads`;
       return `<div class="mkt-dag${wknd?' we':''}" title="${h(titel)}">
         <div class="mkt-dagtop num">${d.leads || ''}</div>
-        <div class="mkt-dagbar"><i style="height:${Math.max(2, Math.round(d.spend/max*100))}%"></i></div>
+        <div class="mkt-dagbar"><i style="height:${Math.max(2, Math.round(waarde(d)/max*100))}%"></i></div>
         <div class="mkt-daglbl"><b class="num">${dag.getDate()}</b><span>${DAGKORT[dag.getDay()]}</span></div>
       </div>`;
     }).join('')}</div>
-    <div class="row" style="margin-top:12px"><span class="meta">Staafhoogte = uitgegeven per dag · getal boven de staaf = leads</span></div>`;
+    <div class="row" style="margin-top:12px"><span class="meta">Staafhoogte = ${geld()?'uitgegeven':'kliks'} per dag · getal boven de staaf = leads</span></div>`;
   }
 
   /* ── 6b. Keten ── */
@@ -426,7 +450,6 @@
       `<div class="mkt-stap"><div class="label">${h(label)}</div>
         <div class="big num">${waarde}</div><div class="meta">${h(detail||'')}</div></div>`;
     const pijl = tekst => `<div class="mkt-pijl">→<span class="num">${h(tekst)}</span></div>`;
-    const geld = CRM.canSeeMoney();
     const kpl = k.geplaatst ? CRM.euro(k.spend / k.geplaatst) : '—';
     const metaLeads = stat(binnenPeriode()).leads;
     const verschil = metaLeads - k.leads;
@@ -436,8 +459,10 @@
           <span class="meta">Meta · laatste ${M.periode} dagen</span></div>
         <div class="card-b">
           <div class="mkt-keten">
-            ${stap('Uitgegeven', CRM.euro(k.spend), 'Meta-advertenties')}
-            ${pijl(k.spend ? CRM.euro(k.leads ? k.spend/k.leads : 0, 2) + ' p/l' : '—')}
+            ${geld() ? stap('Uitgegeven', CRM.euro(k.spend), 'Meta-advertenties')
+                     : stap('Kliks', fmtN(stat(binnenPeriode()).kliks), 'op Meta-advertenties')}
+            ${geld() ? pijl(k.spend ? CRM.euro(k.leads ? k.spend/k.leads : 0, 2) + ' p/l' : '—')
+                     : pijl(pct(k.leads, stat(binnenPeriode()).kliks))}
             ${stap('Leads in CRM', fmtN(k.leads), 'bron Meta')}
             ${pijl(pct(k.kandidaten, k.leads))}
             ${stap('Kandidaten', fmtN(k.kandidaten), 'op het bord')}
@@ -456,14 +481,19 @@
         Alles hieronder rekent met de leads die daadwerkelijk in het CRM staan.</div>` : ''}
 
       <div class="grid c3" style="margin-bottom:18px">
-        ${CRM.ui.kpi('Kosten per lead', `<span class="num">${k.leads?CRM.euro(k.spend/k.leads,2):'—'}</span>`,
-          `${fmtN(k.leads)} CRM-leads uit ${CRM.euro(k.spend)}`)}
-        ${CRM.ui.kpi('Kosten per kandidaat', `<span class="num">${k.kandidaten?CRM.euro(k.spend/k.kandidaten):'—'}</span>`,
-          `${fmtN(k.kandidaten)} kandidaten op het bord`)}
-        ${geld
+        ${geld()
+          ? CRM.ui.kpi('Kosten per lead', `<span class="num">${k.leads?CRM.euro(k.spend/k.leads,2):'—'}</span>`,
+              `${fmtN(k.leads)} CRM-leads uit ${CRM.euro(k.spend)}`)
+          : CRM.ui.kpi('Leads in CRM', `<span class="num">${fmtN(k.leads)}</span>`, `met bron Meta in deze periode`)}
+        ${geld()
+          ? CRM.ui.kpi('Kosten per kandidaat', `<span class="num">${k.kandidaten?CRM.euro(k.spend/k.kandidaten):'—'}</span>`,
+              `${fmtN(k.kandidaten)} kandidaten op het bord`)
+          : CRM.ui.kpi('Lead → kandidaat', `<span class="num">${pct(k.kandidaten, k.leads)}</span>`,
+              `${fmtN(k.kandidaten)} kandidaten op het bord`)}
+        ${geld()
           ? CRM.ui.kpi('Kosten per plaatsing', `<span class="num">${kpl}</span>`,
               k.geplaatst ? `${fmtN(k.geplaatst)} plaatsing${k.geplaatst===1?'':'en'} in de periode` : 'nog geen plaatsing', 'accent')
-          : CRM.ui.kpi('Plaatsingen', `<span class="num">${fmtN(k.geplaatst)}</span>`, 'uit Meta-leads in deze periode')}
+          : CRM.ui.kpi('Plaatsingen', `<span class="num">${fmtN(k.geplaatst)}</span>`, 'uit Meta-leads in deze periode', 'accent')}
       </div>
 
       <div class="card">

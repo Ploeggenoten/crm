@@ -92,13 +92,13 @@ CRM.actieveKlanten = () => {
 
 /* Plaatsingen deze maand — exact dezelfde definitie als het bord:
    netto = getekend deze maand − gestopt deze maand. */
-CRM.plaatsingenMaand = (mk = new Date().toISOString().slice(0,7)) => {
+CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
   const cs = CRM.kandidaten();
   const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk && CRM.PLACED.includes(c.fase));
   const gestopt  = cs.filter(c => c.fase==='Gestopt' && (c.gestoptOp||'').slice(0,7)===mk);
   return {getekend, gestopt, netto: getekend.length - gestopt.length};
 };
-CRM.maandTarget = (mk = new Date().toISOString().slice(0,7)) => {
+CRM.maandTarget = (mk = CRM.todayISO().slice(0,7)) => {
   const t = CRM.state.targets.find(t=>t.maand===mk) || CRM.state.targets.find(t=>t.maand==='__default__');
   return t ? t.aantal : 8;
 };

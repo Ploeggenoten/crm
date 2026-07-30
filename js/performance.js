@@ -223,7 +223,7 @@ function blokRecruiters(p, D){
         <td class="n num">${r.netto>0?'+':''}${r.netto}</td>
         <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
         <td class="n num">${r.pijplijn}</td>
-        <td class="n num">${r.looptijd!=null ? r.looptijd+' d' : '<span class="meta">—</span>'}</td>
+        <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>
         <td class="n num">${r.gesprekken}</td>
       </tr>`).join('')}</tbody>
     </table></div>
@@ -302,7 +302,8 @@ function blokUitval(p, D){
     <div class="card-b">${rijen.length ? `<div class="pf-redenen">${rijen.slice(0,6).map(([r,n])=>`
       <div class="pf-reden"><span class="pf-rl">${h(r)}</span>
         <span class="pf-rb">${CRM.ui.bar(Math.round(n/totaal*100))}</span>
-        <span class="pf-rn num">${n}</span></div>`).join('')}</div>` : CRM.ui.leeg('Geen registratie','')}
+        <span class="pf-rn num">${n}</span></div>`).join('')}</div>`
+      : CRM.ui.leeg('Nog geen reden vastgelegd','Vul bij het afvallen of stoppen van een kandidaat de reden in — dan zie je hier waar het structureel misgaat.')}
     </div></div>`;
 
   return `<section class="pf-sec">
@@ -339,7 +340,8 @@ function blokKlanten(p, D){
 
   if(!rijen.length)
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per klant</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen klantactiviteit in deze periode','')}</div></div></section>`;
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen klantactiviteit in deze periode',
+        'Er liep bij geen enkele klant een traject. Kies hierboven een langere periode.')}</div></div></section>`;
 
   const waarde = (r,k) => k==='naam' ? r.naam
     : k==='aanname' ? (r.voorgesteld ? r.plaatsingen/r.voorgesteld : -1)
@@ -375,7 +377,7 @@ function blokKlanten(p, D){
           <td class="n num">${r.plaatsingen}</td>
           <td class="n">${r.voorgesteld ? pctTxt(r.plaatsingen, r.voorgesteld) : '<span class="meta">—</span>'}</td>
           <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
-          <td class="n num">${r.looptijd!=null ? r.looptijd+' d' : '<span class="meta">—</span>'}</td>
+          <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>
           <td>${vaakWeg ? '<span class="chip amber">wijst vaak af</span>'
              : afwijzend ? '<span class="chip">lage aanname</span>' : ''}</td>
         </tr>`;
@@ -435,6 +437,9 @@ let _fin = null;
 async function finLezen(){
   if(_fin) return _fin;
   if(!CRM.canSeeMoney()) return (_fin = {ok:false});
+  /* In demo blijft de echte database buiten beeld — anders staan er
+     bij een nog actieve sessie zomaar echte omzetcijfers op een testscherm. */
+  if(CRM.demo) return (_fin = {ok:false});
   try{
     const [p,i] = await Promise.all([
       CRM.sb.from('fin_placements').select('id,klant,kandidaat,fee_excl,contract_datum,gestopt_op'),

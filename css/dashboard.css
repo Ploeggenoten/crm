@@ -5,7 +5,8 @@
 
 /* ─── Begroeting ─────────────────────────────────────────────── */
 .dash-hero{padding:2px 2px 0}
-.dash-hero .label{margin-bottom:6px}
+/* Datum in Inter (nooit Anton — condensed leest vaag bij cijfers). */
+.dash-hero .dash-datum{margin-bottom:6px;text-transform:capitalize;letter-spacing:.01em}
 .dash-hero .h1{font-size:27px}
 .dash-hero .dash-zin{margin:7px 0 0;font-size:14.5px;color:var(--txt-2);max-width:640px;line-height:1.55}
 

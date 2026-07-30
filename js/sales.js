@@ -163,9 +163,7 @@ async function legVast(naam, soort){
 /* De KPI's volgen de actieve filters — zo krijgt een AM met "Mijn klanten"
    aan meteen zijn eigen cijfers te zien. */
 function kpiHTML(alle){
-  const maand = new Date().toISOString().slice(0,7);
   const actief = alle.filter(k=>CRM.SALES_ACTIEF.includes(faseVan(k)));
-  const nieuw  = alle.filter(k=>faseVan(k)==='Lead' && String(k.fase_sinds||'').slice(0,7)===maand);
   const gespr  = alle.filter(k=>faseVan(k)==='Gesprek ingepland');
   const klant  = alle.filter(k=>faseVan(k)==='Afgerond');
   const conv   = alle.length ? Math.round(klant.length / alle.length * 100) : 0;
@@ -183,10 +181,9 @@ function kpiHTML(alle){
   const tegels = [
     CRM.ui.kpi('Actieve trajecten', `<span class="num">${actief.length}</span>`,
       hangen ? `<span style="color:var(--amber)">${hangen} langer dan ${HANGT_NA} dagen stil</span>` : 'allemaal in beweging', 'accent'),
-    CRM.ui.kpi('Nieuwe leads deze maand', `<span class="num">${nieuw.length}</span>`, 'sinds ' + CRM.fmtDate(maand+'-01')),
-    CRM.ui.kpi('Gesprekken ingepland', `<span class="num">${gespr.length}</span>`, 'kennismakingen in de agenda'),
+    CRM.ui.kpi('Gesprekken ingepland', `<span class="num">${gespr.length}</span>`,
+      gem==null ? 'kennismakingen in de agenda' : `kennismakingen · gemiddeld <span class="num">${gem}</span> dgn in fase`),
     CRM.ui.kpi('Conversie naar klant', `<span class="num">${conv}%</span>`, `${klant.length} van ${alle.length} bedrijven in beeld`),
-    CRM.ui.kpi('Gem. tijd in fase', gem==null?'—':`<span class="num">${gem}</span> <span style="font-size:16px;font-weight:500">dgn</span>`, 'over lopende trajecten'),
     CRM.canSeeMoney()
       ? CRM.ui.kpi('Gewogen kanswaarde', `<span class="num">${CRM.euro(gewogen)}</span>`, `${open.length} open kansen`)
       : CRM.ui.kpi('Open posities', `<span class="num">${posities}</span>`, `${open.length} open kansen`)

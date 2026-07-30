@@ -87,4 +87,13 @@ label.kl-taak input{margin-top:3px}
   .kl-evc{grid-template-columns:1fr 60px}
   .kl-evc .sub{grid-column:1/-1}
   .kl-rec{display:none}
+
+  /* Filterbalk: twee gelijke kolommen in plaats van een scheve trap van
+     selects die elk hun eigen breedte kiezen. */
+  .kl-fil{gap:8px}
+  .kl-fil > .searchbox{flex:1 1 100% !important;max-width:none !important;min-width:0}
+  .kl-fil > select{flex:1 1 calc(50% - 4px);min-width:0;text-overflow:ellipsis}
+  .kl-fil > .spacer{display:none}
+  .kl-fil > .chip{flex:0 0 auto}
+  .kl-fil > .meta{margin-left:auto}
 }
