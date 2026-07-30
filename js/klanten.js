@@ -333,6 +333,7 @@ function kaart(mount, acties, naam){
         <aside class="kl-rail">
           ${gegevensHtml(k)}
           ${contactBlokHtml()}
+          ${afsprakenBlokHtml()}
           ${takenBlokHtml()}
           ${notitiesBlokHtml()}
         </aside>
@@ -348,7 +349,22 @@ function kaart(mount, acties, naam){
 
   /* Snelacties in de kop */
   mount.querySelector('#k_bel').onclick     = () => logVia(k,'bel','Wat is er besproken?');
-  mount.querySelector('#k_mail').onclick    = () => logVia(k,'mail','Waarover ging de mail?');
+  /* Mailen: met Outlook-koppeling schrijf je de mail hier (en wordt hij
+     vanzelf gelogd); zonder koppeling leg je vast wat je buiten het CRM
+     hebt gemaild. Handmatig loggen blijft in de tab Activiteiten. */
+  mount.querySelector('#k_mail').onclick    = () => {
+    const hoofd = (CRM.state.contacten||[]).filter(x => x.klant === k.naam && x.email)
+      .sort((a,b) => (b.hoofd?1:0) - (a.hoofd?1:0))[0];
+    const adres = k.email || (hoofd && hoofd.email) || '';
+    if(CRM.mailUI.actief() && adres){
+      CRM.mailUI.opstellen({aan:adres, wie:k.naam, set:'klant',
+        ctx:{voornaam: hoofd && !k.email ? voornaamVan(hoofd.naam) : '', klant:k.naam},
+        entiteit:'klant', ref:k.naam,
+        na(){ tabActief = 'activiteiten'; CRM.render(); }});
+      return;
+    }
+    logVia(k,'mail','Waarover ging de mail?');
+  };
   mount.querySelector('#k_plan').onclick    = () => planModal(k);
   mount.querySelector('#k_notitie').onclick = () => logVia(k,'notitie','Wat wil je onthouden? Tip: @collega stuurt diegene een melding.');
   mount.querySelector('#k_taak').onclick    = () => nieuweTaak(k);
@@ -416,6 +432,9 @@ function kaart(mount, acties, naam){
   mount.querySelector('#ct_nieuw').onclick = () => contactModal(k, null);
   contactLijst(ctLijst, k);
 
+  /* Rail: komende afspraken (alleen met gekoppelde Outlook) */
+  railAfspraken(mount, k);
+
   /* Rail: open taken */
   mount.querySelector('#rt_nieuw').onclick = () => nieuweTaak(k);
   railTaken(mount.querySelector('#rt_lijst'), k);
@@ -464,6 +483,51 @@ function kopHtml(k, c){
     </div></div>`;
 }
 
+/* ─── Rail: komende afspraken uit Outlook ─────────────────────────
+   Alleen als deze gebruiker zijn Outlook gekoppeld heeft; anders
+   blijft het blok weg (geen loze belofte op het scherm). ───────── */
+function afsprakenBlokHtml(){
+  if(!CRM.outlook?.verbonden?.()) return '';
+  return `<div class="card kl-railkaart kl-r-ag" id="ag_kaart" hidden>
+    <div class="card-h"><div class="h2">Komende afspraken</div></div>
+    <div class="card-b" id="ag_lijst"></div></div>`;
+}
+
+/* Agenda van 30 dagen filteren op deze klant: naam in het onderwerp of
+   de locatie, of een e-mailadres van een contactpersoon in de gasten. */
+function railAfspraken(root, k){
+  const kaart = root.querySelector('#ag_kaart'); if(!kaart) return;
+  const lijst = kaart.querySelector('#ag_lijst');
+  const mails = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+    .map(x => String(x.email||'').toLowerCase()).filter(Boolean)
+    .concat(String(k.email||'').toLowerCase() || []);
+  const naam = k.naam.toLowerCase();
+
+  Promise.resolve(CRM.outlook.agenda(30)).then(items => {
+    if(!Array.isArray(items)) return;
+    const raak = items.filter(e => {
+      const hooi = [e.titel, e.locatie, ...(e.deelnemers||[])].join(' ').toLowerCase();
+      return hooi.includes(naam) || mails.some(m => m && hooi.includes(m));
+    }).slice(0, 5);
+    if(!raak.length){ kaart.hidden = true; return; }
+    kaart.hidden = false;
+    lijst.innerHTML = `<div class="kl-afspraken">${raak.map(e => {
+      const dt = new Date(e.start);
+      const wanneer = isNaN(dt) ? '' : CRM.fmtDateShort(e.start) + ' · ' +
+        dt.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
+      const waar = e.online ? 'Teams' : (e.locatie || '');
+      return `<div class="kl-afspraak">
+        <b class="trunc">${h(e.titel||'Afspraak')}</b>
+        <div class="meta num">${h(wanneer)}${waar ? ' · ' + h(waar) : ''}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }).catch(e => console.warn('agenda klantkaart', e));
+}
+/* Na het inplannen: het blokje bijwerken als de klantkaart openstaat. */
+function verversAfspraken(k){
+  if(klantOpen === k.naam && document.getElementById('ag_kaart')) railAfspraken(document, k);
+}
+
 /* ─── Rail: gegevens — compacte kaart met de klantvelden ───────── */
 function gegevensHtml(k){
   const web = veiligeUrl(k.website);
@@ -471,7 +535,7 @@ function gegevensHtml(k){
   if(web){ try{ webTekst = new URL(web).hostname.replace(/^www\./,''); }catch(e){ webTekst = 'Website'; } }
   const rij = (lbl, val) => `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
     <span class="kl-gg-val trunc">${val || '<span class="meta">—</span>'}</span></div>`;
-  return `<div class="card kl-railkaart">
+  return `<div class="card kl-railkaart kl-r-gg">
     <div class="card-h"><div class="h2">Gegevens</div><span class="spacer"></span>
       <button class="btn sub sm" id="gg_bewerk">Bewerken</button></div>
     <div class="card-b kl-gg">
@@ -492,7 +556,7 @@ function gegevensHtml(k){
 
 /* ─── Rail: contactpersonen — altijd in beeld naast de tabs ────── */
 function contactBlokHtml(){
-  return `<div class="card kl-railkaart">
+  return `<div class="card kl-railkaart kl-r-ct">
     <div class="card-h"><div class="h2">Contactpersonen</div></div>
     <div class="card-b">
       <div class="searchbox kl-ctzoek">
@@ -505,7 +569,7 @@ function contactBlokHtml(){
 
 /* ─── Rail: open taken — dé takenplek van de klantkaart ────────── */
 function takenBlokHtml(){
-  return `<div class="card kl-railkaart">
+  return `<div class="card kl-railkaart kl-r-tk">
     <div class="card-h"><div class="h2">Open taken</div><span class="spacer"></span>
       <button class="btn sm" id="rt_nieuw">+ Taak</button></div>
     <div class="card-b" id="rt_lijst"></div></div>`;
@@ -513,7 +577,7 @@ function takenBlokHtml(){
 
 /* ─── Rail: notities — het gezamenlijke geheugen van de relatie ── */
 function notitiesBlokHtml(){
-  return `<div class="card kl-railkaart">
+  return `<div class="card kl-railkaart kl-r-nt">
     <div class="card-h"><div class="h2">Notities</div></div>
     <div class="card-b">
       <div class="f-row" style="margin-bottom:10px">
@@ -682,6 +746,8 @@ function contactDrawer(k, ctId){
       <div class="row tight" style="margin-bottom:18px">
         <button class="btn ghost sm" id="cd_notitie">Notitie</button>
         <button class="btn ghost sm" id="cd_verslag">Gespreksverslag</button>
+        ${ct.email ? '<button class="btn ghost sm" id="cd_mail">Mailen</button>' : ''}
+        <button class="btn ghost sm" id="cd_plan">Inplannen</button>
         <button class="btn sm" id="cd_taak">+ Taak</button>
         <span class="spacer"></span>
         <button class="btn sub sm" id="cd_bewerk">Bewerken</button>
@@ -689,7 +755,14 @@ function contactDrawer(k, ctId){
       ${ct.note ? `<div class="note info" style="margin-bottom:16px">${h(ct.note)}</div>` : ''}
       <div class="label" style="margin-bottom:10px">Notities & gespreksverslagen</div>
       ${CRM.ui.tijdlijn(items)}
+      ${CRM.mailUI.blokHtml(ct.email, 'cd_mailblok')}
     </div>`, {onOpen(dr){
+      /* Mail pas ophalen nu de drawer echt openstaat — nooit in de lijst. */
+      CRM.mailUI.laad(dr, ct.email, 'cd_mailblok');
+      const mailKnop = dr.querySelector('#cd_mail');
+      if(mailKnop) mailKnop.onclick = () => mailAanContact(k, ct);
+      /* Het mailadres in de kop opent hetzelfde venster (of blijft mailto). */
+      CRM.mailUI.bindLinks(dr.querySelector('.drawer-h'), mailOptiesContact(k, ct));
       dr.querySelector('#cd_notitie').onclick = async () => {
         const tekst = await CRM.vraag('Notitie bij ' + ct.naam,
           {multiline:true, hint:'Tip: @collega stuurt diegene een melding.', knop:'Vastleggen'});
@@ -701,6 +774,11 @@ function contactDrawer(k, ctId){
         contactDrawer(k, ct.id);
       };
       dr.querySelector('#cd_verslag').onclick = () => verslagModal(k, ct);
+      /* Inplannen mét deze persoon al aangevinkt. */
+      dr.querySelector('#cd_plan').onclick = () => planModal(k, {
+        contactIds:[ct.id], titel:`Gesprek — ${ct.naam} (${k.naam})`,
+        na(){ contactLijstVerversen(k); }
+      });
       dr.querySelector('#cd_taak').onclick = () => {
         CRM.taakModal({entiteit:'klant', ref:k.naam, refLabel:`${ct.naam} (${k.naam})`});
       };
@@ -708,6 +786,21 @@ function contactDrawer(k, ctId){
         contactModal(k, ct, verwijderd => { if(verwijderd) CRM.drawer.close(); else contactDrawer(k, ct.id); });
     }});
 }
+
+/* Mailen met een contactpersoon: met Outlook-koppeling een opstelvenster,
+   zonder koppeling gewoon mailto. Na versturen wordt het gesprek gelogd en
+   ververst de drawer (en dus ook het mailblok). */
+function mailOptiesContact(k, ct){
+  return {
+    aan: ct.email || '',
+    wie: `${ct.naam} — ${k.naam}`,
+    set: 'klant',
+    ctx: { voornaam: voornaamVan(ct.naam), klant: k.naam },
+    entiteit: 'contact', ref: String(ct.id),
+    na(){ contactLijstVerversen(k); contactDrawer(k, ct.id); }
+  };
+}
+function mailAanContact(k, ct){ CRM.mailUI.opstellen(mailOptiesContact(k, ct)); }
 
 /* Gespreksverslag: groter tekstvak + datum (standaard vandaag). */
 function verslagModal(k, ct){
@@ -858,6 +951,12 @@ function tabVacatures(el, k, c){
     e.preventDefault(); e.stopPropagation();
     vacatureModal(k, c.vs.find(v => String(v.id) === b.dataset.vbew));
   });
+  /* Overleg over déze vacature inplannen — zelfde venster, ander onderwerp. */
+  el.querySelectorAll('[data-vplan]').forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    const v = c.vs.find(x => String(x.id) === b.dataset.vplan); if(!v) return;
+    planModal(k, {titel:`Overleg ${v.functie} — ${k.naam}`});
+  });
   el.querySelectorAll('[data-kand]').forEach(a => a.onclick = e => {
     e.preventDefault(); CRM.ga('kandidaten',{id:a.dataset.kand});
   });
@@ -880,6 +979,7 @@ function vacatureHtml(v, k){
       ${sal}
       <span class="chip${open?' green':''}">${h(v.status||'Open')}</span>
       ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
+      <button class="btn sub sm" data-vplan="${h(String(v.id))}">Inplannen</button>
       <button class="btn sub sm" data-vbew="${h(String(v.id))}">Bewerken</button>
     </summary>
     <div class="kl-vac-b">
@@ -1144,52 +1244,189 @@ function docModal(k){
   }});
 }
 
-/* ─── Kennismaking inplannen (Outlook of vooringevulde deeplink) ── */
-function planModal(k){
+/* ═══════════════════════════════════════════════════════════════
+   AFSPRAAK INPLANNEN — één venster voor de hele app.
+   De klantkaart, het contactpersoon-dossier, een vacature én het
+   salesbord roepen hetzelfde venster aan via CRM.klantInplannen(),
+   zodat "even inplannen" overal hetzelfde werkt.
+   ═══════════════════════════════════════════════════════════════ */
+/* Soort afspraak zet slimme standaarden; alles blijft aanpasbaar. */
+const AFSPRAAK_SOORTEN = [
+  {k:'Kennismaking',   duur:45, teams:false, opLocatie:true},
+  {k:'Vervolggesprek', duur:45, teams:false, opLocatie:true},
+  {k:'Bedrijfsbezoek', duur:60, teams:false, opLocatie:true},
+  {k:'Evaluatie',      duur:45, teams:false, opLocatie:true},
+  {k:'Online',         duur:30, teams:true,  opLocatie:false}
+];
+const DUREN = [15,30,45,60,90];
+const plusDagen = (iso, n) => {
+  const d = new Date(String(iso||'') + 'T12:00:00');
+  if(isNaN(d)) return CRM.todayISO();
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('sv-SE');
+};
+const geldigMail = s => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(s||'').trim());
+
+/* opts: {contactIds:[id], titel, soort, na()} */
+function planModal(klant, opts = {}){
+  const k = typeof klant === 'string' ? CRM.klant(klant) : klant;
+  if(!k) return CRM.toast('Klant niet gevonden','err');
+
+  const conts = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+    .sort((a,b) => (b.hoofd?1:0)-(a.hoofd?1:0) || String(a.naam).localeCompare(String(b.naam),'nl'));
+  const gekozenIds = new Set((opts.contactIds||[]).map(String));
+  const aanStart = ct => !!ct.email && (gekozenIds.size ? gekozenIds.has(String(ct.id)) : !!ct.hoofd);
+  const iemandAan = conts.some(aanStart);
+
+  const soortStart = opts.soort || (opts.titel ? '' : 'Kennismaking');
+  const soortDef   = AFSPRAAK_SOORTEN.find(s => s.k === soortStart) || null;
+  const titelStart = opts.titel || `${soortStart||'Afspraak'} — ${k.naam}`;
+  const datumStart = plusDagen(CRM.todayISO(), 1);
+
+  const deelHtml = [
+    ...conts.map(ct => `
+      <label class="kl-deel${ct.email?'':' uit'}">
+        <input type="checkbox" data-ct="${h(String(ct.id))}" value="${h(ct.email||'')}"
+          ${aanStart(ct)?'checked':''}${ct.email?'':' disabled'}>
+        <span class="kl-deel-wie">
+          <b class="trunc">${h(ct.naam)}</b>
+          <span class="meta trunc">${h([ct.functie||'', ct.email||'geen e-mailadres'].filter(Boolean).join(' · '))}</span>
+        </span>
+        ${ct.hoofd?'<span class="chip green">Hoofd</span>':''}
+      </label>`),
+    k.email ? `
+      <label class="kl-deel">
+        <input type="checkbox" data-alg="1" value="${h(k.email)}"${iemandAan?'':' checked'}>
+        <span class="kl-deel-wie">
+          <b class="trunc">${h(k.naam)}</b>
+          <span class="meta trunc">algemeen e-mailadres · ${h(k.email)}</span>
+        </span>
+      </label>` : ''
+  ].filter(Boolean).join('');
+
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Inplannen</div>
       <p class="sub" style="margin:6px 0 0">${h(k.naam)}</p></div>
     <div class="modal-b">
-      <div class="f-row"><label>Onderwerp</label><input type="text" id="kp_titel" value="${h('Kennismaking — '+k.naam)}"></div>
+      <div class="kl-soorten" id="kp_soort">${AFSPRAAK_SOORTEN.map(s =>
+        `<button type="button" class="chip btn-like${s.k===soortStart?' on':''}" data-s="${h(s.k)}">${h(s.k)}</button>`).join('')}</div>
+
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="kp_titel" value="${h(titelStart)}"></div>
       <div class="f-grid">
-        <div class="f-row"><label>Datum</label><input type="date" id="kp_datum" value="${h(CRM.todayISO())}"></div>
+        <div class="f-row"><label>Datum</label><input type="date" id="kp_datum" value="${h(datumStart)}"></div>
         <div class="f-row"><label>Tijd</label><input type="time" id="kp_tijd" value="10:00"></div>
-        <div class="f-row"><label>Duur</label><select id="kp_duur">
-          <option value="30">30 minuten</option>
-          <option value="45" selected>45 minuten</option>
-          <option value="60">60 minuten</option></select></div>
-        <div class="f-row"><label>Locatie</label><input type="text" id="kp_loc" value="${h(k.locatie||'')}"></div>
+        <div class="f-row"><label>Duur</label><select id="kp_duur">${DUREN.map(n =>
+          `<option value="${n}"${n===(soortDef?soortDef.duur:45)?' selected':''}>${n} minuten</option>`).join('')}</select></div>
+        <div class="f-row"><label>Locatie</label><input type="text" id="kp_loc"
+          value="${h(soortDef && !soortDef.opLocatie ? '' : (k.locatie||''))}"></div>
       </div>
-      <label class="check"><input type="checkbox" id="kp_teams"> Teams-videocall</label>
-      <div class="f-row" style="margin-top:10px"><label>Notitie</label>
+      <label class="check"><input type="checkbox" id="kp_teams"${soortDef&&soortDef.teams?' checked':''}> Teams-videocall</label>
+
+      <div class="f-row" style="margin-top:14px"><label>Wie nodig je uit?</label>
+        ${deelHtml ? `<div class="kl-deelnemers">${deelHtml}</div>`
+          : '<p class="meta" style="margin:0 0 8px">Nog geen contactpersonen bij deze klant — vul hieronder een adres in.</p>'}
+        <input type="text" id="kp_extra" placeholder="naam@bedrijf.nl, collega@bedrijf.nl">
+        <span class="hint">Extra e-mailadressen, gescheiden door een komma.</span>
+      </div>
+
+      <div class="f-row"><label>Notitie</label>
         <textarea id="kp_body" placeholder="Voor in de uitnodiging…"></textarea></div>
+
+      <label class="check"><input type="checkbox" id="kp_opvolg"> Zet ook een opvolgtaak</label>
+      <div class="f-row kl-opvolg" id="kp_opvolgrij" hidden style="margin-top:8px">
+        <label>Nabellen op</label>
+        <input type="date" id="kp_opvolgdatum" value="${h(plusDagen(datumStart, 7))}" style="max-width:180px">
+      </div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="kp_ok">Inplannen</button></div>`, {onOpen(m){
-    m.querySelector('#kp_ok').onclick = async () => {
+
+    const $ = s => m.querySelector(s);
+    const titelEl = $('#kp_titel'), datumEl = $('#kp_datum'), duurEl = $('#kp_duur');
+    const locEl = $('#kp_loc'), teamsEl = $('#kp_teams');
+    const opvolgEl = $('#kp_opvolg'), opvolgRij = $('#kp_opvolgrij'), opvolgDatum = $('#kp_opvolgdatum');
+    let opvolgAangeraakt = false;
+
+    /* Soort kiezen: onderwerp voorvullen + duur, locatie en Teams zetten. */
+    m.querySelectorAll('#kp_soort [data-s]').forEach(b => b.onclick = () => {
+      const s = AFSPRAAK_SOORTEN.find(x => x.k === b.dataset.s); if(!s) return;
+      m.querySelectorAll('#kp_soort [data-s]').forEach(x => x.classList.toggle('on', x === b));
+      titelEl.value = `${s.k} — ${k.naam}`;
+      duurEl.value  = String(s.duur);
+      teamsEl.checked = s.teams;
+      locEl.value = s.opLocatie ? (k.locatie||'') : '';
+    });
+
+    datumEl.onchange = () => { if(!opvolgAangeraakt) opvolgDatum.value = plusDagen(datumEl.value, 7); };
+    opvolgDatum.onchange = () => { opvolgAangeraakt = true; };
+    opvolgEl.onchange = () => { opvolgRij.hidden = !opvolgEl.checked; };
+
+    $('#kp_ok').onclick = async () => {
+      const gekozen = [...m.querySelectorAll('.kl-deel input:checked')];
+      const uitContacten = gekozen.filter(c => c.dataset.ct)
+        .map(c => conts.find(x => String(x.id) === c.dataset.ct)).filter(Boolean);
+      const extra = $('#kp_extra').value.split(/[,;]/).map(s => s.trim()).filter(geldigMail);
       const d = {
-        titel:m.querySelector('#kp_titel').value.trim(),
-        datum:m.querySelector('#kp_datum').value, tijd:m.querySelector('#kp_tijd').value || '10:00',
-        duurMin:Number(m.querySelector('#kp_duur').value)||45,
-        locatie:m.querySelector('#kp_loc').value.trim(),
-        teams:m.querySelector('#kp_teams').checked,
-        body:m.querySelector('#kp_body').value.trim(),
-        deelnemers:[k.email].filter(Boolean)
+        titel: titelEl.value.trim(),
+        datum: datumEl.value, tijd: $('#kp_tijd').value || '10:00',
+        duurMin: Number(duurEl.value) || 45,
+        locatie: locEl.value.trim(),
+        teams: teamsEl.checked,
+        body: $('#kp_body').value.trim(),
+        deelnemers: [...new Set(gekozen.map(c => c.value).filter(Boolean).concat(extra))]
       };
       if(!d.titel) return CRM.toast('Vul een onderwerp in','err');
       if(!d.datum) return CRM.toast('Kies een datum','err');
+      const opvolg = opvolgEl.checked ? (opvolgDatum.value || plusDagen(d.datum, 7)) : null;
       CRM.modal.close();
+
       try{
         const r = await CRM.outlook.maakAfspraak(d);
-        CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
-        await CRM.logActiviteit('klant', k.naam, 'gesprek',
-          `Afspraak ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
+        CRM.toast(r.via === 'graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
+
+        const wie = uitContacten.map(c => c.naam).join(', ');
+        const regel = `Afspraak ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`
+          + (wie ? ` — met ${wie}` : '') + (d.locatie ? ` (${d.locatie})` : d.teams ? ' (Teams)' : '');
+        await CRM.logActiviteit('klant', k.naam, 'gesprek', regel, {afspraak:{datum:d.datum, tijd:d.tijd, titel:d.titel}});
+        /* Ook in het dossier van iedereen die je uitnodigt. */
+        for(const ct of uitContacten)
+          await CRM.logActiviteit('contact', String(ct.id), 'gesprek', regel, {afspraak:{datum:d.datum, tijd:d.tijd, titel:d.titel}});
         if(r.online) await CRM.logActiviteit('klant', k.naam, 'notitie', 'Teams-link: ' + r.online);
+
+        /* Laatste contact alleen bijwerken als de afspraak niet in de
+           toekomst ligt — anders lijkt een klant "vers" terwijl je hem
+           nog moet spreken. */
+        if(d.datum <= CRM.todayISO()) await bewaarKlant(k.naam, {laatst_contact: d.datum});
+
+        if(opvolg) await opvolgtaak(k, d, opvolg);
+        verversAfspraken(k);
         CRM.render();
+        if(typeof opts.na === 'function') opts.na();
       }catch(e){ CRM.fout('Inplannen mislukt', e); }
     };
   }});
 }
+
+/* Opvolgtaak zonder extra venster: dezelfde rij als CRM.taakModal maakt. */
+async function opvolgtaak(k, d, datum){
+  const rij = {
+    id: CRM.uid(), tekst: 'Nabellen na ' + d.titel, datum, klaar: false,
+    entiteit: 'klant', ref: k.naam, voor: CRM.me(), door: CRM.me(),
+    prioriteit: '', created_at: new Date().toISOString()
+  };
+  CRM.state.taken.push(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_taken').insert(rij);
+    if(error){ CRM.fout('Opvolgtaak opslaan mislukt', error); return; }
+  }
+  if(CRM.outlook?.verbonden?.())
+    CRM.outlook.maakTaak({titel: rij.tekst, datum, notities: k.naam}).catch(()=>{});
+  CRM.navBadges?.();
+  CRM.toast('Opvolgtaak gezet voor ' + CRM.fmtDate(datum), 'ok');
+}
+
+/* Voor sales.js en andere modules: hetzelfde venster, geen tweede modal. */
+CRM.klantInplannen = (klant, opts) => planModal(klant, opts || {});
 
 /* ─── Klantgegevens bewerken ──────────────────────────────────── */
 function klantModal(k){
@@ -1287,6 +1524,221 @@ function vacatureModal(k, v){
   }});
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   MAIL (Outlook) — gedeelde bouwstenen
+   Wordt óók door js/kandidaten.js gebruikt; daarom aan CRM gehangen
+   in plaats van twee keer geschreven (zie VERZOEK AAN CORE onderaan).
+   Spelregels:
+   · alleen zichtbaar als déze gebruiker Outlook verbonden heeft;
+   · alleen correspondentie met één adres, nooit het hele postvak;
+   · fragmenten zijn kort (de motor kapt op 220 tekens), nooit hele bodies;
+   · pas laden als het blok echt in beeld staat — nooit in lijstweergaven;
+   · nooit automatisch versturen: de gebruiker klikt zelf op Versturen.
+   ═══════════════════════════════════════════════════════════════ */
+const mailAan = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.() && CRM.outlook.verbonden?.());
+const voornaamVan = n => String(n||'').trim().split(/\s+/)[0] || '';
+
+/* Sjablonen: klein en nuchter, je-vorm, met de namen die we al weten
+   ingevuld en [haakjes] waar de gebruiker zelf iets moet kiezen. */
+const SJABLONEN = {
+  klant: [
+    { lbl:'Kandidaat voorstellen',
+      onderwerp: c => 'Kandidaat voor ' + (c.functie || 'jullie vacature'),
+      tekst: c => `Beste ${c.voornaam || '[naam]'},
+
+Ik heb een kandidaat die past bij ${c.functie ? 'de functie ' + c.functie : 'jullie openstaande functie'}: ${c.kandidaat || '[naam kandidaat]'}.
+
+In het kort:
+- ervaring: [in één regel]
+- beschikbaar: [datum]
+- woonplaats: [plaats]
+
+Zal ik het cv sturen, of plan ik meteen een kennismaking in?
+
+Met vriendelijke groet,
+${c.mij || ''}` },
+    { lbl:'Terugkoppeling na gesprek',
+      onderwerp: () => 'Terugkoppeling na het gesprek',
+      tekst: c => `Beste ${c.voornaam || '[naam]'},
+
+Dank voor het gesprek. Hierbij de terugkoppeling.
+
+Besproken:
+- [punt]
+- [punt]
+
+Afgesproken vervolgstap: [stap], uiterlijk [datum].
+
+Klopt dit met jouw beeld? Laat het weten, dan pak ik het verder op.
+
+Met vriendelijke groet,
+${c.mij || ''}` }
+  ],
+  kandidaat: [
+    { lbl:'Uitnodiging intake',
+      onderwerp: () => 'Uitnodiging voor een kennismaking',
+      tekst: c => `Hoi ${c.voornaam || '[naam]'},
+
+Goed dat we contact hebben. Ik wil je graag beter leren kennen: wat je zoekt, wat je kunt en wanneer je kunt starten.
+
+Schikt [dag] om [tijd] je? Het gesprek duurt ongeveer drie kwartier en gaat [via video / op kantoor]. Komt dat niet uit, geef dan twee momenten door die wel passen.
+
+Tot dan.
+
+Met vriendelijke groet,
+${c.mij || ''}` },
+    { lbl:'Voorstel besproken bij klant',
+      onderwerp: c => 'Je profiel is besproken bij ' + (c.klant || '[klant]'),
+      tekst: c => `Hoi ${c.voornaam || '[naam]'},
+
+Ik heb je profiel besproken bij ${c.klant || '[klant]'}${c.functie ? ' voor de functie ' + c.functie : ''}.
+
+Stand van zaken: [reactie van de klant].
+
+Vervolgstap: [stap]. Zodra ik meer weet, hoor je het van mij. Heb je in de tussentijd vragen, bel me gerust.
+
+Met vriendelijke groet,
+${c.mij || ''}` }
+  ]
+};
+
+/* Eén rustige regel per mail; klikbaar naar Outlook (alleen https). */
+function mailRegelHtml(m){
+  const url = /^https:\/\//i.test(String(m.link||'')) ? String(m.link) : '';
+  const richting = m.uitgaand
+    ? 'verstuurd'
+    : 'ontvangen' + (m.vanNaam ? ' van ' + m.vanNaam : '');
+  const binnen = `<b class="trunc">${h(m.onderwerp || '(geen onderwerp)')}</b>
+      <div class="meta">${h(richting)} · <span class="num">${h(CRM.geleden(m.op) || '')}</span></div>
+      ${m.fragment ? `<p class="ml-frag">${h(String(m.fragment).slice(0,220))}</p>` : ''}`;
+  return url
+    ? `<a class="ml-i" href="${h(url)}" target="_blank" rel="noopener" title="Openen in Outlook">${binnen}</a>`
+    : `<div class="ml-i">${binnen}</div>`;
+}
+
+CRM.mailUI = {
+  actief: mailAan,
+
+  /* Leeg blok. Geen koppeling of geen adres → lege string: dan staat er
+     niets op het scherm dat we toch niet kunnen waarmaken. */
+  blokHtml(adres, id = 'ml_blok'){
+    if(!mailAan() || !adres) return '';
+    return `<div class="card ml-kaart" id="${h(id)}">
+      <div class="card-h"><div class="h2">Mailwisseling</div>
+        <span class="spacer"></span><span class="meta trunc ml-adres">${h(adres)}</span></div>
+      <div class="card-b ml-b"><p class="meta ml-leeg">Mail ophalen…</p></div></div>`;
+  },
+
+  /* Vult het blok. Alleen aanroepen als de kaart/drawer daadwerkelijk open is. */
+  laad(root, adres, id = 'ml_blok'){
+    if(!mailAan() || !adres || !root) return;
+    const kaart = root.querySelector('#' + id);
+    if(!kaart) return;
+    const body = kaart.querySelector('.ml-b');
+    Promise.resolve(CRM.outlook.mailMet(adres, 10)).then(rijen => {
+      if(!Array.isArray(rijen) || !rijen.length){
+        body.innerHTML = '<p class="meta ml-leeg">Geen mailwisseling gevonden met dit adres.</p>';
+        return;
+      }
+      body.innerHTML = `<div class="ml-lijst">${rijen.map(mailRegelHtml).join('')}</div>`;
+    }).catch(e => {
+      console.warn('mailblok', e);
+      body.innerHTML = '<p class="meta ml-leeg">Mail kon niet worden opgehaald.</p>';
+    });
+  },
+
+  /* Mail opstellen. Zonder koppeling: gewone mailto, zoals altijd.
+     opts: {aan, cc, onderwerp, tekst, wie, set:'klant'|'kandidaat',
+            ctx:{voornaam,mij,klant,functie,kandidaat}, entiteit, ref, na} */
+  opstellen(opts = {}){
+    const aan = String(opts.aan || '').trim();
+    if(!mailAan()){
+      const q = opts.onderwerp ? '?subject=' + encodeURIComponent(opts.onderwerp) : '';
+      window.location.href = 'mailto:' + encodeURIComponent(aan) + q;
+      return;
+    }
+    const set = SJABLONEN[opts.set] || [];
+    const ctx = Object.assign({mij: CRM.me()}, opts.ctx || {});
+    const adressen = s => String(s||'').split(/[;,]/).map(x => x.trim()).filter(Boolean);
+
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Mail opstellen</div>
+        ${opts.wie ? `<p class="sub" style="margin:6px 0 0">${h(opts.wie)}</p>` : ''}</div>
+      <div class="modal-b">
+        ${set.length ? `<div class="f-row"><label for="ml_sj">Sjabloon</label>
+          <select id="ml_sj"><option value="">Leeg bericht</option>${
+            set.map((s,i) => `<option value="${i}">${h(s.lbl)}</option>`).join('')}</select></div>` : ''}
+        <div class="f-grid">
+          <div class="f-row"><label for="ml_aan">Aan</label>
+            <input type="text" id="ml_aan" value="${h(aan)}"></div>
+          <div class="f-row"><label for="ml_cc">CC</label>
+            <input type="text" id="ml_cc" value="" placeholder="optioneel"></div>
+        </div>
+        <div class="f-row"><label for="ml_ond">Onderwerp</label>
+          <input type="text" id="ml_ond" value="${h(opts.onderwerp || '')}"></div>
+        <div class="f-row"><label for="ml_tekst">Bericht</label>
+          <textarea id="ml_tekst" class="ml-tekst">${h(opts.tekst || '')}</textarea></div>
+        <p class="meta ml-vanaf">Wordt verstuurd vanaf jouw Outlook-account.</p>
+      </div>
+      <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+        <button class="btn" id="ml_send">Versturen</button></div>`, {onOpen(m){
+      const sj  = m.querySelector('#ml_sj');
+      const ond = m.querySelector('#ml_ond');
+      const tk  = m.querySelector('#ml_tekst');
+      setTimeout(() => (sj || tk).focus(), 60);
+
+      if(sj) sj.onchange = async () => {
+        const s = set[Number(sj.value)];
+        if(!s){ return; }
+        if(tk.value.trim() && !await CRM.bevestig('Sjabloon toepassen?',
+              'De tekst die je nu hebt getypt wordt vervangen.')){
+          sj.value = ''; return;
+        }
+        ond.value = s.onderwerp(ctx);
+        tk.value  = s.tekst(ctx);
+        tk.focus();
+      };
+
+      m.querySelector('#ml_send').onclick = async ev => {
+        const knop = ev.currentTarget;
+        const lijstAan = adressen(m.querySelector('#ml_aan').value);
+        const tekst = tk.value.trim();
+        const onderwerp = ond.value.trim();
+        if(!lijstAan.length) return CRM.toast('Vul eerst een ontvanger in','err');
+        if(!tekst) return CRM.toast('Schrijf eerst een bericht','err');
+        knop.disabled = true; knop.textContent = 'Versturen…';
+        try{
+          await CRM.outlook.stuurMail({aan:lijstAan, cc:adressen(m.querySelector('#ml_cc').value),
+                                       onderwerp, tekst});
+          CRM.modal.close();
+          CRM.toast('Mail verstuurd','ok');
+          if(opts.entiteit && opts.ref){
+            await CRM.logActiviteit(opts.entiteit, String(opts.ref), 'mail',
+              'Mail verstuurd: ' + (onderwerp || '(geen onderwerp)'));
+          }
+          if(typeof opts.na === 'function') opts.na();
+        }catch(e){
+          knop.disabled = false; knop.textContent = 'Versturen';
+          CRM.fout('Versturen mislukt', e);
+        }
+      };
+    }});
+  },
+
+  /* Een bestaande mailto-link slim maken: met koppeling opent hij het
+     opstelvenster, zonder koppeling blijft het gewoon mailto. */
+  bindLinks(root, opts = {}){
+    if(!mailAan() || !root) return;
+    root.querySelectorAll('a[href^="mailto:"]').forEach(a => {
+      a.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        CRM.mailUI.opstellen(Object.assign({}, opts,
+          {aan: decodeURIComponent(a.getAttribute('href').slice(7).split('?')[0])}));
+      };
+    });
+  }
+};
+
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('klanten', {
   title:'Relaties', icon:'▣', onderschrift:'Van lead tot klant — relatiekaarten en accountbeheer',
@@ -1298,7 +1750,22 @@ CRM.registerModule('klanten', {
 });
 })();
 
-/* VERZOEK AAN CORE: `crm_contacten` wordt nog niet door CRM.load() opgehaald en
-   `contacten` staat niet in CRM.state. Deze module haalt de tabel nu zelf
-   eenmalig op; graag toevoegen aan CRM.load() zodat alle modules dezelfde
-   lijst delen. */
+/* VERZOEK AAN CORE:
+   1. `crm_contacten` wordt inmiddels wél door CRM.load() opgehaald — de
+      eigen fallback hierboven (zorgContacten) kan weg zodra dat overal
+      bevestigd is.
+   2. js/outlook.js — `composeUrl()` zet geen gasten in de deeplink. Zonder
+      gekoppelde Outlook (en in demo) vallen de aangevinkte contactpersonen
+      dus stil weg. De Outlook-deeplink kent daarvoor `to=` (komma-gescheiden
+      adressen); graag toevoegen aan composeUrl + maakAfspraak/composeLink,
+      dan werkt "wie nodig je uit" ook zonder koppeling.
+   3. js/outlook.js — `agenda()` haalt geen `attendees` op ($select). Daardoor
+      kan de klantkaart komende afspraken alleen matchen op klantnaam in het
+      onderwerp of de locatie, niet op het e-mailadres van een contactpersoon.
+      Graag `attendees` meenemen en als `deelnemers:[email]` teruggeven — deze
+      module leest dat veld al defensief uit. */
+
+/* VERZOEK AAN CORE: de mail-bouwstenen (`CRM.mailUI` bovenaan de registratie in
+   dit bestand + de `.ml-*`-stijl onderaan css/klanten.css) worden gedeeld met
+   js/kandidaten.js. Ze staan hier alleen omdat een module geen core mag
+   aanraken; ze horen thuis in js/core.js en css/base.css. */

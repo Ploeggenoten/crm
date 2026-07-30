@@ -507,6 +507,7 @@ function kaart(mount, acties, id){
         <div class="stack">
           ${kansenHtml(c)}
           ${trajectHtml(c)}
+          ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
         </div>
       </div>
       <div>
@@ -517,6 +518,15 @@ function kaart(mount, acties, id){
 
   bindVelden(mount, c);
   bindSterren(mount, c);
+
+  /* Mail: pas ophalen nu de kaart daadwerkelijk openstaat — in de
+     lijstweergave wordt er nooit mail opgevraagd. */
+  if(CRM.mailUI){
+    CRM.mailUI.laad(mount, c.email, 'kd_mailblok');
+    CRM.mailUI.bindLinks(mount.querySelector('.kd-contact'), mailOpties(c));
+    const mailBtn = mount.querySelector('#c_mail');
+    if(mailBtn) mailBtn.onclick = () => CRM.mailUI.opstellen(mailOpties(c));
+  }
   const goldBtn = mount.querySelector('#c_golden');
   if(goldBtn) goldBtn.onclick = async () => {
     const ok = await zetGolden(c.id, !isGolden(c.id));
@@ -537,6 +547,23 @@ function kaart(mount, acties, id){
     if(v) voorstellen(c, v);
   });
   tabInhoud(mount, c);
+}
+
+/* ─── Mailen met de kandidaat ─────────────────────────────────────
+   Met Outlook-koppeling opent het opstelvenster (CRM.mailUI, gedeeld
+   met de klantenmodule); zonder koppeling blijft het gewoon mailto.
+   Na versturen wordt het gelogd en tekent de kaart zich opnieuw, dus
+   ook het mailblok is dan bij. */
+const voornaam = n => String(n||'').trim().split(/\s+/)[0] || '';
+function mailOpties(c){
+  return {
+    aan: c.email || '',
+    wie: c.naam + (c.functie ? ' — ' + c.functie : ''),
+    set: 'kandidaat',
+    ctx: { voornaam: voornaam(c.naam), klant: c.klant || '', functie: c.functie || '' },
+    entiteit: 'kandidaat', ref: String(c.id),
+    na(){ tabActief = 'activiteiten'; CRM.render(); }
+  };
 }
 
 /* ─── Ster-beoordeling in de kop ──────────────────────────────── */
@@ -586,7 +613,8 @@ function kopHtml(c){
       <div class="kd-contact">
         ${c.telefoon?`<a class="num" href="${h(telLink(c.telefoon))}">${h(c.telefoon)}</a>
           <a class="btn sub sm" href="${h(waLink(c.telefoon))}" target="_blank" rel="noopener">WhatsApp</a>`:'<span class="meta">Geen telefoonnummer</span>'}
-        ${c.email?`<a href="mailto:${h(c.email)}">${h(c.email)}</a>`:'<span class="meta">Geen e-mailadres</span>'}
+        ${c.email?`<a href="mailto:${h(c.email)}">${h(c.email)}</a>
+          <button type="button" class="btn sub sm" id="c_mail">Mailen</button>`:'<span class="meta">Geen e-mailadres</span>'}
       </div>
     </div>
     <div class="kd-meter">

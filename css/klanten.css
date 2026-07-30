@@ -162,12 +162,16 @@ label.kl-taak input{margin-top:3px}
   .kl-dossier{display:flex;flex-direction:column;gap:14px}
   .kl-rail{display:contents}
   #k_tabinhoud{padding:10px}
-  .kl-rail > .card:nth-child(1){order:3}   /* gegevens */
-  .kl-rail > .card:nth-child(2){order:1}   /* contactpersonen */
-  .kl-rail > .card:nth-child(3){order:4}   /* open taken */
+  /* Volgorde op naam in plaats van op positie: er kan een blok bij
+     komen (komende afspraken) zonder dat de rest verspringt. */
+  .kl-rail > .kl-r-ct{order:1}   /* contactpersonen */
+  .kl-rail > .kl-r-ag{order:2}   /* komende afspraken */
+  .kl-rail > .kl-r-nt{order:4}   /* notities */
+  .kl-rail > .kl-r-gg{order:5}   /* gegevens */
+  .kl-rail > .kl-r-tk{order:6}   /* open taken */
   /* width:100% expliciet: anders rekken de blokken tot hun inhoud
      en krijgt de hele pagina horizontale scroll of halve kaarten. */
-  .kl-werk{order:2;width:100%}
+  .kl-werk{order:3;width:100%}
   .kl-rail > .card{width:100%}
   /* Kandidaatrij: naam op een eigen regel zodat hij niet tot een
      enkele letter wordt afgekort naast de chips. */
@@ -197,3 +201,58 @@ label.kl-taak input{margin-top:3px}
 .rn-item .rn-tekst{font-size:12.5px;line-height:1.45;word-break:break-word}
 .rn-item .meta{margin-top:3px}
 #rn_tekst{font-size:12.5px;min-height:52px}
+
+/* ─── Inplannen-venster ────────────────────────────────────────── */
+/* Soort afspraak: kleine keuzerij die de standaarden zet. */
+.kl-soorten{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.kl-soorten .chip{font-size:11.5px}
+
+/* Deelnemers: contactpersonen van deze klant, aanvinkbaar. */
+.kl-deelnemers{
+  border:1px solid var(--line);border-radius:var(--r);
+  max-height:190px;overflow-y:auto;margin-bottom:8px;background:var(--card)
+}
+.kl-deel{display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;
+  border-bottom:1px solid var(--line)}
+.kl-deel:last-child{border-bottom:none}
+.kl-deel:hover{background:var(--card-2)}
+.kl-deel input{flex:0 0 auto;margin:0}
+.kl-deel-wie{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.kl-deel-wie b{font-size:13px}
+.kl-deel-wie .meta{font-size:11.5px}
+/* Zonder e-mailadres: zichtbaar maar niet uit te nodigen. */
+.kl-deel.uit{cursor:default;opacity:.5}
+.kl-deel.uit:hover{background:transparent}
+
+/* Opvolgtaak-datum verschijnt pas als je hem aanvinkt. */
+.kl-opvolg[hidden]{display:none}
+
+/* ─── Rail: komende afspraken uit Outlook ──────────────────────── */
+.kl-afspraken{display:flex;flex-direction:column;gap:2px}
+.kl-afspraak{padding:7px 0;border-bottom:1px solid var(--line)}
+.kl-afspraak:last-child{border-bottom:none}
+.kl-afspraak b{font-size:12.5px;display:block}
+.kl-afspraak .meta{margin-top:2px}
+
+/* ═══════════════════════════════════════════════════════════════
+   MAIL (Outlook) — gedeelde stijl
+   Hoort bij CRM.mailUI in js/klanten.js en wordt óók door de
+   kandidatenkaart gebruikt; daarom één keer beschreven in plaats
+   van twee keer. (Zie VERZOEK AAN CORE onderaan js/klanten.js.)
+   ═══════════════════════════════════════════════════════════════ */
+.ml-kaart .ml-adres{max-width:200px}
+.ml-b{padding-top:6px;padding-bottom:6px}
+.ml-leeg{margin:8px 0}
+.ml-lijst{display:flex;flex-direction:column}
+.ml-i{display:block;padding:11px 0;border-bottom:1px solid var(--line);
+  color:inherit;text-decoration:none}
+.ml-i:last-child{border-bottom:none}
+a.ml-i:hover{background:var(--card-2)}
+a.ml-i:hover b{text-decoration:underline}
+.ml-i b{display:block;font-size:13px;font-weight:600}
+.ml-i .meta{margin-top:2px;font-size:11.5px}
+/* Fragment gedempt en kort: mail is gevoelig, dit is een geheugensteun. */
+.ml-frag{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ml-tekst{min-height:220px;line-height:1.55}
+.ml-vanaf{margin:10px 0 0}

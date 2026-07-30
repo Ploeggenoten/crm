@@ -127,3 +127,9 @@ label.kd-taak input{margin-top:3px}
 .kd-goldbtn{color:var(--muted)}
 .kd-goldbtn:hover{border-color:#dcc98a}
 .kd-goldbtn.aan{background:#f6f0dd;border-color:#dcc98a;color:#7a601c;font-weight:600}
+
+/* ─── Mailwisseling (Outlook) ─────────────────────────────────────
+   Het blok in de rechterkolom gebruikt de gedeelde `.ml-*`-stijl die
+   onderaan css/klanten.css staat (samen met CRM.mailUI). Hier alleen
+   de plaatsing: het blok volgt de andere kaarten in de kolom. */
+.kd-kolommen .ml-kaart{margin-top:0}

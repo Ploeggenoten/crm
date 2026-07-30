@@ -34,13 +34,17 @@ const isoLokaal = d => {                       // "2026-07-30T14:00:00" zonder U
 const combineer = (datum, tijd) => new Date(`${datum}T${(tijd||'09:00')}:00`);
 
 /* ─── Laag 1: deeplink (werkt altijd, geen registratie nodig) ──── */
-function composeUrl({titel, start, eind, body, locatie}){
+function composeUrl({titel, start, eind, body, locatie, deelnemers}){
   const q = new URLSearchParams({
     subject: titel || '',
     startdt: start ? isoLokaal(start) : '',
     enddt:   eind  ? isoLokaal(eind)  : '',
     body:    body || '', location: locatie || '', path: '/calendar/action/compose'
   });
+  /* Genodigden gaan ook op de deeplink-route mee (to=, komma-gescheiden),
+     anders vallen aangevinkte contactpersonen zonder koppeling stil weg. */
+  const to = (deelnemers||[]).filter(Boolean).join(',');
+  if(to) q.set('to', to);
   return 'https://outlook.office.com/calendar/0/deeplink/compose?' + q.toString();
 }
 
@@ -133,12 +137,15 @@ CRM.outlook = {
     if(!CRM.outlook.beschikbaar() || !_account) return null;
     const nu = new Date(); const tot = new Date(nu.getTime() + dagen*86400000);
     try{
-      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=25&$select=subject,start,end,location,onlineMeeting,webLink`,
+      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=25&$select=subject,start,end,location,onlineMeeting,webLink,attendees`,
         { headers:{ Prefer:'outlook.timezone="W. Europe Standard Time"' } }, false);
       return (d?.value||[]).map(e => ({
         titel: e.subject, start: e.start?.dateTime, eind: e.end?.dateTime,
         locatie: e.location?.displayName || '', link: e.webLink,
-        online: e.onlineMeeting?.joinUrl || ''
+        online: e.onlineMeeting?.joinUrl || '',
+        /* Deelnemers meegeven zodat modules een afspraak aan een
+           contactpersoon kunnen koppelen op e-mailadres. */
+        deelnemers: (e.attendees||[]).map(a => a.emailAddress?.address).filter(Boolean)
       }));
     }catch(e){ console.warn('agenda', e); return null; }
   },
@@ -161,7 +168,7 @@ CRM.outlook = {
       }});
       return {via:'graph', link: ev?.webLink || '', online: ev?.onlineMeeting?.joinUrl || ''};
     }
-    window.open(composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie}), '_blank', 'noopener');
+    window.open(composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers}), '_blank', 'noopener');
     return {via:'deeplink'};
   },
 
@@ -225,7 +232,7 @@ CRM.outlook = {
   composeLink(opts){
     const start = combineer(opts.datum, opts.tijd);
     const eind  = new Date(start.getTime() + (opts.duurMin || 45)*60000);
-    return composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie});
+    return composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers});
   }
 };
 })();

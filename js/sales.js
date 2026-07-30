@@ -441,7 +441,7 @@ function tekenDrawer(dr, naam){
   CRM.$$('[data-close]', dr).forEach(b=>b.onclick=()=>CRM.drawer.close());
   CRM.$$('[data-dtab]', dr).forEach(b=>b.onclick=()=>{ dTab=b.dataset.dtab; tekenDrawer(dr, naam); });
   dr.querySelector('[data-volledig]').onclick = () => { CRM.drawer.close(); CRM.ga('klanten',{id:naam}); };
-  dr.querySelector('[data-plan]').onclick = () => planKennismaking(k);
+  dr.querySelector('[data-plan]').onclick = () => planKennismaking(k, () => tekenDrawer(dr, naam));
   dr.querySelector('#sd_fase').onchange = e => { zetFase(naam, e.target.value).then(()=>tekenDrawer(dr,naam)); };
 
   const body = dr.querySelector('#sd_body');
@@ -602,32 +602,14 @@ function bindTab(body, dr, naam){
   };
 }
 
-/* ─── Kennismaking inplannen (Outlook of vooringevulde deeplink) ── */
-async function planKennismaking(k){
-  const velden = [
-    {k:'titel', lbl:'Onderwerp', waarde:'Kennismaking — '+k.naam, breed:true},
-    {k:'datum', lbl:'Datum', type:'date', waarde:CRM.todayISO()},
-    {k:'tijd',  lbl:'Tijd',  type:'time', waarde:'10:00'},
-    {k:'duur',  lbl:'Duur',  type:'select', waarde:'45',
-      opts:[{v:'30',l:'30 minuten'},{v:'45',l:'45 minuten'},{v:'60',l:'60 minuten'}]},
-    {k:'locatie', lbl:'Locatie', waarde:k.locatie||''},
-    {k:'teams', lbl:'Teams-videocall', type:'check', waarde:false},
-    {k:'body',  lbl:'Notitie', type:'textarea', ph:'Voor in de uitnodiging…', breed:true}
-  ];
-  const uit = await formModal('Inplannen — '+k.naam, velden, 'Inplannen');
-  if(!uit || !uit.titel) return;
-  if(!uit.datum) return CRM.toast('Kies een datum','err');
-  try{
-    const r = await CRM.outlook.maakAfspraak({
-      titel:uit.titel, datum:uit.datum, tijd:uit.tijd||'10:00',
-      duurMin:Number(uit.duur)||45, locatie:uit.locatie, teams:uit.teams,
-      body:uit.body, deelnemers:[k.email].filter(Boolean)
-    });
-    CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
-    await CRM.logActiviteit('klant', k.naam, 'gesprek',
-      `Afspraak ingepland: ${uit.titel} op ${CRM.fmtDate(uit.datum)} ${uit.tijd||'10:00'}`);
-    if(r.online) await CRM.logActiviteit('klant', k.naam, 'notitie', 'Teams-link: ' + r.online);
-  }catch(e){ CRM.fout('Inplannen mislukt', e); }
+/* ─── Afspraak inplannen ───────────────────────────────────────────
+   Eén venster voor de hele app: js/klanten.js levert het via
+   CRM.klantInplannen (contactpersonen aanvinken, soort afspraak,
+   opvolgtaak). Hier dus géén tweede formulier. ─────────────────── */
+function planKennismaking(k, na){
+  if(typeof CRM.klantInplannen !== 'function')
+    return CRM.toast('Inplannen is nu niet beschikbaar','err');
+  CRM.klantInplannen(k, {na});
 }
 
 async function uploadDoc(naam, bestand, soort){
