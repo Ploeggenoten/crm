@@ -12,7 +12,9 @@
 const h   = CRM.h;
 const DAG = 86400000;
 const kort   = s => String(s||'').slice(0,10);
-const actief = c => !['Afgevallen','Gestopt'].includes(c.fase);
+/* Actief in de pijplijn: een échte fase (golden/geïmporteerde kandidaten
+   zonder fase tellen niet mee) en niet uitgevallen. */
+const actief = c => !!c.fase && !['Afgevallen','Gestopt'].includes(c.fase);
 const VANDAAG = () => CRM.todayISO();
 const dISO = t => new Date(t).toLocaleDateString('sv-SE');
 
@@ -138,7 +140,7 @@ function bouwDag(){
     }).filter(Boolean);
   if(leads.length){
     const b = { soort:'sug', key:'leads', mod:'recruitment',
-      titel:`bel je ${leads.length} ${leads.length===1?'nieuwe lead':'nieuwe leads'}`,
+      titel:`bel je ${leads.length} nieuwe sollicitant${leads.length===1?'':'en'}`,
       sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') };
     b.af = sessieKlaar.has(sk('sug:leads'));
     blokken.push(b);
@@ -237,9 +239,9 @@ function tijdlijnKaart(P){
       <span class="spacer"></span>
       <button class="btn ghost sm" id="tl2_nieuw">+ Taak</button></div>
     <div class="card-b tl2-b">
-      <div class="tl2-meta meta num">${pijp} in de pijplijn · ${openLeads} open leads · ${vacs.length} open vacatures (${posities} posities)</div>
+      <div class="tl2-meta meta num">${pijp} in de pijplijn · ${openLeads} nieuwe sollicitanten · ${vacs.length} open vacatures (${posities} posities)</div>
       ${outlookRij}
-      ${leeg?`<div class="tl2-leeg meta">Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe leads te bellen.</div>`:''}
+      ${leeg?`<div class="tl2-leeg meta">Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.</div>`:''}
       <div class="tl2-baan">${uurRijen.join('')}</div>
       ${P.rest.length?`<div class="tl2-rest"><div class="label">Nog in te plannen</div>
         ${P.rest.map(rijHTML).join('')}</div>`:''}
@@ -541,7 +543,7 @@ function looptRegel(){
   const seg = (mod, txt) => `<button type="button" class="loopt-i" data-mod="${h(mod)}">${h(txt)} →</button>`;
   return `<div class="loopt meta">
     ${seg('sales', `Sales: ${kansen} open kansen, ${traject} klanten in traject`)}
-    ${seg('recruitment', `Recruitment: ${openLeads} open leads, ${pijp} in de pijplijn`)}
+    ${seg('recruitment', `Recruitment: ${openLeads} sollicitanten, ${pijp} in de pijplijn`)}
     ${seg('marketing', `Marketing: ${leadsWeek} leads deze week`)}
   </div>`;
 }

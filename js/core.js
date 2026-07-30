@@ -270,7 +270,7 @@ CRM.rowToCand = r => ({
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
   ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
-  talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||''
+  talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||'', golden:!!r.golden
 });
 CRM.candToRow = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
@@ -287,7 +287,7 @@ CRM.candToRow = c => ({
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
   ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
-  talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||''
+  talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||'', golden:!!c.golden
 });
 
 /* ─── Activiteiten (gedeeld: sales, klant, kandidaat) ─────────── */

@@ -26,6 +26,33 @@ function zet(k,v){ F[k]=v; try{ localStorage.setItem(FKEY, JSON.stringify(F)); }
 let filtersOpen = false, filtersOpenGezet = false;
 
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
+
+/* ─── Golden candidates ───────────────────────────────────────────
+   Goede kandidaten waar nú geen passende vacature voor is — die
+   verliezen we anders uit het oog. De vlag leeft in candidates.golden
+   (schema.sql); CRM.rowToCand kent dat veld (nog) niet, dus we lezen
+   en schrijven op de ruwe rij in CRM.state.cands. Golden betekent
+   "onthouden", niet "inactief": de vlag mag blijven staan als iemand
+   later alsnog aan een vacature gekoppeld wordt. */
+const isGolden = id => {
+  const r = CRM.state.cands.find(x => String(x.id) === String(id));
+  return !!(r && r.golden);
+};
+const goldenIds = () => new Set(CRM.state.cands.filter(r => r.golden).map(r => String(r.id)));
+async function zetGolden(id, aan){
+  const r = CRM.state.cands.find(x => String(x.id) === String(id));
+  if(!r) return false;
+  r.golden = !!aan;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('candidates').update({golden:!!aan}).eq('id', id);
+    if(error){ r.golden = !aan; CRM.fout('Opslaan mislukt', error); return false; }
+  }
+  await CRM.logActiviteit('kandidaat', id, 'systeem',
+    aan ? 'Gemarkeerd als golden candidate' : 'Golden candidate-markering weggehaald');
+  CRM.toast(aan ? 'Golden candidate — blijft vindbaar met de ster' : 'Golden-markering weggehaald', 'ok');
+  return true;
+}
+const goldenSter = klasse => `<span class="kd-goldster ${klasse||''}" title="Golden candidate">★</span>`;
 const faseChip = (fase, extra='') => fase
   ? `<span class="chip ${extra}"><i class="dot" style="background:${CRM.faseKleur(fase)}"></i>${h(fase)}</span>` : '';
 const telLink = t => 'tel:' + String(t||'').replace(/[^0-9+]/g,'');
@@ -151,7 +178,7 @@ function overzicht(mount, acties){
 const PANEEL_FILTERS = ['status','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
 function actieveFilters(){
   const uit = [];
-  const STATUS_LBL = {lopend:'Actief lopend', beschikbaar:'Beschikbaar', geplaatst:'Geplaatst', recyclebaar:'Uitval — herbruikbaar', alle:'Alles'};
+  const STATUS_LBL = {lopend:'Actief lopend', beschikbaar:'Beschikbaar', geplaatst:'Geplaatst', golden:'Golden candidates', recyclebaar:'Uitval — herbruikbaar', alle:'Alles'};
   if(F.status !== F_STD.status) uit.push({k:'status', lbl:STATUS_LBL[F.status]||F.status});
   if(F.ster > 0)      uit.push({k:'ster', lbl:'≥ '+'★'.repeat(F.ster)});
   if(String(F.plaats).trim()) uit.push({k:'plaats', lbl:'binnen '+F.km+' km van '+F.plaats});
@@ -202,6 +229,7 @@ function lijstTab(wrap){
                 <option value="lopend"${F.status==='lopend'?' selected':''}>Actief lopend</option>
                 <option value="beschikbaar"${F.status==='beschikbaar'?' selected':''}>Beschikbaar</option>
                 <option value="geplaatst"${F.status==='geplaatst'?' selected':''}>Geplaatst</option>
+                <option value="golden"${F.status==='golden'?' selected':''}>Golden candidates ★</option>
                 <option value="recyclebaar"${F.status==='recyclebaar'?' selected':''}>Uitval — herbruikbaar</option>
                 <option value="alle"${F.status==='alle'?' selected':''}>Alles</option>
               </select></div>
@@ -278,12 +306,14 @@ function gefilterd(){
   const q = String(F.zoek||'').trim().toLowerCase();
   const radiusAan    = !!String(F.plaats||'').trim();
   const radiusBekend = radiusAan && !!CRM.PLAATSEN[CRM.plaatsSleutel(F.plaats)];
+  const golden = goldenIds();
   let zonderPlek = 0;
 
   const rijen = CRM.kandidaten().filter(c => {
     if(F.status === 'lopend'      && !CRM.isActiefLopend(c)) return false;
     if(F.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;
     if(F.status === 'geplaatst'   && !CRM.PLACED.includes(c.fase)) return false;
+    if(F.status === 'golden'      && !golden.has(String(c.id))) return false;
     if(F.status === 'recyclebaar' && !(c.fase === 'Afgevallen' && c.recyclebaar !== false)) return false;
     if(F.ster > 0 && (Number(c.ster)||0) < F.ster) return false;
     /* Ploegen: 'wisselend' kan elke dienst draaien, dus die telt mee
@@ -346,6 +376,7 @@ function lijst(wrap){
     lijstEl.innerHTML = CRM.ui.leeg('Geen kandidaten gevonden','Pas je zoekopdracht of filters aan.');
     return;
   }
+  const golden = goldenIds();
   lijstEl.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>
       <th>Kandidaat</th><th>Sterren</th><th>Klant</th><th>Fase</th><th>Woonplaats</th><th>Recruiter</th>
       <th>Laatst gesproken</th><th>Profiel</th>
@@ -353,7 +384,7 @@ function lijst(wrap){
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
       const km = radiusBekend ? CRM.afstandKm(c.woonplaats, F.plaats) : null;
       return `<tr class="clickable" data-id="${h(String(c.id))}">
-        <td><b>${h(c.naam)}</b><div class="rowsub">${h(c.functie||'—')}</div></td>
+        <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}</div></td>
         <td><span class="kd-ster num" title="${c.ster?c.ster+' van 5':'nog geen beoordeling'}">${h(CRM.sterren(c.ster))}</span></td>
         <td class="sub">${h(c.klant||'—')}</td>
         <td>${faseChip(c.fase)}</td>
@@ -452,6 +483,11 @@ function kaart(mount, acties, id){
 
   bindVelden(mount, c);
   bindSterren(mount, c);
+  const goldBtn = mount.querySelector('#c_golden');
+  if(goldBtn) goldBtn.onclick = async () => {
+    const ok = await zetGolden(c.id, !isGolden(c.id));
+    if(ok) CRM.render();
+  };
   const cvKnop = mount.querySelector('#c_cvlees');
   if(cvKnop) cvKnop.onclick = () => cvModal(c);
   mount.querySelectorAll('#c_tabs .tab').forEach(b => b.onclick = () => {
@@ -493,9 +529,10 @@ function kopHtml(c){
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
   const BESCH_LBL = {direct:'Direct beschikbaar', 'in overleg':'Beschikbaar in overleg', niet:'Niet beschikbaar'};
   const besch = BESCH_LBL[c.beschikbaar] || (c.start ? 'Start ' + CRM.fmtDate(c.start) : '');
+  const gold = isGolden(c.id);
   return `<div class="card"><div class="card-b kd-hero">
     <div style="min-width:0;flex:1">
-      <div class="h1" style="font-size:24px">${h(c.naam)}</div>
+      <div class="h1" style="font-size:24px">${h(c.naam)}${gold?' '+goldenSter('lg'):''}</div>
       ${sterrenHtml(c)}
       <div class="sub" style="margin-top:3px">
         ${h(c.functie||'Functie nog niet ingevuld')}
@@ -503,6 +540,8 @@ function kopHtml(c){
         ${c.woonplaats?' · '+h(c.woonplaats):''}
       </div>
       <div class="row tight" style="margin-top:9px">
+        <button type="button" class="chip btn-like kd-goldbtn${gold?' aan':''}" id="c_golden"
+          title="${gold?'Klik om de golden-markering weg te halen':'Markeer als golden candidate: goede kandidaat, nu geen passende vacature'}">★ Golden candidate</button>
         ${faseChip(c.fase)}
         ${besch?`<span class="chip${c.beschikbaar==='direct'?' green':''}">${h(besch)}</span>`:''}
         ${c.rec?`<span class="chip">Recruiter ${h(c.rec)}</span>`:''}
@@ -977,7 +1016,7 @@ function trajectHtml(c){
       </div>
       <div class="kd-stappen">${stappen.map((p,i) =>
         `<i class="${i<=idx&&idx>=0?'on':''}" style="${i<=idx&&idx>=0?'background:'+p.c:''}" title="${h(p.k)}"></i>`).join('')}</div>
-      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(c.fase)}</div>
+      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(c.fase||'Nog niet in de pijplijn')}</div>
     </div></div>`;
 }
 
@@ -1147,6 +1186,19 @@ function tabHistorie(el, c){
       <span class="meta">doorlooptijd per fase</span></div>
     <div class="card-b">${items.length ? CRM.ui.tijdlijn(items)
       : CRM.ui.leeg('Nog geen fasewissels','Zodra deze kandidaat doorstroomt bouwt de historie zich vanzelf op.')}</div></div>`;
+}
+
+/* ─── Demo: golden candidates zichtbaar maken ─────────────────────
+   demo.js is niet van deze module en blijft onaangeraakt; we zetten
+   de vlag hier op een paar demo-kandidaten zodra de demodata er is,
+   zodat het filter en de ster in demo-modus te controleren zijn. */
+if(CRM.demo){
+  const markeer = () => ['demo3','demo41','demo47'].forEach(id => {
+    const r = (CRM.state.cands||[]).find(x => String(x.id) === id);
+    if(r) r.golden = true;
+  });
+  if(CRM.state._demo) markeer();
+  else window.addEventListener('crm-demo-ready', markeer);
 }
 
 /* ─── Registratie ─────────────────────────────────────────────── */

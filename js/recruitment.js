@@ -1,10 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════
-   MODULE: RECRUITMENT
-   Twee samenhangende weergaven:
-     A. Leads    — de fase VÓÓR de pijplijn (crm_leads)
-     B. Pijplijn — het ATS-bord op candidates
-   Doel: geen vervuiling. Een lead gaat pas de pijplijn in als hij
-   compleet is en er een video-intake staat.
+   MODULE: RECRUITMENT — INSTROOM, INTAKE EN UITVAL
+   Drie tabbladen:
+     A. Inkomende sollicitanten — instroom uit Meta, Indeed, WhatsApp
+        of handmatig (tabel crm_leads; heette in de UI eerst "Leads")
+     B. Voorselectie — de videocall-lijst vóór de pijplijn
+     C. Uitval — afgevallen/gestopt, heraanbieden en vervanging
+   Het pijplijnbord is een eigen module geworden (js/pijplijn.js).
+   De gedeelde bewerk-drawer en fasewissel-poortwachters leven hier
+   en zijn beschikbaar als CRM.kandidaatBewerk / CRM.kandidaatFase;
+   overige gedeelde bord-logica via CRM._rcDeel (onderaan).
+   Doel blijft: geen vervuiling. Een sollicitant komt ALTIJD binnen
+   op status 'Nieuw' en gaat pas de pijplijn in als hij compleet is.
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
@@ -14,7 +20,6 @@ const h = CRM.h;
 const S = {
   tab:'leads',
   l:{q:'', status:'', bron:'', vac:'', mijn:false},
-  b:{q:'', klant:'', rec:'', vac:'', type:'', mijn:false, groep:false},
   u:{f:'alles'}
 };
 
@@ -87,10 +92,11 @@ async function bewaarKand(id, patch){            // patch in DB-kolomnamen
    MODULE-REGISTRATIE
    ═══════════════════════════════════════════════════════════════ */
 CRM.registerModule('recruitment', {
-  title:'Recruitment', icon:'◉', onderschrift:'Leads, intake en pijplijn',
+  title:'Recruitment', icon:'◉', onderschrift:'Instroom, intake en uitval',
   volleBreedte:true,
   badge(){ return leads().filter(l => l.status === 'Nieuw').length; },
   render(mount, acties, params){
+    if(!['leads','voorselectie','uitval'].includes(S.tab)) S.tab = 'leads';
     mount.innerHTML = `
       <div class="rc">
         <div class="rc-bar" id="rc_bar"></div>
@@ -110,23 +116,15 @@ function tekenActies(acties){
   const el = acties || document.getElementById('pageacties');
   if(!el) return;
   if(S.tab === 'leads'){
-    el.innerHTML = `<button class="btn ghost sm" id="rc_import">⬇ Leads importeren</button>
-                    <button class="btn sm" id="rc_nieuw">+ Lead</button>`;
+    el.innerHTML = `<button class="btn ghost sm" id="rc_import">⬇ Importeren</button>
+                    <button class="btn sm" id="rc_nieuw">+ Sollicitant</button>`;
     el.querySelector('#rc_import').onclick = importModal;
-    el.querySelector('#rc_nieuw').onclick  = nieuweLeadModal;
+    el.querySelector('#rc_nieuw').onclick  = nieuweSollicitantKeuze;
   } else if(S.tab === 'voorselectie'){
     el.innerHTML = `<button class="btn sm" id="rc_nieuwkand">+ Kandidaat</button>`;
     el.querySelector('#rc_nieuwkand').onclick = () => nieuweKandidaatModal();
-  } else if(S.tab === 'bord'){
-    el.innerHTML = `<button class="btn ghost sm" id="rc_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>
-                    <button class="btn ghost sm" id="rc_oo">+ O&amp;O-sessie</button>`;
-    el.querySelector('#rc_dicht').onclick = () => {
-      localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
-      tekenActies(); pasDichtheidToe();
-    };
-    el.querySelector('#rc_oo').onclick = () => ooModal(null);
   } else {
-    el.innerHTML = `<span class="meta">Uitval leeft buiten het bord — sleep op het bord naar de uitvalstrook</span>`;
+    el.innerHTML = `<span class="meta">Uitval leeft buiten het bord — sleep op de Pijplijn naar de uitvalstrook, of meld af vanuit Voorselectie</span>`;
   }
 }
 
@@ -150,7 +148,8 @@ function cijfers(){
                   (CRM.dagenGeleden(l.laatst_actie || l.binnen_op) || 0) > 2).length;
   const intakes = L.filter(l => l.status === 'Intake gepland' && inWeek(l.opvolgen_op)).length
                 + K.filter(c => c.fase === 'Voorselectie' && inWeek(c.datum)).length;
-  const pijplijn = K.filter(c => !CRM.DONE.includes(c.fase)).length;
+  /* c.fase truthy: golden candidates zonder fase tellen niet als pijplijn. */
+  const pijplijn = K.filter(c => c.fase && !CRM.DONE.includes(c.fase)).length;
   const startsWeek = K.filter(c => CRM.PLACED.includes(c.fase) && c.start && inWeek(c.start));
   const vroeg = K.filter(c => ['Voorgesteld','O&O sessie','Eerste gesprek'].includes(c.fase)).length;
   const pm = CRM.plaatsingenMaand(), target = CRM.maandTarget();
@@ -163,7 +162,7 @@ function tekenBar(){
     `<div class="rc-it ${klasse}"><div class="label">${h(lbl)}</div>
        <div class="rc-v num">${waarde}</div>${extra?`<div class="meta">${extra}</div>`:''}</div>`;
   el.innerHTML =
-    it('Nieuw vandaag', c.nieuw, 'binnengekomen leads') +
+    it('Nieuw vandaag', c.nieuw, 'binnengekomen sollicitanten') +
     it('Zonder opvolging', c.stil, 'langer dan 2 dagen', c.stil ? 'amber' : '') +
     it('Intakes deze week', c.intakes, 'gepland') +
     it('In de pijplijn', c.pijplijn, 'lopende kandidaten') +
@@ -200,28 +199,30 @@ function tekenTabs(){
   const K = CRM.kandidaten();
   const open = leads().filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
   const voor = K.filter(c => c.fase === 'Voorselectie').length;
-  const inP  = K.filter(c => !CRM.DONE.includes(c.fase) && c.fase !== 'Voorselectie').length
-             + K.filter(c => CRM.PLACED.includes(c.fase)).length;
   const uit  = K.filter(c => UITVAL.includes(c.fase)).length;
   el.innerHTML = `
-    <button class="tab ${S.tab==='leads'?'on':''}" data-t="leads">Leads <span class="cnt num">${open}</span></button>
+    <button class="tab ${S.tab==='leads'?'on':''}" data-t="leads">Inkomende sollicitanten <span class="cnt num">${open}</span></button>
     <button class="tab ${S.tab==='voorselectie'?'on':''}" data-t="voorselectie">Voorselectie <span class="cnt num">${voor}</span></button>
-    <button class="tab ${S.tab==='bord'?'on':''}" data-t="bord">Pijplijn <span class="cnt num">${inP}</span></button>
     <button class="tab ${S.tab==='uitval'?'on':''}" data-t="uitval">Uitval <span class="cnt num">${uit}</span></button>`;
   CRM.$$('[data-t]', el).forEach(b => b.onclick = () => {
     S.tab = b.dataset.t; tekenTabs(); tekenBody(); tekenActies();
   });
 }
 function tekenBody(){
-  const el = document.getElementById('rc_body'); if(!el) return;
+  const el = document.getElementById('rc_body');
+  if(!el){
+    /* Vanuit gedeelde flows (drawer, fase, intake) aangeroepen terwijl de
+       Pijplijn-module openstaat: die module haakt hierop in. */
+    if(CRM.view === 'pijplijn' && typeof CRM._pijplijnVernieuw === 'function') CRM._pijplijnVernieuw();
+    return;
+  }
   if(S.tab === 'leads') tekenLeads(el);
   else if(S.tab === 'voorselectie') tekenVoorselectie(el);
-  else if(S.tab === 'uitval') tekenUitval(el);
-  else tekenBord(el);
+  else tekenUitval(el);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   TAB A — LEADS
+   TAB A — INKOMENDE SOLLICITANTEN (crm_leads)
    ═══════════════════════════════════════════════════════════════ */
 function leadsGefilterd(negeerStatus){
   const f = S.l, q = norm(f.q);
@@ -255,7 +256,7 @@ function tekenLeads(el){
           <option value="">Alle vacatures</option>
           ${vacs.map(v=>`<option value="${h(v.id)}" ${S.l.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}
         </select>
-        <label class="check"><input type="checkbox" id="rc_mijn" ${S.l.mijn?'checked':''}> Mijn leads</label>
+        <label class="check"><input type="checkbox" id="rc_mijn" ${S.l.mijn?'checked':''}> Mijn sollicitanten</label>
         <div class="spacer"></div>
         <span class="meta" id="rc_telling"></span>
       </div>
@@ -289,11 +290,11 @@ function tekenLijst(){
   const wrap = document.getElementById('rc_lijst'); if(!wrap) return;
   const rijen = leadsGefilterd();
   const telling = document.getElementById('rc_telling');
-  if(telling) telling.textContent = rijen.length + ' van ' + leads().length + ' leads';
+  if(telling) telling.textContent = rijen.length + ' van ' + leads().length + ' sollicitanten';
 
   if(!rijen.length){
-    wrap.innerHTML = CRM.ui.leeg('Geen leads gevonden',
-      'Pas je filters aan, of importeer nieuwe leads uit de sheet.');
+    wrap.innerHTML = CRM.ui.leeg('Geen sollicitanten gevonden',
+      'Pas je filters aan, voeg er zelf een toe met + Sollicitant, of importeer uit de sheet.');
     return;
   }
   const toon = rijen.slice(0,200);
@@ -301,7 +302,7 @@ function tekenLijst(){
     <div class="tblwrap">
       <table class="tbl rc-tbl">
         <thead><tr>
-          <th style="width:24px"></th><th>Kandidaat</th><th>Contact</th><th>Bron</th>
+          <th style="width:24px"></th><th>Sollicitant</th><th>Contact</th><th>Bron</th>
           <th>Reageerde op</th><th>Agent</th><th style="width:206px">Status</th><th>Eigenaar</th><th class="n">Binnen</th>
         </tr></thead>
         <tbody>${toon.map(rijHtml).join('')}</tbody>
@@ -645,47 +646,233 @@ function doorschietForm(lead){
     }});
 }
 
-/* ─── Handmatig een lead toevoegen ────────────────────────────── */
-function nieuweLeadModal(){
-  const vacs = (CRM.state.vacs||[]).slice().sort((a,b)=>vacLabel(a).localeCompare(vacLabel(b)));
+/* ═══════════════════════════════════════════════════════════════
+   + SOLLICITANT — zelf iemand toevoegen, in drie stappen:
+   1. route kiezen (handmatig of CV inlezen)
+   2. kerngegevens (naam + telefoon verplicht, volledigheidsbalk)
+   3. bestemming: koppelen aan een vacature (status Nieuw), golden
+      candidate (candidates, zónder pijplijnfase) of alleen opslaan.
+   ═══════════════════════════════════════════════════════════════ */
+function nieuweSollicitantKeuze(){
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Nieuwe lead</div></div>
+    <div class="modal-h"><div class="h2">Nieuwe sollicitant</div>
+      <p class="sub" style="margin:6px 0 0">Hoe wil je hem toevoegen?</p></div>
     <div class="modal-b">
-      <div class="f-grid">
-        <div class="f-row"><label for="nl_naam">Naam</label><input type="text" id="nl_naam"></div>
-        <div class="f-row"><label for="nl_tel">Telefoon</label><input type="tel" id="nl_tel"></div>
-        <div class="f-row"><label for="nl_plaats">Woonplaats</label><input type="text" id="nl_plaats"></div>
-        <div class="f-row"><label for="nl_bron">Bron</label>
-          <select id="nl_bron">${CRM.LEAD_BRONNEN.map(b=>`<option ${b==='Handmatig'?'selected':''}>${h(b)}</option>`).join('')}</select></div>
+      <div class="rc-route">
+        <button id="ns_hand"><b>Handmatig invullen</b><small>Typ de gegevens zelf in het formulier.</small></button>
+        <button id="ns_cv"><b>CV inlezen</b><small>PDF of tekstbestand — de velden worden voorgevuld, jij controleert.</small></button>
       </div>
-      <div class="f-row"><label for="nl_vac">Reageerde op</label>
-        <select id="nl_vac"><option value="">— geen vacature —</option>
-          ${vacs.map(v=>`<option value="${h(v.id)}">${h(vacLabel(v))}</option>`).join('')}</select></div>
-      <div class="note err" id="nl_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
+      m.querySelector('#ns_hand').onclick = () => { CRM.modal.close(); sollicitantForm({}); };
+      m.querySelector('#ns_cv').onclick   = () => { CRM.modal.close(); sollicitantCvStap(); };
+    }});
+}
+
+/* Stap 1b — CV kiezen en parsen (zelfde parser als de lead-CV-flow). */
+function sollicitantCvStap(){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">CV inlezen</div>
+      <p class="sub" style="margin:6px 0 0">PDF of tekstbestand. Het bestand wordt in je browser gelezen — er gaat niets naar een externe dienst. Je controleert alles in het formulier hierna.</p></div>
+    <div class="modal-b">
+      <input type="file" id="ns_file" accept=".pdf,.txt,.md,text/plain,application/pdf">
+      <div id="ns_uit" style="margin-top:14px"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="nl_ok">Toevoegen</button></div>`, {onOpen(m){
-      m.querySelector('#nl_ok').onclick = async () => {
-        const naam = m.querySelector('#nl_naam').value.trim();
-        if(!naam){ const e = m.querySelector('#nl_err'); e.style.display=''; e.textContent='Een naam is het minimum.'; return; }
-        const v = vacById(m.querySelector('#nl_vac').value);
-        const rij = {
-          id:CRM.uid(), naam, telefoon:m.querySelector('#nl_tel').value.trim(), email:'',
-          woonplaats:m.querySelector('#nl_plaats').value.trim(), bron:m.querySelector('#nl_bron').value,
-          campagne:'', vacature_id:v?v.id:'', klant:v?v.klant:'', functie:v?v.functie:'',
-          status:'Nieuw', prioriteit:'', kwalificatie:'', score:null, agent_notitie:'',
-          antwoorden:null, cv:null, eigenaar:CRM.me(), binnen_op:new Date().toISOString(),
-          opvolgen_op:null, kandidaat_id:'', notities:[]
-        };
-        CRM.state.leads.unshift(rij);
-        if(!CRM.demo){
-          const {error} = await CRM.sb.from('crm_leads').insert(rij);
-          if(error){ CRM.state.leads.shift(); return CRM.fout('Opslaan mislukt', error); }
+      <button class="btn" id="ns_door" disabled>Verder naar het formulier →</button></div>`, {onOpen(m){
+      let gevonden = null;
+      m.querySelector('#ns_file').onchange = async e => {
+        const f = e.target.files[0]; if(!f) return;
+        const uit = m.querySelector('#ns_uit');
+        uit.innerHTML = CRM.ui.laden('CV lezen…');
+        try{
+          const tekst = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
+            ? await pdfTekst(f) : await f.text();
+          if(!tekst.trim()){
+            gevonden = null;
+            uit.innerHTML = `<div class="note warn">Er kwam geen tekst uit dit bestand — waarschijnlijk een gescande pdf (een plaatje). Ga verder en vul het formulier handmatig in.</div>`;
+            m.querySelector('#ns_door').disabled = false;
+            return;
+          }
+          gevonden = parseCV(tekst);
+          uit.innerHTML = `
+            <p class="label" style="margin-bottom:8px">Gevonden in het CV</p>
+            <div class="rc-kv"><span class="label">Telefoon</span><span class="num">${h(gevonden.telefoon)||'<span class="meta">—</span>'}</span></div>
+            <div class="rc-kv"><span class="label">E-mail</span><span>${h(gevonden.email)||'<span class="meta">—</span>'}</span></div>
+            <div class="rc-kv"><span class="label">Woonplaats</span><span>${h(gevonden.woonplaats)||'<span class="meta">—</span>'}</span></div>
+            <div class="rc-kv"><span class="label">Functie</span><span>${h(gevonden.functie)||'<span class="meta">—</span>'}</span></div>
+            ${gevonden.talen.length?`<div class="rc-kv"><span class="label">Talen</span><span>${h(gevonden.talen.join(', '))}</span></div>`:''}
+            ${gevonden.certificaten.length?`<div class="rc-kv"><span class="label">Certificaten</span><span>${h(gevonden.certificaten.join(', '))}</span></div>`:''}
+            ${gevonden.mist.length ? `<div class="note warn" style="margin-top:10px">Niet gevonden: ${h(gevonden.mist.join(', '))}. Vul dat in het formulier aan.</div>`
+                                   : `<div class="note ok" style="margin-top:10px">Alles gevonden — loop het formulier nog even na.</div>`}`;
+          m.querySelector('#ns_door').disabled = false;
+        }catch(err){
+          uit.innerHTML = `<div class="note err">Lezen mislukt: ${h(err.message)}</div>`;
         }
-        CRM.modal.close(); CRM.toast('Lead toegevoegd','ok');
-        tekenBar(); tekenTabs(); tekenLijst(); CRM.navBadges();
+      };
+      m.querySelector('#ns_door').onclick = () => {
+        CRM.modal.close();
+        const p = gevonden || {};
+        const heeftCv = !!(p.functie || (p.werk&&p.werk.length) || (p.talen&&p.talen.length) || (p.certificaten&&p.certificaten.length));
+        sollicitantForm({
+          telefoon:p.telefoon||'', email:p.email||'', woonplaats:p.woonplaats||'', functie:p.functie||'',
+          cv: heeftCv ? {functie:p.functie||'', ervaringJaren:p.ervaringJaren==null?null:p.ervaringJaren,
+                         talen:p.talen||[], certificaten:p.certificaten||[], werk:p.werk||[],
+                         op:new Date().toISOString(), door:CRM.me()} : null
+        });
       };
     }});
+}
+
+/* Stap 2 — kerngegevens met volledigheidsbalk (zelfde meetlat als de
+   doorschiet-poortwachter: CRM.volledigheid). */
+function sollicitantForm(pre){
+  pre = pre || {};
+  const rij = (id, lbl, val, type, hint) => `
+    <div class="f-row"><label for="nsf_${id}">${h(lbl)}</label>
+      <input type="${type||'text'}" id="nsf_${id}" value="${h(val||'')}">${hint?`<span class="hint">${h(hint)}</span>`:''}</div>`;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe sollicitant</div>
+      <p class="sub" style="margin:6px 0 0">Naam en telefoon zijn verplicht. De rest is aanbevolen — half ingevulde kandidaten vervuilen het systeem.</p></div>
+    <div class="modal-b">
+      <div class="rc-vol" id="ns_vol"></div>
+      <div class="f-grid" style="margin-top:14px">
+        ${rij('naam','Naam','')}
+        ${rij('tel','Telefoonnummer', pre.telefoon, 'tel')}
+        ${rij('mail','E-mail (aanbevolen)', pre.email, 'email')}
+        ${rij('plaats','Woonplaats (aanbevolen)', pre.woonplaats)}
+        ${rij('functie','Gezochte functie (aanbevolen)', pre.functie)}
+        <div class="f-row"><label for="nsf_bron">Bron (aanbevolen)</label>
+          <select id="nsf_bron">${CRM.LEAD_BRONNEN.map(b=>`<option ${b==='Handmatig'?'selected':''}>${h(b)}</option>`).join('')}</select></div>
+      </div>
+      ${pre.cv ? `<div class="note ok" style="margin-top:4px">Het ingelezen CV wordt aan deze sollicitant gekoppeld.</div>` : ''}
+      <div class="note err" id="ns_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ns_ok">Verder →</button></div>`, {onOpen(m){
+      const g = id => m.querySelector('#nsf_'+id).value.trim();
+      const vol = () => {
+        const v = CRM.volledigheid({naam:g('naam'), telefoon:g('tel'), woonplaats:g('plaats'),
+          functie:g('functie'), bron:m.querySelector('#nsf_bron').value, email:g('mail'), cv:pre.cv||null});
+        m.querySelector('#ns_vol').innerHTML = `
+          <div class="row" style="justify-content:space-between"><span class="label">Volledigheid</span>
+            <span class="num">${v.pct}%</span></div>
+          ${CRM.ui.bar(v.pct, v.pct>=80?'green':v.pct>=50?'amber':'red')}`;
+      };
+      ['naam','tel','mail','plaats','functie'].forEach(id => m.querySelector('#nsf_'+id).oninput = vol);
+      m.querySelector('#nsf_bron').onchange = vol;
+      vol();
+      setTimeout(()=>m.querySelector('#nsf_naam').focus(), 60);
+      m.querySelector('#ns_ok').onclick = () => {
+        const err = m.querySelector('#ns_err');
+        const zeg = t => { err.style.display=''; err.textContent = t; };
+        if(!g('naam')) return zeg('Vul de naam in.');
+        if(!g('tel'))  return zeg('Vul het telefoonnummer in — zonder nummer kun je niet bellen.');
+        const gg = {naam:g('naam'), telefoon:g('tel'), email:g('mail'), woonplaats:g('plaats'),
+                    functie:g('functie'), bron:m.querySelector('#nsf_bron').value, cv:pre.cv||null};
+        CRM.modal.close();
+        sollicitantBestemming(gg);
+      };
+    }});
+}
+
+/* Stap 3 — bestemming kiezen. */
+function sollicitantBestemming(gg){
+  const vacs = (CRM.state.vacs||[]).filter(v => !v.status || v.status === 'Open')
+    .slice().sort((a,b)=>vacLabel(a).localeCompare(vacLabel(b)));
+  const opt = (val, lbl, sub, checked) => `
+    <label class="rc-opt ${checked?'sel':''}"><input type="radio" name="ns_best" value="${h(val)}" ${checked?'checked':''}>
+      <span><b>${h(lbl)}</b><small>${h(sub)}</small></span></label>`;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Waar hoort ${h(gg.naam)} thuis?</div></div>
+    <div class="modal-b">
+      <div class="rc-radio">
+        ${opt('vac','Koppel aan een vacature','Komt als Nieuw in Inkomende sollicitanten bij die vacature — jij of een collega werkt hem daar weg.', true)}
+        ${opt('golden','Golden candidate','Goede kandidaat, maar nu geen passende vacature. Krijgt de gouden ster ★ en blijft vindbaar in de kandidatenlijst.', false)}
+        ${opt('lijst','Alleen opslaan als sollicitant','Komt als Nieuw in de lijst, zonder vacature. Koppelen kan later alsnog.', false)}
+      </div>
+      <div class="f-row" id="ns_vacwrap" style="margin-top:12px"><label for="ns_vac">Open vacature</label>
+        <select id="ns_vac"><option value="">— kies de vacature —</option>
+          ${vacs.map(v=>`<option value="${h(v.id)}">${h(vacLabel(v))}</option>`).join('')}</select></div>
+      <div class="note err" id="ns_err2" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ns_ok2">Opslaan</button></div>`, {onOpen(m){
+      const keuze = () => m.querySelector('input[name=ns_best]:checked').value;
+      const sync = () => {
+        CRM.$$('.rc-opt', m).forEach(o => o.classList.toggle('sel', o.querySelector('input').checked));
+        m.querySelector('#ns_vacwrap').style.display = keuze() === 'vac' ? '' : 'none';
+      };
+      CRM.$$('.rc-radio input', m).forEach(r => r.onchange = sync);
+      sync();
+      m.querySelector('#ns_ok2').onclick = async () => {
+        const err = m.querySelector('#ns_err2');
+        const k = keuze();
+        if(k === 'golden'){
+          const cand = await maakGoldenCandidate(gg);
+          if(!cand) return;
+          CRM.modal.close();
+          alles();
+          toastLink(`${gg.naam} opgeslagen als golden candidate`, 'Open kandidaatkaart →',
+            () => CRM.ga('kandidaten',{id:cand.id}));
+          return;
+        }
+        let v = null;
+        if(k === 'vac'){
+          v = vacById(m.querySelector('#ns_vac').value);
+          if(!v){ err.style.display=''; err.textContent = 'Kies de vacature — of kies een andere bestemming.'; return; }
+        }
+        const rij = await maakSollicitantRij(gg, v);
+        if(!rij) return;
+        CRM.modal.close();
+        S.tab = 'leads'; alles(); tekenActies();
+        toastLink(`${gg.naam} staat als Nieuw in Inkomende sollicitanten`, 'Openen →', () => openLead(rij.id));
+      };
+    }});
+}
+
+/* Zelfde route als instroom van buiten: een crm_leads-rij op status Nieuw. */
+async function maakSollicitantRij(gg, v){
+  const rij = {
+    id:CRM.uid(), naam:gg.naam, telefoon:gg.telefoon, email:gg.email||'',
+    woonplaats:gg.woonplaats||'', bron:gg.bron||'Handmatig', campagne:'',
+    vacature_id:v?v.id:'', klant:v?v.klant:'', functie:v?v.functie:(gg.functie||''),
+    status:'Nieuw', prioriteit:'', kwalificatie:'', score:null, agent_notitie:'',
+    antwoorden:null, cv:gg.cv||null, eigenaar:CRM.me(), binnen_op:new Date().toISOString(),
+    opvolgen_op:null, kandidaat_id:'', notities:[]
+  };
+  CRM.state.leads.unshift(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_leads').insert(rij);
+    if(error){ CRM.state.leads.shift(); CRM.fout('Opslaan mislukt', error); return null; }
+  }
+  await CRM.logActiviteit('lead', rij.id, 'systeem',
+    v ? `Handmatig toegevoegd en gekoppeld aan ${v.functie} · ${v.klant}` : 'Handmatig toegevoegd');
+  return rij;
+}
+
+/* Golden candidate: direct een candidates-rij, mét golden-vlag en zónder
+   pijplijnfase (fase '' — faseIdx is dan -1, bord en Voorselectie tonen
+   hem terecht niet). candToRow kent de kolom golden (nog) niet, dus die
+   zetten we op de rij zelf — zie ook het VERZOEK AAN CORE onderaan. */
+async function maakGoldenCandidate(gg){
+  const vandaag = CRM.todayISO();
+  const cand = {
+    id:CRM.uid(), naam:gg.naam, telefoon:gg.telefoon, email:gg.email||'',
+    woonplaats:gg.woonplaats||'', functie:gg.functie||'', klant:'', type:'',
+    bron:gg.bron||'Handmatig', fase:'', since:vandaag, rec:CRM.me(),
+    cv:gg.cv||null, historie:[], notities:[]
+  };
+  const rij = CRM.candToRow(cand);
+  rij.golden = true;                        // kolom candidates.golden (schema.sql)
+  CRM.state.cands.unshift(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('candidates').insert(rij);
+    if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
+  }
+  await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
+    'Aangemaakt als golden candidate — goede kandidaat, nu geen passende vacature');
+  return cand;
 }
 /* ═══════════════════════════════════════════════════════════════
    CV INLEZEN — pdf.js lazy laden, regels/regex, gebruiker bevestigt
@@ -925,7 +1112,7 @@ function kopScore(kop, veld){
 
 function importModal(){
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Leads importeren</div>
+    <div class="modal-h"><div class="h2">Sollicitanten importeren</div>
       <p class="sub" style="margin:6px 0 0">Plak de rijen uit de Google Sheet (met kopregel), of kies een CSV-bestand.</p></div>
     <div class="modal-b">
       <div class="f-row"><label for="im_txt">CSV plakken</label>
@@ -1062,18 +1249,18 @@ function koppelStap(rijen){
           if(error){ CRM.state.leads.splice(0, nieuw.length); err.style.display=''; err.textContent = 'Opslaan mislukt: ' + error.message; return; }
         }
         CRM.modal.close();
-        CRM.toast(`${nieuw.length} lead${nieuw.length===1?'':'s'} geïmporteerd${over?` · ${over} dubbele${over===1?'':' rijen'} overgeslagen`:''}`,'ok');
+        CRM.toast(`${nieuw.length} sollicitant${nieuw.length===1?'':'en'} geïmporteerd${over?` · ${over} dubbele${over===1?'':' rijen'} overgeslagen`:''}`,'ok');
         S.l.status = ''; tekenBar(); tekenTabs(); tekenLijst(); CRM.navBadges();
       };
     }});
 }
 /* ═══════════════════════════════════════════════════════════════
-   TAB B — HET PIJPLIJNBORD
-   Gedrag en formules 1-op-1 uit het pijplijnbord; alleen het jasje
-   is CRM-stijl. Zie PARITEIT-BORD.md.
+   GEDEELDE BORD-LOGICA
+   Formules 1-op-1 uit het pijplijnbord (zie PARITEIT-BORD.md).
+   Het bord zelf is verhuisd naar js/pijplijn.js; deze helpers
+   blijven hier omdat Voorselectie, Uitval en de bewerk-drawer ze
+   ook gebruiken. Pijplijn krijgt ze via CRM._rcDeel (onderaan).
    ═══════════════════════════════════════════════════════════════ */
-
-/* ─── Bord-helpers (formules exact zoals het pijplijnbord) ─────── */
 const daysTo = d => { const n = CRM.dagenGeleden(d); return n == null ? null : -n; };
 
 /* Verst bereikte funnel-fase; Afgevallen/Gestopt tellen niet als 'ver gekomen'. */
@@ -1098,24 +1285,8 @@ function totaalJaarSalaris(loon, ploeg, vt, eju, overig){
   return jr*(1+(ploeg||0)/100)*(1+((vt==null||vt==='')?8:+vt)/100) + jr*((eju||0)/100) + jr*((overig||0)/100);
 }
 
-/* Weekindeling voor de week-view in de kolommen. */
-function mondayOf(d){ const t = new Date(d); const dow = (t.getDay()+6)%7; t.setDate(t.getDate()-dow); t.setHours(0,0,0,0); return t; }
-const isoLoc = dt => dt.toLocaleDateString('sv-SE');
-const weekKey = d => isoLoc(mondayOf(d));
-function isoWeek(d){
-  const dt = new Date(d), x = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
-  const dag = (x.getUTCDay()+6)%7; x.setUTCDate(x.getUTCDate()-dag+3);
-  const ft = new Date(Date.UTC(x.getUTCFullYear(),0,4));
-  return 1 + Math.round(((x-ft)/864e5 - 3 + ((ft.getUTCDay()+6)%7)) / 7);
-}
-function weekLabel(d){
-  const ma = mondayOf(d), zo = new Date(ma); zo.setDate(ma.getDate()+6);
-  const f = dt => dt.toLocaleDateString('nl-NL',{day:'numeric',month:'short'});
-  return 'Week ' + isoWeek(d) + ' · ' + f(ma) + '–' + f(zo);
-}
-const isDezeWeek = d => weekKey(d) === weekKey(CRM.todayISO());
-
 /* Garantie en vervanging (zelfde regels als het bord). */
+const isoLoc = dt => dt.toLocaleDateString('sv-SE');
 function addMonths(d, n){ if(!d) return ''; const x = new Date(d); x.setMonth(x.getMonth()+(n||0)); return isoLoc(x); }
 const withinGarantie = c => { const ref = c.start || c.geplaatstOp; if(!ref || !c.gestoptOp) return true; return c.gestoptOp <= addMonths(ref, c.garantieMnd); };
 const owesReplacement = c => c.fase === 'Gestopt' && c.garantieMnd > 0 && withinGarantie(c);
@@ -1127,34 +1298,11 @@ const intakeDone = c => !!(c.intake && (c.intake.cijfer
   || String(c.intake.drijfveer||'').trim() || String(c.intake.jaZegt||'').trim()
   || String(c.intake.samenvatting||'').trim()));
 
-/* Compact/ruim-weergave (persistent per gebruiker, zoals op het bord). */
-const isCompact = () => localStorage.getItem('crm_rc_compact') === '1';
-function pasDichtheidToe(){ const b = document.querySelector('.rc-bordwrap'); if(b) b.classList.toggle('compact', isCompact()); }
-
 const ooSessies = () => CRM.state.ooSessions || [];
 const ooSessie  = id => ooSessies().find(s => String(s.id) === String(id));
 const sessLeden = id => CRM.kandidaten().filter(c => String(c.ooId) === String(id) && c.fase === 'O&O sessie');
 
 function alles(){ tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges(); }
-
-/* ─── Filteren ────────────────────────────────────────────────── */
-function kandGefilterd(){
-  const f = S.b, q = norm(f.q);
-  return CRM.kandidaten().filter(c => {
-    if(f.klant && c.klant !== f.klant) return false;
-    if(f.rec && c.rec !== f.rec) return false;
-    if(f.vac && String(c.vacatureId) !== f.vac) return false;
-    if(f.type && (c.type||'') !== f.type) return false;
-    if(f.mijn && c.rec !== CRM.me()) return false;
-    if(q && !norm([c.naam, c.functie, c.klant, c.woonplaats].join(' ')).includes(q)) return false;
-    return true;
-  });
-}
-function dagenInFase(c){
-  const laatste = (c.historie && c.historie.length) ? c.historie[c.historie.length-1].op : c.since;
-  const n = CRM.dagenGeleden(laatste);
-  return n == null ? null : Math.max(0, n);
-}
 
 /* Contract getekend + startdatum bereikt → automatisch Gestart (zoals het bord). */
 async function promoteerStarts(){
@@ -1166,241 +1314,6 @@ async function promoteerStarts(){
     CRM.logActiviteit('kandidaat', c.id, 'fase', 'Automatisch naar Gestart — startdatum bereikt');
   }
   return rijp.length;
-}
-
-function tekenBord(el){
-  const K = CRM.kandidaten();
-  const klanten = Array.from(new Set(K.map(c=>c.klant).filter(Boolean))).sort();
-  const recs = Array.from(new Set(K.map(c=>c.rec).filter(Boolean))).sort();
-  const vacs = (CRM.state.vacs||[]).slice().sort((a,b)=>vacLabel(a).localeCompare(vacLabel(b)));
-  el.innerHTML = `
-    <div class="rc-pad rc-pad-b">
-      <div class="rc-fil">
-        <div class="searchbox" style="flex:1;max-width:230px">
-          <input type="search" id="rb_q" placeholder="Zoek kandidaat" value="${h(S.b.q)}"></div>
-        <select id="rb_klant" style="width:auto;min-width:150px"><option value="">Alle klanten</option>
-          ${klanten.map(k=>`<option ${S.b.klant===k?'selected':''}>${h(k)}</option>`).join('')}</select>
-        <select id="rb_rec" style="width:auto;min-width:130px"><option value="">Alle recruiters</option>
-          ${recs.map(r=>`<option ${S.b.rec===r?'selected':''}>${h(r)}</option>`).join('')}</select>
-        <select id="rb_type" style="width:auto;min-width:110px"><option value="">Alle types</option>
-          <option ${S.b.type==='W&S'?'selected':''}>W&amp;S</option>
-          <option ${S.b.type==='Flex'?'selected':''}>Flex</option></select>
-        <select id="rb_vac" style="width:auto;min-width:190px"><option value="">Alle vacatures</option>
-          ${vacs.map(v=>`<option value="${h(v.id)}" ${S.b.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}</select>
-        <label class="check"><input type="checkbox" id="rb_mijn" ${S.b.mijn?'checked':''}> Mijn kandidaten</label>
-        <label class="check"><input type="checkbox" id="rb_groep" ${S.b.groep?'checked':''}> Groepeer per klant</label>
-      </div>
-    </div>
-    <div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div><div class="rc-uit" id="rb_uit"></div></div>`;
-
-  const q = el.querySelector('#rb_q');
-  q.oninput = CRM.debounce(() => { S.b.q = q.value; tekenKolommen(); }, 200);
-  el.querySelector('#rb_klant').onchange = e => { S.b.klant = e.target.value; tekenKolommen(); };
-  el.querySelector('#rb_rec').onchange   = e => { S.b.rec   = e.target.value; tekenKolommen(); };
-  el.querySelector('#rb_type').onchange  = e => { S.b.type  = e.target.value.replace('&amp;','&'); tekenKolommen(); };
-  el.querySelector('#rb_vac').onchange   = e => { S.b.vac   = e.target.value; tekenKolommen(); };
-  el.querySelector('#rb_mijn').onchange  = e => { S.b.mijn  = e.target.checked; tekenKolommen(); };
-  el.querySelector('#rb_groep').onchange = e => { S.b.groep = e.target.checked; tekenKolommen(); };
-  tekenKolommen();
-  promoteerStarts().then(n => { if(n){ tekenBar(); tekenKolommen(); } });
-}
-
-/* ─── Kaart ───────────────────────────────────────────────────── */
-function kaartHtml(c){
-  const v = vacById(c.vacatureId);
-  const placed = CRM.PLACED.includes(c.fase);
-  const dd = placed ? c.start : c.datum;
-  const dt = dd ? daysTo(dd) : null;
-  const isVandaag = dd && !placed && dt === 0;
-  const isMorgen  = dd && !placed && dt === 1;
-  const gemist    = dd && !placed && dt < 0;
-  const over = c.actieDatum && (CRM.dagenGeleden(c.actieDatum) || 0) > 0;
-  const dg = dagenInFase(c);
-  const kanIntake = ['Voorselectie','Voorgesteld'].includes(c.fase);
-  const chips = [];
-  if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
-  else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
-  if(c.bron) chips.push(`<span class="chip">${h(c.bron)}</span>`);
-  if(c.herstartVan) chips.push(`<span class="chip purple" title="Heraangeboden — de eerdere uitkomst blijft op de oude kaart geregistreerd">herstart</span>`);
-  if(c.vervangt) chips.push(`<span class="chip blue" title="Vervanger voor een gestopte plaatsing">vervanger</span>`);
-  if(c.noShows) chips.push(`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`);
-  if(dg != null && dg >= 4 && !CRM.DONE.includes(c.fase)){
-    if(c.fase === 'In de wacht') chips.push(`<span class="chip num" title="In de wacht telt niet als blijven hangen">${dg}d</span>`);
-    else chips.push(`<span class="chip ${dg>=10?'red':'amber'} num" title="Dagen in deze fase">${dg}d in fase</span>`);
-  }
-  if(intakeDone(c)){ const ic = c.intake.cijfer;
-    chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+ic+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
-  }
-  if(placed && c.garantieMnd > 0){ const ge = garantieEnd(c);
-    if(ge && ge >= CRM.todayISO()) chips.push(`<span class="chip green num" title="Garantietermijn">garantie t/m ${h(CRM.fmtDateShort(ge))}</span>`);
-  }
-  if(c.fase === 'Gestart' && c.start && !c.gestoptOp){
-    const nd = CRM.dagenGeleden(c.start);
-    if(nd != null && nd >= 0 && nd <= 32){
-      const cp = [3,14,30].find(x => x >= nd);
-      if([3,14,30].includes(nd)) chips.push(`<span class="chip red num" title="Nazorg-belritme dag 3·14·30">check-in vandaag · dag ${nd}</span>`);
-      else if(cp) chips.push(`<span class="chip num" title="Nazorg-belritme dag 3·14·30">dag ${nd} · check-in dag ${cp}</span>`);
-    }
-  }
-  let when = '';
-  if(dd){
-    const lbl = placed ? ((c.fase==='Gestart' && dd <= CRM.todayISO()) ? 'Gestart' : 'Start') : 'Afspraak';
-    const cls = isVandaag ? 'vandaag' : isMorgen ? 'morgen' : gemist ? 'gemist' : placed ? 'start' : '';
-    const txt = isVandaag ? 'vandaag' : isMorgen ? 'morgen' : CRM.fmtDay(dd);
-    when = `<div class="rc-when ${cls}"><span class="num">${h(lbl)} · ${h(txt)}${(!placed && c.tijd) ? ' ' + h(c.tijd) : ''}${gemist ? ' — gemist' : ''}</span></div>`;
-  }
-  const verw = (['Meeloopdag','Offer','Contract ondertekenen'].includes(c.fase) && c.start)
-    ? `<div class="rc-when verw"><span class="num">Verwachte start · ${h(CRM.fmtDay(c.start))}</span></div>` : '';
-  return `<div class="bcard ${isVandaag?'vandaag':''} ${gemist?'gemist':''}" draggable="true" data-id="${h(c.id)}">
-    <div class="bc-t">
-      <div class="bc-n">${h(c.naam)}
-        <div class="bc-s">${h(c.functie || (v?v.functie:'') || '—')}${c.klant?' @ '+h(c.klant):''}</div></div>
-      ${c.rec?`<span class="rc-rec" title="${h(c.rec)}">${h(CRM.initialen(c.rec))}</span>`:''}
-    </div>
-    ${chips.length?`<div class="bc-f">${chips.join('')}</div>`:''}
-    ${when}${verw}
-    ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
-    ${kanIntake?`<button class="btn ghost sm rc-intakebtn" data-intake="${h(c.id)}">Video-intake</button>`:''}
-    <button class="btn ghost sm rc-move" data-move="${h(c.id)}">Verplaatsen naar fase…</button>
-  </div>`;
-}
-
-/* ─── Kolominhoud: weekgroepen, klantgroepen, O&O-sessies ─────── */
-function weekGroepen(list, fase){
-  const dateFn = c => ['Contract ondertekenen','Contract getekend','Gestart'].includes(fase) ? c.start : c.datum;
-  const asc = fase !== 'Gestart';
-  const met = list.filter(c => dateFn(c)).slice().sort((a,b) => {
-    const x = dateFn(a), y = dateFn(b);
-    if(x === y) return a.naam.localeCompare(b.naam);
-    return asc ? (x < y ? -1 : 1) : (x < y ? 1 : -1);
-  });
-  const zonder = list.filter(c => !dateFn(c));
-  let uit = '', cw = null;
-  met.forEach(c => {
-    const d = dateFn(c), wk = weekKey(d);
-    if(wk !== cw){
-      cw = wk;
-      const n = met.filter(x => weekKey(dateFn(x)) === wk).length;
-      uit += `<div class="rc-wdiv ${isDezeWeek(d)?'nu':''}">${h(weekLabel(d))} · ${n}</div>`;
-    }
-    uit += kaartHtml(c);
-  });
-  if(zonder.length) uit += `<div class="rc-wdiv">Nog te plannen</div>` + zonder.map(kaartHtml).join('');
-  return uit;
-}
-function klantGroepen(list){
-  const volgorde = [], groepen = {};
-  list.forEach(c => { const k = c.klant || '—'; if(!groepen[k]){ groepen[k] = []; volgorde.push(k); } groepen[k].push(c); });
-  return volgorde.map(k =>
-    `<div class="rc-grp"><span>${h(k)}</span><b class="num">${groepen[k].length}</b></div>` +
-    groepen[k].map(kaartHtml).join('')).join('');
-}
-function ooKolom(list){
-  const sess = ooSessies().slice()
-    .filter(s => !S.b.klant || s.klant === S.b.klant)
-    .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
-  let uit = '', cw = null;
-  sess.forEach(s => {
-    if(s.datum){
-      const wk = weekKey(s.datum);
-      if(wk !== cw){ cw = wk; uit += `<div class="rc-wdiv ${isDezeWeek(s.datum)?'nu':''}">${h(weekLabel(s.datum))}</div>`; }
-    }
-    const n = sessLeden(s.id).length;
-    uit += `<button class="rc-sess ${n>=4?'goed':n===3?'matig':'laag'}" data-oo="${h(s.id)}" title="Sessie beheren">
-      <span>${h(s.klant||'?')} · ${h(s.functie||'')}<small>${h(CRM.fmtDay(s.datum)||'geen datum')}${s.locatie?' · '+h(s.locatie):''}</small></span>
-      <b class="num">${n}/4</b></button>`;
-    uit += list.filter(c => String(c.ooId) === String(s.id)).map(kaartHtml).join('');
-  });
-  const wees = list.filter(c => !c.ooId || !ooSessie(c.ooId));
-  if(wees.length) uit += `<div class="rc-wdiv">Zonder sessie</div>` + wees.map(kaartHtml).join('');
-  return uit;
-}
-
-function tekenKolommen(){
-  const board = document.getElementById('rb_board'), uit = document.getElementById('rb_uit');
-  if(!board) return;
-  const alle = kandGefilterd();
-  const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
-  const byDate = (a,b) => {
-    const x = a.datum||'', y = b.datum||'';
-    if(!x && !y) return a.naam.localeCompare(b.naam);
-    if(!x) return 1; if(!y) return -1;
-    return x < y ? -1 : x > y ? 1 : a.naam.localeCompare(b.naam);
-  };
-  board.innerHTML = bordFases().map(p => {
-    let kaarten = alle.filter(c => c.fase === p.k).sort(byDate);
-    if(p.k === 'Contract getekend' || p.k === 'Gestart')
-      kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:a.naam.localeCompare(b.naam); });
-    let binnen;
-    if(p.k === 'O&O sessie') binnen = ooKolom(kaarten);
-    else if(S.b.groep) binnen = klantGroepen(kaarten);
-    else if(WEEKCOLS.includes(p.k)) binnen = weekGroepen(kaarten, p.k);
-    else binnen = kaarten.map(kaartHtml).join('');
-    if(p.k === 'Gestart'){
-      const [ma, zo] = weekGrens();
-      const dz = kaarten.filter(c => c.start && new Date(c.start) >= ma && new Date(c.start) < zo).length;
-      binnen = `<div class="rc-startnote num">Deze week: ${dz} start${dz===1?'':'s'}</div>` + binnen;
-    }
-    return `<div class="bcol" data-fase="${h(p.k)}" style="--ph:${p.c}">
-      <div class="bcol-h"><b>${h(p.k)}</b><span class="cnt num">${kaarten.length}</span></div>
-      <div class="bcol-b">${binnen || `<div class="rc-leegkol">${p.k==='Voorgesteld'?'Stel kandidaten voor vanuit Voorselectie':'—'}</div>`}</div>
-    </div>`;
-  }).join('');
-
-  /* Smalle uitvalstrook naast het bord: cijfers + sleepdoelen. */
-  const K = CRM.kandidaten();
-  const nAfg = K.filter(c => c.fase === 'Afgevallen').length;
-  const nStp = K.filter(c => c.fase === 'Gestopt').length;
-  const nVerv = K.filter(c => owesReplacement(c) && !repOf(c)).length;
-  uit.innerHTML = `<div class="label" style="padding:0 4px 6px">Uitval</div>` + UITVAL.map(f => {
-    const n = f === 'Afgevallen' ? nAfg : nStp;
-    return `<div class="rc-uitzone" data-fase="${h(f)}" style="--ph:${CRM.faseKleur(f)}">
-      <b>${h(f)}</b><span class="num">${n}</span>
-      <span class="meta">sleep hierheen</span></div>`;
-  }).join('') +
-  (nVerv ? `<div class="rc-uitverv"><span class="chip red num">${nVerv}× vervanging nodig</span></div>` : '') +
-  `<button class="btn ghost sm" id="rb_uitopen" style="width:100%;justify-content:center">Uitval openen →</button>`;
-  uit.querySelector('#rb_uitopen').onclick = () => { S.tab = 'uitval'; tekenTabs(); tekenBody(); tekenActies(); };
-
-  CRM.$$('.bcard', board).forEach(k => {
-    k.ondragstart = e => { e.dataTransfer.setData('text/plain', k.dataset.id); k.classList.add('drag'); };
-    k.ondragend   = () => k.classList.remove('drag');
-    k.onclick = e => {
-      if(e.target.closest('[data-intake],[data-move]')) return;
-      snelBewerk(k.dataset.id);
-    };
-  });
-  CRM.$$('[data-intake]', board).forEach(b => b.onclick = e => { e.stopPropagation(); intakeForm(b.dataset.intake); });
-  CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); fasePicker(b.dataset.move); });
-  CRM.$$('[data-oo]', board).forEach(b => b.onclick = e => { e.stopPropagation(); ooModal(b.dataset.oo); });
-  CRM.$$('.bcol, .rc-uitzone', board.parentElement).forEach(zone => {
-    zone.ondragover  = e => { e.preventDefault(); zone.classList.add('over'); };
-    zone.ondragleave = () => zone.classList.remove('over');
-    zone.ondrop = e => {
-      e.preventDefault(); zone.classList.remove('over');
-      const id = e.dataTransfer.getData('text/plain');
-      if(id) faseWissel(id, zone.dataset.fase);
-    };
-  });
-  pasDichtheidToe();
-}
-
-/* ─── Fase-picker (mobiel: tikken in plaats van slepen) ────────── */
-function fasePicker(id){
-  const c = CRM.kandidaat(id); if(!c) return;
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">${h(c.naam)} verplaatsen</div>
-      <p class="sub" style="margin:6px 0 0">Kies de nieuwe fase.</p></div>
-    <div class="modal-b"><div class="rc-fasepick">
-      ${CRM.PHASES.map(p => `<button data-f="${h(p.k)}" class="${c.fase===p.k?'nu':''}">
-        <i class="dot" style="background:${p.c}"></i>${h(p.k)}${c.fase===p.k?'<span class="meta">huidige fase</span>':''}</button>`).join('')}
-    </div></div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
-      CRM.$$('[data-f]', m).forEach(b => b.onclick = () => {
-        CRM.modal.close();
-        if(b.dataset.f !== c.fase) faseWissel(c.id, b.dataset.f);
-      });
-    }});
 }
 
 /* ─── Fasewissel + poortwachters (regels van het bord) ────────── */
@@ -1995,7 +1908,7 @@ function snelBewerk(id){
       ${kanIntake?`<button class="btn ghost" id="sb_intake">Video-intake</button>`:''}
       <button class="btn ghost" id="sb_noshow" title="Afspraak wissen en no-show tellen">No-show</button>
       <div class="spacer"></div>
-      <button class="btn ghost" id="sb_volledig">Volledige kaart →</button>
+      <button class="btn ghost" id="sb_volledig">Volledige kandidaatkaart →</button>
     </div>`, {onOpen(dr){
       const upd = () => {
         const el = dr.querySelector('#sb_totsal'); if(!el) return;
@@ -2363,6 +2276,25 @@ function ooModal(sid){
     }});
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   GEDEELD MET DE PIJPLIJN-MODULE (js/pijplijn.js laadt ná dit
+   bestand). De poortwachters en de bewerk-drawer leven híer — het
+   bord roept ze aan, zodat de regels maar op één plek bestaan.
+   ═══════════════════════════════════════════════════════════════ */
+CRM.kandidaatBewerk = id => snelBewerk(id);                 // bewerk-drawer
+CRM.kandidaatFase   = (id, doelFase) => faseWissel(id, doelFase); // fasewissel + poortwachters (incl. uitvalformulier)
+CRM._rcDeel = {
+  intakeForm, ooModal, promoteerStarts, weekGrens,
+  ooSessies, ooSessie, sessLeden, intakeDone,
+  garantieEnd, owesReplacement, repOf,
+  /* Vanuit de uitvalstrook op het bord terug naar het Uitval-tabblad. */
+  openUitval(){ S.tab = 'uitval'; CRM.ga('recruitment'); }
+};
+
+/* VERZOEK AAN CORE: candidates heeft nu de kolom `golden` (schema.sql), maar
+   CRM.rowToCand/candToRow kennen dat veld nog niet. Modules lezen/schrijven
+   de vlag daarom op de ruwe rij in CRM.state.cands. Netter: golden opnemen
+   in beide mappers, dan kan c.golden overal direct gebruikt worden. */
 /* VERZOEK AAN CORE: crm_leads mist een kolom `belpogingen int default 0`.
    Zolang die er niet is leiden we het aantal belpogingen af uit
    crm_activiteiten (soort = 'bel'). Dat werkt, maar een teller in de rij

@@ -111,3 +111,13 @@ label.kd-taak input{margin-top:3px}
   .kd-fil > .chip{flex:0 0 auto}
   .kd-fil > .meta{margin-left:auto}
 }
+
+/* ─── Golden candidates ───────────────────────────────────────── */
+/* Gedempt goudgeel — bewust geen fel geel; sluit aan op de warme
+   cream-tinten van het palet. VERZOEK AAN CORE: als er vaker goud
+   nodig is, neem --gold(-bg/-line) op in :root van base.css. */
+.kd-goldster{color:#a8862d;font-size:13px;line-height:1}
+.kd-goldster.lg{font-size:19px;vertical-align:2px}
+.kd-goldbtn{color:var(--muted)}
+.kd-goldbtn:hover{border-color:#dcc98a}
+.kd-goldbtn.aan{background:#f6f0dd;border-color:#dcc98a;color:#7a601c;font-weight:600}
