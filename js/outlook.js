@@ -21,7 +21,7 @@
 /* App-registratie "Ploeggenoten CRM" in Entra (30 jul 2026, single tenant). */
 const MS_CLIENT_ID = 'd07d8bf0-82b1-426e-89c6-3ae11393b982';
 const MS_TENANT_ID = 'c0436a3b-5aa8-4ada-bd4d-a3138ec11fa6';
-const MS_SCOPES = ['User.Read','Calendars.ReadWrite','Tasks.ReadWrite'];
+const MS_SCOPES = ['User.Read','Calendars.ReadWrite','Tasks.ReadWrite','Mail.Read','Mail.Send'];
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
 let _msal = null, _account = null, _laadBelofte = null;
@@ -176,6 +176,49 @@ CRM.outlook = {
       dueDateTime: opts.datum ? { dateTime: opts.datum + 'T09:00:00', timeZone:'W. Europe Standard Time' } : undefined,
       body: opts.notities ? { content: opts.notities, contentType:'text' } : undefined
     }});
+  },
+
+  /* ─── Mail ──────────────────────────────────────────────────
+     Meelezen per e-mailadres: toont alléén correspondentie met díe
+     persoon, nooit het hele postvak. Stil: vraagt niet om login. */
+  async mailMet(adres, aantal = 10){
+    if(!CRM.outlook.beschikbaar() || !_account || !adres) return null;
+    const veilig = String(adres).replace(/'/g, "''");
+    try{
+      const d = await graph(`/me/messages?$search="participants:${encodeURIComponent(veilig)}"` +
+        `&$top=${aantal}&$select=subject,from,toRecipients,receivedDateTime,bodyPreview,webLink,isRead`,
+        { headers:{ ConsistencyLevel:'eventual' } }, false);
+      return (d?.value||[]).map(m => ({
+        onderwerp: m.subject || '(geen onderwerp)',
+        van: m.from?.emailAddress?.address || '',
+        vanNaam: m.from?.emailAddress?.name || '',
+        aan: (m.toRecipients||[]).map(r => r.emailAddress?.address).filter(Boolean),
+        op: m.receivedDateTime,
+        fragment: (m.bodyPreview||'').slice(0, 220),
+        link: m.webLink,
+        uitgaand: (m.from?.emailAddress?.address||'').toLowerCase() === (_account.username||'').toLowerCase()
+      }));
+    }catch(e){ console.warn('mailMet', e); return null; }
+  },
+
+  /* Mail versturen. WORDT NOOIT AUTOMATISCH AANGEROEPEN: alleen vanuit
+     een scherm waarin de gebruiker de tekst ziet en zelf op Versturen
+     klikt. Geen bulk, geen achtergrondverzending. */
+  async stuurMail({aan, cc, onderwerp, tekst}){
+    if(!CRM.outlook.beschikbaar() || !_account) throw new Error('Outlook niet verbonden');
+    const lijst = a => (Array.isArray(a)?a:[a]).filter(Boolean)
+      .map(x => ({emailAddress:{address:String(x).trim()}}));
+    if(!lijst(aan).length) throw new Error('Geen ontvanger');
+    await graph('/me/sendMail', {method:'POST', body:{
+      message: {
+        subject: onderwerp || '',
+        body: { contentType:'text', content: tekst || '' },
+        toRecipients: lijst(aan),
+        ccRecipients: lijst(cc)
+      },
+      saveToSentItems: true
+    }});
+    return {ok:true};
   },
 
   /* Kant-en-klare deeplink (voor gewone <a href>-knoppen). */
