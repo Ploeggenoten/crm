@@ -107,10 +107,16 @@ async function bewaarRij(tabel, veld, rij, bestaat){
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
   if(i >= 0) Object.assign(lijst[i], rij); else lijst.unshift(rij);
   if(!CRM.demo){
-    const {error} = bestaat
-      ? await CRM.sb.from(tabel).update(rij).eq('id', rij.id)
-      : await CRM.sb.from(tabel).insert(rij);
-    if(error) return CRM.fout('Opslaan mislukt', error);
+    if(bestaat){
+      const {error} = await CRM.sb.from(tabel).update(rij).eq('id', rij.id);
+      if(error) return CRM.fout('Opslaan mislukt', error);
+    }else{
+      /* Bij nieuw: het door de database gegenereerde id (uuid) terughalen,
+         anders is de rij lokaal niet te bewerken tot de volgende reload. */
+      const {data, error} = await CRM.sb.from(tabel).insert(rij).select().single();
+      if(error) return CRM.fout('Opslaan mislukt', error);
+      if(data) Object.assign(rij, data);
+    }
   }
   CRM.toast('Opgeslagen','ok');
 }
@@ -1183,7 +1189,9 @@ function vacatureModal(k, v){
         sal_max: smax === '' ? null : Number(smax),
         omschrijving:m.querySelector('#v_oms').value.trim()
       });
-      if(!rij.id) rij.id = k.naam + '::' + functie;
+      /* In productie is vacatures.id een uuid met database-default — geen
+         eigen id meesturen bij nieuw; in demo wél (geen database). */
+      if(!rij.id && CRM.demo) rij.id = k.naam + '::' + functie;
       CRM.modal.close();
       await bewaarRij('vacatures','vacs', rij, !!v);
       if(!v) await CRM.logActiviteit('klant', k.naam, 'systeem', 'Vacature ' + functie + ' aangemaakt');

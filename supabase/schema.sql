@@ -45,7 +45,16 @@ alter table clients add column if not exists aangemaakt  date default current_da
 alter table clients add column if not exists fase_historie jsonb default '[]'::jsonb;
 
 -- Vacatures: eigen id, locatie, status, aantal en salarisrange.
-alter table vacatures add column if not exists id        text;
+-- LET OP: in productie bestaat vacatures.id al als uuid — alleen aanmaken
+-- en vullen als de kolom nog helemaal niet bestaat.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_name = 'vacatures' and column_name = 'id') then
+    alter table vacatures add column id text;
+    update vacatures set id = klant || '::' || functie where id is null or id = '';
+  end if;
+end $$;
 alter table vacatures add column if not exists locatie   text default '';
 alter table vacatures add column if not exists status    text default 'Open';
 alter table vacatures add column if not exists aantal    int  default 1;
@@ -60,7 +69,6 @@ alter table vacatures add column if not exists deadline     date;
 alter table vacatures add column if not exists doel_aantal  int;               -- bv. 2 (voorstellen)
 alter table vacatures add column if not exists doel_soort   text default 'voorstellen';  -- voorstellen | gesprekken | plaatsingen
 alter table vacatures add column if not exists doel_gezet_op date;             -- vanaf wanneer telt de voortgang
-update vacatures set id = klant || '::' || functie where id is null or id = '';
 
 -- ─── 2. Kandidaat-leads (fase vóór de pijplijn) ───────────────
 -- Komen binnen uit Meta/Indeed/WhatsApp-agent, met kwalificatie.
