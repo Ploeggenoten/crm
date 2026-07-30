@@ -102,6 +102,160 @@ function sectieTeam(){
     </div></div>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   MICROSOFT-KOPPELING
+   De koppeling is per persoon: Tjeerd verbindt zijn eigen account,
+   Bryan het zijne. Niemand kijkt via het CRM in andermans agenda of
+   postvak. Is er geen app-registratie (of draaien we in demo), dan
+   verschijnen deze blokken helemaal niet.
+   ═══════════════════════════════════════════════════════════════ */
+const msKlaar    = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.());
+const msVerbonden = () => !!(msKlaar() && CRM.outlook.verbonden?.());
+
+/* Wat kan de koppeling, in gewone taal. De sleutel komt overeen met
+   wat CRM.outlook.zelftest() teruggeeft. */
+const MS_ONDERDELEN = [
+  ['agenda',     'Agenda',     'Je komende afspraken zien en er vanuit het CRM een inplannen.'],
+  ['taken',      'Taken',      'Een taak uit het CRM komt ook in Microsoft To Do te staan.'],
+  ['mail',       'Mail',       'De mailwisseling met één klant of kandidaat terugzien op de kaart.'],
+  ['contacten',  'Contacten',  'Contactpersonen in je adresboek zetten, zodat je telefoon laat zien wie er belt.'],
+  ['documenten', 'Documenten', 'Zoeken in OneDrive en SharePoint. Er wordt niets gekopieerd of opgeslagen.'],
+  ['teams',      'Teams',      'Meldingen naar een collega sturen in Teams.']
+];
+
+function msRegelHtml([sleutel, lbl, uitleg]){
+  return `<div class="in-msrij" data-ms="${h(sleutel)}">
+    <span class="in-msvink" aria-hidden="true">–</span>
+    <span class="in-mswat"><b>${h(lbl)}</b><span class="meta">${h(uitleg)}</span></span>
+  </div>`;
+}
+
+function sectieMicrosoft(){
+  if(!msKlaar()) return '';
+  const verbonden = msVerbonden();
+  const adres = verbonden ? (CRM.outlook.accountNaam?.() || '') : '';
+  const teamsUit = (() => { try{ return localStorage.getItem('crm_teams_uit') === '1'; }catch(e){ return false; } })();
+  return `<div class="card" style="margin-top:20px"><div class="card-h"><div class="h2">Microsoft-koppeling</div>
+      <div class="spacer"></div><span class="meta">alleen voor jouw eigen account</span></div>
+    <div class="card-b">
+      <div class="in-msstatus">
+        <div class="in-msnu">
+          <b>${verbonden ? 'Verbonden' : 'Niet verbonden'}</b>
+          <div class="meta">${verbonden
+            ? 'als <span class="num">' + h(adres) + '</span>'
+            : 'Verbind je Microsoft-account om agenda, mail, contacten en documenten in het CRM te gebruiken.'}</div>
+        </div>
+        <div class="row tight">
+          ${verbonden
+            ? '<button class="btn ghost sm" id="in_msuit">Verbreken</button>'
+            : '<button class="btn sm" id="in_msaan">Verbinden</button>'}
+        </div>
+      </div>
+      ${verbonden ? `<div class="in-msonderdelen" id="in_mslijst">${MS_ONDERDELEN.map(msRegelHtml).join('')}</div>
+      <p class="meta in-mscheck">Onderdelen controleren…</p>
+      <label class="in-msschakel"><input type="checkbox" id="in_teamsuit" ${teamsUit?'':'checked'}>
+        <span><b>Teams-meldingen</b><span class="meta">Krijgt een collega een taak van je, dan stuurt het CRM hem een bericht in Teams. Zet uit als je dat liever niet hebt.</span></span></label>` : ''}
+    </div></div>`;
+}
+
+/* Zelftest: per onderdeel één lichte aanroep. Faalt er één, dan blijft
+   het streepje staan — geen paniekmelding, wel eerlijk. */
+function msZelftest(mount){
+  const lijst = mount.querySelector('#in_mslijst');
+  const regel = mount.querySelector('.in-mscheck');
+  if(!lijst || !CRM.outlook.zelftest) return;
+  Promise.resolve(CRM.outlook.zelftest()).then(uit => {
+    if(!uit){ if(regel) regel.textContent = 'Onderdelen konden niet worden gecontroleerd.'; return; }
+    let mis = 0;
+    lijst.querySelectorAll('[data-ms]').forEach(r => {
+      const ok = !!uit[r.dataset.ms];
+      if(!ok) mis++;
+      const vink = r.querySelector('.in-msvink');
+      vink.textContent = ok ? '✓' : '–';
+      vink.classList.toggle('aan', ok);
+      r.classList.toggle('uit', !ok);
+    });
+    if(regel) regel.textContent = mis
+      ? `${mis} onderdeel${mis===1?'':'en'} doet het nog niet — meestal ontbreekt daarvoor een machtiging in Entra.`
+      : 'Alle onderdelen doen het.';
+  }).catch(e => {
+    console.warn('zelftest', e);
+    if(regel) regel.textContent = 'Onderdelen konden niet worden gecontroleerd.';
+  });
+}
+
+/* ─── Outlook-contacten: alles in één keer synchroniseren ─────────
+   Rustig aan, één voor één met een korte pauze: Microsoft knijpt bij
+   bulkwerk de kraan dicht. Gaat het toch mis, dan stoppen we netjes
+   met een melding in plaats van door te blijven proberen. */
+const pauzeMs = ms => new Promise(r => setTimeout(r, ms));
+let syncBezig = false;
+
+function sectieContacten(){
+  if(!msVerbonden()) return '';
+  const alle = CRM.state.contacten || [];
+  const bruikbaar = alle.filter(c => String(c.email||'').trim() || String(c.telefoon||'').trim());
+  return `<div class="card" style="margin-top:20px"><div class="card-h"><div class="h2">Outlook-contacten</div>
+      <div class="spacer"></div><span class="meta"><span class="num">${bruikbaar.length}</span> van <span class="num">${alle.length}</span> met gegevens</span></div>
+    <div class="card-b">
+      <p class="sub" style="margin:0 0 12px">Zet alle contactpersonen uit het CRM in je eigen Outlook-adresboek.
+        Belt iemand je, dan laat je telefoon meteen zien wie het is en bij welk bedrijf hij werkt.
+        Bestaat de persoon al, dan wordt hij bijgewerkt — er komt niets dubbel te staan.</p>
+      <div class="row"><button class="btn" id="in_ctsync">Alle contactpersonen synchroniseren</button></div>
+      <div id="in_ctstatus" style="margin-top:12px"></div>
+    </div></div>`;
+}
+
+async function syncContacten(knop, statusEl){
+  if(syncBezig) return;
+  const alle = CRM.state.contacten || [];
+  const doen = alle.filter(c => String(c.email||'').trim() || String(c.telefoon||'').trim());
+  const zonder = alle.length - doen.length;
+  if(!doen.length){
+    statusEl.innerHTML = '<div class="note info">Geen contactpersonen met een e-mailadres of telefoonnummer.</div>';
+    return;
+  }
+  syncBezig = true;
+  const oud = knop.textContent;
+  knop.disabled = true; knop.textContent = 'Bezig…';
+  let nieuw = 0, bij = 0, mislukt = 0, achterElkaar = 0, gestopt = '', gedaan = 0;
+  for(let i = 0; i < doen.length; i++){
+    const c = doen[i];
+    statusEl.innerHTML = `<div class="note info">Bezig: <span class="num">${i+1}</span> van
+      <span class="num">${doen.length}</span> — ${h(c.naam || 'zonder naam')}</div>`;
+    let r = null;
+    try{
+      r = await CRM.outlook.zetContact({naam:c.naam, email:c.email, telefoon:c.telefoon,
+                                        bedrijf:c.klant, functie:c.functie});
+    }catch(e){
+      console.warn('contacten synchroniseren', e);
+      gestopt = e && e.message ? e.message : 'onbekende fout';
+      break;
+    }
+    gedaan++;
+    if(r && r.nieuw){ nieuw++; achterElkaar = 0; }
+    else if(r){ bij++; achterElkaar = 0; }
+    else {
+      mislukt++; achterElkaar++;
+      if(achterElkaar >= 3){ gestopt = 'drie contactpersonen achter elkaar mislukt'; break; }
+    }
+    await pauzeMs(180);
+  }
+  syncBezig = false;
+  knop.disabled = false; knop.textContent = oud;
+  const delen = [
+    `<span class="num">${nieuw}</span> nieuw`,
+    `<span class="num">${bij}</span> bijgewerkt`,
+    mislukt ? `<span class="num">${mislukt}</span> mislukt` : '',
+    zonder ? `<span class="num">${zonder}</span> overgeslagen zonder gegevens` : ''
+  ].filter(Boolean).join(' · ');
+  statusEl.innerHTML = gestopt
+    ? `<div class="note warn">Gestopt na <span class="num">${gedaan}</span> van
+        <span class="num">${doen.length}</span>: ${h(gestopt)}. Tot dan: ${delen}.
+        Probeer het straks nog eens — je kunt gewoon opnieuw beginnen.</div>`
+    : `<div class="note ok">Klaar: ${delen}.</div>`;
+}
+
 /* ─── Export / import (bord-compatibel JSON) ──────────────────── */
 function exportJson(){
   const st = CRM.state;
@@ -226,7 +380,7 @@ CRM.registerModule('instellingen', {
   title:'Instellingen', icon:'⚙', onderschrift:'Targets, team, export en systeem',
   adminOnly:true,
   render(mount){
-    mount.innerHTML = `<div class="in-wrap">${sectieTargets()}${sectieTeam()}${sectieData()}${sectieSysteem()}</div>`;
+    mount.innerHTML = `<div class="in-wrap">${sectieTargets()}${sectieTeam()}${sectieMicrosoft()}${sectieContacten()}${sectieData()}${sectieSysteem()}</div>`;
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
@@ -252,6 +406,35 @@ CRM.registerModule('instellingen', {
       }
       CRM.toast(`Rol van ${p.naam||'gebruiker'} → ${sel.value}`, 'ok');
     });
+    /* ─── Microsoft-koppeling ───────────────────────────────── */
+    const msAan = mount.querySelector('#in_msaan');
+    if(msAan) msAan.onclick = async () => {
+      msAan.disabled = true;
+      const ok = await CRM.outlook.verbind();
+      msAan.disabled = false;
+      if(ok) CRM.render();
+    };
+    const msUit = mount.querySelector('#in_msuit');
+    if(msUit) msUit.onclick = async () => {
+      if(!await CRM.bevestig('Koppeling verbreken?',
+        'Agenda, mail, contacten en documenten verdwijnen dan uit het CRM. Je kunt altijd opnieuw verbinden.')) return;
+      await CRM.outlook.verbreek();
+      CRM.render();
+    };
+    const teamsBox = mount.querySelector('#in_teamsuit');
+    if(teamsBox) teamsBox.onchange = () => {
+      try{
+        if(teamsBox.checked) localStorage.removeItem('crm_teams_uit');
+        else localStorage.setItem('crm_teams_uit','1');
+      }catch(e){ console.warn('teams-vlag', e); }
+      CRM.toast(teamsBox.checked ? 'Teams-meldingen staan aan' : 'Teams-meldingen staan uit','ok');
+    };
+    if(mount.querySelector('#in_mslijst')) msZelftest(mount);
+
+    /* ─── Outlook-contacten ─────────────────────────────────── */
+    const ctSync = mount.querySelector('#in_ctsync');
+    if(ctSync) ctSync.onclick = () => syncContacten(ctSync, mount.querySelector('#in_ctstatus'));
+
     mount.querySelector('#in_export').onclick = exportJson;
     mount.querySelector('#in_import').onchange = e => {
       const f = e.target.files && e.target.files[0];

@@ -35,7 +35,11 @@ function dagenInFase(c){
   return n == null ? null : Math.max(0, n);
 }
 
-/* Weekindeling voor de week-view in de kolommen. */
+/* Weekindeling voor de week-view in de kolommen.
+   Echte data bevat af en toe een onleesbare datum (import, handmatig
+   getypt). Zonder controle levert dat een kolomkop "Week NaN · Invalid
+   Date" op — daarom overal eerst geldigDatum(). */
+const geldigDatum = d => { if(!d) return false; const t = new Date(d); return !isNaN(t.getTime()); };
 function mondayOf(d){ const t = new Date(d); const dow = (t.getDay()+6)%7; t.setDate(t.getDate()-dow); t.setHours(0,0,0,0); return t; }
 const isoLoc = dt => dt.toLocaleDateString('sv-SE');
 const weekKey = d => isoLoc(mondayOf(d));
@@ -109,6 +113,7 @@ CRM.registerModule('pijplijn', {
             <label class="check"><input type="checkbox" id="rb_mijn" ${P.mijn?'checked':''}> Mijn kandidaten</label>
             <label class="check"><input type="checkbox" id="rb_groep" ${P.groep?'checked':''}> Groepeer per klant</label>
           </div>
+          <div id="pp_geenfase" class="rc-geenfase"></div>
         </div>
         <div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div><div class="rc-uit" id="rb_uit"></div></div>
       </div>`;
@@ -228,13 +233,15 @@ function kaartHtml(c){
 /* ─── Kolominhoud: weekgroepen, klantgroepen, O&O-sessies ─────── */
 function weekGroepen(list, fase){
   const dateFn = c => ['Contract ondertekenen','Contract getekend','Gestart'].includes(fase) ? c.start : c.datum;
+  const naam = c => String(c.naam||'');
   const asc = fase !== 'Gestart';
-  const met = list.filter(c => dateFn(c)).slice().sort((a,b) => {
+  const met = list.filter(c => geldigDatum(dateFn(c))).slice().sort((a,b) => {
     const x = dateFn(a), y = dateFn(b);
-    if(x === y) return a.naam.localeCompare(b.naam);
+    if(x === y) return naam(a).localeCompare(naam(b));
     return asc ? (x < y ? -1 : 1) : (x < y ? 1 : -1);
   });
   const zonder = list.filter(c => !dateFn(c));
+  const onleesbaar = list.filter(c => dateFn(c) && !geldigDatum(dateFn(c)));
   let uit = '', cw = null;
   met.forEach(c => {
     const d = dateFn(c), wk = weekKey(d);
@@ -246,6 +253,7 @@ function weekGroepen(list, fase){
     uit += kaartHtml(c);
   });
   if(zonder.length) uit += `<div class="rc-wdiv">Nog te plannen</div>` + zonder.map(kaartHtml).join('');
+  if(onleesbaar.length) uit += `<div class="rc-wdiv">Datum onleesbaar — corrigeer de kaart</div>` + onleesbaar.map(kaartHtml).join('');
   return uit;
 }
 function klantGroepen(list){
@@ -262,7 +270,7 @@ function ooKolom(list){
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
   let uit = '', cw = null;
   sess.forEach(s => {
-    if(s.datum){
+    if(geldigDatum(s.datum)){
       const wk = weekKey(s.datum);
       if(wk !== cw){ cw = wk; uit += `<div class="rc-wdiv ${isDezeWeek(s.datum)?'nu':''}">${h(weekLabel(s.datum))}</div>`; }
     }
@@ -283,16 +291,17 @@ function tekenKolommen(){
   const d = D();
   const alle = kandGefilterd();
   const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
+  const nm = c => String(c.naam||'');
   const byDate = (a,b) => {
     const x = a.datum||'', y = b.datum||'';
-    if(!x && !y) return a.naam.localeCompare(b.naam);
+    if(!x && !y) return nm(a).localeCompare(nm(b));
     if(!x) return 1; if(!y) return -1;
-    return x < y ? -1 : x > y ? 1 : a.naam.localeCompare(b.naam);
+    return x < y ? -1 : x > y ? 1 : nm(a).localeCompare(nm(b));
   };
   board.innerHTML = bordFases().map(p => {
     let kaarten = alle.filter(c => c.fase === p.k).sort(byDate);
     if(p.k === 'Contract getekend' || p.k === 'Gestart')
-      kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:a.naam.localeCompare(b.naam); });
+      kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:nm(a).localeCompare(nm(b)); });
     let binnen;
     if(p.k === 'O&O sessie') binnen = ooKolom(kaarten);
     else if(P.groep) binnen = klantGroepen(kaarten);
@@ -309,11 +318,26 @@ function tekenKolommen(){
     </div>`;
   }).join('');
 
+  /* Zoek je op iemand die (nog) geen fase heeft — bijvoorbeeld een import
+     uit het oude ATS — dan hoort hij niet op het bord. Dat zeggen we er
+     liever bij dan dat je naar een leeg bord staart. */
+  const buitenBord = alle.filter(c => !c.fase).length;
+  const hint = document.getElementById('pp_geenfase');
+  if(hint){
+    hint.innerHTML = buitenBord
+      ? `<span class="meta">${buitenBord} kandidaat${buitenBord===1?'':'en'} in je selectie ${buitenBord===1?'heeft':'hebben'} geen fase
+         en ${buitenBord===1?'staat':'staan'} dus niet op het bord — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
+  }
+
   /* Smalle uitvalstrook naast het bord: cijfers + sleepdoelen. */
   const K = CRM.kandidaten();
   const nAfg = K.filter(c => c.fase === 'Afgevallen').length;
   const nStp = K.filter(c => c.fase === 'Gestopt').length;
-  const nVerv = K.filter(c => d.owesReplacement(c) && !d.repOf(c)).length;
+  /* Vervangers in één doorloop indexeren — d.repOf() loopt zelf opnieuw
+     door alle kandidaten, dus per gestopte kandidaat opnieuw aanroepen
+     werd bij 350 rijen onnodig duur. */
+  const vervangt = new Set(K.map(c => c.vervangt).filter(Boolean).map(String));
+  const nVerv = K.filter(c => d.owesReplacement(c) && !vervangt.has(String(c.id))).length;
   uit.innerHTML = `<div class="label" style="padding:0 4px 6px">Uitval</div>` + UITVAL.map(f => {
     const n = f === 'Afgevallen' ? nAfg : nStp;
     return `<div class="rc-uitzone" data-fase="${h(f)}" style="--ph:${CRM.faseKleur(f)}">

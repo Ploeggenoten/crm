@@ -1523,10 +1523,21 @@ function tekenUitval(el){
   const stp = K.filter(c => c.fase === 'Gestopt');
   const nk = afg.filter(c => afvalTypeVan(c) === 'niet_gekwalificeerd');
   const oa = afg.filter(c => afvalTypeVan(c) === 'offer_afgewezen');
+  /* repOf/herstartOf lopen elk zelf door álle kandidaten. Per rij twee keer
+     aanroepen liep bij 350 kandidaten op tot tienduizenden vergelijkingen —
+     daarom één keer indexeren. */
+  const vervangerVan = {}, herstartVanaf = {};
+  K.forEach(x => {
+    if(x.vervangt)    vervangerVan[String(x.vervangt)]    = x;
+    if(x.herstartVan) herstartVanaf[String(x.herstartVan)] = x;
+  });
   /* Offer-acceptatie: iedereen die ooit 'In de wacht' of verder kwam, óf als
-     offer-afwijzer is gemarkeerd. Vervangers tellen niet mee (geen dubbeling). */
+     offer-afwijzer is gemarkeerd. Vervangers tellen niet mee (geen dubbeling).
+     Een lege fase (import uit het oude ATS) is géén positie in de funnel: die
+     kandidaten hebben nooit een aanbod gehad en mogen dit percentage dus niet
+     kleuren — ook niet als er per ongeluk een geplaatst-datum op staat. */
   const offerIdx = CRM.faseIdx('In de wacht');
-  const offers = K.filter(c => (furthestPhaseIdx(c) >= offerIdx || c.afvalType === 'offer_afgewezen') && !c.vervangt);
+  const offers = K.filter(c => c.fase && (furthestPhaseIdx(c) >= offerIdx || c.afvalType === 'offer_afgewezen') && !c.vervangt);
   const geacc = offers.filter(c => c.geplaatstOp || CRM.PLACED.includes(c.fase)).length;
   const accPct = offers.length ? Math.round(geacc / offers.length * 100) : null;
   const stopDuur = b => stp.filter(c => {
@@ -1548,8 +1559,8 @@ function tekenUitval(el){
 
   const rij = c => {
     const isStop = c.fase === 'Gestopt';
-    const herstart = herstartOf(c);
-    const rep = isStop ? repOf(c) : null;
+    const herstart = herstartVanaf[String(c.id)];
+    const rep = isStop ? vervangerVan[String(c.id)] : null;
     const lbl = isStop
       ? `Gestopt ${STOP_LBL[c.stopDoor]||'—'}${c.stopCat?' · '+h(c.stopCat):''}`
       : `${AFVAL_LBL[afvalTypeVan(c)]}${c.afvalCat?' · '+h(c.afvalCat):''}${c.afvalType?'':' <span class="chip" title="Automatisch bepaald uit de fase-historie">auto</span>'}`;
@@ -1589,8 +1600,9 @@ function tekenUitval(el){
     <div class="rc-chips">${tabs.map(([k,l]) => `<button class="chip btn-like ${f===k?'on':''}" data-uvtab="${k}">${l}</button>`).join('')}</div>
     <div class="tblwrap"><table class="tbl">
       <thead><tr><th>Kandidaat</th><th>Uitval</th><th>Verst gekomen</th><th class="n">Datum</th><th>Vervanging</th><th class="n">Acties</th></tr></thead>
-      <tbody>${lijst.map(rij).join('') || `<tr><td colspan="6"><span class="meta">Niets in deze categorie.</span></td></tr>`}</tbody>
+      <tbody>${lijst.slice(0,200).map(rij).join('') || `<tr><td colspan="6"><span class="meta">Niets in deze categorie.</span></td></tr>`}</tbody>
     </table></div>
+    ${lijst.length > 200 ? `<p class="meta" style="margin:10px 2px">De 200 meest recente van ${lijst.length} worden getoond.</p>` : ''}
     <p class="meta" style="margin:10px 2px">Heraanbieden maakt altijd een <b>nieuwe kaart</b> in Voorselectie; de oude blijft als
       afvaller of stopper geregistreerd — die uitkomst blijft in alle cijfers en in de finance-app meetellen.</p>
   </div>`;
@@ -1819,7 +1831,7 @@ function snelBewerk(id){
         <div class="h2">${h(c.naam)}</div>
         <div class="sub">${h(c.functie||'—')}${c.klant?' @ '+h(c.klant):''}${c.woonplaats?' · '+h(c.woonplaats):''}</div>
         <div class="row tight" style="margin-top:8px">
-          <span class="chip"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>
+          <span class="chip"><i class="dot" style="background:${c.fase?CRM.faseKleur(c.fase):'var(--line-2)'}"></i>${h(c.fase || 'geen fase')}</span>
           ${c.rec?`<span class="chip">${h(c.rec)}</span>`:''}
           ${c.herstartVan?`<span class="chip purple" title="Heraangeboden — eerdere uitkomst staat op de oude kaart">herstart</span>`:''}
           ${c.vervangt?`<span class="chip blue">vervanger</span>`:''}
@@ -1835,7 +1847,14 @@ function snelBewerk(id){
         <div class="card-b">
           <div class="f-grid">
             <div class="f-row"><label for="sb_fase">Fase</label>
-              <select id="sb_fase">${CRM.PHASES.map(p=>`<option ${c.fase===p.k?'selected':''}>${h(p.k)}</option>`).join('')}</select></div>
+              <select id="sb_fase">${
+                /* Zonder fase (import uit het oude ATS) hoort er ook een lege
+                   keuze te staan. Anders kiest de browser stilzwijgend de
+                   eerste optie en zou opslaan de kandidaat zomaar de pijplijn
+                   in duwen — of het formulier onbruikbaar blokkeren. */
+                c.fase ? '' : `<option value="" selected>— nog geen fase —</option>`
+              }${CRM.PHASES.map(p=>`<option ${c.fase===p.k?'selected':''}>${h(p.k)}</option>`).join('')}</select>
+              ${c.fase ? '' : `<span class="hint">Deze kandidaat komt uit het oude ATS en staat nergens op het bord. Kies een fase zodra je het traject start.</span>`}</div>
             <div class="f-row"><label for="sb_type">Type</label>
               <select id="sb_type"><option value="">—</option>
                 <option ${c.type==='W&S'?'selected':''}>W&amp;S</option><option ${c.type==='Flex'?'selected':''}>Flex</option></select></div>

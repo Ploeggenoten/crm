@@ -747,6 +747,8 @@ function contactDrawer(k, ctId){
         <button class="btn ghost sm" id="cd_notitie">Notitie</button>
         <button class="btn ghost sm" id="cd_verslag">Gespreksverslag</button>
         ${ct.email ? '<button class="btn ghost sm" id="cd_mail">Mailen</button>' : ''}
+        ${outlookAan() && (ct.email || ct.telefoon)
+          ? '<button class="btn ghost sm" id="cd_outlook" title="Zet deze persoon in je Outlook-adresboek, dan ziet je telefoon wie er belt">Naar Outlook</button>' : ''}
         <button class="btn ghost sm" id="cd_plan">Inplannen</button>
         <button class="btn sm" id="cd_taak">+ Taak</button>
         <span class="spacer"></span>
@@ -761,6 +763,11 @@ function contactDrawer(k, ctId){
       CRM.mailUI.laad(dr, ct.email, 'cd_mailblok');
       const mailKnop = dr.querySelector('#cd_mail');
       if(mailKnop) mailKnop.onclick = () => mailAanContact(k, ct);
+      const olKnop = dr.querySelector('#cd_outlook');
+      if(olKnop) olKnop.onclick = () => CRM.naarOutlook(olKnop, {
+        naam: ct.naam, email: ct.email, telefoon: ct.telefoon,
+        bedrijf: k.naam, functie: ct.functie
+      });
       /* Het mailadres in de kop opent hetzelfde venster (of blijft mailto). */
       CRM.mailUI.bindLinks(dr.querySelector('.drawer-h'), mailOptiesContact(k, ct));
       dr.querySelector('#cd_notitie').onclick = async () => {
@@ -1212,8 +1219,10 @@ function tabDocumenten(el, k){
           <td class="sub">${h(d.door||'—')}</td>
           <td class="n"><button class="btn sub sm" data-dweg="${h(d.id)}">Verwijderen</button></td>
         </tr>`).join('')}</tbody></table></div>`
-      : CRM.ui.leeg('Nog geen documenten','Koppel de SWO, offerte of andere afspraken zodat iedereen ze terugvindt.')}`;
+      : CRM.ui.leeg('Nog geen documenten','Koppel de SWO, offerte of andere afspraken zodat iedereen ze terugvindt.')}
+    ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(k.naam, 'kl_bestanden') : ''}`;
 
+  if(CRM.bestandenUI) CRM.bestandenUI.laad(el, k.naam, 'kl_bestanden');
   el.querySelector('#d_nieuw').onclick = () => docModal(k);
   el.querySelectorAll('[data-dweg]').forEach(b => b.onclick = async () => {
     if(!await CRM.bevestig('Document loskoppelen?')) return;
@@ -1536,6 +1545,9 @@ function vacatureModal(k, v){
    · nooit automatisch versturen: de gebruiker klikt zelf op Versturen.
    ═══════════════════════════════════════════════════════════════ */
 const mailAan = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.() && CRM.outlook.verbonden?.());
+/* Zelfde voorwaarde, maar dan voor contacten en documenten: alleen als
+   déze gebruiker zijn Microsoft-account gekoppeld heeft. */
+const outlookAan = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.() && CRM.outlook.verbonden?.());
 const voornaamVan = n => String(n||'').trim().split(/\s+/)[0] || '';
 
 /* Sjablonen: klein en nuchter, je-vorm, met de namen die we al weten
@@ -1739,6 +1751,78 @@ CRM.mailUI = {
   }
 };
 
+/* ═══════════════════════════════════════════════════════════════
+   BESTANDEN UIT ONEDRIVE EN SHAREPOINT — gedeeld met kandidaten.js.
+   Zoeken, niet kopiëren: er wordt niets gedownload en niets in het
+   CRM opgeslagen. We laten alleen zien wat er al staat en linken
+   erheen. Zonder koppeling verschijnt het blok helemaal niet.
+   ═══════════════════════════════════════════════════════════════ */
+function bestandRegelHtml(b){
+  const url = /^https:\/\//i.test(String(b.webUrl||'')) ? String(b.webUrl) : '';
+  const meta = [b.waar || '', b.gewijzigd ? 'gewijzigd ' + CRM.geleden(b.gewijzigd) : '']
+    .filter(Boolean).join(' · ');
+  const binnen = `<b class="trunc">${h(b.naam)}</b>
+    ${meta ? `<div class="meta">${h(meta)}</div>` : ''}`;
+  return url
+    ? `<a class="ob-i" href="${h(url)}" target="_blank" rel="noopener" title="Openen in OneDrive of SharePoint">${binnen}</a>`
+    : `<div class="ob-i">${binnen}</div>`;
+}
+
+CRM.bestandenUI = {
+  actief: outlookAan,
+
+  /* Leeg blok. Geen koppeling of geen zoekterm → lege string. */
+  blokHtml(term, id = 'ob_blok'){
+    if(!outlookAan() || !String(term||'').trim()) return '';
+    return `<div class="card ob-kaart" id="${h(id)}">
+      <div class="card-h"><div class="h2">In OneDrive en SharePoint</div>
+        <span class="spacer"></span><span class="meta trunc ob-term">${h(term)}</span></div>
+      <div class="card-b ob-b"><p class="meta ob-leeg">Bestanden zoeken…</p></div></div>`;
+  },
+
+  /* Vult het blok. Alleen aanroepen als de kaart echt openstaat. */
+  laad(root, term, id = 'ob_blok'){
+    if(!outlookAan() || !String(term||'').trim() || !root) return;
+    const kaart = root.querySelector('#' + id);
+    if(!kaart) return;
+    const body = kaart.querySelector('.ob-b');
+    Promise.resolve(CRM.outlook.zoekBestanden(term, 12)).then(rijen => {
+      if(!Array.isArray(rijen)){
+        /* null = zoeken lukte niet; een lege lijst = niets gevonden. */
+        body.innerHTML = '<p class="meta ob-leeg">Zoeken lukte niet.</p>';
+        return;
+      }
+      if(!rijen.length){
+        body.innerHTML = '<p class="meta ob-leeg">Niets gevonden in OneDrive of SharePoint.</p>';
+        return;
+      }
+      body.innerHTML = `<div class="ob-lijst">${rijen.slice(0,8).map(bestandRegelHtml).join('')}</div>
+        <a class="btn sub sm ob-meer" href="${h(CRM.outlook.zoekLink(term))}"
+           target="_blank" rel="noopener">Meer in OneDrive</a>`;
+    }).catch(e => {
+      console.warn('bestandenblok', e);
+      body.innerHTML = '<p class="meta ob-leeg">Zoeken lukte niet.</p>';
+    });
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   CONTACTPERSOON NAAR OUTLOOK — gedeeld met kandidaten.js.
+   Zodat de telefoon laat zien wie er belt. Eén persoon per klik;
+   bulk gaat via Instellingen.
+   ═══════════════════════════════════════════════════════════════ */
+CRM.naarOutlook = async function(knop, gegevens){
+  if(!outlookAan()) return;
+  if(!gegevens.email && !gegevens.telefoon)
+    return CRM.toast('Geen e-mailadres of telefoonnummer om op te slaan','err');
+  const oud = knop ? knop.textContent : '';
+  if(knop){ knop.disabled = true; knop.textContent = 'Bezig…'; }
+  const r = await CRM.outlook.zetContact(gegevens);
+  if(knop){ knop.disabled = false; knop.textContent = oud; }
+  if(!r) return CRM.toast('Opslaan in je Outlook-contacten lukte niet','err');
+  CRM.toast(r.nieuw ? 'Toegevoegd aan je Outlook-contacten' : 'Bijgewerkt in je Outlook-contacten','ok');
+};
+
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('klanten', {
   title:'Relaties', icon:'▣', onderschrift:'Van lead tot klant — relatiekaarten en accountbeheer',
@@ -1768,4 +1852,7 @@ CRM.registerModule('klanten', {
 /* VERZOEK AAN CORE: de mail-bouwstenen (`CRM.mailUI` bovenaan de registratie in
    dit bestand + de `.ml-*`-stijl onderaan css/klanten.css) worden gedeeld met
    js/kandidaten.js. Ze staan hier alleen omdat een module geen core mag
-   aanraken; ze horen thuis in js/core.js en css/base.css. */
+   aanraken; ze horen thuis in js/core.js en css/base.css.
+   Hetzelfde geldt inmiddels voor `CRM.bestandenUI` (OneDrive/SharePoint-blok,
+   `.ob-*`-stijl) en `CRM.naarOutlook` (contactpersoon naar het adresboek):
+   ook die worden door de kandidatenkaart gebruikt en horen in core. */

@@ -34,6 +34,16 @@
 .src-match b{font-size:13px;display:block}
 .src-match > span:first-child{flex:1;min-width:0}
 
+/* ─── "Niet op de kaart" — inklapbaar, want dit kunnen er honderden zijn ── */
+.src-buiten{padding:2px 4px;font-size:12px;color:var(--txt-2)}
+.src-buiten > summary{cursor:pointer;list-style:none;padding:4px 0;font-weight:600;color:var(--txt-2)}
+.src-buiten > summary::-webkit-details-marker{display:none}
+.src-buiten > summary::before{content:'▸';display:inline-block;width:14px;color:var(--muted)}
+.src-buiten[open] > summary::before{content:'▾'}
+.src-buiten > summary:hover{color:var(--ink)}
+.src-buitenlijst{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px 14px}
+.src-buiten p.meta{margin:4px 0 8px;padding-left:14px;max-width:70ch}
+
 @media (max-width:700px){
   .src-kaart{height:48vh;min-height:280px}
   .src-fgrid{grid-template-columns:1fr 1fr}

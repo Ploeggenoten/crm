@@ -256,3 +256,24 @@ a.ml-i:hover b{text-decoration:underline}
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ml-tekst{min-height:220px;line-height:1.55}
 .ml-vanaf{margin:10px 0 0}
+
+/* ═══════════════════════════════════════════════════════════════
+   BESTANDEN (OneDrive / SharePoint) — gedeelde stijl
+   Hoort bij CRM.bestandenUI in js/klanten.js en wordt óók door de
+   kandidatenkaart gebruikt. Zelfde rustige regelstijl als de mail.
+   ═══════════════════════════════════════════════════════════════ */
+/* In de tab Documenten staat het blok los onder de tabel; in een .stack
+   (kandidatenkaart) regelt de gap de afstand al. */
+#kl_bestanden{margin-top:18px}
+.ob-kaart .ob-term{max-width:200px}
+.ob-b{padding-top:6px;padding-bottom:10px}
+.ob-leeg{margin:8px 0}
+.ob-lijst{display:flex;flex-direction:column}
+.ob-i{display:block;padding:10px 0;border-bottom:1px solid var(--line);
+  color:inherit;text-decoration:none}
+.ob-i:last-child{border-bottom:none}
+a.ob-i:hover{background:var(--card-2)}
+a.ob-i:hover b{text-decoration:underline}
+.ob-i b{display:block;font-size:13px;font-weight:600}
+.ob-i .meta{margin-top:2px;font-size:11.5px}
+.ob-meer{margin-top:12px}

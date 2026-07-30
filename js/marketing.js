@@ -43,6 +43,21 @@
   }
   const binnenPeriode = () => { const cut = isoT(M.periode); return M.meta.filter(r => (r.datum||'') >= cut); };
 
+  /* Verschil met richting. Positief = olijf, negatief = rood (CRM.plusMin).
+     Bij kosten per lead is lager juist beter, dus draaien we het teken om
+     vóórdat de kleur gekozen wordt. Neutraal = geen kleur: een cijfer dat
+     op zichzelf niet goed of slecht is (zoals uitgegeven budget). */
+  function verschil(nieuw, oud, fmt, richting){
+    if(!oud) return `<span class="meta">vorige week nog niets om mee te vergelijken</span>`;
+    const v = nieuw - oud;
+    if(Math.abs(v) < 0.005) return `<span class="meta">gelijk aan vorige week</span>`;
+    const tekst = (v > 0 ? '+' : '−') + fmt(Math.abs(v));
+    const cijfer = richting === 'neutraal'
+      ? `<span class="num">${tekst}</span>`
+      : CRM.plusMin(richting === 'lager' ? -v : v, () => tekst);
+    return `${cijfer} <span class="meta">vs ${fmt(oud)}</span>`;
+  }
+
   /* ═══ 1. DATA ════════════════════════════════════════════════ */
   async function veilig(q){
     try{
@@ -280,12 +295,48 @@
   }
 
   /* ── 6a. Prestatie ── */
+  /* Weekvergelijking: het eerste wat je wilt weten als je dit scherm opent.
+     Drie cijfers van de laatste zeven dagen met het verschil tegenover de
+     zeven dagen daarvoor. Euro's alleen voor wie ze mag zien. */
+  function weekHtml(){
+    const nu  = stat(M.meta.filter(r => (r.datum||'') >= isoT(7)));
+    const vor = stat(M.meta.filter(r => (r.datum||'') >= isoT(14) && (r.datum||'') < isoT(7)));
+    if(!nu.imp && !vor.imp) return '';           /* twee weken stil: geen strook */
+
+    const cel = (label, waarde, delta) =>
+      `<div class="mkt-week-c"><span class="label">${h(label)}</span>
+        <b class="num">${waarde}</b><span class="mkt-week-d">${delta}</span></div>`;
+    const cellen = geld()
+      ? cel('Uitgegeven', CRM.euro(nu.spend),
+            verschil(nu.spend, vor.spend, n => CRM.euro(n), 'neutraal')) +
+        cel('Leads', fmtN(nu.leads),
+            verschil(nu.leads, vor.leads, n => fmtN(n), 'hoger')) +
+        cel('Kosten per lead', nu.cpl ? CRM.euro(nu.cpl,2) : '—',
+            nu.cpl && vor.cpl ? verschil(nu.cpl, vor.cpl, n => CRM.euro(n,2), 'lager')
+                              : `<span class="meta">geen vergelijking mogelijk</span>`)
+      : cel('Kliks', fmtN(nu.kliks),
+            verschil(nu.kliks, vor.kliks, n => fmtN(n), 'hoger')) +
+        cel('Leads', fmtN(nu.leads),
+            verschil(nu.leads, vor.leads, n => fmtN(n), 'hoger')) +
+        cel('Leads per 100 kliks', nu.kliks ? CRM.pct(nu.leads/nu.kliks*100,1) : '—',
+            nu.kliks && vor.kliks ? verschil(nu.leads/nu.kliks*100, vor.leads/vor.kliks*100, n => CRM.pct(n,1), 'hoger')
+                                  : `<span class="meta">geen vergelijking mogelijk</span>`);
+
+    return `<div class="vlak mkt-week">
+      <span class="label">Deze week vs vorige week</span>
+      <div class="mkt-week-r">${cellen}</div>
+      <span class="meta">Laatste zeven dagen tegenover de zeven daarvóór.${
+        geld() ? ' Meer of minder uitgeven is op zichzelf niet goed of slecht — dat verschil blijft daarom kleurloos.' : ''}</span>
+    </div>`;
+  }
+
   function prestatieHtml(adv){
     if(!M.meta.length) return leegMeta();
     const rows = binnenPeriode();
     const s = stat(rows);
     const laatst = M.meta[0]?.synced_at ? CRM.fmtDate(M.meta[0].synced_at) : '';
     return `
+      ${weekHtml()}
       ${adviesHtml(adv)}
       <div class="grid c4" style="margin-bottom:18px">
         ${geld()
@@ -302,14 +353,16 @@
       <div class="card" style="margin-bottom:18px">
         <div class="card-h"><div class="h2">Per campagne</div>
           <span class="meta">Klik een regel open voor advertentiesets en advertenties</span></div>
-        <div class="tblwrap" style="border:none;border-radius:0 0 var(--r) var(--r)">
-          <table class="tbl">
+        <div class="tblwrap" style="border:none;border-radius:0 0 var(--r-l) var(--r-l)">
+          <table class="tbl mkt-tbl">
             <thead><tr>
-              <th>Campagne</th>${geld()?'<th class="n">Uitgegeven</th>':''}<th style="width:96px">Aandeel</th>
+              <th>Campagne</th>${geld()?'<th class="n">Uitgegeven</th>':''}
+              <th style="width:96px">${geld()?'Aandeel uitgaven':'Aandeel kliks'}</th>
               <th class="n">Leads</th>${geld()?'<th class="n">€ / lead</th>':''}<th class="n">Kliks</th>
               ${geld()?'<th class="n">CPC</th>':''}<th class="n">CTR</th>
             </tr></thead>
             <tbody id="mkt_camp">${campagneRijen()}</tbody>
+            ${totaalRij()}
           </table>
         </div>
       </div>
@@ -332,7 +385,9 @@
   function adviesHtml(adv){
     if(!M.meta.length) return '';
     if(!adv.length) return `<div class="note ok" style="margin-bottom:18px">Geen openstaande advertentie-adviezen — alles loopt binnen de bandbreedte.</div>`;
-    const kleurVar = {red:'var(--red)', amber:'var(--amber)', green:'var(--green)'};
+    /* Rood = ingrijpen, oranje = urgentie/waarschuwing, olijf = positief
+       (zelfde betekenis als .pos elders in de app). */
+    const kleurVar = {red:'var(--red)', amber:'var(--amber)', green:'var(--olive)'};
     const knop = (a, keuze, tekst) =>
       `<button class="btn ghost sm" data-bes="${h(keuze)}|${h(a.advertentie)}|${h(a.campagne)}">${h(tekst)}</button>`;
     return `<div class="card" style="margin-bottom:18px">
@@ -371,42 +426,64 @@
     });
     return camps;
   }
-  function cijferCellen(s, totaal){
-    const aandeel = totaal ? s.spend/totaal*100 : 0;
+  /* Zonder geldrechten gaat de aandeelbalk over kliks in plaats van euro's —
+     anders staat er een verhouding waarvan de noemer onzichtbaar is. */
+  function cijferCellen(s, tot){
+    const deel = geld() ? (tot.spend ? s.spend/tot.spend : 0) : (tot.kliks ? s.kliks/tot.kliks : 0);
     return `${geld()?`<td class="n num">${CRM.euro(s.spend)}</td>`:''}
-      <td>${CRM.ui.bar(aandeel)}</td>
+      <td>${CRM.ui.bar(deel*100)}</td>
       <td class="n num">${fmtN(s.leads)}</td>
       ${geld()?`<td class="n num">${s.cpl?CRM.euro(s.cpl,2):'—'}</td>`:''}
       <td class="n num">${fmtN(s.kliks)}</td>
       ${geld()?`<td class="n num">${s.cpc?CRM.euro(s.cpc,2):'—'}</td>`:''}
       <td class="n num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</td>`;
   }
+  const kolommen = () => geld() ? 8 : 5;
   function campagneRijen(){
     const camps = [...boom().values()];
-    if(!camps.length) return `<tr><td colspan="${geld()?8:5}" style="padding:0">${CRM.ui.leeg('Geen uitgaven in deze periode',
-      'Er liep geen advertentie in dit venster. Kies hierboven een langere periode of zet een campagne aan in Ads Manager.')}</td></tr>`;
-    const totaal = camps.reduce((t,c) => t + stat(c.rows).spend, 0);
+    if(!camps.length){
+      const knop = geld()
+        ? `<a class="btn" href="${ADSMANAGER}" target="_blank" rel="noopener">Ads Manager openen ↗</a>`
+        : `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`;
+      return `<tr><td colspan="${kolommen()}" style="padding:0">${CRM.ui.leeg('Geen advertenties in deze periode',
+        'Er liep geen advertentie in dit venster. Kies hierboven een langere periode, of zet een campagne aan — zonder advertenties komen er geen Meta-leads binnen.', knop)}</td></tr>`;
+    }
+    const tot = stat(binnenPeriode());
     let html = '';
     camps.sort((a,b) => stat(b.rows).spend - stat(a.rows).spend).forEach(c => {
       const ck = 'c:'+c.naam, cOpen = M.open.has(ck);
       html += `<tr class="clickable" data-uit="${h(ck)}">
         <td><span class="mkt-caret ${cOpen?'op':''}">▸</span><b>${h(c.naam)}</b>
           <div class="rowsub">${c.sets.size} advertentieset${c.sets.size===1?'':'s'}</div></td>
-        ${cijferCellen(stat(c.rows), totaal)}</tr>`;
+        ${cijferCellen(stat(c.rows), tot)}</tr>`;
       if(!cOpen) return;
       [...c.sets.values()].sort((a,b)=>stat(b.rows).spend-stat(a.rows).spend).forEach(s => {
         const sk = 's:'+c.naam+'|'+s.naam, sOpen = M.open.has(sk);
         html += `<tr class="clickable mkt-r1" data-uit="${h(sk)}">
           <td class="mkt-n1"><span class="mkt-caret ${sOpen?'op':''}">▸</span>${h(s.naam)}</td>
-          ${cijferCellen(stat(s.rows), totaal)}</tr>`;
+          ${cijferCellen(stat(s.rows), tot)}</tr>`;
         if(!sOpen) return;
         [...s.ads.values()].sort((a,b)=>stat(b.rows).spend-stat(a.rows).spend).forEach(a => {
           html += `<tr class="mkt-r2"><td class="mkt-n2">${h(a.naam)}</td>
-            ${cijferCellen(stat(a.rows), totaal)}</tr>`;
+            ${cijferCellen(stat(a.rows), tot)}</tr>`;
         });
       });
     });
     return html;
+  }
+  /* Totaalregel — zelfde patroon als de tabellen in Performance, zodat je
+     de campagnes tegen het geheel kunt lezen zonder zelf op te tellen. */
+  function totaalRij(){
+    const tot = stat(binnenPeriode());
+    if(!tot.imp && !tot.kliks && !tot.spend) return '';
+    return `<tfoot><tr><td><b>Alle campagnes</b></td>
+      ${geld()?`<td class="n num">${CRM.euro(tot.spend)}</td>`:''}
+      <td></td>
+      <td class="n num">${fmtN(tot.leads)}</td>
+      ${geld()?`<td class="n num">${tot.cpl?CRM.euro(tot.cpl,2):'—'}</td>`:''}
+      <td class="n num">${fmtN(tot.kliks)}</td>
+      ${geld()?`<td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'—'}</td>`:''}
+      <td class="n num">${tot.ctr!=null?CRM.pct(tot.ctr,2):'—'}</td></tr></tfoot>`;
   }
 
   function dagStrook(){
@@ -425,8 +502,11 @@
        verhaal, zonder dat er een bedrag uit af te leiden is. */
     const waarde = d => geld() ? d.spend : d.kliks;
     const max = Math.max(...dagen.map(waarde), 1);
-    if(!dagen.some(d => d.spend > 0)) return CRM.ui.leeg('Twee weken zonder uitgaven',
-      'Er stond geen advertentie aan. Zonder advertenties komen er geen Meta-leads binnen — zet een campagne aan in Ads Manager.');
+    if(!dagen.some(d => waarde(d) > 0)) return CRM.ui.leeg(
+      geld() ? 'Twee weken zonder uitgaven' : 'Twee weken zonder advertentieverkeer',
+      'Er stond geen advertentie aan. Zonder advertenties komen er geen Meta-leads binnen.',
+      geld() ? `<a class="btn" href="${ADSMANAGER}" target="_blank" rel="noopener">Ads Manager openen ↗</a>`
+             : `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`);
     return `<div class="mkt-dagen">${dagen.map(d => {
       const dag = new Date(d.datum + 'T12:00'), wknd = [0,6].includes(dag.getDay());
       const cpl = d.leads ? d.spend/d.leads : null;
@@ -461,7 +541,7 @@
           <div class="mkt-keten">
             ${geld() ? stap('Uitgegeven', CRM.euro(k.spend), 'Meta-advertenties')
                      : stap('Kliks', fmtN(stat(binnenPeriode()).kliks), 'op Meta-advertenties')}
-            ${geld() ? pijl(k.spend ? CRM.euro(k.leads ? k.spend/k.leads : 0, 2) + ' p/l' : '—')
+            ${geld() ? pijl(k.spend && k.leads ? CRM.euro(k.spend/k.leads, 2) + ' p/l' : '—')
                      : pijl(pct(k.leads, stat(binnenPeriode()).kliks))}
             ${stap('Leads in CRM', fmtN(k.leads), 'bron Meta')}
             ${pijl(pct(k.kandidaten, k.leads))}
@@ -480,7 +560,7 @@
         <b class="num">${fmtN(k.leads)}</b> met bron Meta in het CRM staan — <b class="num">${fmtN(verschil)}</b> zijn er niet doorgezet.
         Alles hieronder rekent met de leads die daadwerkelijk in het CRM staan.</div>` : ''}
 
-      <div class="grid c3" style="margin-bottom:18px">
+      <div class="grid c3">
         ${geld()
           ? CRM.ui.kpi('Kosten per lead', `<span class="num">${k.leads?CRM.euro(k.spend/k.leads,2):'—'}</span>`,
               `${fmtN(k.leads)} CRM-leads uit ${CRM.euro(k.spend)}`)
@@ -494,22 +574,6 @@
           ? CRM.ui.kpi('Kosten per plaatsing', `<span class="num">${kpl}</span>`,
               k.geplaatst ? `${fmtN(k.geplaatst)} plaatsing${k.geplaatst===1?'':'en'} in de periode` : 'nog geen plaatsing', 'accent')
           : CRM.ui.kpi('Plaatsingen', `<span class="num">${fmtN(k.geplaatst)}</span>`, 'uit Meta-leads in deze periode', 'accent')}
-      </div>
-
-      <div class="card">
-        <div class="card-h"><div class="h2">Waar valt het weg?</div></div>
-        <div class="tblwrap" style="border:none;border-radius:0 0 var(--r) var(--r)">
-          <table class="tbl"><thead><tr><th>Stap</th><th class="n">Aantal</th><th class="n">Doorstroom</th><th style="width:180px"></th></tr></thead>
-          <tbody>
-            ${[['Leads in CRM', k.leads, k.leads],
-               ['Kandidaten', k.kandidaten, k.leads],
-               ['Voorgesteld', k.voorgesteld, k.kandidaten],
-               ['Geplaatst', k.geplaatst, k.voorgesteld]].map(([lbl, n, basis]) => `
-              <tr><td>${h(lbl)}</td><td class="n num">${fmtN(n)}</td>
-                <td class="n num">${basis ? Math.round(n/basis*100)+'%' : '—'}</td>
-                <td>${CRM.ui.bar(k.leads ? n/k.leads*100 : 0)}</td></tr>`).join('')}
-          </tbody></table>
-        </div>
       </div>`;
   }
 
@@ -538,20 +602,22 @@
         <div class="card-h"><div class="h2">Binnenkort</div><span class="meta">${gepland.length} gepland</span>
           <div class="spacer"></div>
           <a class="btn sm ghost" href="${BORD}" target="_blank" rel="noopener">Nieuwe post maken ↗</a></div>
-        ${gepland.length ? `<div class="tblwrap" style="border:none;border-radius:0">
+        ${gepland.length ? `<div class="tblwrap" style="border:none;border-radius:0 0 var(--r-l) var(--r-l)">
           <table class="tbl"><thead><tr><th>Datum</th><th>Kanaal</th><th>Titel</th><th>Status</th><th>Vacature</th></tr></thead>
           <tbody>${gepland.slice(0,10).map(p => `<tr>
             <td class="num" style="white-space:nowrap">${h(CRM.fmtDateShort(p.datum))}${p.tijd?` <span class="meta num">${h(p.tijd)}</span>`:''}</td>
             <td>${kanaalChip(p.kanaal)}</td>
             <td><b>${h(p.titel||'(zonder titel)')}</b>${p.format?`<div class="rowsub">${h(p.format)}</div>`:''}</td>
-            <td><span class="chip ${p.fase==='Ingepland'?'amber':''}">${h(p.fase)}</span></td>
+            <td><span class="chip">${h(p.fase)}</span></td>
             <td class="meta">${h(p.vacature||'—')}</td></tr>`).join('')}</tbody></table>
-        </div>` : `<div class="card-b"><span class="meta">Niets ingepland. Dat is het moment om nieuwe content te maken.</span></div>`}
+        </div>` : `<div class="card-b">${CRM.ui.leeg('Niets ingepland',
+          'Zonder geplande content valt de organische instroom stil. Zet in het marketingbord de posts voor de komende twee weken klaar.',
+          `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Content plannen ↗</a>`)}</div>`}
       </div>
 
       <div class="card">
         <div class="card-h"><div class="h2">Gepubliceerd</div><span class="meta">laatste ${pub.length}</span></div>
-        <div class="tblwrap" style="border:none;border-radius:0 0 var(--r) var(--r)">
+        <div class="tblwrap" style="border:none;border-radius:0">
           <table class="tbl"><thead><tr>
             <th>Datum</th><th>Kanaal</th><th>Titel</th>
             <th class="n">Bereik</th><th class="n">Likes</th><th class="n">Reacties</th><th class="n">Leads</th>
@@ -580,9 +646,9 @@
         <span class="meta">open vacatures, laatste 14 dagen</span>
         <div class="spacer"></div>
         <a class="btn sm ghost" href="${BORD}" target="_blank" rel="noopener">Content plannen ↗</a></div>
-      <div class="tblwrap" style="border:none;border-radius:0 0 var(--r) var(--r)">
+      <div class="tblwrap" style="border:none;border-radius:0">
         <table class="tbl"><thead><tr>
-          <th>Klant</th><th>Functie</th><th>Locatie</th><th class="n">Plekken</th><th class="n">Dagen open</th><th>Wat mist</th>
+          <th>Klant</th><th>Functie</th><th>Locatie</th><th class="n">Plekken</th><th class="n">Dagen open</th>
         </tr></thead>
         <tbody>${gaten.map(g => `<tr>
           <td><b>${h(g.v.klant)}</b></td>
@@ -590,7 +656,6 @@
           <td class="meta">${h(g.v.locatie||'—')}</td>
           <td class="n num">${fmtN(g.v.aantal||1)}</td>
           <td class="n num">${g.dagenOpen!=null?g.dagenOpen:'—'}</td>
-          <td><span class="chip red">geen content</span> <span class="chip red">geen advertentie</span></td>
         </tr>`).join('')}</tbody></table>
       </div>
       <div class="card-f"><span class="meta">Deze vacatures krijgen nu geen instroom vanuit marketing. Eén post of advertentieset per vacature is meestal genoeg.</span></div>

@@ -9,8 +9,7 @@
 
 const h = CRM.h;
 const kort   = s => String(s||'').slice(0,10);
-const actief = c => !['Afgevallen','Gestopt'].includes(c.fase);
-const GARANTIE_STD = 3;                       /* maanden, als garantie_mnd leeg is */
+const GARANTIE_STD = 3;                     /* maanden, als garantie_mnd leeg is */
 
 /* ─── Periode ────────────────────────────────────────────────── */
 let periode = 'maand', eigenVan = '', eigenTot = '';
@@ -95,7 +94,10 @@ function duurzaam(c){
   return kort(c.gestoptOp) > eind;
 }
 
-/* Verste fase die een kandidaat ooit bereikte (0..10, eindfases tellen niet mee). */
+/* Verste fase die een kandidaat ooit bereikte (0..10, eindfases tellen niet mee).
+   Een lege fase (geïmporteerd uit het oude ATS, nooit in de pijplijn geweest)
+   levert -1 op: zo'n kandidaat heeft geen trechterpositie en is ook niet
+   "verloren" — hij is er simpelweg nooit ingegaan. */
 const FUNNEL = CRM.PHASES.filter(p => !['Afgevallen','Gestopt'].includes(p.k));
 function verste(c){
   const idxs = [];
@@ -106,6 +108,10 @@ function verste(c){
   if(kort(c.geplaatstOp)) idxs.push(CRM.faseIdx('Contract getekend'));
   return idxs.length ? Math.max.apply(null, idxs) : -1;
 }
+/* Staat deze kandidaat nú in de pijplijn? Alleen echte, lopende fases —
+   een lege fase telt niet mee, anders zit de hele oude-ATS-import
+   ineens in ieders pijplijn. */
+const inPijplijn = c => CRM.faseIdx(c.fase) >= 0 && !CRM.DONE.includes(c.fase);
 
 /* ─── Basisverzamelingen voor de gekozen periode ─────────────── */
 function cijfers(p){
@@ -238,7 +244,7 @@ function recruiterRijen(p, D){
       plaatsingen: getekend.length,
       netto: getekend.length - gestopt.length,
       duurN: duur.length, duurT: cohort.length,
-      pijplijn: mijn.filter(c => actief(c) && !CRM.PLACED.includes(c.fase)).length,
+      pijplijn: mijn.filter(inPijplijn).length,
       looptijd: gem(looptijden),
       gesprekken: mijn.filter(c => inP(c.datum, p)).length
     };
@@ -293,11 +299,16 @@ function blokRecruiters(p, D){
 
 /* ═══ 4. CONVERSIETRECHTER ═══════════════════════════════════════ */
 function blokTrechter(p, D){
-  const cohort = D.instroom;
+  /* Alleen kandidaten die daadwerkelijk een pijplijnfase bereikten. Een
+     geïmporteerde kandidaat zonder fase heeft nooit in de trechter gezeten
+     en zou het startgetal anders vervuilen. */
+  const cohort = D.instroom.filter(c => verste(c) >= 0);
+  const buiten = D.instroom.length - cohort.length;
+  const buitenTxt = buiten ? ` · <span class="num">${buiten}</span> zonder pijplijnfase niet meegeteld` : '';
   if(cohort.length < 3)
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Conversietrechter</span></div>
       <div class="card"><div class="card-b">${CRM.ui.leeg('Te weinig instroom in deze periode',
-        `Er stroomden ${cohort.length} kandidaten in. Kies een langere periode voor een betrouwbaar beeld.`)}</div></div></section>`;
+        `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} geïmporteerde kandidaten zonder fase tellen niet mee)`:''}. Kies een langere periode voor een betrouwbaar beeld.`)}</div></div></section>`;
 
   const verstes = cohort.map(verste);
   const tel = FUNNEL.map((f,i) => ({fase:f.k, kleur:f.c, n:verstes.filter(v => v>=i).length}));
@@ -308,7 +319,7 @@ function blokTrechter(p, D){
 
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Conversietrechter</span>
-      <span class="meta">${cohort.length} kandidaten ingestroomd in ${h(p.lbl)}</span></div>
+      <span class="meta"><span class="num">${cohort.length}</span> kandidaten de pijplijn in ${h(p.lbl)}${buitenTxt}</span></div>
     <div class="card"><div class="card-b">
       <div class="pf-funnel">
         ${tel.map((t,i)=>{
@@ -330,7 +341,8 @@ function blokTrechter(p, D){
           <span class="meta num">${offers} offers · ${plaatsingen} geplaatst</span></div>
       </div>
       <p class="pf-uitleg meta">Een kandidaat telt bij elke fase die hij ooit bereikte (uit de historie).
-        Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die hij haalde.</p>
+        Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die hij haalde.
+        Kandidaten zonder fase (import uit het oude ATS) zijn nooit de pijplijn in gegaan en tellen dus nergens mee.</p>
     </div></div>
   </section>`;
 }
@@ -461,7 +473,15 @@ function blokKlanten(fin){
   </section>`;
 }
 
-/* ═══ 7. PER BRON — marketing ↔ recruitment ══════════════════════ */
+/* ═══ 7. PER BRON — marketing ↔ recruitment ══════════════════════
+   Een historische import uit het oude ATS is géén wervingsbron: die
+   kandidaten zijn nooit via een advertentie of gesprek binnengekomen.
+   Ze staan wél zichtbaar in de tabel (ze bestaan), maar ónder de
+   totaalregel en zonder conversiepercentages — anders zou één import
+   van honderden namen de cijfers van Meta, Indeed en WhatsApp
+   onherkenbaar verdunnen.                                          */
+const BRON_GEEN_WERVING = b => /\bimport\b|oud ats|migratie/i.test(b);
+
 function blokBron(p, D){
   const leads = (CRM.state.leads||[]).filter(l => inP(l.binnen_op, p));
   const bronnen = Array.from(new Set([
@@ -474,14 +494,26 @@ function blokBron(p, D){
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per bron</span></div>
       <div class="card"><div class="card-b">${CRM.ui.leeg('Geen bron vastgelegd','Vul het veld bron bij leads en kandidaten in om marketing aan plaatsingen te koppelen.')}</div></div></section>`;
 
-  const rijen = bronnen.map(b => ({
+  const alle = bronnen.map(b => ({
     bron: b,
+    werving: !BRON_GEEN_WERVING(b),
     leads: leads.filter(l => (l.bron||'').trim()===b).length,
     kand:  D.instroom.filter(c => (c.bron||'').trim()===b).length,
     plaats:D.getekend.filter(c => (c.bron||'').trim()===b).length
   })).sort((a,b)=> (b.leads+b.kand*3+b.plaats*10) - (a.leads+a.kand*3+a.plaats*10));
 
+  const rijen  = alle.filter(r => r.werving);
+  const buiten = alle.filter(r => !r.werving);
   const tot = rijen.reduce((s,r)=>({leads:s.leads+r.leads, kand:s.kand+r.kand, plaats:s.plaats+r.plaats}), {leads:0,kand:0,plaats:0});
+
+  const rij = r => `<tr>
+    <td><b>${h(r.bron)}</b></td>
+    <td class="n num">${r.leads}</td>
+    <td class="n num">${r.kand}</td>
+    <td class="n">${r.leads ? pctTxt(r.kand, r.leads) : '<span class="meta">—</span>'}</td>
+    <td class="n num">${r.plaats}</td>
+    <td class="n">${r.kand ? pctTxt(r.plaats, r.kand) : '<span class="meta">—</span>'}</td>
+  </tr>`;
 
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Per bron</span>
@@ -489,21 +521,29 @@ function blokBron(p, D){
     <div class="tblwrap"><table class="tbl pf-tbl">
       <thead><tr><th>Bron</th><th class="n">Leads</th><th class="n">Kandidaten</th>
         <th class="n">→ kandidaat</th><th class="n">Plaatsingen</th><th class="n">→ plaatsing</th></tr></thead>
-      <tbody>${rijen.map(r=>`<tr>
-        <td><b>${h(r.bron)}</b></td>
+      <tbody>
+        ${rijen.map(rij).join('') || `<tr><td colspan="6"><span class="meta">Geen wervingsbron in deze periode.</span></td></tr>`}
+        <tr class="pf-tot"><td><b>Totaal wervingsbronnen</b></td>
+          <td class="n num">${tot.leads}</td><td class="n num">${tot.kand}</td>
+          <td class="n">${tot.leads ? pctTxt(tot.kand, tot.leads) : '<span class="meta">—</span>'}</td>
+          <td class="n num">${tot.plaats}</td>
+          <td class="n">${tot.kand ? pctTxt(tot.plaats, tot.kand) : '<span class="meta">—</span>'}</td></tr>
+      </tbody>
+      ${buiten.length ? `<tbody class="pf-buiten">${buiten.map(r=>`<tr>
+        <td><b>${h(r.bron)}</b><div class="rowsub">historisch bestand, geen werving</div></td>
         <td class="n num">${r.leads}</td>
         <td class="n num">${r.kand}</td>
-        <td class="n">${r.leads ? pctTxt(r.kand, r.leads) : '<span class="meta">—</span>'}</td>
+        <td class="n"><span class="meta">niet meegeteld</span></td>
         <td class="n num">${r.plaats}</td>
-        <td class="n">${r.kand ? pctTxt(r.plaats, r.kand) : '<span class="meta">—</span>'}</td>
-      </tr>`).join('')}</tbody>
-      <tfoot><tr><td><b>Totaal</b></td><td class="n num">${tot.leads}</td><td class="n num">${tot.kand}</td>
-        <td class="n">${tot.leads ? pctTxt(tot.kand, tot.leads) : '—'}</td>
-        <td class="n num">${tot.plaats}</td>
-        <td class="n">${tot.kand ? pctTxt(tot.plaats, tot.kand) : '—'}</td></tr></tfoot>
+        <td class="n"><span class="meta">niet meegeteld</span></td>
+      </tr>`).join('')}</tbody>` : ''}
     </table></div>
     <p class="pf-uitleg meta">Leads zijn binnengekomen reacties, kandidaten zijn de leads die de pijplijn in gingen.
-      Beide gemeten binnen de gekozen periode, dus een lead uit vorige maand die nu plaatst telt hier niet mee.</p>
+      Beide gemeten binnen de gekozen periode, dus een lead uit vorige maand die nu plaatst telt hier niet mee.${
+      buiten.length ? ` Onder de streep staat het overgezette bestand uit het oude ATS
+      (${buiten.reduce((s,r)=>s+r.kand,0).toLocaleString('nl-NL')} kandidaten in deze periode). Die namen zijn nooit geworven,
+      dus ze tellen niet mee in het totaal en krijgen geen conversiepercentage — anders lijkt elke echte bron
+      opeens veel slechter dan hij is.` : ''}</p>
   </section>`;
 }
 
@@ -562,17 +602,9 @@ function tempoHtml(plPerMnd, conv){
 }
 
 function blokDoel(fin){
-  /* Demo: geen fin-data. Nette lege staat voor de eigenaar, niets voor het team. */
-  if(CRM.demo){
-    if(!CRM.canSeeMoney()) return '';
-    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Doel</span>
-        <span class="meta">alleen voor jou</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen financiële data in demo-modus',
-        'Het omzetdoel en het benodigde tempo verschijnen hier zodra je met je eigen account bent ingelogd.')}</div></div></section>`;
-  }
-
   /* Team: geen euro's, wel de afgeleide activiteitendoelen op basis van
-     het maandtarget van het bord en de eigen conversieratio's. */
+     het maandtarget van het bord en de eigen conversieratio's. Dit deel
+     heeft geen financiële data nodig en werkt dus ook in demo-modus. */
   if(!CRM.canSeeMoney()){
     const target = CRM.maandTarget();
     if(!target) return '';
@@ -587,6 +619,13 @@ function blokDoel(fin){
     </section>`;
   }
 
+  /* Eigenaar in demo: de echte financiële data blijft bewust buiten beeld. */
+  if(CRM.demo)
+    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Doel</span>
+        <span class="meta">alleen voor jou</span></div>
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen financiële data in demo-modus',
+        'Het omzetdoel en het benodigde tempo verschijnen hier zodra je met je eigen account bent ingelogd.')}</div></div></section>`;
+
   /* Eigenaar, nog aan het laden */
   if(!fin) return `<section class="pf-sec"><div class="pf-kop"><span class="label">Doel</span></div>
     <div class="card"><div class="card-b">${CRM.ui.laden('Financiële doelen laden…')}</div></div></section>`;
@@ -597,20 +636,25 @@ function blokDoel(fin){
   const doelBron  = posNum(S.doel_omzet) != null ? 'doel_omzet' : (posNum(S.doel_omzet_jaar) != null ? 'doel_omzet_jaar' : null);
   const doelWinst = posNum(S.doel_winst_jaar);
 
-  /* Geen omzetdoel ingesteld → toon het doel dat er wél staat + instelveld. */
+  /* Geen omzetdoel ingesteld → toon het doel dat er wél staat + instelveld.
+     Ook als fin_settings helemaal leeg is (of niet gelezen kon worden)
+     komt het scherm hier netjes uit: één zin en één invulveld. */
   if(doelOmzet == null){
+    const eindJaar = CRM.todayISO().slice(0,4) + '-12';
     return `<section class="pf-sec">
       <div class="pf-kop"><span class="label">Doel</span><span class="meta">alleen voor jou</span></div>
       <div class="card"><div class="card-b">
         ${doelWinst != null ? `<div class="pf-doelkop"><div><span class="label">Winstdoel dit jaar (financebord)</span>
             <div class="big num">${h(CRM.euro(doelWinst))}</div></div></div>
           <p class="pf-uitleg meta">Er staat nog geen omzetdoel in de instellingen. Stel het hieronder in — dan rekent dit blok uit welk tempo daarvoor nodig is.</p>`
-        : `<p class="sub" style="margin:0 0 12px">Er staat nog geen doel in de instellingen van het financebord. Stel hieronder een omzetdoel in.</p>`}
+        : `<p class="sub" style="margin:0 0 12px">Er staat nog geen omzetdoel in de instellingen van het financebord. Stel het hieronder in — dan rekent dit blok uit hoeveel plaatsingen, voorstellen en gesprekken per maand daarvoor nodig zijn.</p>`}
         <div class="row tight pf-doelset">
           <input type="number" id="pf_doelbedrag" placeholder="Omzetdoel, bijv. 400000" min="0" step="1000" style="width:200px">
-          <input type="month" id="pf_doeldatum" style="width:160px">
+          <input type="month" id="pf_doeldatum" value="${h(eindJaar)}" style="width:160px">
           <button class="btn sm" id="pf_doelzet">Omzetdoel instellen</button>
         </div>
+        <p class="pf-uitleg meta">Wordt bewaard in <span class="num">fin_settings</span> (doel_omzet en doel_omzet_datum),
+          zodat het dashboard met hetzelfde doel rekent.</p>
       </div></div>
     </section>`;
   }
@@ -643,7 +687,11 @@ function blokDoel(fin){
 
   const teGaan = Math.max(0, doelOmzet - omzet);
   const pct = Math.min(100, Math.round(omzet / doelOmzet * 100));
-  const mndRest = Math.max(0.25, (new Date(doelDatum) - new Date(vandaag)) / 86400000 / 30.44);
+  /* Ligt de doeldatum al achter ons, dan is er geen tempo meer uit te rekenen —
+     dan vragen we om een nieuwe datum in plaats van een onmogelijk getal. */
+  const dagenRest = Math.round((new Date(doelDatum) - new Date(vandaag)) / 86400000);
+  const verstreken = dagenRest < 0;
+  const mndRest = Math.max(0.25, dagenRest / 30.44);
 
   /* Gemiddelde fee en blijfkans uit fin_placements. */
   const fees = (fin.placements||[]).map(pl => Number(pl.fee_excl)||0).filter(n => n > 0);
@@ -658,6 +706,10 @@ function blokDoel(fin){
 
   const dLbl = new Date(doelDatum).toLocaleDateString('nl-NL',{month:'long',year:'numeric'});
   const klaarTekst = teGaan === 0 ? `<span class="chip green">Doel gehaald</span>` : '';
+  /* Staat er ook een jaardoel in het financebord dat afwijkt? Dan reken je in
+     twee apps met verschillende getallen — dat wil je weten. */
+  const doelJaar = posNum(S.doel_omzet_jaar);
+  const afwijkend = doelBron === 'doel_omzet' && doelJaar != null && Math.round(doelJaar) !== Math.round(doelOmzet);
 
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Doel</span><span class="meta">alleen voor jou · euro's ziet het team niet</span></div>
@@ -669,13 +721,18 @@ function blokDoel(fin){
           <span class="meta">gefactureerd sinds ${h(CRM.fmtDateShort(start))}</span>
           ${sOmzet?`<div class="pf-spark">${sOmzet}<span class="meta">per maand</span></div>`:''}</div>
         <div><span class="label">Nog te gaan</span><div class="big num">${h(CRM.euro(teGaan))}</div>
-          <span class="meta num">${mndRest.toFixed(1).replace('.',',')} maanden resterend</span></div>
+          <span class="meta num">${verstreken ? 'doeldatum verstreken' : mndRest.toFixed(1).replace('.',',') + ' maanden resterend'}</span></div>
         <span class="spacer"></span>
         <div class="row tight">${klaarTekst}<button class="btn ghost sm" id="pf_doelzetten">Doel aanpassen</button></div>
       </div>
       <div class="pf-doelbar">${CRM.ui.bar(pct, pct>=100?'green':'')}
         <span class="meta num">${pct}% van het doel</span></div>
-      ${teGaan > 0 ? tempoHtml(plPerMnd, conv) : ''}
+      ${teGaan > 0 && verstreken
+        ? `<div class="note warn" style="margin-top:18px">De doeldatum (${h(dLbl)}) is verstreken en het doel is niet gehaald.
+             Zet een nieuwe datum met <b>Doel aanpassen</b> — dan rekent dit blok het benodigde tempo opnieuw uit.</div>`
+        : teGaan > 0 ? tempoHtml(plPerMnd, conv) : ''}
+      ${afwijkend ? `<p class="pf-uitleg meta">Let op: in het financebord staat een jaardoel van
+        ${h(CRM.euro(doelJaar))} (doel_omzet_jaar). Dit blok rekent met het doel hierboven (doel_omzet).</p>` : ''}
       <p class="pf-uitleg meta">${gemFee != null
         ? `Gerekend met een gemiddelde fee van ${h(CRM.euro(Math.round(gemFee)))} (uit ${fees.length} plaatsingen),
            een blijfkans van ${Math.round(blijf*100)}% en de conversie uit onze eigen afgeronde trajecten
@@ -689,12 +746,16 @@ function blokDoel(fin){
 function eindeMaand(mk){ const [j,m] = mk.split('-').map(Number); return new Date(j, m, 0).toLocaleDateString('sv-SE'); }
 function verschuifMaanden(iso, n){ const d = new Date(iso); d.setMonth(d.getMonth()+n); return d.toLocaleDateString('sv-SE'); }
 
-/* Omzetdoel wegschrijven naar fin_settings (keys: doel_omzet + doel_omzet_datum). */
+/* Omzetdoel wegschrijven naar fin_settings (keys: doel_omzet + doel_omzet_datum).
+   fin_settings heeft key als primaire sleutel en value als jsonb; onConflict
+   staat er expliciet bij zodat een bestaand doel wordt overschreven in
+   plaats van een dubbele sleutel te veroorzaken. */
 async function doelOpslaan(bedrag, maand){
-  if(!CRM.canSeeMoney() || CRM.demo) return false;
+  if(!CRM.canSeeMoney()) return false;
+  if(CRM.demo){ CRM.toast('Demo-modus — het doel wordt niet opgeslagen','err'); return false; }
   const rows = [{key:'doel_omzet', value:bedrag}];
   if(maand) rows.push({key:'doel_omzet_datum', value:maand});
-  const {error} = await CRM.sb.from('fin_settings').upsert(rows);
+  const {error} = await CRM.sb.from('fin_settings').upsert(rows, {onConflict:'key'});
   if(error){ CRM.fout('Doel opslaan mislukt', error); return false; }
   if(_fin){ _fin.settings = _fin.settings || {}; _fin.settings.doel_omzet = bedrag; if(maand) _fin.settings.doel_omzet_datum = maand; }
   CRM.toast('Omzetdoel opgeslagen','ok');
@@ -714,7 +775,8 @@ function doelModal(mount, acties){
         <div class="f-row"><label>Te halen vóór</label>
           <input type="month" id="dm_maand" value="${h(datum)}"></div>
       </div>
-      <p class="hint">Wordt opgeslagen in de instellingen van het financebord (fin_settings) — beide apps kijken naar hetzelfde doel.</p>
+      <p class="hint">Wordt opgeslagen in de instellingen van het financebord (fin_settings) onder doel_omzet en doel_omzet_datum.
+        Het CRM-dashboard rekent met hetzelfde doel; het jaardoel ín het financebord (doel_omzet_jaar) blijft ongemoeid.</p>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="dm_ok">Opslaan</button></div>`, {onOpen(m){

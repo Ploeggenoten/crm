@@ -415,12 +415,14 @@ CRM.outlook = {
         jobTitle: functie ? String(functie) : undefined
       };
       const bestaand = await zoekContactId(volledig, adres);
+      /* Geen antwoord = geen geldig token meer; dan niet doen alsof het
+         gelukt is, maar netjes null teruggeven. */
       if(bestaand){
-        await graphRustig('/me/contacts/' + encodeURIComponent(bestaand), {method:'PATCH', body: velden});
-        return {nieuw:false};
+        const r = await graphRustig('/me/contacts/' + encodeURIComponent(bestaand), {method:'PATCH', body: velden});
+        return r ? {nieuw:false} : null;
       }
-      await graphRustig('/me/contacts', {method:'POST', body: velden});
-      return {nieuw:true};
+      const r = await graphRustig('/me/contacts', {method:'POST', body: velden});
+      return r ? {nieuw:true} : null;
     }catch(e){ console.warn('zetContact', e); return null; }
   },
 

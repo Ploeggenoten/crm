@@ -27,6 +27,10 @@ let filtersOpen = false, filtersOpenGezet = false;
 
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
 
+/* Microsoft-koppeling van déze gebruiker. Staat die uit, dan verschijnen
+   de Outlook-onderdelen op de kaart helemaal niet. */
+const outlookAan = () => !!(CRM.outlook && CRM.outlook.beschikbaar?.() && CRM.outlook.verbonden?.());
+
 /* ─── Golden candidates ───────────────────────────────────────────
    Goede kandidaten waar nú geen passende vacature voor is — die
    verliezen we anders uit het oog. De vlag leeft in candidates.golden
@@ -508,6 +512,7 @@ function kaart(mount, acties, id){
           ${kansenHtml(c)}
           ${trajectHtml(c)}
           ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
+          ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
         </div>
       </div>
       <div>
@@ -527,6 +532,16 @@ function kaart(mount, acties, id){
     const mailBtn = mount.querySelector('#c_mail');
     if(mailBtn) mailBtn.onclick = () => CRM.mailUI.opstellen(mailOpties(c));
   }
+  /* CV's en documenten die al in OneDrive of SharePoint staan — zoeken
+     op naam, pas nu de kaart openstaat. Er wordt niets gekopieerd. */
+  if(CRM.bestandenUI) CRM.bestandenUI.laad(mount, c.naam, 'kd_bestanden');
+  /* Kandidaat in het Outlook-adresboek zetten, zodat je telefoon bij een
+     inkomend gesprek meteen laat zien wie er belt. */
+  const olBtn = mount.querySelector('#c_outlook');
+  if(olBtn && CRM.naarOutlook) olBtn.onclick = () => CRM.naarOutlook(olBtn, {
+    naam: c.naam, email: c.email, telefoon: c.telefoon,
+    bedrijf: (c.cv && c.cv.werkgever) || '', functie: c.functie
+  });
   const goldBtn = mount.querySelector('#c_golden');
   if(goldBtn) goldBtn.onclick = async () => {
     const ok = await zetGolden(c.id, !isGolden(c.id));
@@ -615,6 +630,9 @@ function kopHtml(c){
           <a class="btn sub sm" href="${h(waLink(c.telefoon))}" target="_blank" rel="noopener">WhatsApp</a>`:'<span class="meta">Geen telefoonnummer</span>'}
         ${c.email?`<a href="mailto:${h(c.email)}">${h(c.email)}</a>
           <button type="button" class="btn sub sm" id="c_mail">Mailen</button>`:'<span class="meta">Geen e-mailadres</span>'}
+        ${outlookAan() && (c.email || c.telefoon)
+          ? `<button type="button" class="btn sub sm" id="c_outlook"
+              title="Zet deze kandidaat in je Outlook-adresboek, dan ziet je telefoon wie er belt">Naar Outlook</button>` : ''}
       </div>
     </div>
     <div class="kd-meter">

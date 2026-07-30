@@ -48,8 +48,12 @@
 /* ─── Tabellen ───────────────────────────────────────────────── */
 .pf-tbl td.pf-balk{width:110px;min-width:90px}
 .pf-tbl td.pf-balk .bar{height:6px}
-.pf-tbl tfoot td{background:var(--card-2);border-top:1px solid var(--line);font-weight:600;padding:10px 14px}
+.pf-tbl tfoot td,.pf-tbl tr.pf-tot td{background:var(--card-2);border-top:1px solid var(--line);font-weight:600;padding:10px 14px}
 .pf-tbl .chip{font-size:11px}
+/* Onder de totaalregel: rijen die bewust buiten de telling blijven
+   (historische import). Gedempt, maar zichtbaar — ze bestaan wel. */
+.pf-tbl tbody.pf-buiten td{background:var(--well);color:var(--txt-2);border-top:1px solid var(--line)}
+.pf-tbl tbody.pf-buiten b{font-weight:600}
 
 /* ─── Trechter ───────────────────────────────────────────────── */
 .pf-funnel{display:flex;flex-direction:column;gap:7px}

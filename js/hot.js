@@ -28,10 +28,24 @@
     .sort((a,b)=>(a.hot_prio||999)-(b.hot_prio||999));
 
   /* Gekoppelde kandidaten: op vacature_id, met terugval op
-     klant+functie voor kandidaten zonder koppeling. */
-  const gekoppeld = v => CRM.kandidaten().filter(c =>
+     klant+functie voor kandidaten zonder koppeling.
+     De kandidatenlijst wordt binnen één tekenronde hergebruikt: bij 350
+     kandidaten en tien hot vacatures werd hij anders tien keer opnieuw
+     opgebouwd (kaart, badge én de deadline-check doen dit elk apart). */
+  let _kandCache = null;
+  const alleKand = () => {
+    if(!_kandCache){
+      _kandCache = CRM.kandidaten();
+      Promise.resolve().then(() => { _kandCache = null; });   // geldig binnen één tick
+    }
+    return _kandCache;
+  };
+  /* Een kandidaat zonder fase (import uit het oude ATS) hoort nergens
+     als lopend traject te tellen — leeg is geen positie in de pijplijn. */
+  const heeftFase = c => !!c.fase;
+  const gekoppeld = v => alleKand().filter(c =>
     (c.vacatureId && String(c.vacatureId)===String(v.id)) ||
-    (!c.vacatureId && c.klant===v.klant && c.functie===v.functie));
+    (!c.vacatureId && !!v.klant && !!v.functie && c.klant===v.klant && c.functie===v.functie));
 
   /* Doel-voortgang: telt kandidaten die het doel sinds doel_gezet_op
      bereikten. Historie is leidend; terugval op huidige fase + since. */
@@ -129,8 +143,9 @@
   /* ─── Kaart-HTML ────────────────────────────────────────────── */
   function kaartHtml(v, i, n){
     const cands = gekoppeld(v);
-    const lopend = cands.filter(c => !CRM.DONE.includes(c.fase));
+    const lopend = cands.filter(c => heeftFase(c) && !CRM.DONE.includes(c.fase));
     const geplaatst = cands.filter(c => CRM.PLACED.includes(c.fase));
+    const zonderFase = cands.filter(c => !heeftFase(c)).length;
     const beh = telDoel(v, cands);
     const doel = Number(v.doel_aantal)||0;
     const gehaald = doel > 0 && beh >= doel;
@@ -173,23 +188,25 @@
 
     // Uitklap: gekoppelde kandidaten
     const open = S.open === String(v.id);
-    const rij = cands.slice().sort((a,b) => {
-      const ea = EIND.includes(a.fase)?1:0, eb = EIND.includes(b.fase)?1:0;
-      if(ea !== eb) return ea - eb;
-      return CRM.faseIdx(b.fase) - CRM.faseIdx(a.fase);
-    });
+    /* Afgeronde én faseloze kandidaten onderaan — alleen lopende trajecten
+       verdienen de aandacht bovenin. */
+    const achteraan = c => (EIND.includes(c.fase) || !heeftFase(c)) ? 1 : 0;
+    const rij = cands.slice().sort((a,b) =>
+      achteraan(a) - achteraan(b) || CRM.faseIdx(b.fase) - CRM.faseIdx(a.fase));
     const uitklap = !open ? '' : `<div class="hot-uitklap">
       <div class="label" style="margin-bottom:8px">Gekoppelde kandidaten (${cands.length})</div>
       ${!cands.length ? `<div class="meta">Nog geen kandidaten aan deze vacature gekoppeld.</div>` :
-        rij.map(c => `<div class="hk-row${EIND.includes(c.fase)?' af':''}" data-cand="${h(c.id)}">
-          <i class="hot-dot" style="background:${CRM.faseKleur(c.fase)}"></i>
+        rij.map(c => `<div class="hk-row${EIND.includes(c.fase)||!heeftFase(c)?' af':''}" data-cand="${h(c.id)}">
+          <i class="hot-dot" style="background:${heeftFase(c)?CRM.faseKleur(c.fase):'var(--line-2)'}"></i>
           <b>${h(c.naam)}</b>
-          <span class="chip">${h(c.fase)}</span>
+          <span class="chip">${heeftFase(c) ? h(c.fase) : 'geen fase'}</span>
           <span class="hk-actie">${h(c.volgendeActie
               ? c.volgendeActie + (c.actieDatum ? ' · ' + CRM.fmtDateShort(c.actieDatum) : '')
               : (c.datum && dat(c.datum) >= vandaag && !EIND.includes(c.fase) ? 'afspraak ' + CRM.fmtDay(c.datum) + (c.tijd?' '+c.tijd:'') : ''))}</span>
           <span class="hk-ga">→</span>
         </div>`).join('')}
+      ${zonderFase ? `<div class="meta" style="margin-top:8px">${zonderFase} hiervan ${zonderFase===1?'heeft':'hebben'} geen fase
+        (import uit het oude ATS) — die tellen niet mee in de funnel of het doel.</div>` : ''}
     </div>`;
 
     return `<div class="hotcard${i===0?' top':''}${open?' open':''}" data-id="${h(v.id)}" draggable="true">

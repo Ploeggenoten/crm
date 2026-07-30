@@ -30,12 +30,23 @@ const sk = key => VANDAAG() + ':' + key;
 let _vgTot = 0, _vgAf = 0;
 
 /* Maandag t/m zondag van de huidige week. */
-function weekBereik(){
+const dagPlus = (basis, n) => { const x = new Date(basis); x.setDate(x.getDate()+n); return x; };
+function maandag(){
   const d = new Date(); d.setHours(0,0,0,0);
-  const van = new Date(d.getTime() - ((d.getDay()+6)%7)*DAG);
-  return { van:dISO(van), tot:dISO(new Date(van.getTime()+6*DAG)) };
+  return dagPlus(d, -((d.getDay()+6)%7));
+}
+function weekBereik(){
+  const ma = maandag();
+  return { van:dISO(ma), tot:dISO(dagPlus(ma,6)) };
 }
 const inBereik = (x,van,tot) => { const s = kort(x); return !!s && s>=van && s<=tot; };
+
+/* ═══ ZICHT: vandaag of week ═════════════════════════════════════
+   De schakelaar staat in de kop van het tijdlijnblok; de keuze
+   overleeft een herlaadbeurt. */
+const ZICHT_KEY = 'crm_dash_zicht';
+const zicht    = () => { try{ return localStorage.getItem(ZICHT_KEY)==='week' ? 'week' : 'dag'; }catch(e){ return 'dag'; } };
+const zetZicht = v => { try{ localStorage.setItem(ZICHT_KEY, v); }catch(e){} };
 
 function groet(){
   const u = new Date().getHours();
@@ -60,27 +71,10 @@ function sparkline(waarden){
     <circle cx="${x(v.length-1).toFixed(1)}" cy="${y(v[v.length-1]).toFixed(1)}" r="2" fill="var(--olive)"/></svg>`;
 }
 
-/* Sparkline-rij onder de metaregel: instroom en plaatsingen per week,
-   laatste 8 weken. Instroom telt bron 'Import oud ATS' bewust NIET mee:
-   de import van het oude ATS gaf 235 kandidaten een since-datum in
-   feb–jul en zou hier een absurde piek tekenen die niets over echte
-   instroom zegt. */
-function sparkRij(){
-  const cs = CRM.kandidaten();
-  const d0 = new Date(); d0.setHours(0,0,0,0);
-  const ma = new Date(d0.getTime() - ((d0.getDay()+6)%7)*DAG);   // maandag deze week
-  const weken = [];
-  for(let i=7;i>=0;i--) weken.push({
-    van: dISO(new Date(ma.getTime()-i*7*DAG)),
-    tot: dISO(new Date(ma.getTime()-(i-1)*7*DAG))
-  });
-  const tel = f => weken.map(w => cs.filter(c => { const s = f(c); return s && s >= w.van && s < w.tot; }).length);
-  const sIn = sparkline(tel(c => c.bron==='Import oud ATS' ? '' : kort(c.since)));
-  const sPl = sparkline(tel(c => kort(c.geplaatstOp)));
-  if(!sIn && !sPl) return '';
-  const seg = (svg,lbl) => svg ? `<span class="tl2-spark">${svg}<span class="meta">${h(lbl)}</span></span>` : '';
-  return `<div class="tl2-sparks">${seg(sIn,'instroom per week')}${seg(sPl,'geplaatst per week')}</div>`;
-}
+/* De twee sparklines "instroom per week" en "geplaatst per week" stonden
+   hier boven de dagbaan. Verwijderd (rust, jul 2026): ze duwden de dag naar
+   beneden en dezelfde richting staat al in Performance én — voor jezelf —
+   in het blok "Jouw maand". Eén sparkline per scherm is genoeg. */
 
 /* ═══ MOTIVATIEZIN — elke dag een andere, nuchter en recruitment ═ */
 const ZINNEN = [
@@ -228,6 +222,57 @@ function bouwDag(){
   return { uren, rest, tot: getekend + klaarVandaag, af: af + klaarVandaag };
 }
 
+/* ═══ DE WEEK OPBOUWEN ═══════════════════════════════════════════
+   Maandag t/m vrijdag altijd; zaterdag en zondag alleen als daar
+   iets staat. Per dag: CRM-afspraken, mijn taken met datum en (later,
+   asynchroon) de Outlook-afspraken. Chronologisch: eerst wat een tijd
+   heeft, daarna de rest. */
+function bouwWeek(){
+  const ma = maandag(), nu = VANDAAG(), mij = CRM.me(), cs = CRM.kandidaten();
+  const dagen = [];
+  for(let i=0;i<7;i++){
+    const d = dagPlus(ma,i), iso = dISO(d);
+    dagen.push({ iso, weekend: i>=5, vandaag: iso===nu, verleden: iso<nu,
+      naam: d.toLocaleDateString('nl-NL',{weekday:'short'}).replace('.',''),
+      dat:  d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'}),
+      items: [] });
+  }
+  const opDag = iso => dagen.find(x => x.iso === iso);
+
+  /* 1. CRM-afspraken: intakes, gesprekken, meeloopdagen. */
+  cs.filter(actief).forEach(c => {
+    const d = opDag(kort(c.datum)); if(!d) return;
+    d.items.push({ soort:'afspraak', geenVink:true, titel:c.naam,
+      sub:[c.fase, c.klant].filter(Boolean).join(' · '),
+      tijd:c.tijd||'', mod:'kandidaten', id:c.id });
+  });
+
+  /* 2. Mijn open taken met een datum in deze week. */
+  (CRM.state.taken||[]).filter(t => !t.klaar && (!t.voor || t.voor===mij)).forEach(t => {
+    const d = opDag(kort(t.datum)); if(!d) return;
+    const refNaam = t.entiteit==='kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || t.ref) : (t.ref||'');
+    const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
+    d.items.push({ soort:'taak', taakId:t.id, titel:t.tekst, buiten: d.iso !== nu,
+      sub:[refNaam, van].filter(Boolean).join(' · '),
+      urgent: d.iso < nu, w: d.iso < nu ? 'over datum' : '',
+      tijd: t.tijd ? String(t.tijd).slice(0,5) : '',
+      mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
+         : t.entiteit==='lead' ? 'recruitment' : '', id:t.ref||'' });
+  });
+
+  dagen.forEach(sorteerDag);
+  return dagen;
+}
+
+/* Eerst wat een tijd heeft (oplopend), daarna wat geen tijd heeft. */
+function sorteerDag(d){
+  d.items.sort((a,b) => {
+    const ta = a.tijd||'', tb = b.tijd||'';
+    if(!!ta !== !!tb) return ta ? -1 : 1;
+    return ta.localeCompare(tb);
+  });
+}
+
 /* ═══ TIJDLIJN-MARKUP ════════════════════════════════════════════ */
 function rijHTML(it){
   const vink = it.soort==='taak' ? `data-taak="${h(it.taakId)}"`
@@ -236,18 +281,22 @@ function rijHTML(it){
     : `data-ses="${h(it.sesKey||'')}"`;
   const klik = it.mod ? ` data-mod="${h(it.mod)}"${it.id?` data-id="${h(it.id)}"`:''}` : '';
   const w = it.w || '';
+  /* Zonder vinkje (weekweergave: afspraken) blijft de regel wel uitgelijnd.
+     data-buiten = telt niet mee in de voortgang, want die gaat over vandaag. */
+  const vinkHTML = it.geenVink
+    ? `<span class="tl2-geenvink"></span>`
+    : `<input type="checkbox" class="tl2-vink" ${vink}${it.buiten?' data-buiten="1"':''}${it.af?' checked disabled':''} title="Afvinken">`;
   return `<div class="tl2-item${it.mod?' klik':''}${it.urgent&&!it.af?' urgent':''}${it.soort==='sug'?' sug':''}${it.af?' af':''}"${klik}>
-    <input type="checkbox" class="tl2-vink" ${vink}${it.af?' checked disabled':''} title="Afvinken">
+    ${vinkHTML}
     <div class="tl2-t"><b>${it.soort==='sug'?'<span class="tl2-ruimte">ruimte:</span> ':''}${h(it.titel)}</b>
       ${it.sub||it.subHtml?`<span class="tl2-s">${it.subHtml||h(it.sub)}</span>`:''}</div>
     ${it.tijd?`<span class="tl2-w num">${h(it.tijd)}</span>`:w?`<span class="tl2-w num${it.urgent?' oranje':''}">${h(w)}</span>`:''}
   </div>`;
 }
 
-function tijdlijnKaart(P){
+/* De dagbaan: 08:00–18:00 met een nu-lijntje. */
+function dagBaanHTML(P){
   const nuD = new Date(), nuUur = nuD.getHours(), nuMin = nuD.getMinutes();
-  const leeg = P.tot === 0;
-
   const uurRijen = [];
   for(let u=START_UUR; u<EIND_UUR; u++){
     const isNu = u === nuUur;
@@ -259,33 +308,54 @@ function tijdlijnKaart(P){
       </div>
     </div>`);
   }
+  return `<div class="tl2-baan">${uurRijen.join('')}</div>
+    ${P.rest.length?`<div class="tl2-rest"><div class="label">Nog in te plannen</div>
+      ${P.rest.map(rijHTML).join('')}</div>`:''}`;
+}
 
-  /* Compacte metaregel — vervangt de oude KPI-tegels. */
-  const cs = CRM.kandidaten();
-  const pijp = cs.filter(c => actief(c) && !CRM.PLACED.includes(c.fase)).length;
-  const openLeads = (CRM.state.leads||[]).filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
-  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
-  const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
+/* De week: vijf (soms zeven) dagblokken ONDER elkaar, met dezelfde
+   tijd-links/inhoud-rechts opbouw als de dagbaan. Bewuste keuze boven
+   vijf kolommen: op 1280px houdt de tijdlijnkolom ±760px over, dus vijf
+   kolommen worden ±145px breed — daar past "Marek Nowak / Voorgesteld ·
+   Starcuisine" niet in zonder overal af te kappen. Onder elkaar leest
+   het als één lijst, is er ruimte voor de subregel, en op mobiel is het
+   exact dezelfde vorm (alleen smaller) in plaats van een tweede indeling. */
+function weekBaanHTML(W){
+  const toon = W.filter(d => !d.weekend || d.items.length);
+  return `<div class="tl2-week">${toon.map(d => `
+    <div class="tl2-dag${d.vandaag?' vandaag':''}${d.verleden?' voorbij':''}" data-dag="${h(d.iso)}">
+      <div class="tl2-dkop">
+        <span class="tl2-dnaam">${h(d.naam)}</span>
+        <span class="tl2-ddat num">${h(d.dat)}</span>
+        ${d.vandaag?'<span class="tl2-dnu">vandaag</span>':''}
+      </div>
+      <div class="tl2-ditems">${d.items.length ? d.items.map(rijHTML).join('')
+        : `<div class="tl2-dleeg meta">Niets ingepland</div>`}</div>
+    </div>`).join('')}</div>`;
+}
 
+function tijdlijnKaart(P, W){
+  const wk = zicht()==='week';
+  const leeg = !wk && P.tot === 0;
   const pct = P.tot ? Math.round(P.af/P.tot*100) : 0;
   const outlookRij = (CRM.outlook.beschikbaar() && !CRM.outlook.verbonden())
     ? `<div class="tl2-olrow"><span class="meta">Je Outlook-agenda kan hier tussen de afspraken staan.</span>
        <button class="btn ghost sm" id="tl2_ol">Outlook verbinden</button></div>` : '';
 
   return `<div class="card tl2-card">
-    <div class="card-h"><div class="h2">Vandaag</div>
-      ${P.tot?`<div class="tl2-vg"><span class="meta num" id="tl2_vgt">${P.af} van ${P.tot} afgerond</span>
+    <div class="card-h"><div class="h2">${wk?'Deze week':'Vandaag'}</div>
+      <div class="seg tl2-seg">
+        <button type="button" data-zicht="dag"${wk?'':' class="on"'}>Vandaag</button>
+        <button type="button" data-zicht="week"${wk?' class="on"':''}>Week</button>
+      </div>
+      ${P.tot?`<div class="tl2-vg"><span class="meta num" id="tl2_vgt">${P.af} van ${P.tot} afgerond${wk?' vandaag':''}</span>
         <div class="bar tl2-vgbar"><i id="tl2_vgb" style="width:${pct}%"></i></div></div>`:''}
       <span class="spacer"></span>
       <button class="btn ghost sm" id="tl2_nieuw">+ Taak</button></div>
     <div class="card-b tl2-b">
-      <div class="tl2-meta meta num">${pijp} in de pijplijn · ${openLeads} nieuwe sollicitanten · ${vacs.length} open vacatures (${posities} posities)</div>
-      ${sparkRij()}
       ${outlookRij}
       ${leeg?`<div class="tl2-leeg meta">Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.</div>`:''}
-      <div class="tl2-baan">${uurRijen.join('')}</div>
-      ${P.rest.length?`<div class="tl2-rest"><div class="label">Nog in te plannen</div>
-        ${P.rest.map(rijHTML).join('')}</div>`:''}
+      ${wk ? weekBaanHTML(W) : dagBaanHTML(P)}
     </div></div>`;
 }
 
@@ -517,15 +587,9 @@ function maandBlok(){
     </div></div></div>`;
 }
 
-function instroomBlok(){
-  const vroeg = CRM.kandidaten().filter(c => ['Voorselectie','Voorgesteld'].includes(c.fase)).length;
-  if(vroeg >= 3) return '';
-  return `<div class="dash-sec"><div class="label sec-kop">Signaal</div>
-    <div class="card klik zij-sig" data-mod="recruitment"><div class="card-b zij-b">
-      <b>De instroom is laag</b>
-      <div class="sub">Maar ${vroeg} ${vroeg===1?'kandidaat staat':'kandidaten staan'} in voorselectie of voorgesteld. Over twee weken merk je dat in de plaatsingen.</div>
-    </div></div></div>`;
-}
+/* Het blok "Signaal — de instroom is laag" was een hele kaart voor één zin.
+   Ingedikt (rust, jul 2026) tot een oranje segment op de onderregel, waar de
+   andere pijplijn-cijfers ook staan. Zie looptRegel(). */
 
 /* ─── Marketeer-variant: vandaag posten + waakhond ────────────── */
 let _mkt = null;

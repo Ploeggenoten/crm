@@ -67,11 +67,16 @@ function themaKleuren(){
 
 const NL_MIDDEN = [52.05, 4.7];
 
-/* Kandidaten die door de Source-filters komen. */
+/* Kandidaten die door de Source-filters komen.
+   Let op: een lege fase is géén positie in de pijplijn. Geïmporteerde
+   kandidaten uit het oude ATS hebben fase '' — CRM.isActiefLopend() geeft
+   daar `true` op (leeg staat immers niet in CRM.DONE), dus we eisen hier
+   expliciet een echte fase. Anders zou "Actief lopend" de hele importbak
+   op de kaart zetten. */
 function bronKandidaten(){
   return CRM.kandidaten().filter(c => {
     if(S.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;
-    if(S.status === 'lopend'      && !CRM.isActiefLopend(c)) return false;
+    if(S.status === 'lopend'      && !(c.fase && CRM.isActiefLopend(c))) return false;
     if(S.ster > 0 && (Number(c.ster)||0) < S.ster) return false;
     if(S.functie && !String(c.functie||'').toLowerCase().includes(S.functie.trim().toLowerCase())) return false;
     if(S.rijbewijs && !String(c.rijbewijs||'').toLowerCase().includes(S.rijbewijs.trim().toLowerCase())) return false;
@@ -121,16 +126,24 @@ async function laadOmzet(){
   }
   return _omzet;
 }
-function omzetVan(rows, klantNaam, periode){
-  const jaar = String(new Date().getFullYear());
-  return rows.filter(r => CRM.zelfdeKlant(r.klant, klantNaam)
-      && (periode === 'alles' || String(r.datum).startsWith(jaar)))
-    .reduce((s,r) => s + r.bedrag, 0);
+/* Klantnamen bucketen zoals CRM.zelfdeKlant ze vergelijkt (genormaliseerd,
+   eerste 8 tekens). Zo kunnen we één keer tellen in plaats van per klant
+   opnieuw door alle rijen te lopen — bij 222 klanten × 349 kandidaten
+   scheelt dat tienduizenden vergelijkingen per hertekening. */
+const klantSleutel = naam => { const x = CRM.normKlant(naam); return x ? x.slice(0,8) : ''; };
+function telPerKlant(rijen, naamVan, waardeVan){
+  const tel = {};
+  rijen.forEach(r => { const k = klantSleutel(naamVan(r)); if(k) tel[k] = (tel[k]||0) + waardeVan(r); });
+  return naam => tel[klantSleutel(naam)] || 0;
 }
-
+function omzetIndex(rows, periode){
+  const jaar = String(new Date().getFullYear());
+  return telPerKlant(rows.filter(r => periode === 'alles' || String(r.datum).startsWith(jaar)),
+    r => r.klant, r => r.bedrag);
+}
 /* Plaatsingen per klant (aantallen — die mag iedereen zien). */
-function plaatsingenVan(klantNaam){
-  return CRM.kandidaten().filter(c => c.geplaatstOp && CRM.zelfdeKlant(c.klant, klantNaam)).length;
+function plaatsingenIndex(){
+  return telPerKlant(CRM.kandidaten().filter(c => c.geplaatstOp), c => c.klant, () => 1);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -232,7 +245,36 @@ CRM.kaartRender = async function(container, opts){
   const teken = () => {
     laag.clearLayers();
     $('#src_paneel').innerHTML = '';
-    const punten = [], missend = [];
+    const punten = [];
+    /* Wie niet op de kaart past, verdwijnt niet stilletjes: we splitsen
+       "veld leeg" van "plaats staat niet in CRM.PLAATSEN" en tonen beide.
+       Vroeger werden alle namen in één regel achter elkaar geplakt — met
+       200+ klanten werd dat een muur van tekst. */
+    const buiten = {geenLocatie:[], onbekend:[]};
+    const noteerBuiten = k => {
+      const loc = String(k.locatie||'').trim();
+      (loc ? buiten.onbekend : buiten.geenLocatie).push({naam:k.naam, locatie:loc});
+    };
+    const tekenBuiten = () => {
+      const el = $('#src_missend'); if(!el) return;
+      const n = buiten.geenLocatie.length + buiten.onbekend.length;
+      if(!n){ el.innerHTML = ''; return; }
+      const perPlaats = {};
+      buiten.onbekend.forEach(k => { (perPlaats[k.locatie] = perPlaats[k.locatie]||[]).push(k.naam); });
+      const plaatsen = Object.entries(perPlaats).sort((a,b) => b[1].length - a[1].length);
+      const zl = buiten.geenLocatie;
+      el.innerHTML = `<details class="src-buiten">
+        <summary>${n} klant${n===1?'':'en'} niet op de kaart${
+          zl.length ? ` · ${zl.length} zonder locatie` : ''}${
+          buiten.onbekend.length ? ` · ${buiten.onbekend.length} met een plaats die het systeem niet kent` : ''}</summary>
+        ${plaatsen.length ? `<div class="src-buitenlijst">${plaatsen.map(([p, namen]) =>
+            `<span class="chip" title="${h(namen.join(', '))}">${h(p)} <b class="num">${namen.length}</b></span>`).join('')}</div>
+          <p class="meta">Deze plaatsnamen staan niet in de afstandentabel — daardoor vallen ze ook buiten elk
+            radiusfilter. Geef ze door zodat ze toegevoegd kunnen worden.</p>` : ''}
+        ${zl.length ? `<p class="meta">Zonder locatie: ${h(zl.slice(0,25).map(k => k.naam).join(', '))}${
+          zl.length > 25 ? ` + ${zl.length - 25} andere` : ''}.</p>` : ''}
+      </details>`;
+    };
 
     if(lens === 'kandidaten'){
       const klanten = CRM.actieveKlanten();
@@ -241,10 +283,20 @@ CRM.kaartRender = async function(container, opts){
       /* Kandidaten: kleine stippen op woonplaats. */
       const perPlek = {};
       kands.forEach(c => { const k = CRM.plaatsSleutel(c.woonplaats); (perPlek[k] = perPlek[k]||[]).push(c); });
-      let zonderPlek = 0;
+      let geenWoonplaats = 0, onbekendeWoonplaats = 0;
+      const onbekendeNamen = {};
       Object.keys(perPlek).forEach(plek => {
         const basis = CRM.PLAATSEN[plek];
-        if(!basis){ zonderPlek += perPlek[plek].length; return; }
+        if(!basis){
+          const groep = perPlek[plek];
+          if(!plek) geenWoonplaats += groep.length;
+          else {
+            onbekendeWoonplaats += groep.length;
+            const toon = String(groep[0].woonplaats||'').trim();
+            onbekendeNamen[toon] = (onbekendeNamen[toon]||0) + groep.length;
+          }
+          return;
+        }
         perPlek[plek].forEach((c, i) => {
           const p = spreid(basis, i, perPlek[plek].length, 0.014);
           punten.push(p);
@@ -261,7 +313,7 @@ CRM.kaartRender = async function(container, opts){
       klanten.forEach(k => { const s = CRM.plaatsSleutel(k.locatie); (perKPlek[s] = perKPlek[s]||[]).push(k); });
       Object.keys(perKPlek).forEach(plek => {
         const basis = CRM.PLAATSEN[plek];
-        if(!basis){ perKPlek[plek].forEach(k => missend.push(k.naam + (k.locatie?' ('+k.locatie+')':' — geen locatie'))); return; }
+        if(!basis){ perKPlek[plek].forEach(k => noteerBuiten(k)); return; }
         perKPlek[plek].forEach((k, i) => {
           const p = spreid(basis, i, perKPlek[plek].length, 0.02);
           punten.push(p);
@@ -273,14 +325,26 @@ CRM.kaartRender = async function(container, opts){
         });
       });
 
+      const opKaart = kands.length - geenWoonplaats - onbekendeWoonplaats;
       $('#src_telling').textContent =
         klanten.length + ' actieve klanten · ' + kands.length + ' kandidaten door de filters'
-        + (zonderPlek ? ' · ' + zonderPlek + ' zonder herkende woonplaats (niet op de kaart)' : '');
+        + ' · ' + opKaart + ' op de kaart'
+        + (geenWoonplaats ? ' · ' + geenWoonplaats + ' zonder woonplaats' : '')
+        + (onbekendeWoonplaats ? ' · ' + onbekendeWoonplaats + ' zonder herkende plaats' : '');
+      const topOnbekend = Object.entries(onbekendeNamen).sort((a,b) => b[1]-a[1]).slice(0,12);
       $('#src_legenda').innerHTML = `<div class="src-legenda">
         <span class="src-leg"><i class="src-dot" style="background:${K.olive}"></i>actieve klant</span>
         <span class="src-leg"><i class="src-dot sm" style="background:${K.blue}"></i>kandidaat</span>
         <span class="meta">klik op een klant-pin voor passende kandidaten binnen 30 km</span>
-      </div>`;
+      </div>` + (topOnbekend.length ? `<details class="src-buiten">
+        <summary>${onbekendeWoonplaats} kandidaat${onbekendeWoonplaats===1?'':'en'} met een plaats die het systeem niet kent</summary>
+        <div class="src-buitenlijst">${topOnbekend.map(([p,n]) =>
+          `<span class="chip">${h(p)} <b class="num">${n}</b></span>`).join('')}
+          ${Object.keys(onbekendeNamen).length > topOnbekend.length
+            ? `<span class="meta">+ ${Object.keys(onbekendeNamen).length - topOnbekend.length} andere plaatsnamen</span>` : ''}</div>
+        <p class="meta">Deze plaatsen staan niet in de afstandentabel, dus ze vallen ook buiten elk radiusfilter.
+          Geef ze door zodat ze toegevoegd kunnen worden.</p>
+      </details>` : '');
     }
 
     if(lens === 'klanten'){
@@ -293,36 +357,38 @@ CRM.kaartRender = async function(container, opts){
       const PAL = [K.blue, K.green, K.purple, K.amber, K.red, K.oliveL];
       const kleurVan = b => { const i = branches.indexOf(b||'Onbekend'); return i > -1 && i < PAL.length ? PAL[i] : K.muted; };
 
-      /* Waarde per klant: omzet (alleen eigenaar) of plaatsingen (iedereen). */
+      /* Waarde per klant: omzet (alleen eigenaar) of plaatsingen (iedereen).
+         Eén index vooraf — niet per klant opnieuw alle rijen doorlopen. */
+      const telPlaatsingen = plaatsingenIndex();
+      const telOmzet = (geld && omzet) ? omzetIndex(omzet.rows, periode) : null;
       const waarde = {};
-      klanten.forEach(k => {
-        waarde[k.naam] = geld && omzet ? omzetVan(omzet.rows, k.naam, periode) : plaatsingenVan(k.naam);
-      });
+      klanten.forEach(k => { waarde[k.naam] = telOmzet ? telOmzet(k.naam) : telPlaatsingen(k.naam); });
       const max = Math.max(1, ...Object.values(waarde));
 
       const perPlek = {};
       klanten.forEach(k => { const s = CRM.plaatsSleutel(k.locatie); (perPlek[s] = perPlek[s]||[]).push(k); });
       Object.keys(perPlek).forEach(plek => {
         const basis = CRM.PLAATSEN[plek];
-        if(!basis){ perPlek[plek].forEach(k => missend.push(k.naam + (k.locatie?' ('+k.locatie+')':' — geen locatie'))); return; }
+        if(!basis){ perPlek[plek].forEach(k => noteerBuiten(k)); return; }
         perPlek[plek].forEach((k, i) => {
           const p = spreid(basis, i, perPlek[plek].length, 0.02);
           punten.push(p);
           const w = waarde[k.naam] || 0;
           const r = 5 + Math.sqrt(w / max) * 11;
-          const n = plaatsingenVan(k.naam);
+          const n = telPlaatsingen(k.naam);
           L.circleMarker(p, {radius:r, color:kleurVan(k.branche), weight:2, fillColor:kleurVan(k.branche), fillOpacity:.6})
             .bindPopup(`<div class="src-pop">
               <b><a href="#klanten/${encodeURIComponent(k.naam)}" data-klantkaart="${h(k.naam)}">${h(k.naam)}</a></b>
               <div class="src-pop-sub">${h(k.branche||'—')} · ${h(k.locatie||'—')} · ${h(k.fase||'')}</div>
               <div class="src-pop-sub"><span class="num">${n}</span> plaatsing${n===1?'':'en'}${
-                geld && omzet ? ' · omzet ' + (periode==='jaar'?'dit jaar':'totaal') + ': <b class="num">' + CRM.euro(omzetVan(omzet.rows, k.naam, periode)) + '</b>' : ''}</div>
+                telOmzet ? ' · omzet ' + (periode==='jaar'?'dit jaar':'totaal') + ': <b class="num">' + CRM.euro(telOmzet(k.naam)) + '</b>' : ''}</div>
             </div>`)
             .addTo(laag);
         });
       });
 
-      $('#src_telling').textContent = klanten.length + ' klanten op de kaart'
+      const buitenTotaal = buiten.geenLocatie.length + buiten.onbekend.length;
+      $('#src_telling').textContent = (klanten.length - buitenTotaal) + ' van ' + klanten.length + ' klanten op de kaart'
         + (geld && omzet && omzet.demo ? ' · demo-omzet (afgeleid van testdata)' : '')
         + (geld && omzet && omzet.fout ? ' · omzet niet beschikbaar' : '');
       const legendaBranches = branches.slice(0, PAL.length);
@@ -332,7 +398,7 @@ CRM.kaartRender = async function(container, opts){
       </div>`;
     }
 
-    $('#src_missend').textContent = missend.length ? 'Niet op de kaart: ' + missend.join(', ') : '';
+    tekenBuiten();
 
     if(punten.length){
       try{ map.fitBounds(L.latLngBounds(punten).pad(0.12), {maxZoom:11}); }catch(e){}
@@ -343,6 +409,12 @@ CRM.kaartRender = async function(container, opts){
 
   /* Paneeltje bij een klant-pin: open vacatures + beste matches ≤ 30 km. */
   const klantPaneel = (k, vacs, kands) => {
+    /* Onbekende woonplaats valt eerlijk buiten de radius (nooit gokken),
+       maar we zeggen er wél bij hoeveel kandidaten dat waren — anders lijkt
+       het alsof er simpelweg niemand in de buurt woont. */
+    const plaatsBekend = c => !!CRM.PLAATSEN[CRM.plaatsSleutel(c.woonplaats)];
+    const klantBekend = !!CRM.PLAATSEN[CRM.plaatsSleutel(k.locatie)];
+    const nietTeMeten = klantBekend ? kands.filter(c => !plaatsBekend(c)).length : kands.length;
     const dichtbij = kands
       .filter(c => CRM.binnenRadius(c, k.locatie, 30))
       .map(c => ({c,
@@ -371,7 +443,12 @@ CRM.kaartRender = async function(container, opts){
             ${sterHtml(m.c.ster)}
             ${vacs.length?`<span class="chip${m.score>=70?' green':m.score>=50?'':' amber'}"><span class="num">${m.score}%</span> match</span>`:''}
           </a>`).join('')}</div>`
-          : '<p class="sub" style="margin:0">Geen kandidaten binnen 30 km die door de filters komen — verruim de filters hierboven.</p>'}
+          : `<p class="sub" style="margin:0">Geen kandidaten binnen 30 km die door de filters komen — verruim de filters hierboven.</p>`}
+        ${nietTeMeten ? `<p class="meta" style="margin:10px 0 0">${
+          klantBekend
+            ? `${nietTeMeten} kandidaat${nietTeMeten===1?'':'en'} kon${nietTeMeten===1?'':'den'} niet meegerekend worden: hun woonplaats staat niet in de afstandentabel.`
+            : `De afstand is hier niet te berekenen — de locatie van ${h(k.naam)} (${h(k.locatie||'leeg')}) staat niet in de afstandentabel.`
+        }</p>` : ''}
       </div></div>`;
     $('#src_pd').onclick = () => { $('#src_paneel').innerHTML = ''; };
     container.querySelectorAll('[data-mkand]').forEach(a =>

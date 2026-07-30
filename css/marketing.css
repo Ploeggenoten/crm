@@ -2,10 +2,19 @@
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist.
    Geen eigen kleuren — alles via de variabelen uit :root. */
 
+/* ─── Weekvergelijking: deze week tegen vorige week ──────────── */
+/* Sectievlak (.vlak uit base.css) met drie cijfers. Het verschil krijgt
+   zijn kleur van CRM.plusMin — hier dus geen eigen kleuren. */
+.mkt-week{margin-bottom:18px}
+.mkt-week-r{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:10px}
+.mkt-week-c{display:flex;flex-direction:column;gap:3px}
+.mkt-week-c b{font-size:22px;font-weight:600;color:var(--ink);line-height:1.2}
+.mkt-week-d{font-size:11.5px;color:var(--muted);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+
 /* ─── Adviesregels van de waakhond ───────────────────────────── */
 .mkt-advies{
   display:flex;align-items:flex-start;gap:11px;
-  padding:12px 20px;border-bottom:1px solid #eef0e4;
+  padding:12px 24px;border-bottom:1px solid #eef0e4;
 }
 .mkt-advies:last-child{border-bottom:none}
 .mkt-advies > .dot{margin-top:6px}
@@ -20,10 +29,15 @@
   transition:transform .12s;transform-origin:center;
 }
 .mkt-caret.op{transform:rotate(90deg)}
-.mkt-r1{background:var(--paper)}
-.mkt-r2{background:var(--card-2)}
+/* Dieper in de boom = dieper vlak, volgens de ladder uit base.css:
+   card (wit) → card-2 → well. */
+.mkt-r1{background:var(--card-2)}
+.mkt-r2{background:var(--well)}
+table.tbl tbody tr.clickable.mkt-r1:hover{background:var(--well)}
 .mkt-n1{padding-left:28px !important}
 .mkt-n2{padding-left:56px !important;color:var(--txt-2)}
+/* Totaalregel — zelfde vorm als de tabellen in Performance. */
+.mkt-tbl tfoot td{background:var(--card-2);border-top:1px solid var(--line);font-weight:600;padding:10px 16px}
 
 /* ─── Dag-voor-dag-strook ────────────────────────────────────── */
 .mkt-dagen{display:flex;gap:7px;align-items:flex-end}
