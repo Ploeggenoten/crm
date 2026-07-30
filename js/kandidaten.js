@@ -98,17 +98,18 @@ function uitleg(c, v){
 
 /* Suggesties: eerst de matches van core, aangevuld met vacatures dichtbij. */
 function kansen(c){
-  const uit = CRM.besteMatches(c, 6).slice();
+  const uit = CRM.besteMatches(c, 5).slice();
   if(uit.length < 3 && c.woonplaats){
     const gehad = new Set(uit.map(m => String(m.vacature.id)));
     CRM.state.vacs.forEach(v => {
       if(gehad.has(String(v.id)) || (v.status && v.status !== 'Open')) return;
       const km = afstandKm(c.woonplaats, v.locatie);
-      if(km != null && km <= 30) uit.push({vacature:v, score:CRM.matchScore(c,v), dichtbij:true, km});
+      const score = CRM.matchScore(c, v);
+      if(km != null && km <= 25 && score >= 20) uit.push({vacature:v, score, dichtbij:true});
     });
   }
-  return uit.map(m => Object.assign({km:afstandKm(c.woonplaats, m.vacature.locatie)}, m))
-    .sort((a,b) => b.score - a.score).slice(0,6);
+  return uit.map(m => Object.assign({}, m, {km:afstandKm(c.woonplaats, m.vacature.locatie)}))
+    .sort((a,b) => b.score - a.score).slice(0,5);
 }
 
 /* ─── Laatst gesproken ────────────────────────────────────────── */
@@ -117,13 +118,22 @@ function laatstGesproken(c){
     .concat((c.notities||[]).map(n => n.op)).filter(Boolean).sort();
   return alle.length ? alle[alle.length-1] : null;
 }
-function stilteChip(c){
+/* "X dagen niet gesproken". Nooit gesproken? Dan telt hoelang iemand al in
+   de pijplijn zit — dat is precies het risico dat we willen zien. */
+function stilte(c){
   const lg = laatstGesproken(c);
-  const d  = CRM.dagenGeleden(lg);
-  if(d == null) return '<span class="chip amber">Nog nooit gesproken</span>';
-  if(d === 0)   return '<span class="chip green">Vandaag gesproken</span>';
-  const kleur = d >= 14 ? ' red' : d >= 7 ? ' amber' : '';
-  return `<span class="chip${kleur}"><span class="num">${d}</span> dagen niet gesproken</span>`;
+  if(lg){
+    const d = CRM.dagenGeleden(lg);
+    return {d, tekst:CRM.geleden(lg), kleur: d>=14 ? 'red' : d>=7 ? 'amber' : ''};
+  }
+  const w = CRM.dagenGeleden(c.since);
+  return {d:null, tekst:'nooit gesproken', kleur: w!=null && w>=14 ? 'red' : w!=null && w>=7 ? 'amber' : ''};
+}
+function stilteChip(c){
+  const s = stilte(c);
+  if(s.d == null) return `<span class="chip ${s.kleur}">Nog nooit gesproken</span>`;
+  if(s.d === 0)   return '<span class="chip green">Vandaag gesproken</span>';
+  return `<span class="chip ${s.kleur}"><span class="num">${s.d}</span> dagen niet gesproken</span>`;
 }
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
@@ -216,7 +226,7 @@ function gefilterd(){
     if(F.mijn  && !CRM.isVanMij(c))    return false;
     if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon].join(' ').toLowerCase().includes(q)) return false;
     return true;
-  }).map(c => ({c, lg:laatstGesproken(c), v:CRM.volledigheid(c)}));
+  }).map(c => ({c, lg:laatstGesproken(c), st:stilte(c), v:CRM.volledigheid(c)}));
 
   const srt = {
     gesproken:    (a,b) => ((CRM.dagenGeleden(b.lg) == null ? 9999 : CRM.dagenGeleden(b.lg)) - (CRM.dagenGeleden(a.lg) == null ? 9999 : CRM.dagenGeleden(a.lg))),
@@ -242,8 +252,7 @@ function lijst(mount){
   wrap.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>
       <th>Kandidaat</th><th>Klant</th><th>Fase</th><th>Woonplaats</th><th>Recruiter</th>
       <th>Laatst gesproken</th><th>Profiel</th>
-    </tr></thead><tbody>${rijen.map(({c,lg,v}) => {
-      const d = CRM.dagenGeleden(lg);
+    </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
       return `<tr class="clickable" data-id="${h(String(c.id))}">
         <td><div class="row tight" style="flex-wrap:nowrap">${CRM.avatar(c.naam,'sm')}
@@ -252,7 +261,7 @@ function lijst(mount){
         <td>${faseChip(c.fase)}</td>
         <td class="sub">${h(c.woonplaats||'—')}</td>
         <td class="sub">${h(c.rec||'—')}</td>
-        <td class="sub num${d==null?' kd-warn':d>=14?' kd-let':d>=7?' kd-warn':''}">${h(lg?CRM.geleden(lg):'nooit gesproken')}</td>
+        <td class="sub num${st.kleur==='red'?' kd-let':st.kleur==='amber'?' kd-warn':''}">${h(st.tekst)}</td>
         <td><div class="kd-vol">${CRM.ui.bar(v.pct, kleur)}<span class="meta num">${v.pct}%</span></div></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
@@ -543,6 +552,7 @@ function kansenHtml(c){
           <div class="kd-score">
             ${CRM.ui.bar(m.score, kleur)}
             <span class="meta num">${m.score}% match</span>
+            ${m.dichtbij?'<span class="meta">op reisafstand</span>':''}
           </div>
         </div>
         <p class="sub kd-uitleg">${h(uitleg(c, v))}</p>

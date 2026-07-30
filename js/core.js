@@ -27,7 +27,7 @@ const CRM = window.CRM = {
   view:null,            // huidige module-key
   state:{               // gedeelde data (via CRM.load())
     cands:[], clients:[], vacs:[], profiles:[], targets:[],
-    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[],
+    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[],
     _loaded:false
   },
   _rt:null, _subs:[]
@@ -217,7 +217,7 @@ async function veilig(promise, naam){
 
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen] = await Promise.all([
+  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
     veilig(sb.from('vacatures').select('*'), 'vacatures'),
@@ -227,9 +227,10 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_activiteiten').select('*').order('op',{ascending:false}).limit(2000), 'crm_activiteiten'),
     veilig(sb.from('crm_taken').select('*').order('datum'), 'crm_taken'),
     veilig(sb.from('crm_documenten').select('*').order('op',{ascending:false}), 'crm_documenten'),
-    veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen')
+    veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen'),
+    veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten')
   ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, _loaded:true});
+  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, _loaded:true});
   return CRM.state;
 };
 CRM.herlaad = async () => { await CRM.load(true); CRM.render(); };

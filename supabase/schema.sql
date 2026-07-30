@@ -24,6 +24,10 @@ alter table clients add column if not exists sinds       date;
 alter table clients add column if not exists laatst_contact date;
 alter table clients add column if not exists note        text default '';
 alter table clients add column if not exists fase_sinds  date;
+-- Aanmaakdatum en fasehistorie: nodig om echte doorlooptijden en conversie
+-- per cohort te kunnen tonen in plaats van een momentopname.
+alter table clients add column if not exists aangemaakt  date default current_date;
+alter table clients add column if not exists fase_historie jsonb default '[]'::jsonb;
 
 -- Vacatures: eigen id, locatie, status, aantal en salarisrange.
 alter table vacatures add column if not exists id        text;
@@ -61,6 +65,7 @@ create table if not exists crm_leads (
   binnen_op     timestamptz default now(),
   laatst_actie  timestamptz,
   opvolgen_op   date,
+  belpogingen   int default 0,              -- hoe vaak geprobeerd te bellen
   kandidaat_id  text default '',            -- gevuld zodra doorgeschoten
   notities      jsonb default '[]'::jsonb,
   created_at    timestamptz default now()
