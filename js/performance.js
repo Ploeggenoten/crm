@@ -322,31 +322,39 @@ function blokUitval(p, D){
   </section>`;
 }
 
-/* ═══ 6. PER KLANT ═══════════════════════════════════════════════ */
-function blokKlanten(p, D){
-  const namen = Array.from(new Set(D.cs.map(c => (c.klant||'').trim()).filter(Boolean)));
+/* ═══ 6. PER KLANT — de klantcijfers die van de klantkaart kwamen ═
+   Over de hele samenwerking (niet per periode): plaatsingen ooit en
+   actief, aanname-ratio, doorlooptijd, duurzaamheid. Omzet per klant
+   alleen achter CRM.canSeeMoney(). ═══════════════════════════════ */
+function blokKlanten(fin){
+  const cs = CRM.kandidaten();
+  const namen = Array.from(new Set(cs.map(c => (c.klant||'').trim()).filter(Boolean)));
+  const geld = CRM.canSeeMoney() && fin && fin.ok && (fin.placements||[]).length;
+
   const rijen = namen.map(naam => {
-    const mijn      = D.cs.filter(c => (c.klant||'').trim()===naam);
-    const inPer     = mijn.filter(c => inP(c.since,p) || inP(c.geplaatstOp,p) || inP(c.gestoptOp,p));
-    const getekend  = D.getekend.filter(c => (c.klant||'').trim()===naam);
-    const cohort    = D.cohort.filter(c => (c.klant||'').trim()===naam);
-    const duur      = cohort.filter(duurzaam);
-    const voorgesteld = inPer.filter(c => verste(c) >= CRM.faseIdx('Voorgesteld')).length;
-    const klantWees = inPer.filter(c => c.fase==='Afgevallen' && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
-    const looptijden= getekend.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n=>n!=null && n>=0);
-    return {naam, actief:inPer.length, plaatsingen:getekend.length, voorgesteld,
-            duurN:duur.length, duurT:cohort.length, klantWees, looptijd:gem(looptijden)};
-  }).filter(r => r.actief || r.plaatsingen);
+    const mijn   = cs.filter(c => (c.klant||'').trim()===naam);
+    const ooit   = mijn.filter(c => CRM.PLACED.includes(c.fase) || c.fase==='Gestopt' || c.geplaatstOp);
+    const nu     = mijn.filter(c => CRM.PLACED.includes(c.fase));
+    const duurT  = ooit.length, duurN = ooit.filter(duurzaam).length;
+    const voorgesteld = mijn.filter(c => verste(c) >= CRM.faseIdx('Voorgesteld')).length;
+    const klantWees = mijn.filter(c => c.fase==='Afgevallen' && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
+    const looptijden = ooit.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n=>n!=null && n>=0 && n<400);
+    const omzet = geld ? fin.placements.filter(pl => CRM.zelfdeKlant(pl.klant, naam))
+      .reduce((s,pl)=>s+(Number(pl.fee_excl)||0),0) : null;
+    return {naam, ooit:ooit.length, nu:nu.length, voorgesteld,
+            duurN, duurT, klantWees, looptijd:gem(looptijden), omzet};
+  }).filter(r => r.voorgesteld || r.ooit);
 
   if(!rijen.length)
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per klant</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen klantactiviteit in deze periode',
-        'Er liep bij geen enkele klant een traject. Kies hierboven een langere periode.')}</div></div></section>`;
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Nog geen klantcijfers',
+        'Zodra er kandidaten bij klanten in traject zijn geweest verschijnen hier de cijfers per klant.')}</div></div></section>`;
 
   const waarde = (r,k) => k==='naam' ? r.naam
-    : k==='aanname' ? (r.voorgesteld ? r.plaatsingen/r.voorgesteld : -1)
+    : k==='aanname' ? (r.voorgesteld ? r.ooit/r.voorgesteld : -1)
     : k==='duur' ? (r.duurT ? r.duurN/r.duurT : -1)
     : k==='looptijd' ? (r.looptijd==null ? 9999 : r.looptijd)
+    : k==='omzet' ? (r.omzet==null ? -1 : r.omzet)
     : r[k];
   rijen.sort((a,b)=>{
     const x = waarde(a,klantSort.k), y = waarde(b,klantSort.k);
@@ -357,32 +365,38 @@ function blokKlanten(p, D){
   const kop = (k,lbl,cls='') => `<th class="sortable ${cls}" data-ks="${k}">${h(lbl)}${klantSort.k===k?(klantSort.dir<0?' ↓':' ↑'):''}</th>`;
 
   return `<section class="pf-sec">
-    <div class="pf-kop"><span class="label">Per klant</span><span class="meta">${h(p.lbl)}</span></div>
+    <div class="pf-kop"><span class="label">Per klant</span><span class="meta">hele samenwerking t/m nu</span></div>
     <div class="tblwrap"><table class="tbl pf-tbl">
       <thead><tr>
         ${kop('naam','Klant')}
         ${kop('voorgesteld','Voorgesteld','n')}
-        ${kop('plaatsingen','Plaatsingen','n')}
+        ${kop('ooit','Geplaatst ooit','n')}
+        ${kop('nu','Actief nu','n')}
         ${kop('aanname','Aanname-ratio','n')}
         ${kop('duur','Duurzaam','n')}
         ${kop('looptijd','Doorlooptijd','n')}
+        ${geld ? kop('omzet','Omzet (fee)','n') : ''}
         <th>Let op</th>
       </tr></thead>
       <tbody>${rijen.map(r=>{
-        const afwijzend = r.voorgesteld>=5 && r.plaatsingen/r.voorgesteld < 0.2;
+        const afwijzend = r.voorgesteld>=5 && r.ooit/r.voorgesteld < 0.2;
         const vaakWeg   = r.voorgesteld>=4 && r.klantWees/r.voorgesteld >= 0.4;
         return `<tr class="clickable" data-klant="${h(r.naam)}">
           <td><b>${h(r.naam)}</b></td>
           <td class="n num">${r.voorgesteld}</td>
-          <td class="n num">${r.plaatsingen}</td>
-          <td class="n">${r.voorgesteld ? pctTxt(r.plaatsingen, r.voorgesteld) : '<span class="meta">—</span>'}</td>
+          <td class="n num">${r.ooit}</td>
+          <td class="n num">${r.nu}</td>
+          <td class="n">${r.voorgesteld ? pctTxt(r.ooit, r.voorgesteld) : '<span class="meta">—</span>'}</td>
           <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
           <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>
+          ${geld ? `<td class="n num">${r.omzet ? h(CRM.euro(r.omzet)) : '<span class="meta">—</span>'}</td>` : ''}
           <td>${vaakWeg ? '<span class="chip amber">wijst vaak af</span>'
              : afwijzend ? '<span class="chip">lage aanname</span>' : ''}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>
+    <p class="pf-uitleg meta">Deze cijfers stonden eerst op de klantkaart en gelden over de hele samenwerking.
+      Doorlooptijd is van instroom tot getekend contract; duurzaam is niet gestopt of pas gestopt ná de garantie.</p>
   </section>`;
 }
 
@@ -432,24 +446,214 @@ function blokBron(p, D){
   </section>`;
 }
 
-/* ═══ 8. OMZET — alleen Tjeerd ═══════════════════════════════════ */
+/* ═══ 7b. FINANCIËLE DATA — alleen Tjeerd (RLS-beschermd) ════════ */
 let _fin = null;
 async function finLezen(){
   if(_fin) return _fin;
-  if(!CRM.canSeeMoney()) return (_fin = {ok:false});
+  if(!CRM.canSeeMoney()) return (_fin = {ok:false, settings:{}});
   /* In demo blijft de echte database buiten beeld — anders staan er
      bij een nog actieve sessie zomaar echte omzetcijfers op een testscherm. */
-  if(CRM.demo) return (_fin = {ok:false});
+  if(CRM.demo) return (_fin = {ok:false, settings:{}});
   try{
-    const [p,i] = await Promise.all([
+    const [p,i,s] = await Promise.all([
       CRM.sb.from('fin_placements').select('id,klant,kandidaat,fee_excl,contract_datum,gestopt_op'),
-      CRM.sb.from('fin_installments').select('placement_id,bedrag_excl,geplande_datum,factuurdatum,status')
+      CRM.sb.from('fin_installments').select('placement_id,bedrag_excl,geplande_datum,factuurdatum,status'),
+      CRM.sb.from('fin_settings').select('key,value')
     ]);
-    if(p.error || i.error) return (_fin = {ok:false});
-    const placements = p.data||[], termijnen = i.data||[];
-    if(!placements.length && !termijnen.length) return (_fin = {ok:false});
-    return (_fin = {ok:true, placements, termijnen});
-  }catch(e){ return (_fin = {ok:false}); }
+    const settings = s.error ? {} : Object.fromEntries((s.data||[]).map(r=>[r.key, r.value]));
+    if(p.error && i.error) return (_fin = {ok:false, settings});
+    const placements = p.error ? [] : (p.data||[]);
+    const termijnen  = i.error ? [] : (i.data||[]);
+    return (_fin = {ok:!!(placements.length || termijnen.length), placements, termijnen, settings});
+  }catch(e){ return (_fin = {ok:false, settings:{}}); }
+}
+
+/* ═══ 0. DOEL — omzetdoel uit het financebord + benodigd tempo ═══
+   Euro's strikt achter CRM.canSeeMoney(). Het team ziet alleen de
+   afgeleide activiteitendoelen (aantallen), dat is juist motiverend. */
+const posNum = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : null; };
+
+/* Conversie uit de eigen CRM-data: van afgeronde W&S-trajecten, welk deel
+   van de voorstellen en gesprekken werd uiteindelijk een plaatsing? */
+function conversies(){
+  const cs = CRM.kandidaten().filter(c => (c.type||'W&S') !== 'Flex');
+  const klaar = cs.filter(c => CRM.DONE.includes(c.fase) || c.geplaatstOp);
+  const vg = klaar.filter(c => verste(c) >= CRM.faseIdx('Voorgesteld')).length;
+  const gs = klaar.filter(c => verste(c) >= CRM.faseIdx('Eerste gesprek')).length;
+  const pl = klaar.filter(c => verste(c) >= CRM.faseIdx('Contract getekend') || c.geplaatstOp).length;
+  return {vg, gs, pl,
+    voorPerPl:     pl ? vg/pl : null,
+    gesprekPerPl:  pl ? gs/pl : null};
+}
+
+/* Tempotegels: X plaatsingen → Y voorstellen → Z gesprekken per maand. */
+function tempoHtml(plPerMnd, conv){
+  const t = (n, lbl, sub) => `<div class="pf-tempo-t"><span class="label">${h(lbl)}</span>
+    <b class="num">${n!=null ? (Math.round(n*10)/10).toLocaleString('nl-NL') : '—'}</b>
+    <span class="meta">${h(sub)}</span></div>`;
+  const vs = conv.voorPerPl    != null && plPerMnd != null ? plPerMnd * conv.voorPerPl    : null;
+  const gs = conv.gesprekPerPl != null && plPerMnd != null ? plPerMnd * conv.gesprekPerPl : null;
+  return `<div class="pf-tempo">
+    ${t(plPerMnd, 'Plaatsingen / maand', 'nodig om het doel te halen')}
+    ${t(vs, 'Voorstellen / maand', conv.voorPerPl!=null ? `eigen conversie: ${conv.voorPerPl.toFixed(1)} voorstellen per plaatsing` : 'nog te weinig eigen data')}
+    ${t(gs, 'Gesprekken / maand', conv.gesprekPerPl!=null ? `eigen conversie: ${conv.gesprekPerPl.toFixed(1)} gesprekken per plaatsing` : 'nog te weinig eigen data')}
+  </div>`;
+}
+
+function blokDoel(fin){
+  /* Demo: geen fin-data. Nette lege staat voor de eigenaar, niets voor het team. */
+  if(CRM.demo){
+    if(!CRM.canSeeMoney()) return '';
+    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Doel</span>
+        <span class="meta">alleen voor jou</span></div>
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen financiële data in demo-modus',
+        'Het omzetdoel en het benodigde tempo verschijnen hier zodra je met je eigen account bent ingelogd.')}</div></div></section>`;
+  }
+
+  /* Team: geen euro's, wel de afgeleide activiteitendoelen op basis van
+     het maandtarget van het bord en de eigen conversieratio's. */
+  if(!CRM.canSeeMoney()){
+    const target = CRM.maandTarget();
+    if(!target) return '';
+    const conv = conversies();
+    return `<section class="pf-sec">
+      <div class="pf-kop"><span class="label">Doel</span><span class="meta">wat er nodig is om het maandtarget te halen</span></div>
+      <div class="card"><div class="card-b">
+        ${tempoHtml(target, conv)}
+        <p class="pf-uitleg meta">Gebaseerd op het maandtarget van <span class="num">${target}</span> plaatsingen
+          en de conversie uit onze eigen afgeronde trajecten (<span class="num">${conv.vg}</span> voorstellen → <span class="num">${conv.pl}</span> plaatsingen).</p>
+      </div></div>
+    </section>`;
+  }
+
+  /* Eigenaar, nog aan het laden */
+  if(!fin) return `<section class="pf-sec"><div class="pf-kop"><span class="label">Doel</span></div>
+    <div class="card"><div class="card-b">${CRM.ui.laden('Financiële doelen laden…')}</div></div></section>`;
+
+  const S = fin.settings || {};
+  /* Welke doel-keys staan er? Niets hardcoden — tonen wat er staat. */
+  const doelOmzet = posNum(S.doel_omzet) ?? posNum(S.doel_omzet_jaar);
+  const doelBron  = posNum(S.doel_omzet) != null ? 'doel_omzet' : (posNum(S.doel_omzet_jaar) != null ? 'doel_omzet_jaar' : null);
+  const doelWinst = posNum(S.doel_winst_jaar);
+
+  /* Geen omzetdoel ingesteld → toon het doel dat er wél staat + instelveld. */
+  if(doelOmzet == null){
+    return `<section class="pf-sec">
+      <div class="pf-kop"><span class="label">Doel</span><span class="meta">alleen voor jou</span></div>
+      <div class="card"><div class="card-b">
+        ${doelWinst != null ? `<div class="pf-doelkop"><div><span class="label">Winstdoel dit jaar (financebord)</span>
+            <div class="big num">${h(CRM.euro(doelWinst))}</div></div></div>
+          <p class="pf-uitleg meta">Er staat nog geen omzetdoel in de instellingen. Stel het hieronder in — dan rekent dit blok uit welk tempo daarvoor nodig is.</p>`
+        : `<p class="sub" style="margin:0 0 12px">Er staat nog geen doel in de instellingen van het financebord. Stel hieronder een omzetdoel in.</p>`}
+        <div class="row tight pf-doelset">
+          <input type="number" id="pf_doelbedrag" placeholder="Omzetdoel, bijv. 400000" min="0" step="1000" style="width:200px">
+          <input type="month" id="pf_doeldatum" style="width:160px">
+          <button class="btn sm" id="pf_doelzet">Omzetdoel instellen</button>
+        </div>
+      </div></div>
+    </section>`;
+  }
+
+  /* Doeldatum: uit doel_omzet_datum, anders einde van dit jaar. */
+  const vandaag = CRM.todayISO();
+  let doelDatum = String(S.doel_omzet_datum || '').slice(0,10);
+  if(doelDatum && doelDatum.length === 7) doelDatum = eindeMaand(doelDatum);
+  if(!doelDatum || isNaN(new Date(doelDatum))) doelDatum = vandaag.slice(0,4) + '-12-31';
+
+  /* Meetvenster: de 12 maanden tot de doeldatum (bij een jaardoel zonder
+     datum: dit kalenderjaar). */
+  const start = (doelBron === 'doel_omzet_jaar' && !S.doel_omzet_datum)
+    ? vandaag.slice(0,4) + '-01-01'
+    : verschuifMaanden(doelDatum, -12);
+
+  const omzet = (fin.termijnen||[])
+    .filter(t => ['gefactureerd','betaald'].includes(t.status))
+    .filter(t => { const d = kort(t.factuurdatum || t.geplande_datum); return d && d >= start && d <= vandaag; })
+    .reduce((s,t)=>s+(Number(t.bedrag_excl)||0),0);
+
+  const teGaan = Math.max(0, doelOmzet - omzet);
+  const pct = Math.min(100, Math.round(omzet / doelOmzet * 100));
+  const mndRest = Math.max(0.25, (new Date(doelDatum) - new Date(vandaag)) / 86400000 / 30.44);
+
+  /* Gemiddelde fee en blijfkans uit fin_placements. */
+  const fees = (fin.placements||[]).map(pl => Number(pl.fee_excl)||0).filter(n => n > 0);
+  const gemFee = fees.length ? fees.reduce((a,b)=>a+b,0)/fees.length : null;
+  const plTot = (fin.placements||[]).length;
+  const blijf = plTot ? 1 - (fin.placements.filter(pl => pl.gestopt_op).length / plTot) : 1;
+
+  const perPlaatsing = gemFee != null ? gemFee * Math.max(0.1, blijf) : null;
+  const plNodig  = perPlaatsing ? teGaan / perPlaatsing : null;
+  const plPerMnd = plNodig != null ? plNodig / mndRest : null;
+  const conv = conversies();
+
+  const dLbl = new Date(doelDatum).toLocaleDateString('nl-NL',{month:'long',year:'numeric'});
+  const klaarTekst = teGaan === 0 ? `<span class="chip green">Doel gehaald</span>` : '';
+
+  return `<section class="pf-sec">
+    <div class="pf-kop"><span class="label">Doel</span><span class="meta">alleen voor jou · euro's ziet het team niet</span></div>
+    <div class="card"><div class="card-b">
+      <div class="pf-doelkop">
+        <div><span class="label">Omzetdoel</span><div class="big num">${h(CRM.euro(doelOmzet))}</div>
+          <span class="meta">t/m ${h(dLbl)}</span></div>
+        <div><span class="label">Gerealiseerd</span><div class="big num">${h(CRM.euro(omzet))}</div>
+          <span class="meta">gefactureerd sinds ${h(CRM.fmtDateShort(start))}</span></div>
+        <div><span class="label">Nog te gaan</span><div class="big num">${h(CRM.euro(teGaan))}</div>
+          <span class="meta num">${mndRest.toFixed(1).replace('.',',')} maanden resterend</span></div>
+        <span class="spacer"></span>
+        <div class="row tight">${klaarTekst}<button class="btn ghost sm" id="pf_doelzetten">Doel aanpassen</button></div>
+      </div>
+      <div class="pf-doelbar">${CRM.ui.bar(pct, pct>=100?'green':'')}
+        <span class="meta num">${pct}% van het doel</span></div>
+      ${teGaan > 0 ? tempoHtml(plPerMnd, conv) : ''}
+      <p class="pf-uitleg meta">${gemFee != null
+        ? `Gerekend met een gemiddelde fee van ${h(CRM.euro(Math.round(gemFee)))} (uit ${fees.length} plaatsingen),
+           een blijfkans van ${Math.round(blijf*100)}% en de conversie uit onze eigen afgeronde trajecten
+           (${conv.vg} voorstellen → ${conv.pl} plaatsingen).`
+        : 'Nog geen plaatsingen met fee in het financebord — het benodigde tempo kan pas berekend worden zodra die er zijn.'}</p>
+    </div></div>
+  </section>`;
+}
+
+/* Doeldatum-hulpjes */
+function eindeMaand(mk){ const [j,m] = mk.split('-').map(Number); return new Date(j, m, 0).toLocaleDateString('sv-SE'); }
+function verschuifMaanden(iso, n){ const d = new Date(iso); d.setMonth(d.getMonth()+n); return d.toLocaleDateString('sv-SE'); }
+
+/* Omzetdoel wegschrijven naar fin_settings (keys: doel_omzet + doel_omzet_datum). */
+async function doelOpslaan(bedrag, maand){
+  if(!CRM.canSeeMoney() || CRM.demo) return false;
+  const rows = [{key:'doel_omzet', value:bedrag}];
+  if(maand) rows.push({key:'doel_omzet_datum', value:maand});
+  const {error} = await CRM.sb.from('fin_settings').upsert(rows);
+  if(error){ CRM.fout('Doel opslaan mislukt', error); return false; }
+  if(_fin){ _fin.settings = _fin.settings || {}; _fin.settings.doel_omzet = bedrag; if(maand) _fin.settings.doel_omzet_datum = maand; }
+  CRM.toast('Omzetdoel opgeslagen','ok');
+  return true;
+}
+
+function doelModal(mount, acties){
+  const S = (_fin && _fin.settings) || {};
+  const huidig = posNum(S.doel_omzet) ?? posNum(S.doel_omzet_jaar) ?? '';
+  const datum  = String(S.doel_omzet_datum||'').slice(0,7);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Omzetdoel aanpassen</div></div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label>Omzetdoel (excl. btw)</label>
+          <input type="number" id="dm_bedrag" min="0" step="1000" value="${h(huidig)}"></div>
+        <div class="f-row"><label>Te halen vóór</label>
+          <input type="month" id="dm_maand" value="${h(datum)}"></div>
+      </div>
+      <p class="hint">Wordt opgeslagen in de instellingen van het financebord (fin_settings) — beide apps kijken naar hetzelfde doel.</p>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="dm_ok">Opslaan</button></div>`, {onOpen(m){
+    m.querySelector('#dm_ok').onclick = async () => {
+      const bedrag = Number(m.querySelector('#dm_bedrag').value);
+      if(!bedrag || bedrag <= 0) return CRM.toast('Vul een bedrag in','err');
+      CRM.modal.close();
+      if(await doelOpslaan(bedrag, m.querySelector('#dm_maand').value || '')) teken(mount, acties);
+    };
+  }});
 }
 
 function blokOmzet(p, fin){
@@ -506,15 +710,26 @@ function teken(mount, acties){
   if(acties) acties.innerHTML = kiezerHTML(p);
 
   mount.innerHTML = `<div class="pf">
+    ${blokDoel(_fin)}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
     ${blokRecruiters(p, D)}
     ${blokTrechter(p, D)}
     ${blokUitval(p, D)}
-    ${blokKlanten(p, D)}
+    ${blokKlanten(_fin)}
     ${blokBron(p, D)}
-    <div id="pf_omzet"></div>
+    ${blokOmzet(p, _fin)}
   </div>`;
+
+  /* Doel instellen / aanpassen */
+  const dz = mount.querySelector('#pf_doelzetten');
+  if(dz) dz.onclick = () => doelModal(mount, acties);
+  const ds = mount.querySelector('#pf_doelzet');
+  if(ds) ds.onclick = async () => {
+    const bedrag = Number(mount.querySelector('#pf_doelbedrag').value);
+    if(!bedrag || bedrag <= 0) return CRM.toast('Vul een bedrag in','err');
+    if(await doelOpslaan(bedrag, mount.querySelector('#pf_doeldatum').value || '')) teken(mount, acties);
+  };
 
   /* Periodekiezer */
   if(acties){
@@ -539,12 +754,10 @@ function teken(mount, acties){
   });
   CRM.$$('[data-klant]', mount).forEach(tr => tr.onclick = () => CRM.ga('klanten', {id:tr.dataset.klant}));
 
-  /* Omzet nalezen — alleen voor Tjeerd, en alleen als het lukt. */
-  if(CRM.canSeeMoney()){
-    finLezen().then(fin => {
-      const el = document.getElementById('pf_omzet');
-      if(el && CRM.view==='performance') el.innerHTML = blokOmzet(p, fin);
-    }).catch(()=>{});
+  /* Financiële data nalezen — alleen voor Tjeerd. Eén keer laden (cache),
+     daarna opnieuw tekenen zodat Doel, Per klant en Omzet gevuld zijn. */
+  if(CRM.canSeeMoney() && !_fin){
+    finLezen().then(() => { if(CRM.view === 'performance') teken(mount, acties); }).catch(()=>{});
   }
 }
 

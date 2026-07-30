@@ -48,7 +48,7 @@ const veiligeUrl = u => {
   return /^(https?:|blob:)/i.test(s) ? s : '';
 };
 
-/* ─── Formulier-modaal (hergebruikt voor kans en taak) ─────────── */
+/* ─── Formulier-modaal (kans en inplannen; taken gaan via CRM.taakModal) ── */
 function formModal(titel, velden, knop='Opslaan'){
   return new Promise(res => {
     const body = velden.map(v => {
@@ -136,15 +136,6 @@ async function zetKansStatus(id, status){
   teken();
 }
 
-async function bewaarTaak(rij){
-  CRM.state.taken.push(rij);
-  if(!CRM.demo){
-    const {error} = await CRM.sb.from('crm_taken').insert(rij);
-    if(error){ CRM.state.taken.pop(); return CRM.fout('Taak opslaan mislukt', error); }
-  }
-  CRM.toast('Taak toegevoegd','ok'); CRM.navBadges();
-}
-
 async function taakKlaar(id, klaar){
   const t = CRM.state.taken.find(x=>x.id===id); if(!t) return;
   t.klaar = klaar;
@@ -160,10 +151,12 @@ async function legVast(naam, soort){
   const s = CRM.ACT_SOORTEN[soort] || {lbl:soort};
   const tekst = await CRM.vraag(s.lbl + ' vastleggen bij ' + naam, {
     multiline:true, knop:'Vastleggen',
+    hint:'@naam om een collega te melden',
     placeholder: soort==='bel' ? 'Waar ging het gesprek over?' : 'Korte samenvatting…'
   });
   if(!tekst) return;
   await CRM.logActiviteit('klant', naam, soort, tekst);
+  CRM.verwerkTags(tekst, 'klant', naam);
   if(soort!=='notitie') await bewaarKlant(naam, {laatst_contact: CRM.todayISO()});
   else CRM.toast('Vastgelegd','ok');
   const dr = CRM.drawer.el();
@@ -583,20 +576,11 @@ function bindTab(body, dr, naam){
   CRM.$$('[data-taak]', body).forEach(c=>c.onchange=async ()=>{
     await taakKlaar(c.dataset.taak, c.checked); tekenDrawer(dr, naam); teken();
   });
+  /* Het gedeelde taakvenster van core — toewijzen aan een collega,
+     prioriteit en Outlook zitten daar al in. */
   CRM.$$('[data-nieuwetaak]', body).forEach(b=>b.onclick=async ()=>{
-    const velden = [
-      {k:'tekst', lbl:'Wat moet er gebeuren?', ph:'Bijv. nabellen over de SWO', breed:true},
-      {k:'datum', lbl:'Datum', type:'date', waarde:CRM.todayISO()},
-      {k:'prioriteit', lbl:'Prioriteit', type:'select', opts:[{v:'',l:'Normaal'},{v:'Hoog',l:'Hoog'}]},
-      {k:'voor', lbl:'Voor wie', waarde:CRM.me()}
-    ];
-    if(CRM.outlook.verbonden()) velden.push({k:'todo', lbl:'Ook in mijn Outlook To Do', type:'check', waarde:true});
-    const uit = await formModal('Nieuwe taak bij '+naam, velden, 'Taak opslaan');
-    if(!uit || !uit.tekst) return;
-    await bewaarTaak({id:CRM.uid(), tekst:uit.tekst, datum:uit.datum||null, klaar:false,
-      entiteit:'klant', ref:naam, voor:uit.voor||CRM.me(), door:CRM.me(), prioriteit:uit.prioriteit||''});
-    if(uit.todo) CRM.outlook.maakTaak({titel:uit.tekst, datum:uit.datum||null, notities:'Klant: '+naam}).catch(()=>{});
-    tekenDrawer(dr, naam); teken();
+    const rij = await CRM.taakModal({entiteit:'klant', ref:naam, refLabel:naam});
+    if(rij){ tekenDrawer(dr, naam); teken(); }
   });
 
   CRM.$$('[data-nieuwekans]', body).forEach(b=>b.onclick=()=>nieuweKans(naam));

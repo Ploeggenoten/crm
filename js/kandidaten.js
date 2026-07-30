@@ -1,28 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════
    MODULE: KANDIDATEN
-   Overzicht van alle kandidaten + de kandidatenkaart: het complete
-   profiel, wat er nog mist, hoelang je niemand gesproken hebt en
-   bij welke vacature deze kandidaat past (profiel + woonlocatie).
+   Overzicht van alle kandidaten met krachtige filters (sterren,
+   status, radius, ploegen, taal, vervoer) + de kandidatenkaart:
+   het complete profiel, ster-beoordeling, CV-verrijking met
+   conflictmarkering en de Source-tab (kaart, zie js/source.js).
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
 const h = CRM.h;
 
-/* ─── Voorkeuren onthouden (crm_kandidaten_*) ─────────────────── */
-const P = {
-  get(k,d){ try{ const v = localStorage.getItem('crm_kandidaten_'+k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
-  set(k,v){ try{ localStorage.setItem('crm_kandidaten_'+k, JSON.stringify(v)); }catch(e){} }
+/* ─── Filters onthouden (één sleutel: crm_kand_filters) ───────── */
+const FKEY = 'crm_kand_filters';
+const F_STD = {
+  zoek:'', status:'lopend', ster:0, plaats:'', km:20, ploegen:'', taal:'',
+  vervoer:'', rijbewijs:'', functie:'', rec:'', klant:'', fase:'',
+  mijn:false, sort:'gesproken'
 };
-const F = {
-  zoek:   P.get('zoek',''),
-  fase:   P.get('fase',''),
-  rec:    P.get('rec',''),
-  klant:  P.get('klant',''),
-  status: P.get('status','lopend'),
-  mijn:   P.get('mijn',false),
-  sort:   P.get('sort','gesproken')
-};
-function zet(k,v){ F[k]=v; P.set(k,v); }
+let F = (() => {
+  try{ return Object.assign({}, F_STD, JSON.parse(localStorage.getItem(FKEY)||'{}')); }
+  catch(e){ return Object.assign({}, F_STD); }
+})();
+function zet(k,v){ F[k]=v; try{ localStorage.setItem(FKEY, JSON.stringify(F)); }catch(e){} }
+
+/* Paneel- en tabstand (geen filter, wel handig om te onthouden). */
+let filtersOpen = false, filtersOpenGezet = false;
+let hoofdTab = 'lijst';            // 'lijst' | 'source'
 
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
 const faseChip = (fase, extra='') => fase
@@ -33,48 +35,20 @@ const waLink  = t => { let n = String(t||'').replace(/[^0-9]/g,''); if(n.startsW
    niet uitgevoerd worden als iemand erop klikt. */
 const veiligeUrl = u => { const s = String(u||'').trim(); return /^(https?:|blob:)/i.test(s) ? s : ''; };
 
-/* ─── Woonlocatie: afstand kandidaat ↔ vacature ───────────────
-   Coördinaten van de plaatsen waar wij werken. Zo kan het systeem
-   uitleggen waaróm iemand bij een vacature past.               */
-const PLAATSEN = {
-  'rotterdam':[51.924,4.478], 'denhaag':[52.078,4.288], 'sgravenhage':[52.078,4.288],
-  'gouda':[52.011,4.711], 'alphena/drijn':[52.129,4.655], 'zoetermeer':[52.057,4.494],
-  'leiden':[52.160,4.490], 'bodegraven':[52.081,4.749], 'waddinxveen':[52.045,4.653],
-  'delft':[52.011,4.357], 'katwijk':[52.203,4.399], 'schiedam':[51.919,4.389],
-  'vlaardingen':[51.912,4.341], 'rijnsburg':[52.190,4.443], 'zaandam':[52.439,4.826],
-  'barendrecht':[51.855,4.535], 'nieuwkoop':[52.148,4.777], 'sliedrecht':[51.822,4.774],
-  'bunnik':[52.065,5.199], 'nieuwvennep':[52.265,4.630], 'maasdijk':[51.981,4.196],
-  'almere':[52.370,5.216], 'ijmuiden':[52.460,4.610], 'krimpena/dijssel':[51.917,4.593],
-  'nunspeet':[52.378,5.784], 'bleiswijk':[52.019,4.531], 'utrecht':[52.090,5.121],
-  'amsterdam':[52.370,4.895], 'dordrecht':[51.813,4.690], 'zwijndrecht':[51.817,4.633],
-  'spijkenisse':[51.845,4.329], 'capellea/dijssel':[51.930,4.577], 'ridderkerk':[51.872,4.602],
-  'hoofddorp':[52.303,4.689], 'amstelveen':[52.309,4.856], 'woerden':[52.086,4.884],
-  'zeist':[52.088,5.233], 'rijswijk':[52.036,4.325], 'voorburg':[52.070,4.360],
-  'naaldwijk':[51.994,4.208], 'pijnacker':[52.019,4.432], 'berkelenrodenrijs':[51.995,4.481],
-  'boskoop':[52.075,4.653], 'zevenhuizen':[52.010,4.610], 'moordrecht':[51.985,4.663],
-  'nieuwerkerka/dijssel':[51.975,4.615], 'papendrecht':[51.831,4.685], 'hendrikidoambacht':[51.843,4.640],
-  'oudbeijerland':[51.826,4.412], 'maassluis':[51.923,4.253], 'delier':[51.968,4.253],
-  'wateringen':[52.020,4.283], 'monster':[52.023,4.170], 'nootdorp':[52.040,4.400],
-  'leidschendam':[52.086,4.400], 'wassenaar':[52.146,4.400], 'voorschoten':[52.128,4.446],
-  'oegstgeest':[52.180,4.470], 'noordwijk':[52.240,4.443], 'sassenheim':[52.223,4.523],
-  'lisse':[52.257,4.557], 'hillegom':[52.290,4.583], 'haarlem':[52.381,4.637],
-  'alkmaar':[52.632,4.749], 'purmerend':[52.505,4.960], 'lelystad':[52.518,5.471],
-  'amersfoort':[52.156,5.388], 'apeldoorn':[52.211,5.970], 'arnhem':[51.985,5.899],
-  'nijmegen':[51.842,5.853], 'breda':[51.586,4.776], 'shertogenbosch':[51.697,5.304],
-  'eindhoven':[51.441,5.470], 'tilburg':[51.560,5.091], 'gorinchem':[51.837,4.975],
-  'vianen':[51.988,5.093], 'culemborg':[51.955,5.226], 'veenendaal':[52.028,5.554]
-};
-function plaatsSleutel(s){
-  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
-}
-function afstandKm(a, b){
-  const pa = PLAATSEN[plaatsSleutel(a)], pb = PLAATSEN[plaatsSleutel(b)];
-  if(!pa || !pb) return null;
-  const R = 6371, rad = d => d*Math.PI/180;
-  const dLat = rad(pb[0]-pa[0]), dLon = rad(pb[1]-pa[1]);
-  const x = Math.sin(dLat/2)**2 + Math.cos(rad(pa[0]))*Math.cos(rad(pb[0]))*Math.sin(dLon/2)**2;
-  return Math.round(2*R*Math.asin(Math.sqrt(x)));
+/* Taal-zoekterm matchen op de talen-string van de kandidaat. Kandidaten
+   hebben soms afkortingen ("NL, EN"), de gebruiker typt vaak voluit. */
+const TAALKORT = {nederlands:'nl', engels:'en', duits:'de', frans:'fr', spaans:'es',
+  pools:'pl', roemeens:'ro', bulgaars:'bg', hongaars:'hu', turks:'tr', arabisch:'ar',
+  portugees:'pt', oekraiens:'uk', russisch:'ru', slowaaks:'sk', tsjechisch:'cs'};
+function taalMatch(talen, zoek){
+  const z = String(zoek||'').trim().toLowerCase(); if(!z) return true;
+  const t = String(talen||'').toLowerCase();       if(!t) return false;
+  if(t.includes(z)) return true;
+  const plat = z.normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const kort = TAALKORT[plat];
+  if(kort && new RegExp('\\b'+kort+'\\b').test(t)) return true;
+  const lang = Object.keys(TAALKORT).find(k => TAALKORT[k] === plat);
+  return !!(lang && t.includes(lang));
 }
 
 /* Waaróm past deze kandidaat bij deze vacature? */
@@ -89,8 +63,8 @@ function uitleg(c, v){
 
   const plaats = v.locatie || '';
   if(c.woonplaats && plaats){
-    const km = afstandKm(c.woonplaats, plaats);
-    if(plaatsSleutel(c.woonplaats) === plaatsSleutel(plaats)) delen.push('woont in ' + c.woonplaats + ' — zelfde plaats');
+    const km = CRM.afstandKm(c.woonplaats, plaats);
+    if(CRM.plaatsSleutel(c.woonplaats) === CRM.plaatsSleutel(plaats)) delen.push('woont in ' + c.woonplaats + ' — zelfde plaats');
     else if(km != null) delen.push('woont in ' + c.woonplaats + ' — ' + km + ' km');
     else delen.push('woont in ' + c.woonplaats);
   }
@@ -106,12 +80,12 @@ function kansen(c){
     const gehad = new Set(uit.map(m => String(m.vacature.id)));
     CRM.state.vacs.forEach(v => {
       if(gehad.has(String(v.id)) || (v.status && v.status !== 'Open')) return;
-      const km = afstandKm(c.woonplaats, v.locatie);
+      const km = CRM.afstandKm(c.woonplaats, v.locatie);
       const score = CRM.matchScore(c, v);
       if(km != null && km <= 25 && score >= 20) uit.push({vacature:v, score, dichtbij:true});
     });
   }
-  return uit.map(m => Object.assign({}, m, {km:afstandKm(c.woonplaats, m.vacature.locatie)}))
+  return uit.map(m => Object.assign({}, m, {km:CRM.afstandKm(c.woonplaats, m.vacature.locatie)}))
     .sort((a,b) => b.score - a.score).slice(0,5);
 }
 
@@ -165,38 +139,80 @@ async function bewaarRij(tabel, veld, rij, bestaat){
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   OVERZICHT
+   OVERZICHT — tab Kandidaten (lijst + filters) | tab Source (kaart)
    ═══════════════════════════════════════════════════════════════ */
 function overzicht(mount, acties){
   acties.innerHTML = '';
-  const alle = CRM.kandidaten();
   mount.innerHTML = `
+    <div class="stack">
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab${hoofdTab==='lijst'?' on':''}" data-ht="lijst">Kandidaten</button>
+        <button class="tab${hoofdTab==='source'?' on':''}" data-ht="source">Source</button>
+      </div>
+      <div id="kd_tabwrap"></div>
+    </div>`;
+  mount.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => {
+    if(hoofdTab === b.dataset.ht) return;
+    hoofdTab = b.dataset.ht;
+    mount.querySelectorAll('[data-ht]').forEach(x => x.classList.toggle('on', x.dataset.ht === hoofdTab));
+    hoofdTabInhoud(mount);
+  });
+  hoofdTabInhoud(mount);
+}
+
+function hoofdTabInhoud(mount){
+  const wrap = mount.querySelector('#kd_tabwrap');
+  if(hoofdTab === 'source'){
+    wrap.innerHTML = '<div id="kd_source"></div>';
+    if(typeof CRM.kaartRender === 'function')
+      CRM.kaartRender(wrap.querySelector('#kd_source'), {lens:'kandidaten'});
+    else
+      wrap.innerHTML = '<div class="note warn">De kaart-engine (js/source.js) is niet geladen.</div>';
+    return;
+  }
+  lijstTab(wrap);
+}
+
+/* Welke filters staan aan (voor teller, chips en wissen)? */
+const PANEEL_FILTERS = ['status','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
+function actieveFilters(){
+  const uit = [];
+  const STATUS_LBL = {lopend:'Actief lopend', beschikbaar:'Beschikbaar', geplaatst:'Geplaatst', recyclebaar:'Uitval — herbruikbaar', alle:'Alles'};
+  if(F.status !== F_STD.status) uit.push({k:'status', lbl:STATUS_LBL[F.status]||F.status});
+  if(F.ster > 0)      uit.push({k:'ster', lbl:'≥ '+'★'.repeat(F.ster)});
+  if(String(F.plaats).trim()) uit.push({k:'plaats', lbl:'binnen '+F.km+' km van '+F.plaats});
+  if(F.ploegen)       uit.push({k:'ploegen', lbl:F.ploegen});
+  if(String(F.taal).trim())      uit.push({k:'taal', lbl:'taal: '+F.taal});
+  if(F.vervoer)       uit.push({k:'vervoer', lbl:'vervoer: '+F.vervoer});
+  if(String(F.rijbewijs).trim()) uit.push({k:'rijbewijs', lbl:'rijbewijs: '+F.rijbewijs});
+  if(String(F.functie).trim())   uit.push({k:'functie', lbl:'functie: '+F.functie});
+  if(F.rec)           uit.push({k:'rec', lbl:F.rec});
+  if(F.klant)         uit.push({k:'klant', lbl:F.klant});
+  if(F.fase)          uit.push({k:'fase', lbl:F.fase});
+  if(F.mijn)          uit.push({k:'mijn', lbl:'mijn kandidaten'});
+  return uit;
+}
+
+function lijstTab(wrap){
+  const alle = CRM.kandidaten();
+  const nFil = actieveFilters().filter(f => f.k !== 'mijn').length;
+  /* Eén keer: staan er filters aan, verstop het paneel dan niet. Daarna
+     respecteren we wat de gebruiker zelf open- of dichtklikte. */
+  if(!filtersOpenGezet){ filtersOpen = nFil > 0; filtersOpenGezet = true; }
+  const sel = (f, opts, leeg) => `<select data-f="${f}"><option value="">${h(leeg)}</option>
+    ${opts.map(o=>`<option value="${h(o)}"${F[f]===o?' selected':''}>${h(o)}</option>`).join('')}</select>`;
+
+  wrap.innerHTML = `
     <div class="stack">
       <div class="card pad">
         <div class="row kd-fil">
           <div class="searchbox" style="flex:1;max-width:290px">
             <input type="search" id="kd_zoek" autocomplete="off" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
           </div>
-          <select id="kd_status" style="width:auto">
-            <option value="lopend"${F.status==='lopend'?' selected':''}>Lopende trajecten</option>
-            <option value="alle"${F.status==='alle'?' selected':''}>Alle kandidaten</option>
-            <option value="geplaatst"${F.status==='geplaatst'?' selected':''}>Geplaatst</option>
-            <option value="recyclebaar"${F.status==='recyclebaar'?' selected':''}>Afgevallen — herbruikbaar</option>
-          </select>
-          <select id="kd_fase" style="width:auto">
-            <option value="">Alle fases</option>
-            ${CRM.PHASES.map(p=>`<option value="${h(p.k)}"${F.fase===p.k?' selected':''}>${h(p.k)}</option>`).join('')}
-          </select>
-          <select id="kd_rec" style="width:auto">
-            <option value="">Alle recruiters</option>
-            ${uniek(alle.map(c=>c.rec)).map(r=>`<option value="${h(r)}"${F.rec===r?' selected':''}>${h(r)}</option>`).join('')}
-          </select>
-          <select id="kd_klant" style="width:auto">
-            <option value="">Alle klanten</option>
-            ${uniek(alle.map(c=>c.klant)).map(r=>`<option value="${h(r)}"${F.klant===r?' selected':''}>${h(r)}</option>`).join('')}
-          </select>
+          <button class="btn ghost sm${filtersOpen?' kd-filaan':''}" id="kd_filknop">Filters${nFil?` <span class="num">(${nFil})</span>`:''}</button>
           <select id="kd_sort" style="width:auto">
             <option value="gesproken"${F.sort==='gesproken'?' selected':''}>Langst niet gesproken</option>
+            <option value="ster"${F.sort==='ster'?' selected':''}>Hoogste sterren</option>
             <option value="naam"${F.sort==='naam'?' selected':''}>Naam</option>
             <option value="fase"${F.sort==='fase'?' selected':''}>Fase</option>
             <option value="volledigheid"${F.sort==='volledigheid'?' selected':''}>Minst volledig</option>
@@ -205,69 +221,175 @@ function overzicht(mount, acties){
           <span class="spacer"></span>
           <span class="meta num" id="kd_telling"></span>
         </div>
+        <div class="kd-fpaneel" id="kd_fpaneel" style="${filtersOpen?'':'display:none'}">
+          <div class="kd-fgrid">
+            <div class="f-row"><label>Status</label>
+              <select data-f="status">
+                <option value="lopend"${F.status==='lopend'?' selected':''}>Actief lopend</option>
+                <option value="beschikbaar"${F.status==='beschikbaar'?' selected':''}>Beschikbaar</option>
+                <option value="geplaatst"${F.status==='geplaatst'?' selected':''}>Geplaatst</option>
+                <option value="recyclebaar"${F.status==='recyclebaar'?' selected':''}>Uitval — herbruikbaar</option>
+                <option value="alle"${F.status==='alle'?' selected':''}>Alles</option>
+              </select></div>
+            <div class="f-row"><label>Minimaal sterren</label>
+              <select data-f="ster">
+                <option value="0">Alle</option>
+                ${[1,2,3,4,5].map(n=>`<option value="${n}"${F.ster===n?' selected':''}>${'★'.repeat(n)}${n<5?' of meer':''}</option>`).join('')}
+              </select></div>
+            <div class="f-row"><label>Woont binnen radius</label>
+              <div class="row tight" style="flex-wrap:nowrap">
+                <input type="text" data-f="plaats" placeholder="Plaats, bv. Gouda" value="${h(F.plaats)}">
+                <select data-f="km" style="width:auto;flex:0 0 auto">
+                  ${[10,20,30,45].map(k=>`<option value="${k}"${Number(F.km)===k?' selected':''}>${k} km</option>`).join('')}
+                </select>
+              </div>
+              <div class="hint" id="kd_plaatshint"></div></div>
+            <div class="f-row"><label>Ploegendiensten</label>${sel('ploegen', CRM.PLOEGEN, 'Alle')}</div>
+            <div class="f-row"><label>Taal</label>
+              <input type="text" data-f="taal" placeholder="bv. Pools of NL" value="${h(F.taal)}"></div>
+            <div class="f-row"><label>Vervoer</label>${sel('vervoer', CRM.VERVOER, 'Alle')}</div>
+            <div class="f-row"><label>Rijbewijs</label>
+              <input type="text" data-f="rijbewijs" placeholder="bv. B of heftruck" value="${h(F.rijbewijs)}"></div>
+            <div class="f-row"><label>Functie</label>
+              <input type="text" data-f="functie" placeholder="bv. operator" value="${h(F.functie)}"></div>
+            <div class="f-row"><label>Recruiter</label>${sel('rec', uniek(alle.map(c=>c.rec)), 'Alle')}</div>
+            <div class="f-row"><label>Klant</label>${sel('klant', uniek(alle.map(c=>c.klant)), 'Alle')}</div>
+            <div class="f-row"><label>Fase</label>${sel('fase', CRM.PHASES.map(p=>p.k), 'Alle')}</div>
+          </div>
+          <div class="row" style="margin-top:2px">
+            <button class="btn sub sm" id="kd_wis">Alle filters wissen</button>
+          </div>
+        </div>
       </div>
+      <div class="row tight" id="kd_chips"></div>
       <div id="kd_lijst"></div>
     </div>`;
 
-  const zoekEl = mount.querySelector('#kd_zoek');
-  zoekEl.oninput = CRM.debounce(() => { zet('zoek', zoekEl.value); lijst(mount); }, 200);
-  ['status','fase','rec','klant','sort'].forEach(k =>
-    mount.querySelector('#kd_'+k).onchange = e => { zet(k, e.target.value); lijst(mount); });
-  mount.querySelector('#kd_mijn').onclick = e => { zet('mijn', !F.mijn); e.target.classList.toggle('on', F.mijn); lijst(mount); };
-  lijst(mount);
+  const zoekEl = wrap.querySelector('#kd_zoek');
+  zoekEl.oninput = CRM.debounce(() => { zet('zoek', zoekEl.value); lijst(wrap); }, 200);
+  wrap.querySelector('#kd_sort').onchange = e => { zet('sort', e.target.value); lijst(wrap); };
+  wrap.querySelector('#kd_mijn').onclick = e => { zet('mijn', !F.mijn); e.target.classList.toggle('on', F.mijn); lijst(wrap); };
+  wrap.querySelector('#kd_filknop').onclick = () => {
+    filtersOpen = !filtersOpen;
+    wrap.querySelector('#kd_fpaneel').style.display = filtersOpen ? '' : 'none';
+    wrap.querySelector('#kd_filknop').classList.toggle('kd-filaan', filtersOpen);
+  };
+  wrap.querySelector('#kd_wis').onclick = () => {
+    PANEEL_FILTERS.forEach(k => zet(k, F_STD[k])); zet('km', F_STD.km);
+    lijstTab(wrap);
+  };
+  wrap.querySelectorAll('[data-f]').forEach(el => {
+    const k = el.dataset.f;
+    const pas = () => {
+      let v = el.value;
+      if(k === 'ster' || k === 'km') v = Number(v)||0;
+      zet(k, v);
+      lijst(wrap);
+      filterKnopBij(wrap);
+    };
+    if(el.tagName === 'SELECT') el.onchange = pas;
+    else el.oninput = CRM.debounce(pas, 250);
+  });
+  lijst(wrap);
+}
+
+function filterKnopBij(wrap){
+  const knop = wrap.querySelector('#kd_filknop'); if(!knop) return;
+  const n = actieveFilters().filter(f => f.k !== 'mijn').length;
+  knop.innerHTML = 'Filters' + (n ? ` <span class="num">(${n})</span>` : '');
+  knop.classList.toggle('kd-filaan', filtersOpen);
 }
 
 function gefilterd(){
   const q = String(F.zoek||'').trim().toLowerCase();
+  const radiusAan    = !!String(F.plaats||'').trim();
+  const radiusBekend = radiusAan && !!CRM.PLAATSEN[CRM.plaatsSleutel(F.plaats)];
+  let zonderPlek = 0;
+
   const rijen = CRM.kandidaten().filter(c => {
-    if(F.status === 'lopend'      && CRM.DONE.includes(c.fase)) return false;
+    if(F.status === 'lopend'      && !CRM.isActiefLopend(c)) return false;
+    if(F.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;
     if(F.status === 'geplaatst'   && !CRM.PLACED.includes(c.fase)) return false;
     if(F.status === 'recyclebaar' && !(c.fase === 'Afgevallen' && c.recyclebaar !== false)) return false;
-    if(F.fase  && c.fase  !== F.fase)  return false;
+    if(F.ster > 0 && (Number(c.ster)||0) < F.ster) return false;
+    /* Ploegen: 'wisselend' kan elke dienst draaien, dus die telt mee
+       zodra er op een echte ploegendienst gefilterd wordt. */
+    if(F.ploegen && !(c.ploegen === F.ploegen || (F.ploegen !== 'geen' && c.ploegen === 'wisselend'))) return false;
+    if(F.taal && !taalMatch(c.talen, F.taal)) return false;
+    if(F.vervoer && c.vervoer !== F.vervoer) return false;
+    if(F.rijbewijs && !String(c.rijbewijs||'').toLowerCase().includes(F.rijbewijs.trim().toLowerCase())) return false;
+    if(F.functie && !String(c.functie||'').toLowerCase().includes(F.functie.trim().toLowerCase())) return false;
     if(F.rec   && c.rec   !== F.rec)   return false;
     if(F.klant && c.klant !== F.klant) return false;
+    if(F.fase  && c.fase  !== F.fase)  return false;
     if(F.mijn  && !CRM.isVanMij(c))    return false;
-    if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon].join(' ').toLowerCase().includes(q)) return false;
+    if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon,c.talen].join(' ').toLowerCase().includes(q)) return false;
+    /* Radius als laatste: onbekende woonplaats valt er eerlijk buiten,
+       en de teller telt alleen kandidaten die verder wél door de filters kwamen. */
+    if(radiusBekend && !CRM.binnenRadius(c, F.plaats, F.km)){
+      if(!CRM.PLAATSEN[CRM.plaatsSleutel(c.woonplaats)]) zonderPlek++;
+      return false;
+    }
     return true;
   }).map(c => ({c, lg:laatstGesproken(c), st:stilte(c), v:CRM.volledigheid(c)}));
 
   const srt = {
     gesproken:    (a,b) => ((CRM.dagenGeleden(b.lg) == null ? 9999 : CRM.dagenGeleden(b.lg)) - (CRM.dagenGeleden(a.lg) == null ? 9999 : CRM.dagenGeleden(a.lg))),
+    ster:         (a,b) => (Number(b.c.ster)||0) - (Number(a.c.ster)||0) || a.c.naam.localeCompare(b.c.naam,'nl'),
     naam:         (a,b) => a.c.naam.localeCompare(b.c.naam,'nl'),
     fase:         (a,b) => CRM.faseIdx(a.c.fase) - CRM.faseIdx(b.c.fase) || a.c.naam.localeCompare(b.c.naam,'nl'),
     volledigheid: (a,b) => a.v.pct - b.v.pct
   }[F.sort];
   if(srt) rijen.sort(srt);
-  return rijen;
+  return {rijen, zonderPlek, radiusAan, radiusBekend};
 }
 
-function lijst(mount){
-  const rijen = gefilterd();
-  const wrap = mount.querySelector('#kd_lijst');
-  const tel  = mount.querySelector('#kd_telling');
+function lijst(wrap){
+  const {rijen, zonderPlek, radiusAan, radiusBekend} = gefilterd();
+  const lijstEl = wrap.querySelector('#kd_lijst');
+  const tel  = wrap.querySelector('#kd_telling');
   const dun  = rijen.filter(r => r.v.pct < 60).length;
   if(tel) tel.textContent = rijen.length + (rijen.length===1?' kandidaat':' kandidaten') + (dun?' · '+dun+' onvolledig':'');
 
+  const hint = wrap.querySelector('#kd_plaatshint');
+  if(hint) hint.textContent = radiusAan && !radiusBekend
+    ? '"'+F.plaats+'" is geen herkende plaats — de radius filtert nu niet.' : '';
+
+  /* Actieve filters als verwijderbare chips. */
+  const chipsEl = wrap.querySelector('#kd_chips');
+  if(chipsEl){
+    const act = actieveFilters();
+    chipsEl.innerHTML = act.map(f =>
+      `<span class="chip kd-fchip">${h(f.lbl)}<button class="kd-fx" data-fx="${h(f.k)}" title="Filter weghalen">×</button></span>`).join('')
+      + (radiusBekend && zonderPlek ? `<span class="meta"><span class="num">${zonderPlek}</span> zonder herkende plaats vallen buiten deze radius</span>` : '');
+    chipsEl.querySelectorAll('[data-fx]').forEach(b => b.onclick = () => {
+      zet(b.dataset.fx, F_STD[b.dataset.fx]);
+      lijstTab(wrap);   // paneel-invoer moet meebewegen met de chip
+    });
+  }
+
   if(!rijen.length){
-    wrap.innerHTML = CRM.ui.leeg('Geen kandidaten gevonden','Pas je zoekopdracht of filters aan.');
+    lijstEl.innerHTML = CRM.ui.leeg('Geen kandidaten gevonden','Pas je zoekopdracht of filters aan.');
     return;
   }
-  wrap.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>
-      <th>Kandidaat</th><th>Klant</th><th>Fase</th><th>Woonplaats</th><th>Recruiter</th>
+  lijstEl.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>
+      <th>Kandidaat</th><th>Sterren</th><th>Klant</th><th>Fase</th><th>Woonplaats</th><th>Recruiter</th>
       <th>Laatst gesproken</th><th>Profiel</th>
     </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
+      const km = radiusBekend ? CRM.afstandKm(c.woonplaats, F.plaats) : null;
       return `<tr class="clickable" data-id="${h(String(c.id))}">
         <td><b>${h(c.naam)}</b><div class="rowsub">${h(c.functie||'—')}</div></td>
+        <td><span class="kd-ster num" title="${c.ster?c.ster+' van 5':'nog geen beoordeling'}">${h(CRM.sterren(c.ster))}</span></td>
         <td class="sub">${h(c.klant||'—')}</td>
         <td>${faseChip(c.fase)}</td>
-        <td class="sub">${h(c.woonplaats||'—')}</td>
+        <td class="sub">${h(c.woonplaats||'—')}${km!=null?` <span class="meta num">· ${km} km</span>`:''}</td>
         <td class="sub">${h(c.rec||'—')}</td>
         <td class="sub num${st.kleur==='red'?' kd-let':st.kleur==='amber'?' kd-warn':''}">${h(st.tekst)}</td>
         <td><div class="kd-vol">${CRM.ui.bar(v.pct, kleur)}<span class="meta num">${v.pct}%</span></div></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
-  wrap.querySelectorAll('[data-id]').forEach(tr => tr.onclick = () => CRM.ga('kandidaten',{id:tr.dataset.id}));
+  lijstEl.querySelectorAll('[data-id]').forEach(tr => tr.onclick = () => CRM.ga('kandidaten',{id:tr.dataset.id}));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -275,7 +397,9 @@ function lijst(mount){
    ═══════════════════════════════════════════════════════════════ */
 let kandOpen = null, tabActief = 'activiteiten';
 
-/* Inline bewerkbare velden — pad 'cv.x' schrijft in het cv-jsonb. */
+/* Inline bewerkbare velden — pad 'cv.x' schrijft in het cv-jsonb.
+   Beschikbaarheid, ploegen, talen, rijbewijs en vervoer zijn échte
+   kandidaatvelden (daar filtert het overzicht op), geen cv-velden. */
 const VELDEN = [
   {k:'naam',        lbl:'Naam',              t:'text'},
   {k:'telefoon',    lbl:'Telefoon',          t:'tel'},
@@ -283,13 +407,14 @@ const VELDEN = [
   {k:'woonplaats',  lbl:'Woonplaats',        t:'text'},
   {k:'functie',     lbl:'Gezochte functie',  t:'text'},
   {k:'bron',        lbl:'Bron',              t:'select', opts:['', ...CRM.LEAD_BRONNEN]},
+  {k:'beschikbaar', lbl:'Beschikbaar',       t:'select', opts:['', ...CRM.BESCHIKBAAR]},
+  {k:'ploegen',     lbl:'Ploegendiensten',   t:'select', opts:['', ...CRM.PLOEGEN]},
+  {k:'talen',       lbl:'Talen',             t:'text'},
+  {k:'rijbewijs',   lbl:'Rijbewijs',         t:'text'},
+  {k:'vervoer',     lbl:'Vervoer',           t:'select', opts:['', ...CRM.VERVOER]},
   {k:'maandloon',   lbl:'Maandloon',         t:'number', toon:v => v ? CRM.euro(v) : ''},
   {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''},
-  {k:'cv.salariswens', lbl:'Salariswens',    t:'text'},
-  {k:'cv.beschikbaar', lbl:'Beschikbaarheid',t:'text'},
-  {k:'cv.rijbewijs',   lbl:'Rijbewijs',      t:'select', opts:['','Ja','Nee']},
-  {k:'cv.vervoer',     lbl:'Vervoer',        t:'select', opts:['','Eigen auto','OV','Fiets','Geen']},
-  {k:'cv.talen',       lbl:'Talen',          t:'text', lijst:true}
+  {k:'cv.salariswens', lbl:'Salariswens',    t:'text'}
 ];
 function lees(c, pad){
   if(pad.indexOf('cv.') === 0) return (c.cv || {})[pad.slice(3)];
@@ -329,7 +454,7 @@ function kaart(mount, acties, id){
   acties.querySelector('#c_bel').onclick     = () => logVia(c,'bel','Wat is er besproken?');
   acties.querySelector('#c_app').onclick     = () => logVia(c,'whatsapp','Wat heb je gestuurd?');
   acties.querySelector('#c_notitie').onclick = () => notitieToevoegen(c);
-  acties.querySelector('#c_taak').onclick    = () => taakModal(c);
+  acties.querySelector('#c_taak').onclick    = () => nieuweTaak(c);
 
   mount.innerHTML = `
     <div class="stack">
@@ -352,6 +477,9 @@ function kaart(mount, acties, id){
     </div>`;
 
   bindVelden(mount, c);
+  bindSterren(mount, c);
+  const cvKnop = mount.querySelector('#c_cvlees');
+  if(cvKnop) cvKnop.onclick = () => cvModal(c);
   mount.querySelectorAll('#c_tabs .tab').forEach(b => b.onclick = () => {
     tabActief = b.dataset.t;
     mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === tabActief));
@@ -367,13 +495,34 @@ function kaart(mount, acties, id){
   tabInhoud(mount, c);
 }
 
+/* ─── Ster-beoordeling in de kop ──────────────────────────────── */
+function sterrenHtml(c){
+  const s = Number(c.ster)||0;
+  return `<div class="kd-sterren" role="group" aria-label="Beoordeling">
+    ${[1,2,3,4,5].map(i => `<button type="button" class="kd-sterbtn${i<=s?' aan':''}" data-ster="${i}"
+      title="${i===s ? 'Klik nogmaals om de beoordeling te wissen' : i+' van 5 sterren'}">★</button>`).join('')}
+    <span class="meta">${s ? `<span class="num">${s}</span>/5` : 'nog geen beoordeling'}</span>
+  </div>`;
+}
+function bindSterren(mount, c){
+  mount.querySelectorAll('.kd-sterbtn').forEach(b => b.onclick = async () => {
+    const n = Number(b.dataset.ster);
+    c.ster = (Number(c.ster)||0) === n ? 0 : n;      // zelfde ster = wissen
+    await bewaarKandidaat(c);
+    const wrap = mount.querySelector('.kd-sterren');
+    if(wrap){ wrap.outerHTML = sterrenHtml(c); bindSterren(mount, c); }
+  });
+}
+
 function kopHtml(c){
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
-  const besch = (c.cv && c.cv.beschikbaar) || (c.start ? 'Start ' + CRM.fmtDate(c.start) : '');
+  const BESCH_LBL = {direct:'Direct beschikbaar', 'in overleg':'Beschikbaar in overleg', niet:'Niet beschikbaar'};
+  const besch = BESCH_LBL[c.beschikbaar] || (c.start ? 'Start ' + CRM.fmtDate(c.start) : '');
   return `<div class="card"><div class="card-b kd-hero">
     <div style="min-width:0;flex:1">
       <div class="h1" style="font-size:24px">${h(c.naam)}</div>
+      ${sterrenHtml(c)}
       <div class="sub" style="margin-top:3px">
         ${h(c.functie||'Functie nog niet ingevuld')}
         ${c.klant?` · <a href="#klanten/${encodeURIComponent(c.klant)}" data-klant="${h(c.klant)}">${h(c.klant)}</a>`:''}
@@ -381,7 +530,7 @@ function kopHtml(c){
       </div>
       <div class="row tight" style="margin-top:9px">
         ${faseChip(c.fase)}
-        ${besch?`<span class="chip">${h(besch)}</span>`:''}
+        ${besch?`<span class="chip${c.beschikbaar==='direct'?' green':''}">${h(besch)}</span>`:''}
         ${c.rec?`<span class="chip">Recruiter ${h(c.rec)}</span>`:''}
         ${c.type?`<span class="chip">${h(c.type)}</span>`:''}
         ${stilteChip(c)}
@@ -408,13 +557,16 @@ function kopHtml(c){
 
 /* ─── Kandidaatgegevens (inline bewerkbaar) ───────────────────── */
 function gegevensHtml(c){
+  const uitCv = Array.isArray(c.cv && c.cv.uitCv) ? c.cv.uitCv : [];
   return `<div class="card">
     <div class="card-h"><div class="h2">Kandidaatgegevens</div>
       <span class="meta">klik een waarde om te wijzigen</span></div>
     <div class="card-b"><div class="kd-velden">${VELDEN.map(f => {
       const w = toonWaarde(f, lees(c, f.k));
       return `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
-        <span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span></div>`;
+        <span><span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span>${
+          w && uitCv.includes(f.k) ? ' <span class="chip green kd-cvchip" title="Automatisch overgenomen uit het CV">uit CV</span>' : ''
+        }</span></div>`;
     }).join('')}</div></div></div>`;
 }
 
@@ -489,12 +641,16 @@ function cvHtml(c){
   const werk = Array.isArray(cv.werkgevers) ? cv.werkgevers : [];
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   const skills = Array.isArray(cv.skills) ? cv.skills : [];
-  const leeg = !werk.length && !opl.length && !skills.length && !cv.ervaringJaren && !cv.url;
+  const certs  = Array.isArray(cv.certificaten) ? cv.certificaten : [];
+  const leeg = !werk.length && !opl.length && !skills.length && !certs.length && !cv.ervaringJaren && !cv.url;
   return `<div class="card">
     <div class="card-h"><div class="h2">CV &amp; ervaring</div>
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
-      ${veiligeUrl(cv.url)?`<span class="spacer"></span><a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}</div>
-    <div class="card-b">${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Zodra een CV is verwerkt verschijnen werkgevers, opleidingen en vaardigheden hier.') : `
+      <span class="spacer"></span>
+      ${veiligeUrl(cv.url)?`<a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}
+      <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
+    <div class="card-b">${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Lees een CV in (PDF of tekst) — lege velden worden aangevuld en afwijkingen worden rood gemarkeerd.') : `
+      ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
       ${werk.length?`<div class="label">Werkervaring</div>
         <div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
           <b>${h(w.functie||w.rol||'—')}</b>
@@ -507,11 +663,255 @@ function cvHtml(c){
           <span class="sub">${h(o.school||o.instituut||'')}</span>
           <span class="meta num">${h(o.jaar||o.periode||'')}</span>
         </div>`).join('')}</div>`:''}
+      ${certs.length?`<div class="label" style="margin-top:16px">Certificaten</div>
+        <div class="row tight" style="margin-top:8px">${certs.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
       ${skills.length?`<div class="label" style="margin-top:16px">Vaardigheden</div>
         <div class="row tight" style="margin-top:8px">${skills.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
       ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="label" style="margin-top:16px">Talen</div>
         <div class="row tight" style="margin-top:8px">${cv.talen.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
     `}</div></div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CV-VERRIJKING — parse client-side, lege velden aanvullen (groen),
+   afwijkingen rood markeren. Nooit stil overschrijven.
+   Eigen compacte parser; bewust niets uit recruitment.js gebruikt.
+   ═══════════════════════════════════════════════════════════════ */
+let _pdfjs = null;
+function laadPdfJs(){
+  if(_pdfjs) return _pdfjs;
+  _pdfjs = new Promise((res, rej) => {
+    if(window.pdfjsLib) return res(window.pdfjsLib);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.onload = () => {
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }catch(e){}
+      res(window.pdfjsLib);
+    };
+    s.onerror = () => { _pdfjs = null; rej(new Error('pdf.js kon niet geladen worden')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjs;
+}
+async function pdfTekst(file){
+  const lib = await laadPdfJs();
+  const doc = await lib.getDocument({data:await file.arrayBuffer()}).promise;
+  let uit = '';
+  for(let p = 1; p <= Math.min(doc.numPages, 10); p++){
+    const items = (await (await doc.getPage(p)).getTextContent()).items;
+    let vorigeY = null, regel = ''; const regels = [];
+    items.forEach(it => {
+      const y = it.transform[5];
+      if(vorigeY !== null && Math.abs(y - vorigeY) > 3){ if(regel.trim()) regels.push(regel.trim()); regel = ''; }
+      regel += it.str + ' '; vorigeY = y;
+    });
+    if(regel.trim()) regels.push(regel.trim());
+    uit += regels.join('\n') + '\n';
+  }
+  return uit;
+}
+
+const CV_TALEN = ['Nederlands','Engels','Duits','Frans','Spaans','Pools','Roemeens','Bulgaars',
+  'Hongaars','Turks','Arabisch','Portugees','Italiaans','Oekraïens','Russisch','Slowaaks','Tsjechisch'];
+const CV_CERTS = [
+  [/heftruck|vorkheftruck|forklift/i, 'Heftruckcertificaat'],
+  [/reachtruck|reach truck/i, 'Reachtruck'],
+  [/\bept\b|elektrische pallet/i, 'EPT'],
+  [/\bvca\b/i, 'VCA'],
+  [/hoogwerker/i, 'Hoogwerker'],
+  [/\bbhv\b/i, 'BHV'],
+  [/lascertificaat|lasdiploma|\bnen\s?9606\b/i, 'Lascertificaat']
+];
+
+function parseCvTekst(t){
+  t = String(t||'');
+  const regels = t.split(/\r?\n/).map(r => r.trim()).filter(Boolean);
+  const uit = {telefoon:'', email:'', woonplaats:'', talen:[], certificaten:[],
+               rijbewijs:'', werk:[], ervaringJaren:null, functie:'', nietGevonden:[]};
+
+  const em = t.match(/[\w.+-]+@[\w-]+\.[\w.]{2,}/);
+  if(em) uit.email = em[0];
+
+  const tel = t.match(/(?:\+31|0031|0)\s?6[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}/)
+           || t.match(/(?:\+\d{1,3}[\s-]?)?(?:\d[\s.-]?){9,12}\d/);
+  if(tel) uit.telefoon = tel[0].trim().replace(/\s{2,}/g,' ');
+
+  /* Woonplaats: eerst postcode + plaats op dezelfde regel, anders een
+     hoofdletterwoord dat in onze plaatsentabel voorkomt. */
+  const pc = t.match(/\b\d{4}[ \t]?[A-Za-z]{2}\b[ \t,]+([A-ZÀ-Ž][\wÀ-ž'’-]{2,24}(?:[ \t][A-ZÀ-Ž][\wÀ-ž'’-]{2,24})?)/);
+  if(pc) uit.woonplaats = pc[1].trim();
+  if(!uit.woonplaats){
+    const kandidaten = t.match(/[A-ZÀ-Ž][a-zà-ž'’-]{2,}(?:[ \/-](?:a\/d[ ])?[A-ZÀ-Ž][a-zà-ž'’-]{2,})?/g) || [];
+    const gevonden = kandidaten.find(w => CRM.PLAATSEN[CRM.plaatsSleutel(w)]);
+    if(gevonden) uit.woonplaats = gevonden;
+  }
+
+  CV_TALEN.forEach(x => { if(new RegExp('\\b'+x+'\\b','i').test(t)) uit.talen.push(x); });
+  CV_CERTS.forEach(([re, lbl]) => { if(re.test(t)) uit.certificaten.push(lbl); });
+  const rb = t.match(/rijbewijs[^\n]{0,40}/i);
+  if(rb){
+    const cats = (rb[0].match(/\b(AM|A|BE|B|CE|C|D)\b/g)||[]).join('/');
+    uit.rijbewijs = cats || 'genoemd in CV';
+  }
+
+  /* Werkervaring: regels met een jaartalbereik. Ervaring = nu − vroegste
+     startjaar van het werkverleden (niet van álle jaartallen — daar zit
+     ook een geboortejaar tussen). */
+  const jaarRe = /((19|20)\d{2})\s*[–—\-\/tot ]{1,6}\s*((19|20)\d{2}|heden|nu)/i;
+  const startjaren = [];
+  regels.forEach((r, i) => {
+    const m = r.match(jaarRe);
+    if(m && r.length < 140){
+      let regel = r;
+      if(regel.replace(jaarRe,'').replace(/[^a-zA-Z]/g,'').length < 4 && regels[i+1]) regel = r + ' — ' + regels[i+1];
+      const periode = (regel.match(jaarRe)||[''])[0].trim();
+      const functie = regel.replace(jaarRe,'').replace(/^[\s\-–—:•]+|[\s\-–—:•]+$/g,'').slice(0,80);
+      if(uit.werk.length < 8) uit.werk.push({functie: functie || '—', periode});
+      startjaren.push(+m[1]);
+    }
+  });
+  if(startjaren.length){
+    const vroegst = Math.min.apply(null, startjaren.filter(j => j >= 1960 && j <= new Date().getFullYear()));
+    if(isFinite(vroegst)) uit.ervaringJaren = Math.max(0, Math.min(45, new Date().getFullYear() - vroegst));
+  }
+
+  const functies = Array.from(new Set((CRM.state.vacs||[]).map(v => v.functie).filter(Boolean)));
+  const fg = functies.find(f => new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i').test(t));
+  if(fg) uit.functie = fg;
+  else if(uit.werk.length && uit.werk[0].functie !== '—') uit.functie = uit.werk[0].functie.slice(0,60);
+
+  if(!uit.telefoon)      uit.nietGevonden.push('telefoonnummer');
+  if(!uit.email)         uit.nietGevonden.push('e-mailadres');
+  if(!uit.woonplaats)    uit.nietGevonden.push('woonplaats');
+  if(!uit.talen.length)  uit.nietGevonden.push('talen');
+  if(!uit.werk.length)   uit.nietGevonden.push('werkverleden met jaartallen');
+  if(!uit.certificaten.length) uit.nietGevonden.push('certificaten');
+  return uit;
+}
+
+/* Telefoonnummers vergelijken los van spaties/landcode. */
+const telNorm = t => {
+  let n = String(t||'').replace(/\D/g,'');
+  if(n.startsWith('0031')) n = '0'+n.slice(4);
+  else if(n.startsWith('31') && n.length > 9) n = '0'+n.slice(2);
+  return n;
+};
+
+function cvModal(c){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">CV inlezen</div>
+      <p class="sub" style="margin:6px 0 0">PDF of tekstbestand — wordt in je browser gelezen, er gaat niets naar
+      een externe dienst. Lege velden worden aangevuld; wijkt het CV af van de kaart, dan zie je dat rood en kies je zelf.</p></div>
+    <div class="modal-b">
+      <input type="file" id="cvv_file" accept=".pdf,.txt,.md,text/plain,application/pdf">
+      <div id="cvv_uit" style="margin-top:14px"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button>
+      <button class="btn" id="cvv_ok" disabled>Verwerken</button></div>`, {onOpen(m){
+    const uitEl = m.querySelector('#cvv_uit'), ok = m.querySelector('#cvv_ok');
+    let p = null, bestand = '', aanvullingen = [], conflicten = [];
+
+    m.querySelector('#cvv_file').onchange = async e => {
+      const f = e.target.files[0]; if(!f) return;
+      bestand = f.name;
+      uitEl.innerHTML = CRM.ui.laden('CV lezen…');
+      ok.disabled = true;
+      try{
+        const tekst = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
+          ? await pdfTekst(f) : await f.text();
+        if(!tekst.trim()){
+          uitEl.innerHTML = '<div class="note warn">Er kwam geen tekst uit dit bestand. Waarschijnlijk is het een gescande pdf (een plaatje). Vul de gegevens dan handmatig in.</div>';
+          return;
+        }
+        p = parseCvTekst(tekst);
+
+        /* Vergelijken met de kaart: aanvullen (leeg) of conflict (anders). */
+        aanvullingen = []; conflicten = [];
+        const paren = [
+          ['telefoon',   'Telefoon',   (a,b) => telNorm(a) === telNorm(b)],
+          ['email',      'E-mail',     (a,b) => a.toLowerCase() === b.toLowerCase()],
+          ['woonplaats', 'Woonplaats', (a,b) => CRM.plaatsSleutel(a) === CRM.plaatsSleutel(b)]
+        ];
+        paren.forEach(([k, lbl, eq]) => {
+          const kaartW = String(c[k]||'').trim(), cvW = String(p[k]||'').trim();
+          if(!cvW) return;
+          if(!kaartW) aanvullingen.push({k, lbl, w:cvW});
+          else if(!eq(kaartW, cvW)) conflicten.push({k, lbl, kaart:kaartW, cv:cvW, keuze:'kaart'});
+        });
+        if(p.functie && !String(c.functie||'').trim()) aanvullingen.push({k:'functie', lbl:'Gezochte functie', w:p.functie});
+        if(p.talen.length && !String(c.talen||'').trim()) aanvullingen.push({k:'talen', lbl:'Talen', w:p.talen.join(', ')});
+        if(p.rijbewijs && p.rijbewijs !== 'genoemd in CV' && !String(c.rijbewijs||'').trim())
+          aanvullingen.push({k:'rijbewijs', lbl:'Rijbewijs', w:p.rijbewijs});
+
+        const extra = [];
+        if(p.werk.length)         extra.push(p.werk.length + ' werkervaring-regels');
+        if(p.certificaten.length) extra.push('certificaten: ' + p.certificaten.join(', '));
+        if(p.ervaringJaren != null) extra.push('± ' + p.ervaringJaren + ' jaar ervaring');
+
+        uitEl.innerHTML = `
+          ${conflicten.length ? `
+            <div class="label" style="margin-bottom:8px;color:var(--red)">Klopt niet met de kaart — kies per regel</div>
+            ${conflicten.map((cf,i) => `<div class="kd-conflict" data-ci="${i}">
+              <div class="kd-conflict-lbl">${h(cf.lbl)} wijkt af</div>
+              <div class="kd-conflict-opties">
+                <button type="button" class="kd-copt aan" data-keus="kaart">Kaart houden<b>${h(cf.kaart)}</b></button>
+                <button type="button" class="kd-copt" data-keus="cv">CV overnemen<b>${h(cf.cv)}</b></button>
+              </div>
+            </div>`).join('')}` : ''}
+          ${aanvullingen.length ? `
+            <div class="label" style="margin:${conflicten.length?'14px':'0'} 0 8px">Wordt aangevuld (was leeg op de kaart)</div>
+            <div class="kd-cvaanv">${aanvullingen.map(a =>
+              `<div class="kd-cvaanv-rij"><span class="label">${h(a.lbl)}</span><span>${h(a.w)}</span><span class="chip green kd-cvchip">uit CV</span></div>`).join('')}
+            </div>` : ''}
+          ${extra.length ? `<div class="meta" style="margin-top:12px">Gaat naar CV &amp; ervaring: ${h(extra.join(' · '))}.</div>` : ''}
+          ${!conflicten.length && !aanvullingen.length && !extra.length
+            ? '<div class="note warn">Uit dit CV viel niets bruikbaars te halen.</div>' : ''}
+          ${p.nietGevonden.length ? `<div class="note warn" style="margin-top:12px">Niet gevonden in het CV: ${h(p.nietGevonden.join(', '))}.</div>`
+                                  : '<div class="note ok" style="margin-top:12px">Alles gevonden in het CV.</div>'}`;
+
+        uitEl.querySelectorAll('.kd-conflict').forEach(blok => {
+          blok.querySelectorAll('.kd-copt').forEach(b => b.onclick = () => {
+            conflicten[Number(blok.dataset.ci)].keuze = b.dataset.keus;
+            blok.querySelectorAll('.kd-copt').forEach(x => x.classList.toggle('aan', x === b));
+          });
+        });
+        ok.disabled = !(conflicten.length || aanvullingen.length || extra.length);
+      }catch(err){
+        uitEl.innerHTML = `<div class="note err">Lezen mislukt: ${h(err.message)}</div>`;
+      }
+    };
+
+    ok.onclick = async () => {
+      if(!p) return;
+      const uitCv = [];
+      aanvullingen.forEach(a => { c[a.k] = a.w; uitCv.push(a.k); });
+      const gekozenCv = conflicten.filter(cf => cf.keuze === 'cv');
+      gekozenCv.forEach(cf => { c[cf.k] = cf.cv; uitCv.push(cf.k); });
+
+      const oud = c.cv || {};
+      c.cv = Object.assign({}, oud, {
+        functie:       p.functie || oud.functie || '',
+        ervaringJaren: p.ervaringJaren != null ? p.ervaringJaren : (oud.ervaringJaren != null ? oud.ervaringJaren : null),
+        talen:         p.talen.length ? p.talen : (oud.talen || []),
+        certificaten:  p.certificaten.length ? p.certificaten : (oud.certificaten || []),
+        werkgevers:    p.werk.length ? p.werk : (oud.werkgevers || []),
+        bestand, op:new Date().toISOString(),
+        uitCv: uniek([...(Array.isArray(oud.uitCv)?oud.uitCv:[]), ...uitCv])
+      });
+      await bewaarKandidaat(c);
+
+      const delen = [];
+      if(aanvullingen.length) delen.push('aangevuld: ' + aanvullingen.map(a=>a.lbl.toLowerCase()).join(', '));
+      conflicten.forEach(cf => delen.push(cf.lbl.toLowerCase() + ' week af — ' + (cf.keuze==='cv' ? 'CV overgenomen' : 'kaartwaarde gehouden')));
+      if(p.nietGevonden.length) delen.push('niet gevonden: ' + p.nietGevonden.join(', '));
+      await CRM.logActiviteit('kandidaat', c.id, 'doc', 'CV ingelezen (' + bestand + '). ' + (delen.join('; ') || 'Geen wijzigingen.'));
+
+      CRM.modal.close();
+      CRM.toast('CV verwerkt','ok');
+      CRM.render();
+    };
+  }});
 }
 
 /* ─── Intake ──────────────────────────────────────────────────── */
@@ -646,6 +1046,7 @@ async function logVia(c, soort, hint){
     {multiline:true, hint, knop:'Vastleggen'});
   if(!tekst) return;
   await CRM.logActiviteit('kandidaat', c.id, soort, tekst);
+  CRM.verwerkTags(tekst, 'kandidaat', c.id);       // @collega → melding
   CRM.toast('Vastgelegd','ok');
   CRM.render();
 }
@@ -663,12 +1064,19 @@ function tabTaken(el, c){
           <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${t.voor?' · '+h(t.voor):''}</div></div>
         ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
       </label>`).join('')}</div>` : CRM.ui.leeg('Geen taken','Zet je volgende stap voor deze kandidaat vast.')}</div></div>`;
-  el.querySelector('#kt_nieuw').onclick = () => taakModal(c);
+  el.querySelector('#kt_nieuw').onclick = () => nieuweTaak(c);
   el.querySelectorAll('[data-taak]').forEach(cb => cb.onchange = async () => {
     const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
     await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:cb.checked}), true);
     CRM.render();
   });
+}
+
+/* Taak via het gedeelde taakvenster van core — toewijzen, prioriteit en
+   Outlook werken daar overal hetzelfde. */
+async function nieuweTaak(c){
+  const rij = await CRM.taakModal({entiteit:'kandidaat', ref:c.id, refLabel:c.naam});
+  if(rij){ tabActief = 'taken'; CRM.render(); }
 }
 
 /* ─── Inplannen in Outlook (of deeplink als de koppeling nog uit staat) ── */
@@ -721,37 +1129,6 @@ function planModal(c){
   }});
 }
 
-function taakModal(c){
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Nieuwe taak</div>
-      <p class="sub" style="margin:6px 0 0">${h(c.naam)}</p></div>
-    <div class="modal-b">
-      <div class="f-row"><label>Wat moet er gebeuren?</label><input type="text" id="kt_tekst" placeholder="Nabellen over de meeloopdag"></div>
-      <div class="f-grid">
-        <div class="f-row"><label>Datum</label><input type="date" id="kt_datum" value="${h(CRM.todayISO())}"></div>
-        <div class="f-row"><label>Voor wie</label><input type="text" id="kt_voor" value="${h(c.rec||CRM.me())}"></div>
-      </div>
-      <label class="check"><input type="checkbox" id="kt_hoog"> Hoge prioriteit</label>
-      ${CRM.outlook.verbonden()?'<label class="check"><input type="checkbox" id="kt_todo" checked> Ook in mijn Outlook To Do</label>':''}
-    </div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="kt_ok">Taak opslaan</button></div>`, {onOpen(m){
-    m.querySelector('#kt_ok').onclick = async () => {
-      const rij = {id:CRM.uid(), tekst:m.querySelector('#kt_tekst').value.trim(),
-        datum:m.querySelector('#kt_datum').value || CRM.todayISO(), klaar:false,
-        entiteit:'kandidaat', ref:String(c.id), voor:m.querySelector('#kt_voor').value.trim(),
-        door:CRM.me(), prioriteit:m.querySelector('#kt_hoog').checked ? 'Hoog' : ''};
-      if(!rij.tekst) return CRM.toast('Omschrijf de taak','err');
-      const todo = m.querySelector('#kt_todo');
-      CRM.modal.close();
-      await bewaarRij('crm_taken','taken', rij, false);
-      if(todo && todo.checked)
-        CRM.outlook.maakTaak({titel:rij.tekst, datum:rij.datum, notities:'Kandidaat: '+c.naam}).catch(()=>{});
-      tabActief = 'taken'; CRM.render();
-    };
-  }});
-}
-
 function tabNotities(el, c){
   const notities = (c.notities||[]).slice().sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
   el.innerHTML = `<div class="card">
@@ -764,12 +1141,14 @@ function tabNotities(el, c){
 }
 
 async function notitieToevoegen(c){
-  const tekst = await CRM.vraag('Notitie', {multiline:true, hint:'Wat wil je onthouden over deze kandidaat?', knop:'Opslaan'});
+  const tekst = await CRM.vraag('Notitie', {multiline:true,
+    hint:'Wat wil je onthouden over deze kandidaat? Tip: @collega stuurt diegene een melding.', knop:'Opslaan'});
   if(!tekst) return;
   const nieuw = Object.assign({}, c, {
     notities:[{op:new Date().toISOString(), door:CRM.me(), tekst}].concat(c.notities||[])
   });
   await bewaarKandidaat(nieuw);
+  CRM.verwerkTags(tekst, 'kandidaat', c.id);       // @collega → melding
   tabActief = 'notities'; CRM.render();
 }
 
@@ -793,7 +1172,7 @@ function tabHistorie(el, c){
 
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('kandidaten', {
-  title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten en profielen',
+  title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten, filters en de Source-kaart',
   render(mount, acties, params){
     if(!Array.isArray(CRM.state.taken)) CRM.state.taken = [];
     if(params && params.id) kaart(mount, acties, String(params.id));
@@ -801,7 +1180,3 @@ CRM.registerModule('kandidaten', {
   }
 });
 })();
-
-/* VERZOEK AAN CORE: `CRM.matchScore` kijkt naar gelijke plaatsnamen, niet naar
-   werkelijke reisafstand. Deze module rekent daarom zelf de afstand uit met een
-   plaatsentabel. Zou mooi zijn als core dat ooit meeneemt in de score. */

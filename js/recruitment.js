@@ -443,7 +443,8 @@ function openLead(id){
             <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label><input type="text" id="rc_eig" value="${h(l.eigenaar||'')}" placeholder="Naam"></div>
           </div>
           <div class="f-row"><label for="rc_note">Notitie toevoegen</label>
-            <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea></div>
+            <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea>
+            <span class="hint">@naam om een collega te melden</span></div>
           <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
         </div></div>
 
@@ -475,6 +476,7 @@ function openLead(id){
         const lijst = notities.concat([{op:new Date().toISOString(), door:CRM.me(), tekst:t}]);
         await bewaarLead(l, {notities:lijst, laatst_actie:new Date().toISOString()});
         await CRM.logActiviteit('lead', l.id, 'notitie', t);
+        CRM.verwerkTags(t, 'lead', l.id);
         CRM.toast('Notitie opgeslagen','ok'); tekenBar(); tekenLijst(); openLead(l.id);
       };
     }});
@@ -1215,6 +1217,7 @@ function uitvalForm(c, fase){
         CRM.modal.close();
         await bewaarFase(c, fase, extra);
         await CRM.logActiviteit('kandidaat', c.id, 'notitie', `${fase}: ${cat.value}${toe?' — '+toe:''}`);
+        if(toe) CRM.verwerkTags(toe, 'kandidaat', c.id);
       };
     }});
 }
@@ -1257,7 +1260,8 @@ function snelBewerk(id){
           <div class="f-row"><label for="sb_actie">Volgende actie</label>
             <input type="text" id="sb_actie" value="${h(c.volgendeActie||'')}" placeholder="Bijv. bellen over de meeloopdag"></div>
           <div class="f-row"><label for="sb_note">Notitie toevoegen</label>
-            <textarea id="sb_note" placeholder="Kort en feitelijk"></textarea></div>
+            <textarea id="sb_note" placeholder="Kort en feitelijk"></textarea>
+            <span class="hint">@naam om een collega te melden</span></div>
           <div class="row"><button class="btn" id="sb_ok">Opslaan</button>
             <button class="btn ghost" id="sb_plan">Inplannen</button>
             ${kanIntake?`<button class="btn ghost" id="sb_intake">Video-intake invullen</button>`:''}</div>
@@ -1286,7 +1290,10 @@ function snelBewerk(id){
           patch.notities = (c.notities||[]).concat([{op:new Date().toISOString(), door:CRM.me(), tekst:note}]);
         }
         await bewaarKand(c.id, patch);
-        if(note) await CRM.logActiviteit('kandidaat', c.id, 'notitie', note);
+        if(note){
+          await CRM.logActiviteit('kandidaat', c.id, 'notitie', note);
+          CRM.verwerkTags(note, 'kandidaat', c.id);
+        }
         if(nieuweFase !== c.fase){
           CRM.drawer.close();
           faseWissel(c.id, nieuweFase);

@@ -16,6 +16,10 @@ const actief = c => !['Afgevallen','Gestopt'].includes(c.fase);
 const VANDAAG = () => CRM.todayISO();
 const MORGEN  = () => dISO(Date.now()+DAG);
 
+/* Taken die in deze sessie zijn afgevinkt — tellen mee in de voortgang,
+   ook als hun datum vóór vandaag lag (achterstallige taak alsnog gedaan). */
+const sessieAf = new Set();
+
 /* Maandag t/m zondag van de huidige week. */
 function weekBereik(){
   const d = new Date(); d.setHours(0,0,0,0);
@@ -70,8 +74,12 @@ function mijnDag(){
     .sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))
     .forEach(t => {
       const over = kort(t.datum) < nu;
+      /* Kandidaat-refs zijn ids — laat de naam zien, niet 'demo9'. */
+      const refNaam = t.entiteit==='kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || t.ref) : (t.ref||'');
+      /* Taak van een collega gekregen: stil "van Tjerk" erbij. */
+      const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
       G.taken.push({
-        titel:t.tekst, sub:t.ref||'',
+        titel:t.tekst, sub:[refNaam, van].filter(Boolean).join(' · '),
         wanneer: over ? 'Achterstallig · '+CRM.fmtDateShort(t.datum) : 'Vandaag',
         urgent: over, taak:t,
         go: t.entiteit==='klant' ? {mod:'klanten', id:t.ref}
@@ -150,14 +158,72 @@ function uitklapBewaren(st){
   try{ localStorage.setItem(UITKLAP_KEY, JSON.stringify(st)); }catch(e){}
 }
 
+/* ═══ MELDINGEN — collegiale berichten, geen alarmen ═════════════ */
+function meldingenBlok(){
+  const ms = CRM.mijnMeldingen();
+  if(!ms.length) return '';
+  return `<div class="dash-sec"><div class="label sec-kop">Voor jou</div>
+    <div class="card meld-card"><div class="card-b meld-b">
+      ${ms.slice(0,6).map(m => `<div class="meld-rij" data-meld="${h(m.id)}" data-ent="${h(m.entiteit||'')}" data-ref="${h(m.ref||'')}">
+        <span class="meld-stip"></span>
+        <div class="meld-t"><span class="meld-tekst">${h(m.tekst)}</span>
+          <span class="meld-w meta num">${h(CRM.geleden(m.created_at))}</span></div>
+        <button type="button" class="meld-af" data-af="${h(m.id)}" title="Gezien, afhandelen">✓</button>
+      </div>`).join('')}
+      ${ms.length>6?`<div class="meta" style="padding:6px 0 2px">en nog ${ms.length-6} …</div>`:''}
+    </div></div></div>`;
+}
+
+/* Bij klik op een taak-melding: de groep "Mijn taken" openen en tonen. */
+function toonTakenGroep(){
+  const g = document.querySelector('.dag-groep[data-groep="taken"]');
+  if(!g) return;
+  g.classList.remove('dicht');
+  const kop = g.querySelector('.dag-kop');
+  if(kop) kop.setAttribute('aria-expanded','true');
+  const chev = g.querySelector('.dag-chev');
+  if(chev) chev.textContent = '▾';
+  g.scrollIntoView({behavior:'smooth', block:'center'});
+  g.classList.add('flits');
+  setTimeout(()=>g.classList.remove('flits'), 1400);
+}
+
+/* ═══ DAGFOCUS — voortgang van mijn taken vandaag ════════════════ */
+function taakCijfers(){
+  const nu = VANDAAG(), mij = CRM.me();
+  const mijn = (CRM.state.taken||[]).filter(t => !t.voor || t.voor===mij);
+  const open = mijn.filter(t => !t.klaar && kort(t.datum) && kort(t.datum) <= nu).length;
+  const af   = mijn.filter(t => t.klaar && (kort(t.datum)===nu || sessieAf.has(String(t.id)))).length;
+  return {open, af, totaal: open+af};
+}
+function voortgangHTML(){
+  const c = taakCijfers();
+  if(!c.totaal) return '';
+  const pct = Math.round(c.af/c.totaal*100);
+  return `<div class="dag-vg" id="dag_vg">
+    <span class="meta num" id="dag_vgt">${c.af} van ${c.totaal} ${c.totaal===1?'taak':'taken'} afgerond vandaag</span>
+    <div class="bar dag-vgbar"><i id="dag_vgb" style="width:${pct}%"></i></div>
+  </div>`;
+}
+function vernieuwVoortgang(){
+  const c = taakCijfers();
+  const t = document.getElementById('dag_vgt'), b = document.getElementById('dag_vgb');
+  if(!t || !b) return;
+  t.textContent = `${c.af} van ${c.totaal} ${c.totaal===1?'taak':'taken'} afgerond vandaag`;
+  b.style.width = (c.totaal ? Math.round(c.af/c.totaal*100) : 0) + '%';
+}
+
 function dagBlok(G){
   const groepen = [
     ['afspraken','Afspraken'], ['taken','Mijn taken'], ['acties','Actie over datum'],
     ['leads','Leads opvolgen'], ['nazorg','Nazorg']
   ].filter(([k]) => G[k].length);
 
+  const taakKnop = `<button class="btn ghost sm" id="dag_nieuw">+ Taak</button>`;
+
   if(!groepen.length){
-    return `<div class="card"><div class="card-h"><div class="h2">Mijn dag</div></div>
+    return `<div class="card dag-card"><div class="card-h"><div class="h2">Mijn dag</div>
+        ${voortgangHTML()}<span class="spacer"></span>${taakKnop}</div>
       <div class="card-b">${CRM.ui.leeg('Niets openstaand','Geen afspraken, taken of achterstallige acties voor vandaag. Mooi moment om nieuwe leads te bellen.')}</div></div>`;
   }
 
@@ -172,8 +238,11 @@ function dagBlok(G){
   return `<div class="card dag-card">
     <div class="card-h"><div class="h2">Mijn dag</div>
       <span class="chip">${G.totaal} ${G.totaal===1?'punt':'punten'}</span>
+      ${voortgangHTML()}
+      <span class="spacer"></span>
       ${CRM.outlook.beschikbaar() && !CRM.outlook.verbonden()
-        ? '<span class="spacer"></span><button class="btn ghost sm" id="dash_outlook">Outlook verbinden</button>' : ''}</div>
+        ? '<button class="btn ghost sm" id="dash_outlook">Outlook verbinden</button>' : ''}
+      <button class="btn ghost sm" id="dag_nieuw">+ Taak</button></div>
     <div class="card-b dag-b">
       ${groepen.map(([k,lbl]) => {
         const op = open(k);
@@ -335,36 +404,63 @@ function groet(){
   return u < 6 ? 'Goedenacht' : u < 12 ? 'Goedemorgen' : u < 18 ? 'Goedemiddag' : 'Goedenavond';
 }
 
-/* ═══ AFVINKEN ═══════════════════════════════════════════════════ */
-async function taakAfvinken(id){
+/* ═══ AFVINKEN ═══════════════════════════════════════════════════
+   Geen volledige herteken: de rij wordt direct doorgestreept-gedempt
+   en de voortgangsbalk loopt op. Dat voelt af, zonder gespring.     */
+function rijAf(cb){
+  if(!cb) return;
+  cb.checked = true; cb.disabled = true;
+  const rij = cb.closest('.dag-item');
+  if(rij){ rij.classList.add('af'); rij.classList.remove('urgent','klik'); rij.onclick = null; }
+}
+
+async function taakAfvinken(id, cb){
   const t = (CRM.state.taken||[]).find(x => String(x.id)===String(id));
   if(!t) return;
   t.klaar = true;
+  sessieAf.add(String(t.id));
   if(!CRM.demo){
     const {error} = await CRM.sb.from('crm_taken').update({klaar:true}).eq('id', t.id);
-    if(error){ t.klaar = false; return CRM.fout('Afvinken mislukt', error); }
+    if(error){
+      t.klaar = false; sessieAf.delete(String(t.id));
+      if(cb) cb.checked = false;
+      return CRM.fout('Afvinken mislukt', error);
+    }
   }
-  CRM.toast('Taak afgevinkt','ok');
-  CRM.navBadges(); CRM.render();
+  rijAf(cb);
+  vernieuwVoortgang();
+  CRM.toast('Taak afgerond','ok');
+  CRM.navBadges();
 }
 
-async function actieAfvinken(id){
+async function actieAfvinken(id, cb){
   const rij = (CRM.state.cands||[]).find(c => String(c.id)===String(id));
   if(!rij) return;
   const oud = {a:rij.volgende_actie, d:rij.actie_datum};
   rij.volgende_actie = ''; rij.actie_datum = null;
   if(!CRM.demo){
     const {error} = await CRM.sb.from('candidates').update({volgende_actie:null, actie_datum:null}).eq('id', rij.id);
-    if(error){ rij.volgende_actie = oud.a; rij.actie_datum = oud.d; return CRM.fout('Afvinken mislukt', error); }
+    if(error){
+      rij.volgende_actie = oud.a; rij.actie_datum = oud.d;
+      if(cb) cb.checked = false;
+      return CRM.fout('Afvinken mislukt', error);
+    }
   }
+  rijAf(cb);
   CRM.toast('Actie afgerond','ok');
-  CRM.render();
+  CRM.navBadges();
 }
 
 /* ═══ REGISTRATIE ════════════════════════════════════════════════ */
 CRM.registerModule('dashboard', {
   title:'Dashboard', icon:'◧', onderschrift:'Overzicht van vandaag',
-  badge(){ try{ return mijnDag().totaal; }catch(e){ return 0; } },
+  /* Zijbalkteller: ongelezen meldingen + mijn open taken van vandaag. */
+  badge(){ try{
+    const nu = CRM.todayISO(), mij = CRM.me();
+    const openTaken = (CRM.state.taken||[]).filter(t =>
+      !t.klaar && (!t.voor || t.voor===mij) && kort(t.datum) && kort(t.datum) <= nu).length;
+    return CRM.mijnMeldingen().length + openTaken;
+  }catch(e){ return 0; } },
 
   render(mount, acties){
     const G = mijnDag();
@@ -380,6 +476,7 @@ CRM.registerModule('dashboard', {
           <p class="dash-zin">${h(dagZin(G))}</p>
         </section>
 
+        ${meldingenBlok()}
         ${dagBlok(G)}
         ${kerncijfers()}
         <div id="dash_geld"></div>
@@ -389,6 +486,32 @@ CRM.registerModule('dashboard', {
 
     const ver = document.getElementById('dash_ver');
     if(ver) ver.onclick = () => CRM.herlaad();
+
+    /* + Taak: het gedeelde taakvenster (voor jezelf óf een collega). */
+    const nieuw = document.getElementById('dag_nieuw');
+    if(nieuw) nieuw.onclick = async () => {
+      const rij = await CRM.taakModal({});
+      if(rij && CRM.view==='dashboard') CRM.render();
+    };
+
+    /* Meldingen: ✓ handelt af, klik op de regel navigeert naar de bron. */
+    CRM.$$('[data-af]', mount).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      await CRM.meldingGelezen(b.dataset.af);
+      const rij = b.closest('.meld-rij'), card = b.closest('.dash-sec');
+      if(rij) rij.remove();
+      if(card && !card.querySelector('.meld-rij')) card.remove();
+    });
+    CRM.$$('.meld-rij', mount).forEach(r => {
+      r.onclick = e => {
+        if(e.target.closest('[data-af]')) return;
+        const ent = r.dataset.ent, ref = r.dataset.ref;
+        if(ent==='klant') CRM.ga('klanten',{id:ref});
+        else if(ent==='kandidaat') CRM.ga('kandidaten',{id:ref});
+        else if(ent==='lead') CRM.ga('recruitment',{id:ref});
+        else toonTakenGroep();
+      };
+    });
 
     /* Outlook: verbinden-knop, en bij een verbonden account de afspraken van
        vandaag stilletjes bijmengen in de groep Afspraken. */
@@ -448,8 +571,8 @@ CRM.registerModule('dashboard', {
     CRM.$$('.dag-vink', mount).forEach(cb => {
       cb.onclick = e => e.stopPropagation();
       cb.onchange = () => {
-        if(cb.dataset.taak) taakAfvinken(cb.dataset.taak);
-        else if(cb.dataset.cactie) actieAfvinken(cb.dataset.cactie);
+        if(cb.dataset.taak) taakAfvinken(cb.dataset.taak, cb);
+        else if(cb.dataset.cactie) actieAfvinken(cb.dataset.cactie, cb);
       };
     });
 

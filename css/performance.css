@@ -10,6 +10,19 @@
 .pf .kpi .big{display:flex;align-items:baseline;gap:4px}
 .pf .kpi .pf-eh{font-size:14px;font-weight:500;color:var(--muted)}
 
+/* ─── Doel: omzetdoel, voortgang en benodigd tempo ───────────── */
+.pf-doelkop{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.pf-doelkop > div{display:flex;flex-direction:column;gap:7px}
+.pf-doelbar{display:flex;align-items:center;gap:14px;margin-top:18px}
+.pf-doelbar .bar{flex:1;height:9px}
+.pf-doelbar .meta{white-space:nowrap}
+.pf-tempo{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;
+  margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.pf-tempo-t{display:flex;flex-direction:column;gap:4px}
+.pf-tempo-t b{font-size:24px;font-weight:600;color:var(--ink);line-height:1.2}
+.pf-tempo-t .meta{font-size:11.5px;line-height:1.45}
+.pf-doelset{margin-top:6px}
+
 /* ─── Periodekiezer in de paginakop ──────────────────────────── */
 .pf-kiezer{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pf-kiezer .pf-eigen input[type=date]{width:auto;padding:5px 8px;font-size:12.5px}

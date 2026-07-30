@@ -21,6 +21,18 @@
 .kl-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
 .kl-contact{margin-top:9px;font-size:13px;color:var(--txt-2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .kl-sep{color:var(--line-2)}
+/* Eén gedempte feitenregel in plaats van een rij KPI-tegels. */
+.kl-feiten{margin-top:5px}
+.kl-feiten .num{color:var(--txt-2)}
+/* Snelacties rechts in de kop */
+.kl-snel{align-self:flex-start;justify-content:flex-end}
+
+/* ─── Kaartweergave (kaart-engine uit js/source.js) ───────────── */
+.kl-kaartwrap{min-height:60vh}
+
+/* ─── Activiteiten & notities: tijdlijn links, taken/notitie rechts ─ */
+.kl-actgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:980px){.kl-actgrid{grid-template-columns:1fr}}
 
 /* ─── Signalen ────────────────────────────────────────────────── */
 ul.kl-sig{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
@@ -55,11 +67,24 @@ a.kl-kand b{font-size:13px;font-weight:600;display:block}
 .kl-groep:last-child{margin-bottom:0}
 .kl-groep > .label{margin-bottom:6px}
 
-/* ─── Contactpersonen ─────────────────────────────────────────── */
+/* ─── Contactpersonen — compact raster: wie | bereikbaar | laatste ─
+   Hele rij klikbaar: opent het dossier (drawer) van de persoon. */
 .kl-contacten{display:flex;flex-direction:column;gap:2px}
-.kl-ct{display:flex;align-items:flex-start;gap:12px;padding:12px 10px;border-radius:var(--r-s)}
+.kl-ct{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(0,1.6fr) auto;
+  align-items:center;gap:14px;padding:10px 10px;border-radius:var(--r-s);
+  cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s}
+.kl-ct:hover{background:var(--card-2);border-color:var(--line)}
 .kl-ct + .kl-ct{border-top:1px solid var(--line)}
+.kl-ct + .kl-ct:hover{border-top-color:var(--line)}
 .kl-ct b{font-size:13.5px}
+.kl-ct-wie{min-width:0}
+.kl-ct-links{margin-top:0}
+.kl-ct-lc{text-align:right;white-space:nowrap}
+.kl-ctzoek{min-width:220px}
+@media (max-width:700px){
+  .kl-ct{grid-template-columns:1fr auto}
+  .kl-ct-links{grid-column:1/-1}
+}
 
 /* ─── Evaluaties ──────────────────────────────────────────────── */
 .kl-evverloop{margin-bottom:20px}

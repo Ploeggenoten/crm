@@ -27,7 +27,7 @@ const CRM = window.CRM = {
   view:null,            // huidige module-key
   state:{               // gedeelde data (via CRM.load())
     cands:[], clients:[], vacs:[], profiles:[], targets:[],
-    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[], meldingen:[],
+    leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[], meldingen:[], ooSessions:[],
     _loaded:false
   },
   _rt:null, _subs:[]
@@ -224,7 +224,7 @@ async function veilig(promise, naam){
 
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen] = await Promise.all([
+  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
     veilig(sb.from('vacatures').select('*'), 'vacatures'),
@@ -236,9 +236,10 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_documenten').select('*').order('op',{ascending:false}), 'crm_documenten'),
     veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen'),
     veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten'),
-    veilig(sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200), 'crm_meldingen')
+    veilig(sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200), 'crm_meldingen'),
+    veilig(sb.from('oo_sessions').select('*'), 'oo_sessions')
   ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, _loaded:true});
+  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, _loaded:true});
   return CRM.state;
 };
 CRM.herlaad = async () => { await CRM.load(true); CRM.render(); };
@@ -299,9 +300,9 @@ CRM.activiteitenVoor = (entiteit, ref) =>
 CRM.registerModule = (key, def) => { CRM.modules[key] = Object.assign({key}, def); };
 
 CRM.ga = (key, params={}) => {
-  const m = CRM.modules[key];
+  let m = CRM.modules[key];
   if(!m) return;
-  if(m.adminOnly && !CRM.canSeeMoney()) return;
+  if(m.adminOnly && !CRM.canSeeMoney()){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; }
   CRM.view = key; CRM.params = params;
   const hash = '#' + key + (params.id ? '/'+encodeURIComponent(params.id) : '');
   if(location.hash !== hash) history.replaceState(null,'',hash);
@@ -343,7 +344,7 @@ const NAV_GROEPEN = [
   {titel:'Commercie', keys:['sales','klanten']},
   {titel:'Recruitment', keys:['recruitment','kandidaten']},
   {titel:'Groei', keys:['marketing','performance']},
-  {titel:'Alleen voor jou', keys:['finance']}
+  {titel:'Alleen voor jou', keys:['finance','instellingen']}
 ];
 function bouwNav(){
   const wrap = document.getElementById('navscroll');

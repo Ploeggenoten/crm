@@ -16,6 +16,41 @@
 .dash-sec{display:flex;flex-direction:column;gap:11px}
 .dash-sec .sec-kop{display:block}
 
+/* ─── Meldingen ("Voor jou") — collegiaal, geen alarm ────────── */
+.meld-card{border-left:2px solid var(--olive)}
+.meld-card .card-b.meld-b{padding:8px 20px}
+.meld-rij{
+  display:flex;align-items:center;gap:11px;padding:9px 10px;margin:0 -10px;
+  border-top:1px solid var(--line);border-radius:var(--r-s);
+  cursor:pointer;transition:background .12s;
+}
+.meld-rij:first-child{border-top:none}
+.meld-rij:hover{background:#f7f9f1}
+.meld-stip{width:7px;height:7px;border-radius:50%;background:var(--olive-l);flex:0 0 7px}
+.meld-t{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px}
+.meld-tekst{font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.meld-w{white-space:nowrap;flex:0 0 auto}
+.meld-af{
+  width:26px;height:26px;flex:0 0 26px;display:inline-flex;align-items:center;justify-content:center;
+  background:none;border:1px solid var(--line-2);border-radius:999px;
+  font-size:12px;color:var(--txt-2);cursor:pointer;font-family:var(--body);
+  transition:border-color .12s,color .12s,background .12s;
+}
+.meld-af:hover{border-color:var(--olive);color:var(--olive);background:#fff}
+
+/* ─── Voortgang van mijn taken (in de Mijn dag-kop) ──────────── */
+.dag-vg{display:flex;align-items:center;gap:10px;min-width:0}
+.dag-vg .meta{white-space:nowrap}
+.bar.dag-vgbar{width:96px;flex:0 0 96px;height:5px}
+
+/* Afgevinkte regel: doorgestreept en gedempt, blijft even staan. */
+.dag-item.af{opacity:.72}
+.dag-item.af .dag-t b,.dag-item.af .dag-s{color:var(--muted);text-decoration:line-through}
+.dag-item.af .dag-w{color:var(--muted);font-weight:400}
+
+/* Zachte nadruk als een melding naar de takengroep springt. */
+.dag-groep.flits{background:#f4f7ea;border-radius:var(--r-s);transition:background .5s}
+
 /* ─── Mijn dag ───────────────────────────────────────────────── */
 .dag-card .card-b.dag-b{padding:6px 20px 14px}
 .dag-groep{padding:4px 0;border-top:1px solid var(--line)}
@@ -82,4 +117,7 @@ button.dag-kop:hover .label{color:var(--ink)}
 @media (max-width:700px){
   .mod-kaart .mod-cijfers{gap:16px}
   .dag-item .dag-w{font-size:11.5px}
+  /* Smal scherm: de tekst van de voortgang volstaat, de balk mag weg. */
+  .bar.dag-vgbar{display:none}
+  .meld-tekst{white-space:normal}
 }

@@ -7,6 +7,19 @@
 .kd-let{color:var(--red);font-weight:600}
 .kd-warn{color:var(--amber);font-weight:600}
 
+/* Sterren: functioneel, gedempt olijf — geen fel geel. */
+.kd-ster{color:var(--olive);opacity:.65;letter-spacing:1.5px;font-size:13px;white-space:nowrap;font-weight:400}
+
+/* ─── Filterpaneel + chips ────────────────────────────────────── */
+.kd-filaan{border-color:var(--olive-l) !important;color:var(--olive)}
+.kd-fpaneel{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.kd-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px}
+.kd-fgrid .f-row{margin-bottom:10px}
+.kd-fchip{padding-right:5px}
+.kd-fx{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;
+  padding:0 3px;border-radius:50%;opacity:.65}
+.kd-fx:hover{opacity:1}
+
 /* ─── Kaart: kop ──────────────────────────────────────────────── */
 .kd-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
 .kd-contact{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
@@ -26,6 +39,30 @@
 .kd-w:focus{outline:none;background:var(--card-2);border-color:var(--olive-l)}
 .kd-w.leeg{color:var(--muted);font-style:italic}
 .kd-inp{max-width:280px;padding:4px 8px !important;font-size:13px !important}
+
+/* ─── Ster-beoordeling in de kop ──────────────────────────────── */
+.kd-sterren{display:flex;align-items:center;gap:2px;margin-top:6px}
+.kd-sterren .meta{margin-left:8px}
+.kd-sterbtn{background:none;border:none;cursor:pointer;font-size:19px;line-height:1;padding:1px 2px;
+  color:var(--line-2);transition:color .12s,transform .08s}
+.kd-sterbtn.aan{color:var(--olive);opacity:.8}
+.kd-sterbtn:hover{transform:scale(1.12);color:var(--olive)}
+
+/* ─── CV-verrijking: aanvullingen (groen) en conflicten (rood) ── */
+.kd-cvchip{font-size:10.5px;padding:0 7px;vertical-align:middle}
+.kd-cvaanv{display:flex;flex-direction:column;gap:1px}
+.kd-cvaanv-rij{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;
+  padding:6px 0;border-bottom:1px solid #eef0e4;font-size:13px}
+.kd-cvaanv-rij:last-child{border-bottom:none}
+.kd-cvaanv-rij > .label{margin:0}
+.kd-conflict{border:1px solid var(--red-line);background:var(--red-bg);border-radius:var(--r-s);
+  padding:11px 13px;margin-bottom:10px}
+.kd-conflict-lbl{font-size:12px;font-weight:700;color:#a4301f;margin-bottom:8px}
+.kd-conflict-opties{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kd-copt{background:#fff;border:1px solid var(--line-2);border-radius:var(--r-s);padding:8px 11px;
+  font-family:var(--body);font-size:11.5px;color:var(--txt-2);cursor:pointer;text-align:left;line-height:1.4}
+.kd-copt b{display:block;font-size:13px;color:var(--ink);margin-top:2px;word-break:break-word}
+.kd-copt.aan{border-color:var(--olive);box-shadow:0 0 0 1px var(--olive);color:var(--olive)}
 
 /* ─── CV ──────────────────────────────────────────────────────── */
 .kd-cvlijst{display:flex;flex-direction:column;gap:2px;margin-top:8px}
@@ -58,6 +95,8 @@ label.kd-taak input{margin-top:3px}
 @media (max-width:900px){
   .kd-meter{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;flex:1 1 100%}
   .kd-veld{grid-template-columns:1fr}
+  .kd-conflict-opties{grid-template-columns:1fr}
+  .kd-cvaanv-rij{grid-template-columns:1fr auto;grid-auto-flow:dense}
 }
 
 /* ─── Filterbalk op mobiel ────────────────────────────────────── */
