@@ -239,36 +239,41 @@ function lijst(mount){
   } else {
     wrap.innerHTML = `<div class="grid c3">${rijen.map(({k,c,lc}) => {
       const d = CRM.dagenGeleden(lc);
-      return `<div class="card kl-kaart" data-k="${h(k.naam)}"><div class="card-b">
-        <div class="kl-kop">
-          <div style="min-width:0;flex:1">
-            <div class="kl-naam trunc">${h(k.naam)}</div>
-            <div class="meta trunc">${h([k.branche,k.locatie].filter(Boolean).join(' · ')||'—')}</div>
+      return `<div class="card kl-kaart" data-k="${h(k.naam)}">
+        <div class="kl-kkop">
+          <div class="kl-kop">
+            <div style="min-width:0;flex:1">
+              <div class="kl-naam trunc">${h(k.naam)}</div>
+              <div class="meta trunc">${h([k.branche,k.locatie].filter(Boolean).join(' · ')||'—')}</div>
+            </div>
           </div>
+          <div class="row tight" style="margin-top:8px">${faseChip(k.fase)}
+            ${k.eigenaar?`<span class="chip">${h(k.eigenaar)}</span>`:''}</div>
         </div>
-        <div class="row tight" style="margin-top:10px">${faseChip(k.fase)}
-          ${k.eigenaar?`<span class="chip">${h(k.eigenaar)}</span>`:''}</div>
-        <div class="kl-stats">
-          <div><b class="num">${c.open.length}</b><span>open vacatures</span></div>
-          <div><b class="num">${c.lopend.length}</b><span>in traject</span></div>
-          <div><b class="num">${c.nu.length}</b><span>geplaatst</span></div>
-        </div>
-        <div class="kl-foot">
-          <span class="meta">Laatste contact</span>
-          <span class="meta num${d!=null&&d>30?' let':''}">${h(CRM.geleden(lc)||'nooit')}</span>
-        </div>
-      </div></div>`;
+        <div class="card-b kl-klijf">
+          <div class="kl-stats">
+            <div><b class="num">${c.open.length}</b><span>open vacatures</span></div>
+            <div><b class="num">${c.lopend.length}</b><span>in traject</span></div>
+            <div><b class="num">${c.nu.length}</b><span>geplaatst</span></div>
+          </div>
+          <div class="kl-foot">
+            <span class="meta">Laatste contact</span>
+            <span class="meta num${d!=null&&d>30?' let':''}">${h(CRM.geleden(lc)||'nooit')}</span>
+          </div>
+        </div></div>`;
     }).join('')}</div>`;
   }
   wrap.querySelectorAll('[data-k]').forEach(el => el.onclick = () => CRM.ga('klanten',{id:el.dataset.k}));
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   KLANTKAART — essentie bovenaan, contactpersonen direct eronder
+   KLANTKAART — dossier met zijrail: kop bovenaan, links een vaste
+   rail (gegevens · contactpersonen · open taken) die in beeld
+   blijft, rechts de werkruimte met de tabs.
    ═══════════════════════════════════════════════════════════════ */
 const TABS = ['vacatures','kandidaten','activiteiten','evaluaties','documenten'];
 let klantOpen = null, tabActief = 'vacatures', groepeer = P.get('groepeer','fase');
-let contactZoek = '';
+let contactZoek = '', contactAlles = false;
 
 function kaart(mount, acties, naam){
   const k = CRM.klant(naam);
@@ -279,7 +284,7 @@ function kaart(mount, acties, naam){
     mount.querySelector('#kl_terug').onclick = () => CRM.ga('klanten');
     return;
   }
-  if(klantOpen !== naam){ klantOpen = naam; tabActief = 'vacatures'; contactZoek = ''; }
+  if(klantOpen !== naam){ klantOpen = naam; tabActief = 'vacatures'; contactZoek = ''; contactAlles = false; }
   if(!TABS.includes(tabActief)) tabActief = 'vacatures';
 
   const c = cijfers(naam);
@@ -293,11 +298,19 @@ function kaart(mount, acties, naam){
   mount.innerHTML = `
     <div class="stack">
       ${kopHtml(k, c)}
-      ${contactBlokHtml()}
-      ${signalenHtml(k, c, laatsteContact(k))}
-      <div>
-        <div class="tabs" id="k_tabs">${tabsHtml(k, c)}</div>
-        <div id="k_tabinhoud"></div>
+      <div class="kl-dossier">
+        <aside class="kl-rail">
+          ${gegevensHtml(k)}
+          ${contactBlokHtml()}
+          ${takenBlokHtml()}
+        </aside>
+        <div class="kl-werk">
+          ${signalenHtml(k, c, laatsteContact(k))}
+          <div>
+            <div class="tabs" id="k_tabs">${tabsHtml(k, c)}</div>
+            <div id="k_tabinhoud"></div>
+          </div>
+        </div>
       </div>
     </div>`;
 
@@ -308,12 +321,19 @@ function kaart(mount, acties, naam){
   mount.querySelector('#k_notitie').onclick = () => logVia(k,'notitie','Wat wil je onthouden? Tip: @collega stuurt diegene een melding.');
   mount.querySelector('#k_taak').onclick    = () => nieuweTaak(k);
 
-  /* Contactpersonen: live zoeken zonder het hele scherm te hertekenen */
+  /* Rail: gegevens bewerken */
+  mount.querySelector('#gg_bewerk').onclick = () => klantModal(k);
+
+  /* Rail: contactpersonen — live zoeken zonder het hele scherm te hertekenen */
   const ctLijst = mount.querySelector('#ct_lijst');
   const ctZoek  = mount.querySelector('#ct_zoek');
   ctZoek.oninput = () => { contactZoek = ctZoek.value; contactLijst(ctLijst, k); };
   mount.querySelector('#ct_nieuw').onclick = () => contactModal(k, null);
   contactLijst(ctLijst, k);
+
+  /* Rail: open taken */
+  mount.querySelector('#rt_nieuw').onclick = () => nieuweTaak(k);
+  railTaken(mount.querySelector('#rt_lijst'), k);
 
   mount.querySelectorAll('#k_tabs .tab').forEach(b => b.onclick = () => {
     tabActief = b.dataset.t;
@@ -355,16 +375,73 @@ function kopHtml(k, c){
     </div></div>`;
 }
 
-/* ─── Contactpersonen — prominent, direct onder de kop ─────────── */
+/* ─── Rail: gegevens — compacte kaart met de klantvelden ───────── */
+function gegevensHtml(k){
+  const web = veiligeUrl(k.website);
+  let webTekst = '';
+  if(web){ try{ webTekst = new URL(web).hostname.replace(/^www\./,''); }catch(e){ webTekst = 'Website'; } }
+  const rij = (lbl, val) => `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
+    <span class="kl-gg-val trunc">${val || '<span class="meta">—</span>'}</span></div>`;
+  return `<div class="card kl-railkaart">
+    <div class="card-h"><div class="h2">Gegevens</div><span class="spacer"></span>
+      <button class="btn sub sm" id="gg_bewerk">Bewerken</button></div>
+    <div class="card-b kl-gg">
+      ${rij('Telefoon', k.telefoon ? `<a class="num" href="tel:${h(String(k.telefoon).replace(/\s/g,''))}">${h(k.telefoon)}</a>` : '')}
+      ${rij('E-mail',   k.email ? `<a href="mailto:${h(k.email)}" title="${h(k.email)}">${h(k.email)}</a>` : '')}
+      ${rij('Website',  web ? `<a href="${h(web)}" target="_blank" rel="noopener">${h(webTekst)}</a>` : '')}
+      ${rij('Branche',  k.branche ? h(k.branche) : '')}
+      ${rij('Plaats',   k.locatie ? h(k.locatie) : '')}
+      ${rij('Sinds',    k.sinds ? `<span class="num">${h(maandJaar(k.sinds))}</span>` : '')}
+      ${rij('Eigenaar', k.eigenaar ? h(k.eigenaar) : '')}
+    </div></div>`;
+}
+
+/* ─── Rail: contactpersonen — altijd in beeld naast de tabs ────── */
 function contactBlokHtml(){
-  return `<div class="card">
-    <div class="card-h"><div class="h2">Contactpersonen</div>
+  return `<div class="card kl-railkaart">
+    <div class="card-h"><div class="h2">Contactpersonen</div></div>
+    <div class="card-b">
       <div class="searchbox kl-ctzoek">
         <input type="search" id="ct_zoek" autocomplete="off" placeholder="Zoek op naam of functie…" value="${h(contactZoek)}">
       </div>
-      <span class="spacer"></span>
-      <button class="btn ghost sm" id="ct_nieuw">Toevoegen</button></div>
-    <div class="card-b" id="ct_lijst"></div></div>`;
+      <div id="ct_lijst"></div>
+      <button class="btn ghost sm kl-railknop" id="ct_nieuw">+ Contactpersoon</button>
+    </div></div>`;
+}
+
+/* ─── Rail: open taken — dé takenplek van de klantkaart ────────── */
+function takenBlokHtml(){
+  return `<div class="card kl-railkaart">
+    <div class="card-h"><div class="h2">Open taken</div><span class="spacer"></span>
+      <button class="btn sm" id="rt_nieuw">+ Taak</button></div>
+    <div class="card-b" id="rt_lijst"></div></div>`;
+}
+
+function railTaken(el, k){
+  if(!el) return;
+  const taken = (CRM.state.taken||[]).filter(t => t.entiteit === 'klant' && t.ref === k.naam && !t.klaar)
+    .sort((a,b) => String(a.datum||'').localeCompare(String(b.datum||'')));
+  if(!taken.length){
+    el.innerHTML = '<p class="meta" style="margin:0">Geen open taken bij deze klant.</p>';
+    return;
+  }
+  el.innerHTML = `<div class="kl-taken">${taken.map(t => {
+    const wie = [t.voor ? 'voor ' + t.voor : '', t.door && t.door !== t.voor ? 'van ' + t.door : '']
+      .filter(Boolean).join(' · ');
+    return `<label class="kl-taak">
+      <input type="checkbox" data-taak="${h(t.id)}">
+      <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
+        <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${wie ? ' · ' + h(wie) : ''}</div></div>
+      ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
+    </label>`;
+  }).join('')}</div>`;
+  el.querySelectorAll('[data-taak]').forEach(cb => cb.onchange = async () => {
+    const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
+    if(!t) return;
+    await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:true}), true);
+    CRM.navBadges();
+    railTaken(el, k);
+  });
 }
 
 /* Contactpersonenlijst op de pagina verversen (bv. na een nieuw verslag). */
@@ -395,7 +472,11 @@ function contactLijst(el, k){
     el.innerHTML = CRM.ui.leeg('Geen contactpersoon gevonden','Probeer een ander zoekwoord.');
     return;
   }
-  el.innerHTML = `<div class="kl-contacten">${rij.map(x => {
+  /* Mobiel: ingeklapt tot de eerste drie, met "toon alle". */
+  const mobiel = window.matchMedia && window.matchMedia('(max-width:900px)').matches;
+  const inklappen = mobiel && !contactAlles && !q && rij.length > 3;
+  const toon = inklappen ? rij.slice(0,3) : rij;
+  el.innerHTML = `<div class="kl-contacten">${toon.map(x => {
     const lc = laatsteContactPersoon(x);
     return `
     <div class="kl-ct" data-ct="${h(x.id)}" title="Open het dossier van ${h(x.naam)}">
@@ -410,11 +491,14 @@ function contactLijst(el, k){
         ${!x.telefoon&&!x.email?'<span class="meta">geen gegevens</span>':''}
       </div>
       <span class="meta num kl-ct-lc">${lc ? 'laatste contact: '+h(CRM.geleden(lc)) : 'nog geen verslag'}</span>
-    </div>`;}).join('')}</div>`;
+    </div>`;}).join('')}</div>
+    ${inklappen ? `<button class="btn ghost sm kl-railknop" id="ct_alle">Toon alle <span class="num">${rij.length}</span></button>` : ''}`;
 
   /* Hele rij klikbaar → dossier; telefoon/mail-links blijven gewoon werken. */
   el.querySelectorAll('[data-ct]').forEach(r => r.onclick = () => contactDrawer(k, r.dataset.ct));
   el.querySelectorAll('.kl-ct a').forEach(a => a.onclick = e => e.stopPropagation());
+  const alleBtn = el.querySelector('#ct_alle');
+  if(alleBtn) alleBtn.onclick = () => { contactAlles = true; contactLijst(el, k); };
 }
 
 /* ─── Contactpersoon-dossier (drawer): gegevens + notities +
@@ -590,11 +674,10 @@ function tabsHtml(k, c){
   const acts  = CRM.activiteitenVoor('klant', k.naam);
   const docs  = (CRM.state.documenten||[]).filter(x => x.entiteit === 'klant' && x.ref === k.naam);
   const evals = acts.filter(a => a.extra && a.extra.evaluatie);
-  const openTaken = (CRM.state.taken||[]).filter(t => t.entiteit === 'klant' && t.ref === k.naam && !t.klaar);
   return [
     ['vacatures','Vacatures', c.vs.length],
     ['kandidaten','Kandidaten', c.cs.length],
-    ['activiteiten','Activiteiten & notities', openTaken.length],
+    ['activiteiten','Activiteiten & notities', 0],
     ['evaluaties','Evaluaties', evals.length],
     ['documenten','Documenten', docs.length]
   ].map(([kk,lbl,n]) => `<button class="tab${tabActief===kk?' on':''}" data-t="${kk}">${h(lbl)}${n?`<span class="cnt num">${n}</span>`:''}</button>`).join('');
@@ -618,13 +701,13 @@ function tabVacatures(el, k, c){
   const alle = c.vs.slice().sort((a,b) =>
     String(a.status||'Open').localeCompare(String(b.status||'Open')) ||
     String(a.functie).localeCompare(String(b.functie),'nl'));
-  el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Vacatures</div>
+  el.innerHTML = `
+    <div class="kl-tabkop"><div class="h2">Vacatures</div>
       <span class="meta num">${alle.length} totaal · ${c.open.length} open</span>
       <span class="spacer"></span>
       <button class="btn sm" id="v_nieuw">Vacature toevoegen</button></div>
-    <div class="card-b">${alle.length ? alle.map(v => vacatureHtml(v, k)).join('') :
-      CRM.ui.leeg('Nog geen vacatures','Voeg de eerste opdracht van deze klant toe.')}</div></div>`;
+    ${alle.length ? alle.map(v => vacatureHtml(v, k)).join('') :
+      CRM.ui.leeg('Nog geen vacatures','Voeg de eerste opdracht van deze klant toe.')}`;
 
   el.querySelector('#v_nieuw').onclick = () => vacatureModal(k, null);
   el.querySelectorAll('[data-vbew]').forEach(b => b.onclick = e => {
@@ -671,7 +754,7 @@ function kandRegel(c){
   const lc = laatsteKandContact(c);
   const d  = CRM.dagenGeleden(lc);
   return `<a class="kl-kand" data-kand="${h(String(c.id))}" href="#kandidaten/${encodeURIComponent(c.id)}">
-    <div style="min-width:0;flex:1"><b class="trunc">${h(c.naam)}</b>
+    <div class="kl-kand-wie"><b class="trunc">${h(c.naam)}</b>
       <div class="meta trunc">${h(c.functie||'—')}${c.woonplaats?' · '+h(c.woonplaats):''}</div></div>
     <span class="chip"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>
     ${c.rec?`<span class="meta kl-rec">${h(c.rec)}</span>`:''}
@@ -693,18 +776,18 @@ function tabKandidaten(el, k, c){
     const rest = c.cs.filter(x => !CRM.PHASES.some(p => p.k === x.fase));
     if(rest.length) groepen['Overig'] = rest;
   }
-  el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Kandidaten</div>
+  el.innerHTML = `
+    <div class="kl-tabkop"><div class="h2">Kandidaten</div>
       <span class="meta num">${c.cs.length} totaal · ${c.lopend.length} lopend</span>
       <span class="spacer"></span>
       <div class="seg" id="k_grp">
         <button data-g="fase" class="${groepeer==='fase'?'on':''}">Per fase</button>
         <button data-g="vacature" class="${groepeer==='vacature'?'on':''}">Per vacature</button>
       </div></div>
-    <div class="card-b">${Object.keys(groepen).length ? Object.keys(groepen).map(g => `
+    ${Object.keys(groepen).length ? Object.keys(groepen).map(g => `
         <div class="kl-groep"><div class="label">${h(g)} <span class="num">${groepen[g].length}</span></div>
           <div class="kl-kandlijst">${groepen[g].map(x=>kandRegel(x)).join('')}</div></div>`).join('')
-      : CRM.ui.leeg('Nog geen kandidaten','Zodra je iemand voorstelt bij deze klant verschijnt hij hier.')}</div></div>`;
+      : CRM.ui.leeg('Nog geen kandidaten','Zodra je iemand voorstelt bij deze klant verschijnt hij hier.')}`;
 
   el.querySelectorAll('#k_grp button').forEach(b => b.onclick = () => {
     groepeer = b.dataset.g; P.set('groepeer', groepeer); tabKandidaten(el, k, c);
@@ -712,7 +795,10 @@ function tabKandidaten(el, k, c){
   el.querySelectorAll('[data-kand]').forEach(a => a.onclick = e => { e.preventDefault(); CRM.ga('kandidaten',{id:a.dataset.kand}); });
 }
 
-/* ─── Tab: activiteiten & notities (met taken) ────────────────── */
+/* ─── Tab: activiteiten & notities ────────────────────────────────
+   Taken staan hier bewust NIET meer — de zijrail is dé takenplek.
+   Afgeronde taken die als activiteit gelogd zijn verschijnen wel
+   gewoon in de tijdlijn. ─────────────────────────────────────── */
 function tabActiviteiten(el, k){
   /* Klant-activiteiten + de notities/gespreksverslagen van al haar
      contactpersonen, gemengd op datum — zo blijft het klantbeeld compleet. */
@@ -730,10 +816,7 @@ function tabActiviteiten(el, k){
       tekst: (a.extra && a.extra.evaluatie) ? evalSamenvatting(a.extra.evaluatie) : a.tekst
     };
   });
-  const taken = (CRM.state.taken||[]).filter(t => t.entiteit === 'klant' && t.ref === k.naam)
-    .sort((a,b) => (a.klaar?1:0)-(b.klaar?1:0) || String(a.datum||'').localeCompare(String(b.datum||'')));
-
-  el.innerHTML = `<div class="kl-actgrid">
+  el.innerHTML = `<div class="stack">
     <div class="card">
       <div class="card-h"><div class="h2">Activiteiten & notities</div><span class="spacer"></span>
         <div class="row tight">${['bel','mail','whatsapp','gesprek','bezoek','notitie'].map(s =>
@@ -741,36 +824,17 @@ function tabActiviteiten(el, k){
       </div>
       <div class="card-b">${CRM.ui.tijdlijn(items)}</div>
     </div>
-    <div class="stack">
-      <div class="card">
-        <div class="card-h"><div class="h2">Taken</div><span class="spacer"></span>
-          <button class="btn sm" id="t_nieuw">+ Taak</button></div>
-        <div class="card-b">${taken.length ? `<div class="kl-taken">${taken.map(t => `
-          <label class="kl-taak${t.klaar?' klaar':''}">
-            <input type="checkbox" data-taak="${h(t.id)}"${t.klaar?' checked':''}>
-            <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
-              <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${t.voor?' · '+h(t.voor):''}</div></div>
-            ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
-          </label>`).join('')}</div>` : CRM.ui.leeg('Geen taken','Alles afgehandeld bij deze klant.')}</div>
-      </div>
-      <div class="card">
-        <div class="card-h"><div class="h2">Accountnotitie</div></div>
-        <div class="card-b">
-          <div class="f-row" style="margin-bottom:10px"><textarea id="n_note" placeholder="Vaste afspraken, tarieven, voorkeuren, wie beslist…">${h(k.note||'')}</textarea></div>
-          <button class="btn ghost sm" id="n_bewaar">Opslaan</button>
-        </div>
+    <div class="card">
+      <div class="card-h"><div class="h2">Accountnotitie</div></div>
+      <div class="card-b">
+        <div class="f-row" style="margin-bottom:10px"><textarea id="n_note" placeholder="Vaste afspraken, tarieven, voorkeuren, wie beslist…">${h(k.note||'')}</textarea></div>
+        <button class="btn ghost sm" id="n_bewaar">Opslaan</button>
       </div>
     </div>
   </div>`;
 
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logVia(k, b.dataset.log, 'Wat leg je vast? Tip: @collega stuurt diegene een melding.'));
-  el.querySelector('#t_nieuw').onclick  = () => nieuweTaak(k);
   el.querySelector('#n_bewaar').onclick = () => bewaarKlant(k.naam, {note: el.querySelector('#n_note').value.trim()});
-  el.querySelectorAll('[data-taak]').forEach(cb => cb.onchange = async () => {
-    const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
-    await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:cb.checked}), true);
-    CRM.render();
-  });
 }
 
 /* Activiteit of notitie vastleggen. @collega in de tekst geeft die
@@ -787,10 +851,11 @@ async function logVia(k, soort, hint){
 }
 
 /* Taak aanmaken — ALTIJD via het gedeelde taakvenster (collega-toewijzing,
-   prioriteit, Outlook en meldingen zitten daar al in). */
+   prioriteit, Outlook en meldingen zitten daar al in). De nieuwe taak
+   verschijnt direct in de zijrail. */
 function nieuweTaak(k){
   CRM.taakModal({entiteit:'klant', ref:k.naam, refLabel:k.naam}).then(rij => {
-    if(rij){ tabActief = 'activiteiten'; CRM.render(); }
+    if(rij){ CRM.navBadges(); CRM.render(); }
   });
 }
 
@@ -812,26 +877,24 @@ function tabEvaluaties(el, k){
   const alle   = evals.map(gem).filter(n => n != null);
   const totaal = alle.length ? (alle.reduce((a,b)=>a+b,0) / alle.length) : null;
 
-  el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Evaluaties</div>
+  el.innerHTML = `
+    <div class="kl-tabkop"><div class="h2">Evaluaties</div>
       ${totaal!=null?`<span class="chip${totaal>=4?' green':totaal>=3?'':' amber'}">Gemiddeld <span class="num">${totaal.toFixed(1)}</span> / 5</span>`:''}
       <span class="spacer"></span>
       <button class="btn sm" id="ev_nieuw">Evaluatie invullen</button></div>
-    <div class="card-b">
-      ${evals.length ? `
-        <div class="kl-evverloop">
-          <div class="label">Verloop gemiddelde</div>
-          <div class="kl-evrij">${evals.slice().reverse().map(e => {
-            const g = gem(e) || 0;
-            return `<div class="kl-evtick">
-              ${CRM.ui.bar(g/5*100, g>=4?'green':g>=3?'':'amber')}
-              <span class="num">${g?g.toFixed(1):'—'}</span>
-              <span class="meta num">${h(CRM.fmtDateShort(e.datum))}</span></div>`;
-          }).join('')}</div>
-        </div>
-        ${evals.map(e => evalHtml(e)).join('')}`
-        : CRM.ui.leeg('Nog geen evaluatie','Beoordeel periodiek hoe de samenwerking loopt — dat maakt het gesprek met deze klant concreet.')}
-    </div></div>`;
+    ${evals.length ? `
+      <div class="card kl-evverloop"><div class="card-b">
+        <div class="label">Verloop gemiddelde</div>
+        <div class="kl-evrij">${evals.slice().reverse().map(e => {
+          const g = gem(e) || 0;
+          return `<div class="kl-evtick">
+            ${CRM.ui.bar(g/5*100, g>=4?'green':g>=3?'':'amber')}
+            <span class="num">${g?g.toFixed(1):'—'}</span>
+            <span class="meta num">${h(CRM.fmtDateShort(e.datum))}</span></div>`;
+        }).join('')}</div>
+      </div></div>
+      ${evals.map(e => evalHtml(e)).join('')}`
+      : CRM.ui.leeg('Nog geen evaluatie','Beoordeel periodiek hoe de samenwerking loopt — dat maakt het gesprek met deze klant concreet.')}`;
   el.querySelector('#ev_nieuw').onclick = () => evalModal(k);
 }
 
@@ -893,10 +956,10 @@ function evalModal(k){
 function tabDocumenten(el, k){
   const docs = (CRM.state.documenten||[]).filter(x => x.entiteit === 'klant' && x.ref === k.naam)
     .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
-  el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Documenten</div><span class="spacer"></span>
+  el.innerHTML = `
+    <div class="kl-tabkop"><div class="h2">Documenten</div><span class="spacer"></span>
       <button class="btn sm" id="d_nieuw">Document koppelen</button></div>
-    <div class="card-b">${docs.length ? `<div class="tblwrap"><table class="tbl"><thead><tr>
+    ${docs.length ? `<div class="tblwrap"><table class="tbl"><thead><tr>
         <th>Document</th><th>Soort</th><th>Toegevoegd</th><th>Door</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr>
           <td>${veiligeUrl(d.url) ? `<a href="${h(veiligeUrl(d.url))}" target="_blank" rel="noopener">${h(d.naam)}</a>` : h(d.naam)}</td>
@@ -905,7 +968,7 @@ function tabDocumenten(el, k){
           <td class="sub">${h(d.door||'—')}</td>
           <td class="n"><button class="btn sub sm" data-dweg="${h(d.id)}">Verwijderen</button></td>
         </tr>`).join('')}</tbody></table></div>`
-      : CRM.ui.leeg('Nog geen documenten','Koppel de SWO, offerte of andere afspraken zodat iedereen ze terugvindt.')}</div></div>`;
+      : CRM.ui.leeg('Nog geen documenten','Koppel de SWO, offerte of andere afspraken zodat iedereen ze terugvindt.')}`;
 
   el.querySelector('#d_nieuw').onclick = () => docModal(k);
   el.querySelectorAll('[data-dweg]').forEach(b => b.onclick = async () => {

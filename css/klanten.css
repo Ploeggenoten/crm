@@ -7,6 +7,11 @@
 /* Dunne rand in plaats van schaduw: hover verdiept alleen de rand. */
 .kl-kaart{cursor:pointer;transition:border-color .12s,background .12s}
 .kl-kaart:hover{border-color:var(--olive-l);background:var(--card)}
+/* Kopzone met tint (diepteladder): naam + fase tekenen zich af als kop. */
+.kl-kkop{background:var(--card-2);border-bottom:1px solid var(--line);
+  border-radius:var(--r-l) var(--r-l) 0 0;padding:13px 16px 11px}
+.kl-kkop .chip{background:var(--card)}
+.kl-klijf .kl-stats{margin:0 0 12px;padding:0 0 12px;border-top:0}
 .kl-kop{display:flex;align-items:flex-start;gap:11px}
 .kl-naam{font-weight:600;font-size:14.5px;color:var(--ink);line-height:1.3}
 .kl-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 12px;
@@ -30,9 +35,38 @@
 /* ─── Kaartweergave (kaart-engine uit js/source.js) ───────────── */
 .kl-kaartwrap{min-height:60vh}
 
-/* ─── Activiteiten & notities: tijdlijn links, taken/notitie rechts ─ */
-.kl-actgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
-@media (max-width:980px){.kl-actgrid{grid-template-columns:1fr}}
+/* ─── Dossier met zijrail: links vast (gegevens · contactpersonen ·
+   open taken), rechts de werkruimte met de tabs. De rail plakt onder
+   de paginakop en scrollt zelf bij overloop, zodat contactpersonen en
+   taken altijd in beeld blijven terwijl je rechts van tab wisselt. ─ */
+.kl-dossier{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+/* De rail zelf is een verdiept vlak (--well-2); de blokken erbinnen zijn
+   witte kaarten die eruit springen — één component, drie duidelijke blokken. */
+.kl-rail{display:flex;flex-direction:column;gap:12px;
+  background:var(--well-2);border:1px solid var(--line-2);border-radius:var(--r-l);padding:12px;
+  position:sticky;top:84px;max-height:calc(100vh - 100px);overflow-y:auto;
+  scrollbar-width:thin;min-width:0}
+.kl-rail > .card{border-color:var(--line-2)}
+.kl-werk{min-width:0;display:flex;flex-direction:column;gap:14px}
+
+/* Werkruimte: de tab-inhoud ligt op een licht sectievlak (--well); de
+   items erop (vacatures, kandidaatrijen, evaluaties) zijn witte kaarten. */
+#k_tabinhoud{background:var(--well);border:1px solid var(--line);border-radius:var(--r-l);padding:16px}
+#k_tabinhoud .card{border-color:var(--line-2)}
+.kl-tabkop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;min-height:30px}
+.kl-tabkop .h2{font-size:14px}
+
+/* Railkaarten: iets compacter dan de gewone kaarten. */
+.kl-railkaart > .card-h{padding:11px 16px}
+.kl-railkaart > .card-b{padding:12px 16px 14px}
+.kl-railkaart .h2{font-size:13.5px}
+.kl-railknop{width:100%;margin-top:10px;justify-content:center}
+
+/* Gegevens: label links, waarde rechts, alles op één regel. */
+.kl-gg{display:flex;flex-direction:column;gap:7px}
+.kl-gg-rij{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px}
+.kl-gg-lbl{color:var(--muted);flex:0 0 auto}
+.kl-gg-val{min-width:0;text-align:right;color:var(--txt)}
 
 /* ─── Signalen ────────────────────────────────────────────────── */
 ul.kl-sig{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
@@ -40,26 +74,30 @@ ul.kl-sig li{font-size:13px;color:var(--txt-2);line-height:1.5;padding-left:18px
 ul.kl-sig li::before{content:'•';position:absolute;left:4px;top:-1px;color:var(--amber);font-size:15px}
 ul.kl-sig b{color:var(--ink)}
 
-/* ─── Vacatures (uitklapbaar) ─────────────────────────────────── */
-details.kl-vac{border:1px solid var(--line);border-radius:var(--r-s);margin-bottom:10px;background:var(--card)}
+/* ─── Vacatures: elk blok een witte kaart op het sectievlak, met een
+   getinte kopregel (--card-2) en de uitklap met kandidaten op tint ── */
+details.kl-vac{border:1px solid var(--line-2);border-radius:var(--r);margin-bottom:12px;background:var(--card)}
 details.kl-vac:last-child{margin-bottom:0}
 details.kl-vac > summary{
   list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:9px;
-  flex-wrap:wrap;border-radius:var(--r-s);
+  flex-wrap:wrap;border-radius:var(--r);background:var(--card-2);
 }
 details.kl-vac > summary::-webkit-details-marker{display:none}
-details.kl-vac > summary:hover{background:var(--card-2)}
-details.kl-vac[open] > summary{border-bottom:1px solid var(--line);border-radius:var(--r-s) var(--r-s) 0 0}
+details.kl-vac > summary:hover{background:var(--well)}
+details.kl-vac[open] > summary{border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0}
 details.kl-vac > summary b{font-size:13.5px;color:var(--ink)}
 .kl-vac-b{padding:12px 14px}
+.kl-vac-b .kl-kandlijst{background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);padding:8px}
 
-/* ─── Kandidaatregels (in vacature en in de tab) ──────────────── */
-.kl-kandlijst{display:flex;flex-direction:column;gap:1px}
+/* ─── Kandidaatregels: witte kaartjes op het vlak ─────────────── */
+.kl-kandlijst{display:flex;flex-direction:column;gap:6px}
 a.kl-kand{
-  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-s);
-  color:var(--txt);text-decoration:none;border:1px solid transparent;
+  display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r-s);
+  color:var(--txt);text-decoration:none;border:1px solid var(--line-2);background:var(--card);
+  transition:border-color .12s;
 }
-a.kl-kand:hover{background:var(--card-2);border-color:var(--line);text-decoration:none}
+a.kl-kand:hover{border-color:var(--olive-l);text-decoration:none}
+.kl-kand-wie{min-width:0;flex:1}
 a.kl-kand b{font-size:13px;font-weight:600;display:block}
 .kl-rec{min-width:56px;text-align:right}
 .kl-when{min-width:104px;text-align:right}
@@ -67,31 +105,26 @@ a.kl-kand b{font-size:13px;font-weight:600;display:block}
 .kl-groep:last-child{margin-bottom:0}
 .kl-groep > .label{margin-bottom:6px}
 
-/* ─── Contactpersonen — compact raster: wie | bereikbaar | laatste ─
+/* ─── Contactpersonen — compact gestapeld in de rail.
    Hele rij klikbaar: opent het dossier (drawer) van de persoon. */
-.kl-contacten{display:flex;flex-direction:column;gap:2px}
-.kl-ct{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(0,1.6fr) auto;
-  align-items:center;gap:14px;padding:10px 10px;border-radius:var(--r-s);
+.kl-contacten{display:flex;flex-direction:column;margin-top:10px}
+.kl-ct{display:flex;flex-direction:column;gap:2px;padding:9px 8px;border-radius:var(--r-s);
   cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s}
 .kl-ct:hover{background:var(--card-2);border-color:var(--line)}
-.kl-ct + .kl-ct{border-top:1px solid var(--line)}
-.kl-ct + .kl-ct:hover{border-top-color:var(--line)}
-.kl-ct b{font-size:13.5px}
+.kl-ct + .kl-ct{margin-top:2px;position:relative}
+.kl-ct + .kl-ct::before{content:'';position:absolute;left:8px;right:8px;top:-2px;height:1px;background:var(--line)}
+.kl-ct b{font-size:13px}
 .kl-ct-wie{min-width:0}
-.kl-ct-links{margin-top:0}
-.kl-ct-lc{text-align:right;white-space:nowrap}
-.kl-ctzoek{min-width:220px}
-@media (max-width:700px){
-  .kl-ct{grid-template-columns:1fr auto}
-  .kl-ct-links{grid-column:1/-1}
-}
+.kl-ct-links{margin-top:2px;font-size:12.5px;gap:7px}
+.kl-ct-lc{white-space:nowrap;font-size:11.5px}
+.kl-ctzoek{width:100%}
 
-/* ─── Evaluaties ──────────────────────────────────────────────── */
-.kl-evverloop{margin-bottom:20px}
+/* ─── Evaluaties: witte kaarten op het sectievlak ─────────────── */
+.kl-evverloop{margin-bottom:14px}
 .kl-evrij{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px}
 .kl-evtick{min-width:74px;display:flex;flex-direction:column;gap:4px}
 .kl-evtick .num{font-size:13px;font-weight:600;color:var(--ink)}
-.kl-eval{border:1px solid var(--line);border-radius:var(--r-s);padding:14px 16px;margin-bottom:12px;background:var(--card-2)}
+.kl-eval{border:1px solid var(--line-2);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;background:var(--card)}
 .kl-eval:last-child{margin-bottom:0}
 .kl-evcrit{display:flex;flex-direction:column;gap:8px}
 .kl-evc{display:grid;grid-template-columns:190px 1fr 24px;align-items:center;gap:12px}
@@ -108,6 +141,28 @@ label.kl-taak:hover{background:var(--card-2)}
 label.kl-taak b{font-size:13px;font-weight:600}
 label.kl-taak.klaar b{text-decoration:line-through;color:var(--muted);font-weight:500}
 label.kl-taak input{margin-top:3px}
+
+/* ─── Mobiel: rail niet sticky maar gestapeld ───────────────────
+   Volgorde: kop → contactpersonen (ingeklapt, JS toont eerste 3) →
+   werkruimte met tabs → gegevens → taken. display:contents maakt de
+   railkaarten losse stapel-items zodat ze een eigen plek krijgen. */
+@media (max-width:900px){
+  .kl-dossier{display:flex;flex-direction:column;gap:14px}
+  .kl-rail{display:contents}
+  #k_tabinhoud{padding:10px}
+  .kl-rail > .card:nth-child(1){order:3}   /* gegevens */
+  .kl-rail > .card:nth-child(2){order:1}   /* contactpersonen */
+  .kl-rail > .card:nth-child(3){order:4}   /* open taken */
+  /* width:100% expliciet: anders rekken de blokken tot hun inhoud
+     en krijgt de hele pagina horizontale scroll of halve kaarten. */
+  .kl-werk{order:2;width:100%}
+  .kl-rail > .card{width:100%}
+  /* Kandidaatrij: naam op een eigen regel zodat hij niet tot een
+     enkele letter wordt afgekort naast de chips. */
+  a.kl-kand{flex-wrap:wrap}
+  .kl-kand-wie{flex:1 1 100%}
+  .kl-when{min-width:0}
+}
 
 @media (max-width:700px){
   .kl-evc{grid-template-columns:1fr 60px}
