@@ -14,6 +14,11 @@
   --paper:#f6f7f1;        /* cream — pagina-achtergrond */
   --card:#ffffff;         /* kaarten */
   --card-2:#eef1e6;       /* cream-2 — subtiele vulling */
+  /* Diepte door tinten (wens Tjeerd): componenten tekenen zich als aparte
+     vlakken af. Ladder: paper → well (sectievlak/groep) → well-2 (verdiept:
+     bordkolommen, zijrail) → card (wit, springt eruit) → card-2 (binnenvlak). */
+  --well:#eceede;         /* sectievlak / groepscontainer */
+  --well-2:#e3e7d1;       /* verdiept vlak: bordkolommen, rails */
   --line:#e0e5d2;         /* dé rand, overal */
   --line-2:#d3dabf;       /* iets sterker, alleen voor invoervelden */
 
@@ -184,10 +189,17 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 /* ─── Kaart / paneel — dunne rand, royale padding, geen schaduw ─ */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-l)}
 .card.pad{padding:20px 24px}
-.card-h{padding:16px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.card-h{padding:16px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--card-2);border-radius:var(--r-l) var(--r-l) 0 0}
 .card-h .h2{margin-right:auto}
 .card-b{padding:20px 24px}
 .card-f{padding:12px 24px;border-top:1px solid var(--line);background:var(--card-2);border-radius:0 0 var(--r-l) var(--r-l)}
+
+/* Sectievlak: groepeert kaarten/inhoud als één afgetekend component.
+   Witte kaarten erbinnen springen eruit; nooit vlak-in-vlak-in-vlak. */
+.vlak{background:var(--well);border:1px solid var(--line);border-radius:var(--r-l);padding:16px}
+.vlak > .label{display:block;margin-bottom:10px}
+.vlak .card,.vlak .kpi{border-color:var(--line-2)}
 .grid{display:grid;gap:16px}
 .grid.c2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
 .grid.c3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
@@ -269,8 +281,8 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 
 /* ─── Pijplijnbord (kolommen) ────────────────────────────────── */
 .board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:4px 28px 32px;min-height:60vh}
-.bcol{flex:0 0 268px;width:268px;background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
-.bcol.over{background:#e6ebd8;border-color:var(--olive-l)}
+.bcol{flex:0 0 268px;width:268px;background:var(--well-2);border:1px solid var(--line-2);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
+.bcol.over{background:#dbe1c4;border-color:var(--olive-l)}
 /* Bordkolommen mogen eruit springen: fasekleur als bovenrand + telbadge. */
 .bcol-h{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
   border-top:3px solid var(--ph,var(--muted));border-radius:var(--r) var(--r) 0 0;background:#fff}
