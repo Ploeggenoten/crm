@@ -89,8 +89,16 @@ CRM.initialen = naam => String(naam||'?').trim().split(/\s+/).filter(w=>!/^(van|
   .slice(0,2).map(w=>w[0]).join('').toUpperCase() || '?';
 const AVA_KLEUREN = ['#4a7c15','#2f6b9a','#7e5aa6','#a86a1a','#2f8f5b','#b0483a','#5a7a8a','#8a6a2a','#6a5a9a','#3d7a6a'];
 CRM.avaKleur = naam => AVA_KLEUREN[Math.abs(String(naam||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % AVA_KLEUREN.length];
-CRM.avatar = (naam,klasse='') =>
-  `<div class="ava ${klasse}" style="background:${CRM.avaKleur(naam)}">${h(CRM.initialen(naam))}</div>`;
+/* Avatar: mét foto/logo als die er is, anders initialen. Kandidaten krijgen
+   in lijsten GEEN avatar meer (te druk, expliciete wens) — gebruik dit dus
+   alleen voor klanten (logo) en gebruikers (profielfoto). */
+CRM.avatar = (naam,klasse='',foto='') => foto
+  ? `<div class="ava ${klasse} foto"><img src="${h(foto)}" alt="" loading="lazy"></div>`
+  : `<div class="ava ${klasse}" style="background:${CRM.avaKleur(naam)}">${h(CRM.initialen(naam))}</div>`;
+CRM.klantAvatar = (klant,klasse='') => {
+  const k = typeof klant==='string' ? CRM.klant(klant) : klant;
+  return CRM.avatar(k?.naam||klant, klasse, k?.logo_url||'');
+};
 
 /* ─── Toast ───────────────────────────────────────────────────── */
 let _tt;
@@ -340,7 +348,7 @@ function bouwNav(){
     if(!items.length) return '';
     return (g.titel?`<div class="navgroup">${h(g.titel)}</div>`:'<div style="height:4px"></div>') +
       items.map(m => `<a class="nav${m.adminOnly?' adm':''}" data-go="${m.key}">
-        <span class="ic">${m.icon||'•'}</span><span>${h(m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
+        <span>${h(m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
   }).join('');
   CRM.$$('[data-go]', wrap).forEach(a => a.onclick = () => CRM.ga(a.dataset.go));
   navActief(); navBadges();
@@ -358,6 +366,60 @@ function navBadges(){
   Object.values(CRM.modules).forEach(m => { if(m.badge) try{ CRM.badge(m.key, m.badge()); }catch(e){} });
 }
 CRM.navBadges = navBadges;
+
+/* ─── Eigen profielfoto ───────────────────────────────────────── */
+CRM.tekenEigenAvatar = () => {
+  const el = document.getElementById('whoava'); if(!el) return;
+  const foto = CRM.profile?.foto_url;
+  el.innerHTML = foto ? `<img src="${h(foto)}" alt="">` : h(CRM.initialen(CRM.profile?.naam || CRM.user?.email || '?'));
+  el.title = 'Profielfoto wijzigen';
+};
+CRM.accountModal = () => {
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Jouw profiel</div></div>
+    <div class="modal-b">
+      <div class="row" style="gap:14px;margin-bottom:14px">
+        <div class="ava lg ${CRM.profile?.foto_url?'foto':''}" id="pf_prev" style="background:${CRM.avaKleur(CRM.me())}">${
+          CRM.profile?.foto_url ? `<img src="${h(CRM.profile.foto_url)}" alt="">` : h(CRM.initialen(CRM.me()))}</div>
+        <div><b>${h(CRM.me())}</b><div class="meta">${h(CRM.user?.email||'')}</div></div>
+      </div>
+      <div class="f-row"><label>Profielfoto</label>
+        <input type="file" id="pf_file" accept="image/*">
+        <div class="hint">Vierkante foto werkt het best. Wordt zichtbaar voor het hele team.</div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Sluiten</button>
+      <button class="btn" id="pf_save" disabled>Opslaan</button>
+    </div>`, {onOpen(m){
+      const file = m.querySelector('#pf_file'), save = m.querySelector('#pf_save'), prev = m.querySelector('#pf_prev');
+      let gekozen = null;
+      file.onchange = () => {
+        gekozen = file.files[0] || null; save.disabled = !gekozen;
+        if(gekozen){ prev.classList.add('foto'); prev.innerHTML = `<img src="${URL.createObjectURL(gekozen)}" alt="">`; }
+      };
+      save.onclick = async () => {
+        if(!gekozen) return;
+        save.disabled = true; save.textContent = 'Bezig…';
+        try{
+          let url;
+          if(CRM.demo){ url = URL.createObjectURL(gekozen); }
+          else{
+            const ext = (gekozen.name.split('.').pop()||'jpg').toLowerCase();
+            const pad = `profielen/${CRM.user.id}.${ext}`;
+            const {error} = await sb.storage.from('crm-docs').upload(pad, gekozen, {upsert:true});
+            if(error) throw error;
+            url = sb.storage.from('crm-docs').getPublicUrl(pad).data.publicUrl + '?v=' + Date.now();
+            const {error:e2} = await sb.from('profiles').update({foto_url:url}).eq('id', CRM.user.id);
+            if(e2) throw e2;
+          }
+          CRM.profile.foto_url = url;
+          CRM.tekenEigenAvatar();
+          CRM.modal.close(); CRM.toast('Profielfoto bijgewerkt','ok');
+        }catch(e){ CRM.fout('Foto opslaan mislukt', e); save.disabled=false; save.textContent='Opslaan'; }
+      };
+    }});
+};
 
 /* ─── Realtime ────────────────────────────────────────────────── */
 function realtime(){
@@ -387,7 +449,8 @@ async function start(user){
   CRM.profile = prof || {naam:user.email, rol:'user'};
   document.getElementById('whoname').textContent = CRM.profile.naam || user.email;
   document.getElementById('whorol').textContent  = CRM.canSeeMoney() ? 'Eigenaar' : (CRM.profile.rol==='admin'?'Beheerder':'Teamlid');
-  document.getElementById('whoava').textContent  = CRM.initialen(CRM.profile.naam || user.email);
+  CRM.tekenEigenAvatar();
+  document.getElementById('whoava').onclick = () => CRM.accountModal();
   bouwNav();
   await CRM.load();
   bouwNav();

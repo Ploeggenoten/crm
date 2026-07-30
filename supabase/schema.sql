@@ -24,6 +24,10 @@ alter table clients add column if not exists sinds       date;
 alter table clients add column if not exists laatst_contact date;
 alter table clients add column if not exists note        text default '';
 alter table clients add column if not exists fase_sinds  date;
+alter table clients add column if not exists logo_url    text default '';
+
+-- Profielfoto per gebruiker (zichtbaar voor het team).
+alter table profiles add column if not exists foto_url   text default '';
 -- Aanmaakdatum en fasehistorie: nodig om echte doorlooptijden en conversie
 -- per cohort te kunnen tonen in plaats van een momentopname.
 alter table clients add column if not exists aangemaakt  date default current_date;

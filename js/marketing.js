@@ -119,17 +119,17 @@
         uit.push({kleur, titel, uitleg, cijfers, campagne, advertentie, keuzes});
 
       if(s7.leads === 0 && s7.spend >= 25){
-        A('red','Geld op, geen enkele lead', geld()
+        A('red', geld() ? 'Geld op, geen enkele lead' : 'Zeven dagen zonder één lead', geld()
           ? `${CRM.euro(s7.spend)} in zeven dagen zonder één lead.`
-          : `Zeven dagen budget verbruikt zonder één lead.`, ['stop','negeer']); continue;
+          : `Deze advertentie liep de hele week en leverde niets op.`, ['stop','negeer']); continue;
       }
       if(s7.cpl && acc.cpl && s7.cpl > 2.5*acc.cpl){
-        A('red','Kosten per lead uit de bocht', geld()
+        A('red', geld() ? 'Kosten per lead uit de bocht' : 'Levert veel te weinig leads op', geld()
           ? `${CRM.euro(s7.cpl,2)} per lead tegen ${CRM.euro(acc.cpl,2)} gemiddeld (${maal(s7.cpl, acc.cpl)}× zo duur).`
           : `Deze advertentie kost ${maal(s7.cpl, acc.cpl)}× zoveel per lead als het gemiddelde.`, ['stop','negeer']); continue;
       }
       if(s7.cpc && s30.cpc && s7.cpc > 1.5*s30.cpc){
-        A('amber','CPC loopt op — de creative slijt', geld()
+        A('amber', geld() ? 'CPC loopt op — de creative slijt' : 'De creative slijt', geld()
           ? `CPC ${CRM.euro(s7.cpc,2)} tegen ${CRM.euro(s30.cpc,2)} eigen 30-daags gemiddelde. Zet er een verse variant naast.`
           : `De klikprijs ligt ${maal(s7.cpc, s30.cpc)}× hoger dan het eigen 30-daags gemiddelde. Zet er een verse variant naast.`, ['stop','negeer']); continue;
       }
@@ -294,7 +294,7 @@
         ${CRM.ui.kpi('Leads', `<span class="num">${fmtN(s.leads)}</span>`, s.leads ? 'via Meta-formulieren' : 'nog geen leads')}
         ${geld()
           ? CRM.ui.kpi('Kosten per lead', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`, 'gemiddeld over de periode')
-          : CRM.ui.kpi('Leads per 100 kliks', `<span class="num">${s.kliks?CRM.pct(s.leads/s.kliks*100,1):'—'}</span>`, 'hoe goed het formulier omzet')}
+          : CRM.ui.kpi('Leads per 100 kliks', `<span class="num">${s.kliks?CRM.pct(s.leads/s.kliks*100,1):'—'}</span>`, 'hoe vaak een klik een lead wordt')}
         ${CRM.ui.kpi('Kliks', `<span class="num">${fmtN(s.kliks)}</span>`,
           `<span class="num">${fmtN(s.imp)}</span> impressies${geld()?` · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span>`:''} · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span>`)}
       </div>

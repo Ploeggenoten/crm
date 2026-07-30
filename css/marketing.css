@@ -5,7 +5,7 @@
 /* ─── Adviesregels van de waakhond ───────────────────────────── */
 .mkt-advies{
   display:flex;align-items:flex-start;gap:11px;
-  padding:12px 20px;border-bottom:1px solid #f0f2e8;
+  padding:12px 20px;border-bottom:1px solid #eef0e4;
 }
 .mkt-advies:last-child{border-bottom:none}
 .mkt-advies > .dot{margin-top:6px}
@@ -20,7 +20,7 @@
   transition:transform .12s;transform-origin:center;
 }
 .mkt-caret.op{transform:rotate(90deg)}
-.mkt-r1{background:#fcfdf9}
+.mkt-r1{background:var(--paper)}
 .mkt-r2{background:var(--card-2)}
 .mkt-n1{padding-left:28px !important}
 .mkt-n2{padding-left:56px !important;color:var(--txt-2)}
@@ -30,7 +30,7 @@
 .mkt-dag{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px}
 .mkt-dagtop{font-size:11px;color:var(--txt-2);height:15px;line-height:15px}
 .mkt-dagbar{
-  width:100%;height:84px;background:#eef1e7;border-radius:5px;
+  width:100%;height:84px;background:var(--card-2);border-radius:5px;
   display:flex;align-items:flex-end;overflow:hidden;
 }
 .mkt-dagbar > i{display:block;width:100%;background:var(--olive-l);border-radius:5px 5px 0 0}

@@ -254,7 +254,7 @@ function blokTrechter(p, D){
           const door = i<tel.length-1 ? tel[i+1].n : null;
           return `<div class="pf-fr">
             <div class="pf-fl">${h(t.fase)}</div>
-            <div class="pf-fb"><i style="width:${Math.round(t.n/start*100)}%;background:${h(t.kleur)}"></i>
+            <div class="pf-fb"><i style="width:${Math.round(t.n/start*100)}%"></i>
               <span class="pf-fn num">${t.n}</span></div>
             <div class="pf-fd meta num">${door!=null && t.n ? Math.round(door/t.n*100)+'% door' : ''}</div>
           </div>`;

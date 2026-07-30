@@ -17,7 +17,7 @@
 /* ─── Veldenlijst (inline bewerkbaar) ─────────────────────────── */
 .kd-velden{display:flex;flex-direction:column;gap:1px}
 .kd-veld{display:grid;grid-template-columns:150px 1fr;align-items:baseline;gap:12px;
-  padding:7px 0;border-bottom:1px solid #f0f2e8;font-size:13px}
+  padding:7px 0;border-bottom:1px solid #eef0e4;font-size:13px}
 .kd-veld:last-child{border-bottom:none}
 .kd-veld > .label{margin:0}
 .kd-w{cursor:text;border-radius:4px;padding:2px 6px;margin-left:-6px;
@@ -29,7 +29,7 @@
 
 /* ─── CV ──────────────────────────────────────────────────────── */
 .kd-cvlijst{display:flex;flex-direction:column;gap:2px;margin-top:8px}
-.kd-cvrij{display:grid;grid-template-columns:1fr auto;gap:2px 14px;padding:8px 0;border-bottom:1px solid #f0f2e8}
+.kd-cvrij{display:grid;grid-template-columns:1fr auto;gap:2px 14px;padding:8px 0;border-bottom:1px solid #eef0e4}
 .kd-cvrij:last-child{border-bottom:none}
 .kd-cvrij b{font-size:13px}
 .kd-cvrij .sub{grid-column:1;grid-row:2}

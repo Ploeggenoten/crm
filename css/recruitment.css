@@ -12,7 +12,10 @@
 }
 .rc-bar .rc-it{padding:14px 26px 14px 0;margin-right:26px;border-right:1px solid var(--line);min-width:132px}
 .rc-bar .rc-it:last-child{border-right:none;margin-right:0}
-.rc-bar .rc-v{font-size:23px;font-weight:600;line-height:1.2;color:var(--ink);margin-top:3px}
+/* Deze strook is de KPI-rij van recruitment; dezelfde behandeling als .big in
+   base.css, zodat de kerncijfers in elke module er hetzelfde uitzien. */
+.rc-bar .rc-v{font-family:var(--disp);font-weight:400;font-size:26px;letter-spacing:.5px;
+  line-height:1.1;color:var(--ink);margin-top:4px}
 .rc-bar .rc-it.amber .rc-v{color:var(--amber)}
 .rc-bar .rc-it.goed .rc-v{color:var(--green)}
 .rc-bar .rc-van{font-size:14px;font-weight:500;color:var(--muted);margin-left:4px}
@@ -51,7 +54,7 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
 .rc-stwrap select:hover{border-color:var(--line-2)}
 
 /* ─── Sleutel/waarde-regels in drawers ───────────────────────── */
-.rc-kv{display:flex;gap:14px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f2f4ea}
+.rc-kv{display:flex;gap:14px;align-items:baseline;padding:5px 0;border-bottom:1px solid #eef0e4}
 .rc-kv:last-child{border-bottom:none}
 .rc-kv .label{flex:0 0 108px;margin:0}
 .rc-kv > span:last-child,.rc-kv > div:last-child{flex:1;min-width:0}
@@ -60,7 +63,7 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
 table.rc-qa{width:100%;border-collapse:collapse;font-size:13px}
 table.rc-qa th{text-align:left;font-weight:500;color:var(--muted);padding:6px 14px 6px 0;
   width:34%;vertical-align:top;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12.5px}
-table.rc-qa td{padding:6px 0;border-bottom:1px solid #f2f4ea}
+table.rc-qa td{padding:6px 0;border-bottom:1px solid #eef0e4}
 table.rc-qa tr:last-child td{border-bottom:none}
 
 /* ─── Doorschietformulier ────────────────────────────────────── */
@@ -82,19 +85,21 @@ table.rc-qa tr:last-child td{border-bottom:none}
 .rc .bcol{max-height:calc(100vh - 330px)}
 .rc-uit{flex:0 0 168px;width:168px;padding:4px 26px 30px 0;display:flex;flex-direction:column;gap:8px}
 .rc-uitzone{
-  border:1px dashed var(--line-2);border-radius:var(--r);background:#eef1e7;
-  padding:12px 12px;display:flex;flex-direction:column;gap:2px;border-left:3px solid var(--ph,var(--muted));
+  border:1px dashed var(--line-2);border-radius:var(--r);background:var(--card-2);
+  padding:12px;display:flex;flex-direction:column;gap:4px;border-left:3px solid var(--ph,var(--muted));
   transition:background .12s,border-color .12s;
 }
-.rc-uitzone b{font-family:var(--disp);font-weight:400;font-size:12px;letter-spacing:.05em;
+/* Inter, geen Anton — Anton is alleen voor paginatitels en grote kerncijfers. */
+.rc-uitzone b{font-family:var(--body);font-weight:600;font-size:12px;letter-spacing:.04em;
   text-transform:uppercase;color:var(--ink)}
-.rc-uitzone .num{font-size:19px;font-weight:600;color:var(--txt-2);line-height:1.1}
-.rc-uitzone.over{background:#e4ecd6;border-color:var(--olive-l);border-style:solid}
+.rc-uitzone .num{font-size:20px;font-weight:600;color:var(--txt-2);line-height:1.1}
+/* Zelfde sleepterugkoppeling als .bcol.over in base.css. */
+.rc-uitzone.over{background:#e6ebd8;border-color:var(--olive-l);border-style:solid}
 
 .rc-leegkol{font-size:12px;color:var(--muted);text-align:center;padding:16px 8px;line-height:1.5}
 .rc-rec{background:var(--card-2);border:1px solid var(--line);border-radius:5px;font-size:10px;
   font-weight:600;color:var(--txt-2);padding:2px 5px;letter-spacing:.03em;flex:0 0 auto}
-.bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid #f0f2e8;padding-top:6px}
+.bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid #eef0e4;padding-top:6px}
 .bcard .bc-act.over{color:var(--red);font-weight:600}
 .bcard .rc-intakebtn{margin-top:8px;width:100%;justify-content:center;padding:4px 8px;font-size:11.5px}
 
@@ -111,7 +116,7 @@ table.rc-qa tr:last-child td{border-bottom:none}
   .rc-bar .rc-it:nth-child(odd){padding-right:14px;border-right:1px solid var(--line)}
   .rc-bar .rc-it:nth-child(even){padding-left:14px}
   .rc-bar .rc-it:last-child:nth-child(odd){border-right:none;grid-column:1/-1}
-  .rc-bar .rc-v{font-size:20px}
+  .rc-bar .rc-v{font-size:22px}
   .rc-tabwrap{padding:10px 14px 0}
   .rc-chips .chip{font-size:11.5px;padding:3px 9px}
   .rc-bordwrap{flex-direction:column}

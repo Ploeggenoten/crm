@@ -41,6 +41,12 @@ const contactenVan = naam => (CRM.state.contacten||[]).filter(c => c.klant===naa
 const docsVan    = naam => (CRM.state.documenten||[]).filter(d => d.entiteit==='klant' && d.ref===naam);
 const volgendeTaak = naam => takenVan(naam).filter(t=>!t.klaar).sort((a,b)=>String(a.datum||'9').localeCompare(String(b.datum||'9')))[0] || null;
 const eigenaren = () => [...new Set(CRM.state.clients.map(c=>c.eigenaar).filter(Boolean))].sort();
+/* Alleen echte weblinks openen — een `javascript:`-URL in een documentveld
+   mag niet uitgevoerd worden als iemand erop klikt. */
+const veiligeUrl = u => {
+  const s = String(u||'').trim();
+  return /^(https?:|blob:)/i.test(s) ? s : '';
+};
 
 /* ─── Formulier-modaal (hergebruikt voor kans en taak) ─────────── */
 function formModal(titel, velden, knop='Opslaan'){
@@ -529,7 +535,7 @@ function tabInhoud(naam){
           return `<div class="label" style="margin:10px 0 6px">${h(s)}</div>` + g.map(d=>`<div class="s-ct">
             <div style="flex:1;min-width:0"><b class="trunc">${h(d.naam)}</b>
               <div class="meta">${h(d.door||'')} · ${h(CRM.geleden(d.op))}${d.grootte?` · ${Math.round(d.grootte/1024)} kB`:''}</div></div>
-            <a class="btn sm ghost" href="${h(d.url)}" target="_blank" rel="noopener">Openen</a></div>`).join('');
+            ${veiligeUrl(d.url) ? `<a class="btn sm ghost" href="${h(veiligeUrl(d.url))}" target="_blank" rel="noopener">Openen</a>` : '<span class="meta">geen link</span>'}</div>`).join('');
         }).join('')
         : CRM.ui.leeg('Nog geen documenten','Zet hier de SWO, de offerte en andere afspraken — dan staat alles bij de klant zelf.')
       }</div></div>`;

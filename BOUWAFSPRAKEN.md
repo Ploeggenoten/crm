@@ -43,12 +43,18 @@ Beschikbaar in `css/base.css` (lees dat bestand eerst):
 `.tl` (tijdlijn), `.grid.c2/.c3/.c4`, `.note.info/.warn/.err/.ok`,
 `.bar`, `.empty`, `.ava`, `.f-row .f-grid`, `.searchbox`, `.label .h1 .h2 .sub .meta`.
 
-Regels:
-- Anton (`--disp`) alleen voor koppen en kleine hoofdletterlabels. **Nooit voor
-  datums of cijfers** — die in Inter met `class="num"`.
+Regels (huisstijlbrief Tjeerd, 30 jul 2026):
+- **Anton (`--disp`) alleen voor paginatitels (`.h1`) en grote kerncijfers
+  (`.big`).** Al het functionele — knoppen, labels, tabellen, tussenkoppen —
+  is Inter. Datums en kleine cijfers: Inter met `class="num"`.
+- Knoppen zijn pill-vormig en ALTIJD Inter 600/700. Nooit Anton op een knop.
+- Lime (`--lime`) ALLEEN op donkere vlakken (`.btn.dark`); nooit als accent op
+  de lichte achtergrond. Oranje (`--oranje`) = secundaire actie/waarschuwing.
 - Alleen kleuren uit de variabelen in `:root`. Geen felle/neon kleuren.
+- Dunne randen in plaats van schaduwen. Spacing in veelvouden van 4px.
 - Kleur is betekenis, geen decoratie: hooguit één accent per scherm.
 - Veel witruimte, rustige dichtheid. Liever een lege staat dan een vol scherm.
+- Handschrift-accent `.hand` (Caveat): hooguit 1–2 per pagina, spaarzaam.
 
 ## 4. Helpers (uit `js/core.js` en `js/data.js`)
 

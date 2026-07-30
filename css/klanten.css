@@ -4,8 +4,9 @@
 /* ─── Overzicht: klantkaartje ─────────────────────────────────── */
 /* auto-fill i.p.v. auto-fit: één resultaat blijft kolombreed staan */
 #kl_lijst .grid.c3{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
-.kl-kaart{cursor:pointer;transition:box-shadow .12s,border-color .12s}
-.kl-kaart:hover{box-shadow:var(--sh-2);border-color:var(--line-2)}
+/* Dunne rand in plaats van schaduw: hover verdiept alleen de rand. */
+.kl-kaart{cursor:pointer;transition:border-color .12s,background .12s}
+.kl-kaart:hover{border-color:var(--olive-l);background:var(--card)}
 .kl-kop{display:flex;align-items:flex-start;gap:11px}
 .kl-naam{font-weight:600;font-size:14.5px;color:var(--ink);line-height:1.3}
 .kl-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 12px;

@@ -44,9 +44,13 @@
 .pf-funnel{display:flex;flex-direction:column;gap:7px}
 .pf-fr{display:flex;align-items:center;gap:12px}
 .pf-fl{flex:0 0 158px;font-size:12.5px;color:var(--txt-2)}
-.pf-fb{flex:1;min-width:0;position:relative;height:22px;background:#f0f3e9;border-radius:4px;display:flex;align-items:center}
-.pf-fb > i{display:block;height:100%;border-radius:4px;opacity:.82;min-width:2px}
-.pf-fn{position:absolute;left:9px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 2px rgba(20,30,15,.35)}
+.pf-fb{flex:1;min-width:0;position:relative;height:22px;background:#e8ecdf;border-radius:4px;display:flex;align-items:center}
+/* Eén accent: elke fase heeft al zijn eigen regel met naam en percentage, dus
+   elf verschillende fasekleuren maakten hier alleen een regenboog van. */
+.pf-fb > i{display:block;height:100%;border-radius:4px;background:var(--olive-l);min-width:2px}
+/* Aantal aan het eind van de baan in donkere tekst: altijd leesbaar, ook als de
+   staaf kort is — witte tekst in de staaf vroeg om een schaduw. */
+.pf-fn{position:absolute;right:10px;font-size:12px;font-weight:600;color:var(--ink)}
 .pf-fd{flex:0 0 78px;text-align:right;font-size:11.5px}
 
 .pf-ratios{display:flex;gap:34px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}

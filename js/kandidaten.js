@@ -29,6 +29,9 @@ const faseChip = (fase, extra='') => fase
   ? `<span class="chip ${extra}"><i class="dot" style="background:${CRM.faseKleur(fase)}"></i>${h(fase)}</span>` : '';
 const telLink = t => 'tel:' + String(t||'').replace(/[^0-9+]/g,'');
 const waLink  = t => { let n = String(t||'').replace(/[^0-9]/g,''); if(n.startsWith('06')) n = '31'+n.slice(1); if(n.startsWith('00')) n = n.slice(2); return 'https://wa.me/'+n; };
+/* Alleen echte weblinks openen — een `javascript:`-URL in een CV-veld mag
+   niet uitgevoerd worden als iemand erop klikt. */
+const veiligeUrl = u => { const s = String(u||'').trim(); return /^(https?:|blob:)/i.test(s) ? s : ''; };
 
 /* ─── Woonlocatie: afstand kandidaat ↔ vacature ───────────────
    Coördinaten van de plaatsen waar wij werken. Zo kan het systeem
@@ -490,7 +493,7 @@ function cvHtml(c){
   return `<div class="card">
     <div class="card-h"><div class="h2">CV &amp; ervaring</div>
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
-      ${cv.url?`<span class="spacer"></span><a class="btn ghost sm" href="${h(cv.url)}" target="_blank" rel="noopener">CV openen</a>`:''}</div>
+      ${veiligeUrl(cv.url)?`<span class="spacer"></span><a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}</div>
     <div class="card-b">${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Zodra een CV is verwerkt verschijnen werkgevers, opleidingen en vaardigheden hier.') : `
       ${werk.length?`<div class="label">Werkervaring</div>
         <div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
