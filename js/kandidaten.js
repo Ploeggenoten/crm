@@ -757,10 +757,15 @@ function parseCvTekst(t){
 
   /* Werkervaring: regels met een jaartalbereik. Ervaring = nu − vroegste
      startjaar van het werkverleden (niet van álle jaartallen — daar zit
-     ook een geboortejaar tussen). */
+     ook een geboortejaar of een opleiding tussen). Regels onder een
+     "Opleiding"-kop tellen we niet als werk. */
   const jaarRe = /((19|20)\d{2})\s*[–—\-\/tot ]{1,6}\s*((19|20)\d{2}|heden|nu)/i;
   const startjaren = [];
+  let sectie = 'werk';
   regels.forEach((r, i) => {
+    if(/^(opleiding|opleidingen|onderwijs|educatie|education|cursussen)\b/i.test(r)){ sectie = 'opleiding'; return; }
+    if(/^(werkervaring|ervaring|werkverleden|loopbaan|experience)\b/i.test(r)){ sectie = 'werk'; return; }
+    if(sectie === 'opleiding') return;
     const m = r.match(jaarRe);
     if(m && r.length < 140){
       let regel = r;
