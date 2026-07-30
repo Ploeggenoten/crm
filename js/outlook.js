@@ -111,8 +111,35 @@ async function graph(pad, opties = {}, interactiefOk = true){
   });
   if(r.status === 204) return {};
   const data = await r.json().catch(()=>null);
-  if(!r.ok) throw new Error(data?.error?.message || ('Graph-fout ' + r.status));
+  if(!r.ok){
+    const fout = new Error(data?.error?.message || ('Graph-fout ' + r.status));
+    /* Status en Retry-After meegeven zodat aanroepers throttling (429)
+       kunnen herkennen. Bestaande code leest alleen .message — die blijft
+       dus precies werken zoals hij deed. */
+    fout.status = r.status;
+    fout.retryAfter = Number(r.headers.get('Retry-After')) || 0;
+    throw fout;
+  }
   return data;
+}
+
+const pauze = ms => new Promise(r => setTimeout(r, ms));
+
+/* Graph-aanroep die tegen een dichtgeknepen kraan kan. Bij bulkwerk
+   (contacten synchroniseren) geeft Microsoft na een tijdje 429 terug;
+   dan even wachten en opnieuw, in plaats van de hele run laten klappen. */
+async function graphRustig(pad, opties = {}, pogingen = 3){
+  for(let i = 0; i < pogingen; i++){
+    try{ return await graph(pad, opties, false); }
+    catch(e){
+      if(e && e.status === 429 && i < pogingen - 1){
+        await pauze(Math.min(30, e.retryAfter || 2 * (i + 1)) * 1000);
+        continue;
+      }
+      throw e;
+    }
+  }
+  return null;
 }
 
 let _takenLijstId = null;
@@ -122,6 +149,45 @@ async function takenLijst(){
   const lijst = (d?.value||[]).find(l => l.wellknownListName === 'defaultList') || (d?.value||[])[0];
   _takenLijstId = lijst?.id || null;
   return _takenLijstId;
+}
+
+/* ─── Contacten: opzoeken en opslaan ──────────────────────────── */
+/* OData-string veilig maken: een enkele quote verdubbelen. */
+const odataTekst = s => String(s).replace(/'/g, "''");
+
+/* Bestaand contact vinden: eerst op e-mailadres (uniek genoeg), anders
+   op de volledige naam. Geeft het id terug of null. */
+async function zoekContactId(naam, email){
+  const zoek = async filter => {
+    try{
+      const d = await graphRustig('/me/contacts?$top=1&$select=id&$filter=' + encodeURIComponent(filter));
+      return d?.value?.[0]?.id || null;
+    }catch(e){ console.warn('zoekContactId', e); return null; }
+  };
+  if(email){
+    const id = await zoek(`emailAddresses/any(a:a/address eq '${odataTekst(String(email).trim())}')`);
+    if(id) return id;
+  }
+  if(naam) return zoek(`displayName eq '${odataTekst(naam)}'`);
+  return null;
+}
+
+/* ─── Bestanden: waar staat het en hoe ziet een regel eruit ───── */
+function waarStaatHet(webUrl){
+  try{
+    const u = new URL(webUrl);
+    const pad = decodeURIComponent(u.pathname);
+    if(/\/personal\//i.test(pad)) return 'OneDrive';
+    const m = pad.match(/\/sites\/([^/]+)/i);
+    if(m) return m[1].replace(/[-_]+/g, ' ');
+    return u.hostname.replace(/\.sharepoint\.com$/i, '').replace(/-my$/i, '');
+  }catch(e){ return ''; }
+}
+function bestandRij(r){
+  if(!r || !r.name || r.folder) return null;
+  const url = /^https:\/\//i.test(String(r.webUrl||'')) ? String(r.webUrl) : '';
+  return { naam: r.name, webUrl: url, gewijzigd: r.lastModifiedDateTime || '',
+           grootte: Number(r.size) || 0, waar: waarStaatHet(url) };
 }
 
 /* ─── Publieke API voor modules ───────────────────────────────── */
@@ -222,6 +288,30 @@ CRM.outlook = {
     }catch(e){ console.warn('mailMet', e); return null; }
   },
 
+  /* Inbox-overzicht voor het dashboard: wat kwam er binnen en wat is nog
+     ongelezen. Alleen koppen en een kort fragment — geen volledige mails
+     in beeld terwijl er iemand meekijkt. Stil: vraagt nooit om login. */
+  async mailInbox({ongelezen = false, aantal = 10, sindsUren = 24} = {}){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const sinds = new Date(Date.now() - sindsUren*3600000).toISOString();
+    const filters = [`receivedDateTime ge ${sinds}`];
+    if(ongelezen) filters.push('isRead eq false');
+    try{
+      const d = await graph('/me/mailFolders/inbox/messages' +
+        `?$filter=${encodeURIComponent(filters.join(' and '))}` +
+        `&$orderby=receivedDateTime desc&$top=${aantal}` +
+        '&$select=subject,from,receivedDateTime,bodyPreview,webLink,isRead,importance', {}, false);
+      return (d?.value||[]).map(m => ({
+        onderwerp: m.subject || '(geen onderwerp)',
+        van: m.from?.emailAddress?.address || '',
+        vanNaam: m.from?.emailAddress?.name || m.from?.emailAddress?.address || '',
+        op: m.receivedDateTime,
+        fragment: (m.bodyPreview||'').slice(0, 180),
+        link: m.webLink, gelezen: !!m.isRead, belangrijk: m.importance === 'high'
+      }));
+    }catch(e){ console.warn('mailInbox', e); return null; }
+  },
+
   /* Mail versturen. WORDT NOOIT AUTOMATISCH AANGEROEPEN: alleen vanuit
      een scherm waarin de gebruiker de tekst ziet en zelf op Versturen
      klikt. Geen bulk, geen achtergrondverzending. */
@@ -298,6 +388,89 @@ CRM.outlook = {
       }
       return uit;
     }catch(e){ console.warn('teamsKanalen', e); return null; }
+  },
+
+  /* ─── Contacten ─────────────────────────────────────────────
+     Eén contactpersoon in het Outlook-adresboek zetten, zodat de
+     telefoon laat zien wie er belt. Bestaat de persoon al (zelfde
+     e-mailadres of zelfde naam), dan wordt hij bijgewerkt in plaats
+     van gedupliceerd. Geeft {nieuw:true|false} of null bij fout. */
+  async zetContact({naam, email, telefoon, bedrijf, functie} = {}){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const volledig = String(naam||'').trim();
+    const adres = String(email||'').trim();
+    const nummer = String(telefoon||'').trim();
+    if(!volledig && !adres) return null;
+    try{
+      const delen = volledig.split(/\s+/).filter(Boolean);
+      const voor = delen.shift() || '';
+      const achter = delen.join(' ');
+      const velden = {
+        displayName: volledig || adres,
+        givenName: voor || undefined,
+        surname: achter || undefined,
+        emailAddresses: adres ? [{address: adres, name: volledig || adres}] : undefined,
+        businessPhones: nummer ? [nummer] : undefined,
+        companyName: bedrijf ? String(bedrijf) : undefined,
+        jobTitle: functie ? String(functie) : undefined
+      };
+      const bestaand = await zoekContactId(volledig, adres);
+      if(bestaand){
+        await graphRustig('/me/contacts/' + encodeURIComponent(bestaand), {method:'PATCH', body: velden});
+        return {nieuw:false};
+      }
+      await graphRustig('/me/contacts', {method:'POST', body: velden});
+      return {nieuw:true};
+    }catch(e){ console.warn('zetContact', e); return null; }
+  },
+
+  /* ─── Documenten ────────────────────────────────────────────
+     Zoeken in OneDrive én SharePoint. Dit is ZOEKEN, geen kopiëren:
+     er wordt niets gedownload en niets in het CRM opgeslagen — we
+     tonen alleen waar het bestand staat en linken erheen. */
+  async zoekBestanden(term, aantal = 10){
+    const q = String(term||'').trim();
+    if(!CRM.outlook.beschikbaar() || !_account || !q) return null;
+    const max = Math.max(1, Math.min(25, aantal));
+    try{
+      const d = await graph('/search/query', {method:'POST', body:{ requests:[{
+        entityTypes:['driveItem'], query:{ queryString: q }, from:0, size:max
+      }]}}, false);
+      const hits = d?.value?.[0]?.hitsContainers?.[0]?.hits || [];
+      const uit = hits.map(x => bestandRij(x?.resource)).filter(Boolean);
+      if(uit.length) return uit;
+    }catch(e){ console.warn('zoekBestanden (search)', e); }
+    /* Terugval: alleen de eigen OneDrive, mocht de zoek-API dichtstaan. */
+    try{
+      const d = await graph(`/me/drive/root/search(q='${encodeURIComponent(odataTekst(q))}')` +
+        `?$top=${max}&$select=name,webUrl,lastModifiedDateTime,size,folder`, {}, false);
+      return (d?.value||[]).map(bestandRij).filter(Boolean);
+    }catch(e){ console.warn('zoekBestanden (drive)', e); return null; }
+  },
+
+  /* Link naar de Microsoft 365-zoekpagina, voor "meer in OneDrive". */
+  zoekLink(term){
+    return 'https://www.microsoft365.com/search/files?q=' + encodeURIComponent(String(term||'').trim());
+  },
+
+  /* ─── Zelftest ──────────────────────────────────────────────
+     Per onderdeel één lichte, stille aanroep, zodat Instellingen kan
+     laten zien wat er écht aanstaat. Faalt een onderdeel (machtiging
+     niet toegekend), dan alleen dát onderdeel op false. */
+  async zelftest(){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const probeer = async pad => {
+      try{ return (await graph(pad, {}, false)) !== null; }
+      catch(e){ console.warn('zelftest ' + pad, e); return false; }
+    };
+    return {
+      agenda:     await probeer('/me/events?$top=1&$select=id'),
+      taken:      await probeer('/me/todo/lists?$top=1'),
+      mail:       await probeer('/me/messages?$top=1&$select=id'),
+      contacten:  await probeer('/me/contacts?$top=1&$select=id'),
+      documenten: await probeer('/me/drive/root?$select=id'),
+      teams:      await probeer('/me/chats?$top=1&$select=id')
+    };
   },
 
   /* Kant-en-klare deeplink (voor gewone <a href>-knoppen). */
