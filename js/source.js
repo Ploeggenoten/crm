@@ -402,3 +402,17 @@ CRM.kaartRender = async function(container, opts){
   teken();
 };
 })();
+
+/* ─── Eigen zijbalk-module: Sourcing ──────────────────────────
+   Op verzoek van Tjeerd een eigen navigatie-item onder Kandidaten
+   (niet langer een tab binnen de Kandidaten-module).             */
+CRM.registerModule('source', {
+  title:'Sourcing', icon:'◎', onderschrift:'Kaart: actieve klanten en passende kandidaten',
+  render(mount){
+    mount.innerHTML = '<div id="src_mount"></div>';
+    if(typeof CRM.kaartRender === 'function')
+      CRM.kaartRender(mount.querySelector('#src_mount'), {lens:'kandidaten'});
+    else
+      mount.innerHTML = '<div class="note warn">De kaart-engine is niet geladen.</div>';
+  }
+});

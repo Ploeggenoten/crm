@@ -342,7 +342,7 @@ CRM.pageActies = html => { const el = document.getElementById('pageacties'); if(
 const NAV_GROEPEN = [
   {titel:'Overzicht', keys:['dashboard']},
   {titel:'Commercie', keys:['sales','klanten']},
-  {titel:'Recruitment', keys:['recruitment','kandidaten']},
+  {titel:'Recruitment', keys:['recruitment','kandidaten','source']},
   {titel:'Groei', keys:['marketing','performance']},
   {titel:'Alleen voor jou', keys:['finance','instellingen']}
 ];

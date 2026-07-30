@@ -14,12 +14,19 @@ const h = CRM.h;
 const S = {
   tab:'leads',
   l:{q:'', status:'', bron:'', vac:'', mijn:false},
-  b:{q:'', klant:'', rec:'', vac:'', mijn:false}
+  b:{q:'', klant:'', rec:'', vac:'', type:'', mijn:false, groep:false},
+  u:{f:'alles'}
 };
 
 const GESPREK_FASES = ['O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag'];
+const CONTRACT_FASES = ['Contract ondertekenen','Contract getekend','Gestart'];
 const UITVAL = ['Afgevallen','Gestopt'];
-const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k));
+/* Zoals op het bord: Voorselectie leeft in het eigen tabblad, uitval ook —
+   de pijplijn zelf begint bij Voorgesteld. */
+const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k) && p.k !== 'Voorselectie');
+const KAND_BRONNEN = ['Indeed','LinkedIn','Meta','WhatsApp','Website','Referral','Eigen werving','Anders'];
+const AFVAL_LBL = {niet_gekwalificeerd:'Niet gekwalificeerd', offer_afgewezen:'Offer afgewezen'};
+const STOP_LBL  = {kandidaat:'door kandidaat', klant:'door klant', anders:'anders'};
 
 /* ─── Kleine helpers ──────────────────────────────────────────── */
 const leads    = () => CRM.state.leads || [];
@@ -87,6 +94,7 @@ CRM.registerModule('recruitment', {
     mount.innerHTML = `
       <div class="rc">
         <div class="rc-bar" id="rc_bar"></div>
+        <div class="rc-strook" id="rc_strook"></div>
         <div class="rc-tabwrap"><div class="tabs" id="rc_tabs"></div></div>
         <div id="rc_body"></div>
       </div>`;
@@ -106,8 +114,19 @@ function tekenActies(acties){
                     <button class="btn sm" id="rc_nieuw">+ Lead</button>`;
     el.querySelector('#rc_import').onclick = importModal;
     el.querySelector('#rc_nieuw').onclick  = nieuweLeadModal;
+  } else if(S.tab === 'voorselectie'){
+    el.innerHTML = `<button class="btn sm" id="rc_nieuwkand">+ Kandidaat</button>`;
+    el.querySelector('#rc_nieuwkand').onclick = () => nieuweKandidaatModal();
+  } else if(S.tab === 'bord'){
+    el.innerHTML = `<button class="btn ghost sm" id="rc_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>
+                    <button class="btn ghost sm" id="rc_oo">+ O&amp;O-sessie</button>`;
+    el.querySelector('#rc_dicht').onclick = () => {
+      localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
+      tekenActies(); pasDichtheidToe();
+    };
+    el.querySelector('#rc_oo').onclick = () => ooModal(null);
   } else {
-    el.innerHTML = `<span class="meta">Sleep een kaart naar een andere fase</span>`;
+    el.innerHTML = `<span class="meta">Uitval leeft buiten het bord — sleep op het bord naar de uitvalstrook</span>`;
   }
 }
 
@@ -132,8 +151,10 @@ function cijfers(){
   const intakes = L.filter(l => l.status === 'Intake gepland' && inWeek(l.opvolgen_op)).length
                 + K.filter(c => c.fase === 'Voorselectie' && inWeek(c.datum)).length;
   const pijplijn = K.filter(c => !CRM.DONE.includes(c.fase)).length;
+  const startsWeek = K.filter(c => CRM.PLACED.includes(c.fase) && c.start && inWeek(c.start));
+  const vroeg = K.filter(c => ['Voorgesteld','O&O sessie','Eerste gesprek'].includes(c.fase)).length;
   const pm = CRM.plaatsingenMaand(), target = CRM.maandTarget();
-  return {nieuw, stil, intakes, pijplijn, netto:pm.netto, target};
+  return {nieuw, stil, intakes, pijplijn, netto:pm.netto, target, pm, startsWeek, vroeg};
 }
 function tekenBar(){
   const el = document.getElementById('rc_bar'); if(!el) return;
@@ -148,6 +169,43 @@ function tekenBar(){
     it('In de pijplijn', c.pijplijn, 'lopende kandidaten') +
     it('Netto deze maand', `${c.netto}<span class="rc-van">/ ${c.target}</span>`, 'plaatsingen vs target',
        c.netto >= c.target ? 'goed' : '');
+  tekenStrook(c);
+}
+
+/* Signaalstrook onder de cijfers: naamchips getekend/gestopt, nazorg-belritme,
+   starts deze week en het instroom-signaal. Alles klikbaar naar de kandidaat. */
+function tekenStrook(c){
+  const el = document.getElementById('rc_strook'); if(!el) return;
+  c = c || cijfers();
+  const naamchip = (k, extra, klasse='') =>
+    `<button class="rc-naamchip ${klasse}" data-open="${h(k.id)}">${h(k.naam)}<em>${h(extra)}</em></button>`;
+  const rijen = [];
+  const get = c.pm.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
+  const stp = c.pm.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
+  if(get.length) rijen.push(`<div class="rc-strookrij"><span class="label">Getekend deze maand</span>${
+    get.map(k=>naamchip(k, `${k.type||'?'} · ${CRM.fmtDateShort(k.geplaatstOp)||'—'}`,'groen')).join('')}</div>`);
+  if(stp.length) rijen.push(`<div class="rc-strookrij"><span class="label">Gestopt deze maand</span>${
+    stp.map(k=>naamchip(k, CRM.fmtDateShort(k.gestoptOp)||'—','rood')).join('')}</div>`);
+  const nz = nazorgLijst();
+  if(nz.length) rijen.push(`<div class="rc-strookrij"><span class="label">Nazorg dag 3·14·30</span>${
+    nz.map(x=>naamchip(x.c, x.nu ? `dag ${x.d} · bel vandaag` : `dag ${x.d} → check-in dag ${x.cp||30}`, x.nu?'nu':'')).join('')}</div>`);
+  if(c.startsWeek.length) rijen.push(`<div class="rc-strookrij"><span class="label">Deze week starten</span>${
+    c.startsWeek.slice().sort((a,b)=>(a.start||'').localeCompare(b.start||''))
+      .map(k=>naamchip(k, `${CRM.fmtDay(k.start)}${k.klant?' · '+k.klant:''}`)).join('')}</div>`);
+  if(c.vroeg < 3) rijen.push(`<div class="rc-strookrij"><span class="chip amber">Instroom laag: ${c.vroeg} kandidaat${c.vroeg===1?'':'en'} in Voorgesteld/O&amp;O/Eerste gesprek — over ± 6 weken droogte</span></div>`);
+  el.innerHTML = rijen.join('');
+  el.style.display = rijen.length ? '' : 'none';
+  CRM.$$('[data-open]', el).forEach(b => b.onclick = () => snelBewerk(b.dataset.open));
+}
+
+/* Nazorg-belritme: gestart in de laatste ±30 dagen → check-ins op dag 3/14/30. */
+function nazorgLijst(){
+  return CRM.kandidaten()
+    .filter(k => k.fase==='Gestart' && k.start && !k.gestoptOp)
+    .map(k => ({k, d:CRM.dagenGeleden(k.start)}))
+    .filter(x => x.d != null && x.d >= 0 && x.d <= 32)
+    .map(x => ({c:x.k, d:x.d, cp:[3,14,30].find(n=>n>=x.d), nu:[3,14,30].includes(x.d)}))
+    .sort((a,b)=>(b.nu?1:0)-(a.nu?1:0) || (a.cp||99)-(b.cp||99) || a.d-b.d);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -155,18 +213,27 @@ function tekenBar(){
    ═══════════════════════════════════════════════════════════════ */
 function tekenTabs(){
   const el = document.getElementById('rc_tabs'); if(!el) return;
+  const K = CRM.kandidaten();
   const open = leads().filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
-  const inP  = CRM.kandidaten().filter(c => !CRM.DONE.includes(c.fase)).length;
+  const voor = K.filter(c => c.fase === 'Voorselectie').length;
+  const inP  = K.filter(c => !CRM.DONE.includes(c.fase) && c.fase !== 'Voorselectie').length
+             + K.filter(c => CRM.PLACED.includes(c.fase)).length;
+  const uit  = K.filter(c => UITVAL.includes(c.fase)).length;
   el.innerHTML = `
     <button class="tab ${S.tab==='leads'?'on':''}" data-t="leads">Leads <span class="cnt num">${open}</span></button>
-    <button class="tab ${S.tab==='bord'?'on':''}" data-t="bord">Pijplijn <span class="cnt num">${inP}</span></button>`;
+    <button class="tab ${S.tab==='voorselectie'?'on':''}" data-t="voorselectie">Voorselectie <span class="cnt num">${voor}</span></button>
+    <button class="tab ${S.tab==='bord'?'on':''}" data-t="bord">Pijplijn <span class="cnt num">${inP}</span></button>
+    <button class="tab ${S.tab==='uitval'?'on':''}" data-t="uitval">Uitval <span class="cnt num">${uit}</span></button>`;
   CRM.$$('[data-t]', el).forEach(b => b.onclick = () => {
     S.tab = b.dataset.t; tekenTabs(); tekenBody(); tekenActies();
   });
 }
 function tekenBody(){
   const el = document.getElementById('rc_body'); if(!el) return;
-  if(S.tab === 'leads') tekenLeads(el); else tekenBord(el);
+  if(S.tab === 'leads') tekenLeads(el);
+  else if(S.tab === 'voorselectie') tekenVoorselectie(el);
+  else if(S.tab === 'uitval') tekenUitval(el);
+  else tekenBord(el);
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -24,7 +24,6 @@ function zet(k,v){ F[k]=v; try{ localStorage.setItem(FKEY, JSON.stringify(F)); }
 
 /* Paneel- en tabstand (geen filter, wel handig om te onthouden). */
 let filtersOpen = false, filtersOpenGezet = false;
-let hoofdTab = 'lijst';            // 'lijst' | 'source'
 
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
 const faseChip = (fase, extra='') => fase
@@ -139,38 +138,13 @@ async function bewaarRij(tabel, veld, rij, bestaat){
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   OVERZICHT — tab Kandidaten (lijst + filters) | tab Source (kaart)
+   OVERZICHT — kandidatenlijst met filters.
+   (Sourcing is een eigen module in de zijbalk geworden — js/source.js.)
    ═══════════════════════════════════════════════════════════════ */
 function overzicht(mount, acties){
   acties.innerHTML = '';
-  mount.innerHTML = `
-    <div class="stack">
-      <div class="tabs" style="margin-bottom:0">
-        <button class="tab${hoofdTab==='lijst'?' on':''}" data-ht="lijst">Kandidaten</button>
-        <button class="tab${hoofdTab==='source'?' on':''}" data-ht="source">Source</button>
-      </div>
-      <div id="kd_tabwrap"></div>
-    </div>`;
-  mount.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => {
-    if(hoofdTab === b.dataset.ht) return;
-    hoofdTab = b.dataset.ht;
-    mount.querySelectorAll('[data-ht]').forEach(x => x.classList.toggle('on', x.dataset.ht === hoofdTab));
-    hoofdTabInhoud(mount);
-  });
-  hoofdTabInhoud(mount);
-}
-
-function hoofdTabInhoud(mount){
-  const wrap = mount.querySelector('#kd_tabwrap');
-  if(hoofdTab === 'source'){
-    wrap.innerHTML = '<div id="kd_source"></div>';
-    if(typeof CRM.kaartRender === 'function')
-      CRM.kaartRender(wrap.querySelector('#kd_source'), {lens:'kandidaten'});
-    else
-      wrap.innerHTML = '<div class="note warn">De kaart-engine (js/source.js) is niet geladen.</div>';
-    return;
-  }
-  lijstTab(wrap);
+  mount.innerHTML = `<div class="stack"><div id="kd_tabwrap"></div></div>`;
+  lijstTab(mount.querySelector('#kd_tabwrap'));
 }
 
 /* Welke filters staan aan (voor teller, chips en wissen)? */
@@ -1177,7 +1151,7 @@ function tabHistorie(el, c){
 
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('kandidaten', {
-  title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten, filters en de Source-kaart',
+  title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten en filters',
   render(mount, acties, params){
     if(!Array.isArray(CRM.state.taken)) CRM.state.taken = [];
     if(params && params.id) kaart(mount, acties, String(params.id));
