@@ -50,6 +50,50 @@ Deno.serve(async (req) => {
     if (!user) return new Response(JSON.stringify({ error: "geen toegang" }), { status: 403 });
   }
 
+  // ── Extra modi voor de Claude-ochtendroutine ────────────────
+  let body: Record<string, unknown> = {};
+  try { body = await req.json(); } catch (_) { /* leeg is prima */ }
+
+  // Modus 'lijst': huidige radar teruggeven (voor de ochtendbriefing).
+  if (body.lijst) {
+    const { data } = await service.from("crm_leadradar").select("*")
+      .neq("status", "genegeerd").order("laatst_gezien", { ascending: false }).limit(120);
+    return new Response(JSON.stringify({ ok: true, rijen: data ?? [] }),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
+  // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
+  // rows: [{bedrijf, plaats?, functies?, vacatures?, url?, bron?, notitie?, concepten?}]
+  if (Array.isArray(body.import)) {
+    const vandaag = new Date().toISOString().slice(0, 10);
+    let nieuw = 0, bijgewerkt = 0;
+    for (const r of body.import as Record<string, unknown>[]) {
+      const naam = String(r.bedrijf ?? "").trim();
+      if (!naam) continue;
+      const { data: bestaand } = await service.from("crm_leadradar")
+        .select("id,status").ilike("bedrijf", naam).limit(1);
+      const velden: Record<string, unknown> = { laatst_gezien: vandaag };
+      for (const k of ["plaats", "functies", "url", "salaris_ind", "notitie", "concepten"])
+        if (r[k] != null) velden[k] = r[k];
+      if (r.vacatures != null) velden.vacatures = Number(r.vacatures) || 1;
+      if (bestaand?.length) {
+        if (bestaand[0].status !== "genegeerd") {
+          await service.from("crm_leadradar").update(velden).eq("id", bestaand[0].id);
+          bijgewerkt++;
+        }
+      } else {
+        await service.from("crm_leadradar").insert({
+          id: "lr" + Date.now() + Math.floor(Math.random() * 10000),
+          bedrijf: naam, bron: String(r.bron ?? "claude-research"),
+          gevonden_op: vandaag, status: "nieuw", ...velden
+        });
+        nieuw++;
+      }
+    }
+    return new Response(JSON.stringify({ ok: true, nieuw, bijgewerkt }),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
   const APP_ID = Deno.env.get("ADZUNA_APP_ID"), APP_KEY = Deno.env.get("ADZUNA_APP_KEY");
   if (!APP_ID || !APP_KEY)
     return new Response(JSON.stringify({ error: "secrets ADZUNA_APP_ID/ADZUNA_APP_KEY ontbreken" }), { status: 500 });

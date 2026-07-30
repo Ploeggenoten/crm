@@ -48,6 +48,13 @@ alter table vacatures add column if not exists sal_min   numeric;
 alter table vacatures add column if not exists sal_max   numeric;
 alter table vacatures add column if not exists eigenaar  text default '';
 alter table vacatures add column if not exists omschrijving text default '';
+-- HOT-vacatures: waar de meeste druk op zit, met deadline en doel.
+alter table vacatures add column if not exists hot          boolean default false;
+alter table vacatures add column if not exists hot_prio     int;               -- 1 = bovenaan
+alter table vacatures add column if not exists deadline     date;
+alter table vacatures add column if not exists doel_aantal  int;               -- bv. 2 (voorstellen)
+alter table vacatures add column if not exists doel_soort   text default 'voorstellen';  -- voorstellen | gesprekken | plaatsingen
+alter table vacatures add column if not exists doel_gezet_op date;             -- vanaf wanneer telt de voortgang
 update vacatures set id = klant || '::' || functie where id is null or id = '';
 
 -- ─── 2. Kandidaat-leads (fase vóór de pijplijn) ───────────────
@@ -144,7 +151,8 @@ create table if not exists crm_leadradar (
   laatst_gezien date default current_date,
   status      text default 'nieuw',       -- nieuw | toegevoegd | genegeerd
   status_door text default '',
-  notitie     text default ''
+  notitie     text default '',
+  concepten   jsonb                        -- {contactprofiel, opener, connectie, mail} uit de ochtendroutine
 );
 create unique index if not exists crm_leadradar_bedrijf on crm_leadradar(lower(bedrijf));
 create index if not exists crm_leadradar_status on crm_leadradar(status, laatst_gezien desc);

@@ -64,9 +64,16 @@
     ['Proponent','Orderpicker','Rotterdam',5,2500,2800],
     ['Van Vliet Zoetwaren','Inpakmedewerker','Bodegraven',3,2500,2750],
     ['Koomstra & Co','Lasser','Alphen a/d Rijn',2,3100,3700]
-  ].map(([klant,functie,locatie,aantal,sal_min,sal_max]) => ({
+  ].map(([klant,functie,locatie,aantal,sal_min,sal_max], i) => ({
     id:klant+'::'+functie, klant, functie, locatie, aantal, sal_min, sal_max,
-    type:'W&S', status:'Open', eigenaar:'Tjeerd', aangemaakt:d(-30), omschrijving:''
+    type:'W&S', status:'Open', eigenaar:'Tjeerd', aangemaakt:d(-30), omschrijving:'',
+    // Drie hot vacatures met deadline en doel voor de demo
+    hot: i===7 || i===2 || i===10,
+    hot_prio: i===7 ? 1 : i===2 ? 2 : i===10 ? 3 : null,
+    deadline: i===7 ? d(2) : i===2 ? d(5) : i===10 ? d(9) : null,
+    doel_aantal: i===7 ? 2 : i===2 ? 3 : i===10 ? 2 : null,
+    doel_soort: 'voorstellen',
+    doel_gezet_op: i===7||i===2||i===10 ? d(-4) : null
   }));
 
   const VN = ['Marek','Ionut','Kevin','Alphonse','Michal','Sven','Alain','Rico','Lorenzo','Anna','Soufiane','Henri','Adam','Piotr','Daniel','Youssef','Bogdan','Elias','Tomasz','Karol','Nadia','Fatima','Ahmed','Radu','Viktor'];

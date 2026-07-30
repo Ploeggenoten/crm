@@ -62,9 +62,30 @@
 .s-taakrij.af{color:var(--muted);text-decoration:line-through}
 .s-taakrij.af .chip{text-decoration:none}
 
-/* Afgesloten kans in de kansentabel: aanwezig, maar niet luid. */
+/* Afgesloten kans in de kansentabel: aanwezig, maar niet luid.
+   (Dezelfde klasse dempt beoordeelde rijen in de Leadradar-tabel.) */
 table.tbl tbody tr.s-dicht td{color:var(--muted)}
 table.tbl tbody tr.s-dicht td:first-child{font-weight:500}
+
+/* ─── Leadradar ─────────────────────────────────────────────── */
+/* Filterbalk: statuschips links, bron en zoekveld rechts. */
+.r-bar{margin:18px 0 12px}
+.r-bar .searchbox{min-width:220px}
+
+/* Functie-chips in de beoordeeltabel: klein en rustig. */
+.r-func{display:flex;gap:4px;flex-wrap:wrap;max-width:260px}
+.r-func .chip{font-size:11px;padding:1px 8px}
+
+/* Externe link achter de bedrijfsnaam. */
+.r-link{font-size:12px;margin-left:2px}
+
+/* Actieknoppen rechts uitlijnen, niet laten omvallen. */
+.r-acties{flex-wrap:nowrap;justify-content:flex-end}
+
+@media (max-width:900px){
+  .r-bar .searchbox{min-width:0;flex:1}
+  .r-func{max-width:none}
+}
 
 @media (max-width:900px){
   .s-wrap{padding:16px 14px 0}

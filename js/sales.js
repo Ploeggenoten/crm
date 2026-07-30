@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════
    MODULE: SALES — klantpijplijn, activiteiten, taken, documenten,
-   kansen en de LinkedIn-leadverkenner.
-   Bron van waarheid: clients.fase (salesfase) + crm_kansen.
+   kansen en de Leadradar (bedrijven die nú personeel werven).
+   Bron van waarheid: clients.fase (salesfase) + crm_kansen +
+   crm_leadradar (gevuld door de Edge Function 'lead-radar').
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
@@ -17,7 +18,8 @@ const V = {
   zet(sleutel, waarde){ try{ localStorage.setItem('crm_sales_'+sleutel, JSON.stringify(waarde)); }catch(e){} }
 };
 
-let tab      = V.get('tab','pijplijn');          // pijplijn | kansen
+let tab      = V.get('tab','pijplijn');          // pijplijn | kansen | radar
+if(!['pijplijn','kansen','radar'].includes(tab)) tab = 'pijplijn';
 let weergave = V.get('weergave','bord');         // bord | lijst
 let zoek     = V.get('zoek','');
 let mijn     = V.get('mijn',false);
@@ -642,83 +644,317 @@ async function uploadDoc(naam, bestand, soort){
   CRM.toast('Document opgeslagen','ok');
 }
 
-/* ─── LinkedIn-leadverkenner ───────────────────────────────────── */
-/* Eerlijk: er is nog géén koppeling met LinkedIn. De zoekvelden staan
-   klaar, maar zoeken kan pas als er een export of API-sleutel is. Wat
-   nu wél werkt is de plak-/CSV-import onderaan. */
-let gevonden = [];   // {naam, branche, plaats}
+/* ─── Leadradar ────────────────────────────────────────────────
+   De Edge Function 'lead-radar' vult crm_leadradar dagelijks met
+   bedrijven die nu blue-collar personeel werven. Core laadt die
+   tabel (nog) niet — deze module haalt hem zelf op en degradeert
+   netjes als de tabel nog niet bestaat.                          */
+let radar = [];              // rijen uit crm_leadradar
+let radarStatus = '';        // '' = nog niet geladen | 'ok' | 'mist'
+let radarBezigMet = null;    // lopende laad-belofte
+let rFilter = V.get('r_status','nieuw');   // nieuw | toegevoegd | genegeerd | alles
+if(!['nieuw','toegevoegd','genegeerd','alles'].includes(rFilter)) rFilter = 'nieuw';
+let rZoek = '', rBron = '';
+let rZoeken = false;         // "Nu zoeken" loopt
 
-function openLinkedIn(){
-  gevonden = [];
-  CRM.drawer.open(paneelHTML(), {onOpen: bindLinkedIn});
+/* Alleen echte weblinks in de tabel — een vacature-URL uit de database
+   mag nooit een javascript:-URL zijn die bij een klik uitvoert. */
+const veiligeHttp = u => {
+  const s = String(u||'').trim();
+  return /^https?:\/\//i.test(s) ? s : '';
+};
+
+function laadRadar(force){
+  if(radarStatus==='ok' && !force) return Promise.resolve();
+  if(radarBezigMet) return radarBezigMet;
+  radarBezigMet = (async () => {
+    if(CRM.demo){ if(!radar.length) radar = demoRadar(); radarStatus = 'ok'; return; }
+    try{
+      const r = await CRM.sb.from('crm_leadradar').select('*').order('laatst_gezien',{ascending:false});
+      if(r.error){
+        if(!/does not exist|schema cache|relation/i.test(r.error.message||''))
+          console.warn('Laden crm_leadradar', r.error);
+        radarStatus = 'mist'; radar = []; return;
+      }
+      radar = r.data || []; radarStatus = 'ok';
+    }catch(e){ console.warn('Laden crm_leadradar', e); radarStatus = 'mist'; radar = []; }
+  })().finally(()=>{ radarBezigMet = null; });
+  return radarBezigMet;
 }
 
-function paneelHTML(){
-  return `
-    <div class="drawer-h">
-      <div style="min-width:0;flex:1">
-        <div class="h2" style="font-size:19px">Leads zoeken op LinkedIn</div>
-        <div class="sub">Bedrijven vinden en als lead in je pijplijn zetten</div>
-      </div>
-      <button class="btn sub x" data-close title="Sluiten">✕</button>
-    </div>
-    <div class="drawer-b">
-      <div class="note info">
-        <b>Live zoeken op LinkedIn kan nu nog niet.</b><br>
-        LinkedIn geeft geen open toegang tot zoekresultaten. Om deze knop echt te laten
-        zoeken is één van deze twee nodig:
-        <ul style="margin:8px 0 0;padding-left:18px">
-          <li>een <b>export uit LinkedIn Sales Navigator</b> (CSV met bedrijfsnamen), of</li>
-          <li>een <b>scraping-dienst met API-sleutel</b> (bijv. PhantomBuster, Apify of Proxycurl) —
-              die sleutel moet dan in de app worden gezet.</li>
-        </ul>
-        <span style="display:block;margin-top:8px">Tot die tijd zie je hieronder geen verzonnen
-        bedrijven, maar kun je wel een lijst plakken die je zelf hebt.</span>
-      </div>
-
-      <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Zoekopdracht</div>
-        <span class="chip">nog niet actief</span></div>
-        <div class="card-b"><div class="f-grid">
-          <div class="f-row"><label for="li_branche">Branche</label>
-            <input type="text" id="li_branche" placeholder="Voedingsmiddelen, logistiek…"></div>
-          <div class="f-row"><label for="li_regio">Regio</label>
-            <input type="text" id="li_regio" placeholder="Zuid-Holland, straal 30 km"></div>
-          <div class="f-row"><label for="li_functie">Functietitel contactpersoon</label>
-            <input type="text" id="li_functie" placeholder="Operations manager, HR-manager"></div>
-          <div class="f-row"><label for="li_grootte">Bedrijfsgrootte</label>
-            <input type="text" id="li_grootte" placeholder="50–500 medewerkers"></div>
-        </div>
-        <button class="btn" id="li_zoek" disabled>Zoeken op LinkedIn</button>
-        <span class="hint" style="margin-left:10px">Werkt zodra de koppeling er is. Je zoekopdracht wordt bewaard.</span>
-        </div></div>
-
-      <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Lijst inlezen</div></div>
-        <div class="card-b">
-          <div class="f-row"><label for="li_plak">Plak bedrijfsnamen of CSV</label>
-            <textarea id="li_plak" style="min-height:130px" placeholder="Eén bedrijf per regel. Optioneel met branche en plaats, gescheiden door ; of komma:&#10;&#10;Van der Windt Verpakking; Verpakkingen; Honselersdijk&#10;Bakker Barendrecht; AGF; Barendrecht&#10;Verhoeven Metaal"></textarea>
-            <span class="hint">Werkt met een kolomkop-regel uit Sales Navigator en met een simpele lijst namen.</span></div>
-          <button class="btn ghost" id="li_lees">Lijst inlezen</button>
-        </div></div>
-
-      <div id="li_uit" style="margin-top:16px"></div>
-    </div>`;
+/* Demo: verzonnen maar echt-aandoende NL productie/logistiek-bedrijven.
+   Alleen in het geheugen — er wordt niets naar de database geschreven. */
+function demoRadar(){
+  const d = n => new Date(Date.now()+n*86400000).toLocaleDateString('sv-SE');
+  return [
+    ['Koelvers Logistiek Bleiswijk','Bleiswijk','orderpicker, heftruckchauffeur',6,'adzuna','€2.500–2.900','nieuw',''],
+    ['Bakkerij Duinrand','Katwijk','productiemedewerker, inpakmedewerker',5,'adzuna','€2.400–2.800','nieuw',''],
+    ['Staalservice Rijnmond','Rotterdam','machinebediende, lasser',4,'adzuna','€3.100–3.700','nieuw',''],
+    ['Verspakket Westland','Naaldwijk','productiemedewerker, orderpicker',4,'adzuna','','nieuw',''],
+    ['Drankenhandel Van Rijnsoever','Gouda','verlader, logistiek medewerker',3,'adzuna','€2.600–3.000','nieuw',''],
+    ['Plastiflex Verpakkingen','Waddinxveen','operator productie',3,'claude-research','','nieuw',''],
+    ['Kaasrijperij De Gouwe','Bodegraven','productiemedewerker',3,'adzuna','€2.500–2.850','nieuw',''],
+    ['AGF Sorteercentrum Zuidplas','Moordrecht','productiemedewerker, teamleider logistiek',3,'adzuna','€2.500–3.000','nieuw',''],
+    ['Metaalwaren Slingerland','Sliedrecht','machinebediende, teamleider productie',2,'adzuna','€3.000–3.600','nieuw',''],
+    ['Vriesvers Distributie','Barendrecht','orderpicker, heftruckchauffeur',2,'adzuna','€2.550–2.950','nieuw',''],
+    ['Houtindustrie Alblas','Papendrecht','productiemedewerker',2,'claude-research','','nieuw',''],
+    ['Zuivelfabriek Weidezicht','Woerden','procesoperator',2,'adzuna','€3.200–3.800','nieuw',''],
+    ['PalletPoint Ridderkerk','Ridderkerk','verlader, magazijnmedewerker',1,'adzuna','','nieuw',''],
+    ['Snackfood Partners','Zoetermeer','inpakmedewerker',1,'adzuna','€2.400–2.700','nieuw',''],
+    ['Retour Matras','Waddinxveen','productiemedewerker, verlader',2,'adzuna','','toegevoegd',''],
+    ['Kartonnage Van Deursen','Delft','machinebediende',1,'adzuna','€2.800–3.200','genegeerd','Te klein, één vestiging']
+  ].map(([bedrijf,plaats,functies,vacatures,bron,sal,status,notitie],i)=>({
+    id:'lrdemo'+i, bedrijf, plaats, functies, vacatures, bron,
+    url:'https://www.adzuna.nl/land/ad/demo'+i, salaris_ind:sal,
+    gevonden_op:d(-(i%9)), laatst_gezien:d(-(i%3)),
+    status, status_door: status==='nieuw'?'':'Tjeerd', notitie
+  }));
 }
 
-function bindLinkedIn(dr){
-  CRM.$$('[data-close]', dr).forEach(b=>b.onclick=()=>CRM.drawer.close());
-  ['branche','regio','functie','grootte'].forEach(v=>{
-    const el = dr.querySelector('#li_'+v);
-    el.value = V.get('li_'+v,'');
-    el.oninput = () => V.zet('li_'+v, el.value);
-  });
-  dr.querySelector('#li_zoek').onclick = () => CRM.toast('Er is nog geen LinkedIn-koppeling','err');
-  dr.querySelector('#li_lees').onclick = () => {
-    const ruw = dr.querySelector('#li_plak').value;
-    gevonden = leesLijst(ruw);
-    if(!gevonden.length){ CRM.toast('Geen bedrijfsnamen gevonden','err'); return; }
-    tekenGevonden(dr);
+const radarNieuwN = () => radar.filter(r=>(r.status||'nieuw')==='nieuw').length;
+
+function radarRijen(){
+  const q = rZoek.trim().toLowerCase();
+  const rang = {nieuw:0, toegevoegd:1, genegeerd:2};
+  return radar.filter(r=>{
+    const st = r.status||'nieuw';
+    if(rFilter!=='alles' && st!==rFilter) return false;
+    if(rBron && (r.bron||'')!==rBron) return false;
+    if(q && !(`${r.bedrijf} ${r.plaats||''} ${r.functies||''}`).toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=>
+    (rang[a.status||'nieuw']??3) - (rang[b.status||'nieuw']??3)
+    || (Number(b.vacatures)||0) - (Number(a.vacatures)||0)
+    || String(a.bedrijf).localeCompare(String(b.bedrijf)));
+}
+
+const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig'};
+const bronChip = b => {
+  const kleur = b==='claude-research' ? ' purple' : b==='handmatig' ? ' blue' : '';
+  return `<span class="chip${kleur}">${h(BRON_LBL[b]||b||'—')}</span>`;
+};
+
+function radarHTML(){
+  const delen = [];
+  if(radarStatus===''){
+    laadRadar().then(()=>{ if(tab==='radar') tekenInhoud(); });
+    return CRM.ui.laden('Radar laden…');
+  }
+  if(CRM.demo) delen.push(`<div class="note info" style="margin-bottom:14px">Demo-data — deze bedrijven zijn verzonnen; er wordt niets opgeslagen.</div>`);
+  if(radarStatus==='mist')
+    delen.push(`<div class="note warn" style="margin-bottom:14px"><b>De radartabel bestaat nog niet.</b>
+      Draai eerst supabase/schema.sql in de SQL-editor en volg daarna SETUP-LEADRADAR.md om de
+      dagelijkse zoekmotor aan te zetten.</div>`);
+
+  delen.push(`<div class="sub" style="margin-bottom:14px;max-width:680px">De radar zoekt elke ochtend
+    naar bedrijven in productie, logistiek en industrie die nú zelf personeel werven.
+    Beoordeel ze hier: één klik en het bedrijf staat als lead in je pijplijn.</div>`);
+
+  const week = radar.filter(r=>{ const dg = CRM.dagenGeleden(r.gevonden_op); return dg!=null && dg>=0 && dg<=7; }).length;
+  const toegevoegd = radar.filter(r=>r.status==='toegevoegd').length;
+  delen.push(`<div class="grid c3 s-kpi">
+    ${CRM.ui.kpi('Nieuw te beoordelen', `<span class="num">${radarNieuwN()}</span>`, 'wachten op jouw oordeel', 'accent')}
+    ${CRM.ui.kpi('Deze week gevonden', `<span class="num">${week}</span>`, 'bedrijven die nu werven')}
+    ${CRM.ui.kpi('Toegevoegd als lead', `<span class="num">${toegevoegd}</span>`, 'totaal via de radar')}
+  </div>`);
+
+  const telStatus = s => radar.filter(r=>(r.status||'nieuw')===s).length;
+  const chips = [['nieuw','Nieuw'],['toegevoegd','Toegevoegd'],['genegeerd','Genegeerd'],['alles','Alles']]
+    .map(([k,l])=>`<span class="chip btn-like${rFilter===k?' on':''}" data-rstatus="${k}">${l}${
+      k==='alles'?'':` <span class="num">${telStatus(k)}</span>`}</span>`).join('');
+  const bronnen = [...new Set(radar.map(r=>r.bron).filter(Boolean))].sort();
+  delen.push(`<div class="row r-bar">
+    ${chips}
+    <div class="spacer"></div>
+    ${bronnen.length>1?`<select id="r_bron" style="width:auto;min-width:130px">
+      <option value="">Alle bronnen</option>
+      ${bronnen.map(b=>`<option value="${h(b)}"${rBron===b?' selected':''}>${h(BRON_LBL[b]||b)}</option>`).join('')}
+    </select>`:''}
+    <div class="searchbox"><input type="search" id="r_zoek" placeholder="Zoek bedrijf, plaats of functie" value="${h(rZoek)}"></div>
+  </div>`);
+
+  delen.push(radarTabelHTML(radarRijen()));
+
+  delen.push(`<div class="note info" style="margin-top:18px">
+    <b>Waarom geen live LinkedIn- of Indeed-zoekactie?</b> Beide hebben geen open API en verbieden
+    geautomatiseerd uitlezen. De radar gebruikt daarom Adzuna (open vacature-API die veel van
+    hetzelfde aanbod indexeert) en optioneel een wekelijkse Claude-research-routine — zie
+    SETUP-LEADRADAR.md. Een export uit LinkedIn Sales Navigator kun je wel gewoon inlezen via
+    "Handmatig toevoegen" hierboven.</div>`);
+  return delen.join('');
+}
+
+function radarTabelHTML(rijen){
+  if(!radar.length && radarStatus==='ok')
+    return `<div class="card"><div class="card-b">${CRM.ui.leeg('De radar heeft nog niets gevonden',
+      'Draai de eerste zoekactie met "Nu zoeken", of wacht op de ochtendrun. Een eigen lijst inlezen kan via "Handmatig toevoegen".')}</div></div>`;
+  if(!rijen.length)
+    return `<div class="card"><div class="card-b">${CRM.ui.leeg('Niets binnen deze filters',
+      'Pas de status, bron of zoekopdracht aan.',
+      '<button class="btn ghost" data-rwis>Filters wissen</button>')}</div></div>`;
+  return `<div class="tblwrap"><table class="tbl">
+    <thead><tr>
+      <th>Bedrijf</th><th>Plaats</th><th>Functies</th><th class="n">Vacatures</th>
+      <th>Salarisindicatie</th><th>Bron</th><th>Gevonden</th><th></th>
+    </tr></thead>
+    <tbody>${rijen.map(r=>{
+      const st = r.status||'nieuw';
+      const url = veiligeHttp(r.url);
+      const fns = String(r.functies||'').split(',').map(s=>s.trim()).filter(Boolean);
+      return `<tr${st!=='nieuw'?' class="s-dicht"':''}>
+        <td><div style="font-weight:600">${h(r.bedrijf)}${url?` <a href="${h(url)}" target="_blank" rel="noopener" title="Vacature bekijken" class="r-link">↗</a>`:''}</div>
+          ${r.notitie?`<div class="rowsub">${h(r.notitie)}</div>`:''}</td>
+        <td>${h(r.plaats||'—')}</td>
+        <td>${fns.length?`<div class="r-func">${fns.slice(0,3).map(f=>`<span class="chip">${h(f)}</span>`).join('')}${
+          fns.length>3?`<span class="meta">+${fns.length-3}</span>`:''}</div>`:'—'}</td>
+        <td class="n num">${Number(r.vacatures)||1}</td>
+        <td class="num">${h(r.salaris_ind||'—')}</td>
+        <td>${bronChip(r.bron)}</td>
+        <td><span class="num">${h(CRM.geleden(r.gevonden_op)||'—')}</span>
+          ${r.laatst_gezien && r.laatst_gezien!==r.gevonden_op?`<div class="rowsub">gezien ${h(CRM.geleden(r.laatst_gezien))}</div>`:''}</td>
+        <td>${
+          st==='nieuw' ? `<div class="row tight r-acties">
+              <button class="btn sm" data-rlead="${h(r.id)}">→ Lead</button>
+              <button class="btn sm sub" data-rneg="${h(r.id)}">Negeren</button></div>`
+          : st==='toegevoegd' ? `<div class="row tight r-acties">
+              <span class="chip green">toegevoegd</span>
+              <button class="btn sm ghost" data-rpijp="${h(r.bedrijf)}">pijplijn →</button></div>`
+          : `<div class="row tight r-acties">
+              <span class="chip">genegeerd</span>
+              <button class="btn sm sub" data-rher="${h(r.id)}">Herstellen</button></div>`
+        }</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+/* Status van een radar-rij wijzigen (+ tellers en tab-badge verversen). */
+async function zetRadarStatus(id, status, notitie){
+  const r = radar.find(x=>x.id===id); if(!r) return false;
+  const oud = {status:r.status, status_door:r.status_door, notitie:r.notitie};
+  r.status = status; r.status_door = CRM.me();
+  if(notitie!=null) r.notitie = notitie;
+  if(!CRM.demo){
+    const w = {status, status_door:CRM.me()};
+    if(notitie!=null) w.notitie = notitie;
+    const {error} = await CRM.sb.from('crm_leadradar').update(w).eq('id', id);
+    if(error){ Object.assign(r, oud); tekenInhoud(); CRM.fout('Status opslaan mislukt', error); return false; }
+  }
+  teken();
+  return true;
+}
+
+/* "→ Lead": bedrijf als client in fase Lead zetten + radar-rij afvinken. */
+async function radarNaarLead(id){
+  const r = radar.find(x=>x.id===id); if(!r) return;
+  const bestaand = CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, r.bedrijf));
+  if(bestaand){
+    await zetRadarStatus(id, 'toegevoegd', 'Stond al in de pijplijn ('+faseVan(bestaand)+')');
+    return CRM.toast(`${r.bedrijf} staat al in de pijplijn (${faseVan(bestaand)})`);
+  }
+  const vandaag = CRM.todayISO();
+  const nVac = Number(r.vacatures)||1;
+  const rij = {
+    naam:r.bedrijf, fase:'Lead', eigenaar:CRM.me(), branche:'',
+    locatie:String(r.plaats||'').split(',')[0].trim(),
+    aangemaakt:vandaag, fase_sinds:vandaag, laatst_contact:null,
+    telefoon:'', email:'', website:'',
+    note:`Gevonden via de Leadradar (${BRON_LBL[r.bron]||r.bron||'onbekende bron'}): ${nVac} vacature${nVac===1?'':'s'} voor ${r.functies||'onbekende functies'}.`
   };
-  tekenGevonden(dr);
+  CRM.state.clients.push(rij);
+  if(!CRM.demo){
+    let {error} = await CRM.sb.from('clients').upsert(rij, {onConflict:'naam'});
+    if(error && /aangemaakt/i.test(error.message||'')){
+      /* Oudere database zonder aangemaakt-kolom: zonder dat veld opnieuw. */
+      const zonder = Object.assign({}, rij); delete zonder.aangemaakt;
+      ({error} = await CRM.sb.from('clients').upsert(zonder, {onConflict:'naam'}));
+    }
+    if(error){ CRM.state.clients.pop(); return CRM.fout('Lead opslaan mislukt', error); }
+  }
+  CRM.logActiviteit('klant', r.bedrijf, 'systeem',
+    `Gevonden via Leadradar: ${nVac} vacature${nVac===1?'':'s'} voor ${r.functies||'onbekende functies'}`);
+  await zetRadarStatus(id, 'toegevoegd');
+  CRM.toast(`${r.bedrijf} staat nu als lead op het pijplijnbord — "pijplijn →" opent de kaart`, 'ok');
+}
+
+/* Negeren: de motor slaat genegeerde bedrijven voortaan over. */
+async function radarNegeren(id){
+  const r = radar.find(x=>x.id===id); if(!r) return;
+  const reden = await CRM.vraag('Negeren — '+r.bedrijf, {
+    knop:'Negeren', placeholder:'Bijv. te klein, verkeerde regio (mag leeg blijven)',
+    hint:'De radar slaat dit bedrijf voortaan over. Een reden is optioneel maar helpt je collega’s.'
+  });
+  if(await zetRadarStatus(id, 'genegeerd', reden||''))
+    CRM.toast(`${r.bedrijf} genegeerd — de radar slaat dit bedrijf voortaan over`);
+}
+
+/* "↻ Nu zoeken": de Edge Function direct aanroepen. */
+async function radarZoeken(){
+  if(CRM.demo) return CRM.toast('In demo-modus zoekt de radar niet echt — log in om dit te gebruiken');
+  if(rZoeken) return;
+  rZoeken = true; tekenInhoud();
+  try{
+    const {data:{session}} = await CRM.sb.auth.getSession();
+    if(!session) throw new Error('geen actieve sessie — log opnieuw in');
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/lead-radar', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token},
+      body:'{}'
+    });
+    const uit = await resp.json().catch(()=>({}));
+    if(resp.status===404 || resp.status===503)
+      throw Object.assign(new Error('nog niet gedeployed'), {setup:true});
+    if(!resp.ok) throw new Error(uit.error || ('de zoekfunctie gaf status ' + resp.status));
+    await laadRadar(true);
+    CRM.toast(`Zoeken klaar: ${uit.nieuw??0} nieuw, ${uit.bijgewerkt??0} bijgewerkt`, 'ok');
+  }catch(e){
+    if(e.setup || /Failed to fetch|NetworkError/i.test(e.message||''))
+      CRM.toast('De zoekfunctie lead-radar is nog niet gedeployed — zie SETUP-LEADRADAR.md voor de eenmalige setup','err');
+    else CRM.fout('Zoeken mislukt', e);
+  }
+  rZoeken = false;
+  teken();
+}
+
+/* Handmatig toevoegen: de vertrouwde plak/CSV-import, nu als radar-bron. */
+function handmatigToevoegen(){
+  if(!CRM.demo && radarStatus==='mist')
+    return CRM.toast('De radartabel bestaat nog niet — draai eerst supabase/schema.sql (zie SETUP-LEADRADAR.md)','err');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Handmatig toevoegen</div></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="hm_plak">Plak bedrijfsnamen of CSV</label>
+        <textarea id="hm_plak" style="min-height:140px" placeholder="Eén bedrijf per regel. Optioneel met branche en plaats, gescheiden door ; of komma:&#10;&#10;Van der Windt Verpakking; Verpakkingen; Honselersdijk&#10;Bakker Barendrecht; AGF; Barendrecht&#10;Verhoeven Metaal"></textarea>
+        <span class="hint">Werkt met een kolomkop-regel uit Sales Navigator en met een simpele lijst namen. De bedrijven komen als "nieuw" in de radar, bron Handmatig.</span></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="hm_ok">Inlezen</button>
+    </div>`, {onOpen(m){
+      setTimeout(()=>m.querySelector('#hm_plak').focus(), 60);
+      m.querySelector('#hm_ok').onclick = async () => {
+        const lijst = leesLijst(m.querySelector('#hm_plak').value);
+        if(!lijst.length) return CRM.toast('Geen bedrijfsnamen gevonden','err');
+        const vandaag = CRM.todayISO();
+        const nieuw = [], over = [];
+        lijst.forEach(g => {
+          const bekend = radar.some(x=>CRM.zelfdeKlant(x.bedrijf, g.naam))
+                      || CRM.state.clients.some(c=>CRM.zelfdeKlant(c.naam, g.naam));
+          if(bekend) return over.push(g);
+          nieuw.push({id:CRM.uid(), bedrijf:g.naam, plaats:g.plaats||'', functies:'', vacatures:1,
+            bron:'handmatig', url:'', salaris_ind:'', gevonden_op:vandaag, laatst_gezien:vandaag,
+            status:'nieuw', status_door:CRM.me(), notitie:g.branche?('Branche: '+g.branche):''});
+        });
+        if(!nieuw.length) return CRM.toast('Deze bedrijven staan al in de radar of de pijplijn','err');
+        if(!CRM.demo){
+          const {error} = await CRM.sb.from('crm_leadradar').insert(nieuw);
+          if(error) return CRM.fout('Opslaan mislukt', error);
+        }
+        radar = nieuw.concat(radar);
+        CRM.modal.close();
+        rFilter = 'nieuw'; V.zet('r_status', rFilter);
+        CRM.toast(`${nieuw.length} bedrijven in de radar gezet${over.length?` — ${over.length} overgeslagen (al bekend)`:''}`,'ok');
+        teken();
+      };
+    }});
 }
 
 function leesLijst(ruw){
@@ -737,63 +973,6 @@ function leesLijst(ruw){
   return uit;
 }
 
-function tekenGevonden(dr){
-  const el = dr.querySelector('#li_uit');
-  if(!gevonden.length){
-    el.innerHTML = `<div class="card"><div class="card-b">${
-      CRM.ui.leeg('Nog geen resultaten','Zodra de koppeling er is verschijnen gevonden bedrijven hier. Tot dan: plak hierboven een lijst.')
-    }</div></div>`;
-    return;
-  }
-  const bestaatAl = g => CRM.state.clients.find(c => CRM.zelfdeKlant(c.naam, g.naam));
-  const nieuw = gevonden.filter(g => !bestaatAl(g));
-  el.innerHTML = `<div class="card"><div class="card-h">
-      <div class="h2">Gevonden bedrijven</div><span class="meta">${gevonden.length} regels</span>
-      <div class="spacer"></div>
-      ${nieuw.length?`<button class="btn sm" id="li_alles">Alle ${nieuw.length} als lead toevoegen</button>`:''}
-    </div><div class="card-b" style="padding-top:8px">${gevonden.map((g,i)=>{
-      const al = bestaatAl(g);
-      return `<div class="s-ct">
-        <div style="flex:1;min-width:0"><b class="trunc">${h(g.naam)}</b>
-          <div class="meta">${h([g.branche,g.plaats].filter(Boolean).join(' · ')||'geen extra gegevens')}</div></div>
-        ${al ? `<span class="chip">staat al in ${h(faseVan(al))}</span>`
-             : `<button class="btn sm ghost" data-lead="${i}">→ als lead toevoegen</button>`}</div>`;
-    }).join('')}</div></div>`;
-
-  CRM.$$('[data-lead]', el).forEach(b=>b.onclick=()=>maakLead(dr, gevonden[Number(b.dataset.lead)]));
-  const alles = el.querySelector('#li_alles');
-  if(alles) alles.onclick = async () => {
-    const doen = gevonden.filter(g => !bestaatAl(g));
-    if(!doen.length) return CRM.toast('Deze bedrijven staan er al in','err');
-    if(!await CRM.bevestig(`${doen.length} bedrijven als lead toevoegen?`,'Ze komen in de kolom Lead te staan, met jou als eigenaar.')) return;
-    for(const g of doen) await maakLead(null, g, true);
-    tekenGevonden(dr); teken();
-    CRM.toast(`${doen.length} leads toegevoegd`,'ok');
-  };
-}
-
-async function maakLead(dr, g, stil){
-  if(!g) return;
-  if(CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, g.naam))){
-    if(!stil) CRM.toast('Dit bedrijf staat er al in','err');
-    return;
-  }
-  const rij = {naam:g.naam, fase:'Lead', eigenaar:CRM.me(), branche:g.branche||'', locatie:g.plaats||'',
-               fase_sinds:CRM.todayISO(), laatst_contact:null, telefoon:'', email:'', website:'',
-               note:'Toegevoegd via de LinkedIn-leadverkenner'};
-  CRM.state.clients.push(rij);
-  if(!CRM.demo){
-    const {error} = await CRM.sb.from('clients').insert(rij);
-    if(error){ CRM.state.clients.pop(); return CRM.fout('Lead opslaan mislukt', error); }
-  }
-  CRM.logActiviteit('klant', g.naam, 'systeem', 'Als lead toegevoegd via de LinkedIn-leadverkenner');
-  if(!stil){
-    CRM.toast(g.naam + ' staat nu in Lead','ok');
-    if(dr) tekenGevonden(dr);
-    teken();
-  }
-}
-
 /* ─── Hoofdweergave ────────────────────────────────────────────── */
 let mountEl = null, actiesEl = null;
 
@@ -809,6 +988,9 @@ function gefilterd(){
 
 function tekenActies(){
   if(!actiesEl) return;
+  /* De Leadradar heeft eigen filters in de tab zelf; de pijplijnfilters
+     hierboven zouden daar niets doen en alleen verwarren. */
+  if(tab==='radar'){ actiesEl.innerHTML = ''; return; }
   actiesEl.innerHTML = `
     <div class="searchbox"><input type="search" id="s_zoek" placeholder="Zoek bedrijf, branche of plaats" value="${h(zoek)}"></div>
     <select id="s_eig" style="width:auto;min-width:140px">
@@ -833,19 +1015,25 @@ function tekenInhoud(){
   const klanten = gefilterd();
   const kansenN = (CRM.state.kansen||[]).filter(o=>(o.status||'open')==='open').length;
 
+  const radarN = radarNieuwN();
   const kop = `<div class="s-wrap">
     <div class="s-top">
       <div class="tabs">
         <button class="tab${tab==='pijplijn'?' on':''}" data-tab="pijplijn">Klantpijplijn<span class="cnt num">${klanten.length}</span></button>
         <button class="tab${tab==='kansen'?' on':''}" data-tab="kansen">Kansen<span class="cnt num">${kansenN}</span></button>
+        <button class="tab${tab==='radar'?' on':''}" data-tab="radar">Leadradar${radarN?`<span class="cnt num">${radarN}</span>`:''}</button>
       </div>
-      <div class="row tight s-acts">
-        <button class="btn ghost" data-linkedin>Leads zoeken op LinkedIn</button>
-        <button class="btn" data-nieuwekans>+ Nieuwe kans</button>
+      <div class="row tight s-acts">${tab==='radar'
+        ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>
+           <button class="btn" data-rzoek${rZoeken?' disabled':''}>${rZoeken?'Bezig met zoeken…':'↻ Nu zoeken'}</button>`
+        : `<button class="btn ghost" data-radar>Leadradar</button>
+           <button class="btn" data-nieuwekans>+ Nieuwe kans</button>`}
       </div>
     </div>`;
 
-  if(tab==='kansen'){
+  if(tab==='radar'){
+    mountEl.innerHTML = kop + radarHTML() + '</div>';
+  } else if(tab==='kansen'){
     mountEl.innerHTML = kop + kansenHTML() + '</div>';
   } else if(weergave==='lijst'){
     mountEl.innerHTML = kop + kpiHTML(klanten) + '<div style="height:16px"></div>' + lijstHTML(klanten) + '</div>';
@@ -855,9 +1043,9 @@ function tekenInhoud(){
       (leegBord
         ? `<div class="s-wrap">${CRM.ui.leeg('Geen bedrijven in beeld',
             zoek||mijn||eigFilter ? 'Je filters verbergen alles. Wis ze om de hele pijplijn te zien.'
-                                  : 'Voeg je eerste bedrijven toe via de leadverkenner.',
+                                  : 'De Leadradar vindt bedrijven die nu personeel werven — begin daar.',
             zoek||mijn||eigFilter ? '<button class="btn ghost" data-wis>Filters wissen</button>'
-                                  : '<button class="btn" data-linkedin>Leads zoeken</button>')}</div>`
+                                  : '<button class="btn" data-radar>Naar de Leadradar</button>')}</div>`
         : bordHTML(klanten));
   }
   bindInhoud();
@@ -865,8 +1053,9 @@ function tekenInhoud(){
 
 function bindInhoud(){
   CRM.$$('[data-tab]', mountEl).forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
-  CRM.$$('[data-linkedin]', mountEl).forEach(b=>b.onclick=openLinkedIn);
+  CRM.$$('[data-radar]', mountEl).forEach(b=>b.onclick=()=>{ tab='radar'; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
   CRM.$$('[data-nieuwekans]', mountEl).forEach(b=>b.onclick=()=>nieuweKans(null));
+  bindRadar();
   CRM.$$('[data-wis]', mountEl).forEach(b=>b.onclick=()=>{
     zoek=''; mijn=false; eigFilter='';
     V.zet('zoek',''); V.zet('mijn',false); V.zet('eigenaar','');
@@ -888,11 +1077,40 @@ function bindInhoud(){
   if(bord) bindBord(bord);
 }
 
+function bindRadar(){
+  /* De knoppen Handmatig/Nu zoeken staan in de kop en bestaan alleen op de radar-tab. */
+  CRM.$$('[data-rzoek]', mountEl).forEach(b=>b.onclick=radarZoeken);
+  CRM.$$('[data-rhand]', mountEl).forEach(b=>b.onclick=handmatigToevoegen);
+  if(tab!=='radar') return;
+  CRM.$$('[data-rstatus]', mountEl).forEach(c=>c.onclick=()=>{ rFilter=c.dataset.rstatus; V.zet('r_status',rFilter); tekenInhoud(); });
+  const rb = mountEl.querySelector('#r_bron');
+  if(rb) rb.onchange = e => { rBron = e.target.value; tekenInhoud(); };
+  const rz = mountEl.querySelector('#r_zoek');
+  if(rz) rz.oninput = CRM.debounce(()=>{
+    rZoek = rz.value; tekenInhoud();
+    /* De hele tab is opnieuw getekend — focus terug in het zoekveld. */
+    const el = mountEl.querySelector('#r_zoek');
+    if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }, 220);
+  CRM.$$('[data-rwis]', mountEl).forEach(b=>b.onclick=()=>{
+    rZoek=''; rBron=''; rFilter='alles'; V.zet('r_status',rFilter); tekenInhoud();
+  });
+  CRM.$$('[data-rlead]', mountEl).forEach(b=>b.onclick=()=>radarNaarLead(b.dataset.rlead));
+  CRM.$$('[data-rneg]',  mountEl).forEach(b=>b.onclick=()=>radarNegeren(b.dataset.rneg));
+  CRM.$$('[data-rher]',  mountEl).forEach(b=>b.onclick=()=>zetRadarStatus(b.dataset.rher,'nieuw',''));
+  CRM.$$('[data-rpijp]', mountEl).forEach(b=>b.onclick=()=>{
+    const kl = CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, b.dataset.rpijp));
+    tab='pijplijn'; V.zet('tab',tab); tekenActies(); tekenInhoud();
+    if(kl) setTimeout(()=>openKlant(kl.naam), 60);
+    else CRM.toast('Dit bedrijf staat niet (meer) in de pijplijn','err');
+  });
+}
+
 function teken(){ tekenInhoud(); CRM.navBadges(); }
 
 /* ─── Registratie ──────────────────────────────────────────────── */
 CRM.registerModule('sales', {
-  title:'Sales', icon:'◈', onderschrift:'Klantpijplijn, kansen en activiteiten',
+  title:'Sales', icon:'◈', onderschrift:'Klantpijplijn, kansen en leadradar',
   volleBreedte:true,
   badge(){
     const vandaag = CRM.todayISO();
@@ -902,6 +1120,9 @@ CRM.registerModule('sales', {
     mountEl = mount; actiesEl = acties;
     tekenActies();
     tekenInhoud();
+    /* Radar alvast laden zodat de tab-badge meteen klopt, ook als je
+       op de pijplijn binnenkomt. */
+    laadRadar().then(()=>{ if(mountEl) tekenInhoud(); });
     if(params && params.id && CRM.klant(params.id)) setTimeout(()=>openKlant(params.id), 60);
   }
 });
@@ -937,4 +1158,8 @@ CRM.registerModule('sales', {
       echte doorlooptijden per fase tonen.
    3. `CRM.registerModule` kent geen `group`; de navigatiegroepen staan
       hard in core.js. Prima zo, alleen ter info genoteerd.
+   4. `crm_leadradar` zit niet in CRM.load()/CRM.state; sales haalt de
+      tabel zelf op (met dezelfde nette degradatie als core's veilig()).
+      Als meer modules de radar willen tonen (bv. dashboard-teller),
+      graag toevoegen aan CRM.load() plus realtime-kanaal.
    ═══════════════════════════════════════════════════════════════ */
