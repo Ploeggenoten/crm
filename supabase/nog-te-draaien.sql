@@ -141,3 +141,50 @@ select p.naam, p.email, p.functie, p.rol
 -- zelf hoeveel rijen niet meetellen.
 alter table vacatures add column if not exists aangemaakt date;
 alter table vacatures alter column aangemaakt set default current_date;
+
+
+-- ─── 6. Afgesloten trajecten (js/traject.js) ──────────────────
+-- Eén kandidaat heeft één veld `klant`. Stel je dezelfde persoon bij een
+-- tweede klant voor, dan wordt de eerste overschreven en raakt die klant
+-- stilzwijgend een kandidaat kwijt — inclusief de telling op hun vacature.
+-- Deze tabel bewaart wat er dan verdween. ALLEEN TOEVOEGEN.
+-- Bewust GEEN kandidaatnaam, alleen kandidaat_id: de naam staat op de
+-- kaart en verdwijnt daar bij anonimiseren; zou hij hier ook staan, dan
+-- bewaar je precies wat je zou wissen.
+-- Telt NERGENS mee: dit is geen uitval en geen plaatsing.
+create table if not exists crm_trajecten (
+  id            text primary key,
+  kandidaat_id  text not null,
+  klant         text default '',
+  vacature_id   text default '',
+  functie       text default '',
+  fase          text default '',
+  hoogste_fase  text default '',
+  begin_op      date,
+  eind_op       date,
+  reden         text not null,
+  naar_klant    text default '',
+  naar_vacature text default '',
+  naar_functie  text default '',
+  door          text default '',
+  op            timestamptz default now()
+);
+create index if not exists crm_traj_klant on crm_trajecten(klant, eind_op desc);
+create index if not exists crm_traj_vac   on crm_trajecten(vacature_id);
+create index if not exists crm_traj_kand  on crm_trajecten(kandidaat_id);
+create index if not exists crm_traj_op    on crm_trajecten(op desc);
+
+-- Lezen en aanmaken mag het team. BIJWERKEN EN VERWIJDEREN MAG NIEMAND —
+-- een geschiedenis die je kunt aanpassen bewijst niets. Daarom staat deze
+-- tabel bewust NIET in de array-lus van blok 8 in schema.sql: die geeft
+-- `for all`, en daarmee ook update en delete.
+do $$
+begin
+  execute 'alter table crm_trajecten enable row level security';
+  execute 'drop policy if exists traj_lezen on crm_trajecten';
+  execute 'create policy traj_lezen on crm_trajecten
+           for select to authenticated using (true)';
+  execute 'drop policy if exists traj_aanmaken on crm_trajecten';
+  execute 'create policy traj_aanmaken on crm_trajecten
+           for insert to authenticated with check (true)';
+end $$;

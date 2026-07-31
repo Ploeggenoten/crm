@@ -21,21 +21,37 @@ const D = () => CRM._rcDeel || {};
 
 /* ─── Filters onthouden (één sleutel: crm_kand_filters) ───────── */
 const FKEY = 'crm_kand_filters';
-/* status staat sinds 31 jul 2026 standaard op 'gekwalificeerd'. Dat is de
-   lijst waar een accountmanager mee begint: mensen die de hele
-   recruitmentpijplijn door zijn (intake + videocall gehad) maar nog nergens
-   zijn voorgesteld. Wie zijn filter zelf ooit heeft omgezet houdt zijn eigen
-   keuze — die staat in localStorage en wint van deze default. */
+/* Status staat standaard op 'alle', en dat is een correctie van vanavond.
+   Hij stond even op 'gekwalificeerd' — de vijf mensen die de hele
+   recruitmentpijplijn door zijn. Dat is een prima wérklijst, maar een
+   slechte begintoestand: in productie staan er 355 kandidaten, waarvan er
+   236 uit het oude ATS komen zonder fase. Wie Kandidaten opende zag er
+   vijf, met als enige aanwijzing de tekst "5 kandidaten" — en concludeerde
+   dat de rest weg was. Dat is precies wat er vanavond gebeurde.
+
+   Een lijst die 350 van de 355 verbergt achter een filter dat je niet ziet
+   staan, is erger dan een lange lijst. De gekwalificeerde voorraad blijft
+   één klik weg, en het aantal staat prominent boven de lijst. */
 const F_STD = {
-  zoek:'', status:'gekwalificeerd', ster:0, plaats:'', km:20, ploegen:'', taal:'',
+  zoek:'', status:'alle', ster:0, plaats:'', km:20, ploegen:'', taal:'',
   vervoer:'', rijbewijs:'', functie:'', rec:'', klant:'', fase:'', gesproken:'',
   mijn:false, sort:'gesproken', splits:'functie'
 };
 let F = (() => {
-  try{ return Object.assign({}, F_STD, JSON.parse(localStorage.getItem(FKEY)||'{}')); }
+  try{
+    const bewaard = JSON.parse(localStorage.getItem(FKEY)||'{}');
+    /* De default van vanmiddag is bij iedereen in localStorage beland, ook
+       bij wie hem nooit zelf koos. Die ene waarde eenmalig terugzetten,
+       anders blijft het scherm bij het hele team op vijf kandidaten staan.
+       Een filter dat je zelf hebt gekozen blijft gewoon staan. */
+    if(bewaard.status === 'gekwalificeerd' && !bewaard._eigenKeuze) delete bewaard.status;
+    return Object.assign({}, F_STD, bewaard);
+  }
   catch(e){ return Object.assign({}, F_STD); }
 })();
-function zet(k,v){ F[k]=v; try{ localStorage.setItem(FKEY, JSON.stringify(F)); }catch(e){} }
+function zet(k,v){ F[k]=v;
+  if(k === 'status') F._eigenKeuze = true;   // zie de opmerking hierboven
+  try{ localStorage.setItem(FKEY, JSON.stringify(F)); }catch(e){} }
 
 /* Paneel- en tabstand (geen filter, wel handig om te onthouden). */
 let filtersOpen = false, filtersOpenGezet = false;
@@ -131,7 +147,8 @@ function kansen(c){
       if(gehad.has(String(v.id)) || (v.status && v.status !== 'Open')) return;
       const km = CRM.afstandKm(c.woonplaats, v.locatie);
       const score = CRM.matchScore(c, v);
-      if(km != null && km <= 25 && score >= 20) uit.push({vacature:v, score, dichtbij:true});
+      if(km != null && km <= 25 && score >= 20)
+        uit.push({vacature:v, score, dichtbij:true, m: CRM.match ? CRM.match(c, v) : null});
     });
   }
   return uit.map(m => Object.assign({}, m, {km:CRM.afstandKm(c.woonplaats, m.vacature.locatie)}))
@@ -427,6 +444,15 @@ function stilteChip(c){
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
 async function bewaarKandidaat(c){
+  /* Eén kandidaat heeft één veld `klant`. Stel je dezelfde persoon bij een
+     tweede klant voor, dan werd de eerste stilzwijgend overschreven: die
+     klant raakte een kandidaat kwijt, hun vacature telde er één minder, en
+     niemand kreeg bericht. De poort staat hier — op de plek waar élke
+     opslag vanuit dit bestand langskomt — en niet bij de knop, want dan
+     mis je de routes die er later bij komen. Zie js/traject.js. */
+  const oud = CRM.state.cands.find(r => String(r.id) === String(c.id));
+  if(oud && oud.klant && c.klant !== oud.klant && CRM.traject &&
+     !await CRM.traject.poort(oud, {klant:c.klant, vacatureId:c.vacatureId, functie:c.functie})) return;
   const rij = CRM.candToRow(c);
   const i = CRM.state.cands.findIndex(r => String(r.id) === String(c.id));
   if(i >= 0) Object.assign(CRM.state.cands[i], rij); else CRM.state.cands.unshift(rij);
@@ -1820,6 +1846,16 @@ function kansenHtml(c){
         </div>
       </div>
       <p class="sub kd-uitleg">${h(uitleg(c, v))}</p>
+      ${/* Waaróm die score laag is. Zonder dit staat er "35% match" zonder dat
+           je ziet dat de VCA verlopen is of dat er geen vervoer is — en dan
+           lees je het als "matig passend" in plaats van "hier gaat het op
+           stuk". CRM.match levert die redenen; matchScore geeft alleen het
+           getal. Blokkers eerst, dan twijfels; wat we niet weten laten we
+           hier weg, dat staat al in de uitlegregel erboven. */''}
+      ${(m.m && m.m.blokkers || []).map(b =>
+        `<div class="kd-sig red">${h(b)}</div>`).join('')}
+      ${(m.m && m.m.twijfels || []).map(t =>
+        `<div class="kd-sig amber">${h(t)}</div>`).join('')}
       ${sig.filter(s => s.k !== 'gekoppeld').map(s =>
         `<div class="kd-sig ${h(s.kleur)}">${h(s.tekst)}</div>`).join('')}
       ${gekoppeld ? '<span class="chip green">Al gekoppeld aan deze vacature</span>'

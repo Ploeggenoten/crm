@@ -73,18 +73,12 @@ function laadLeaflet(){
    Deze laag probeert eerst een paar varianten van DEZELFDE plaats.
    Nooit gokken op een buurgemeente: liever geen punt dan een fout punt.
    ═══════════════════════════════════════════════════════════════ */
-const PL_ALIAS = {
-  /* Engelse en verminkte schrijfwijzen */
-  thehague:'denhaag', hague:'denhaag', sgravennage:'sgravenhage',
-  hellvoetsluis:'hellevoetsluis', denbosch:'shertogenbosch', shertogenbos:'shertogenbosch',
-  /* Wijken en deelgemeenten: dezelfde gemeente, andere naam */
-  leidschenveen:'denhaag', ypenburg:'denhaag', scheveningen:'denhaag',
-  loosduinen:'denhaag', wateringseveld:'denhaag',
-  /* "a.d." schrijft plaatsSleutel niet om naar "a/d" */
-  krimpenadijssel:'krimpena/dijssel', capelleadijssel:'capellea/dijssel',
-  nieuwerkerkadijssel:'nieuwerkerka/dijssel', alphenadrijn:'alphena/drijn',
-  koudekerkadrijn:'koudekerka/drijn'
-};
+/* De aliassen staan sinds 31 jul 2026 in js/data.js (CRM.PLAATS_ALIAS) en
+   worden door CRM.plaatsSleutel toegepast. Ze stonden hier als eigen kopie,
+   waardoor dít scherm plaatsen kon plaatsen die de rest van de app niet
+   herkende — twee antwoorden over dezelfde persoon. Nu de matchscore
+   zwaarder op afstand leunt, werd dat verschil groter in plaats van kleiner. */
+const PL_ALIAS = (typeof CRM !== 'undefined' && CRM.PLAATS_ALIAS) || {};
 
 /* Varianten van precies naar ruimer. Elke stap moet dezelfde plaats
    blijven aanwijzen — daarom geen fuzzy matching. */

@@ -329,6 +329,12 @@ async function bewaarLead(lead, patch){
 async function bewaarKand(id, patch){            // patch in DB-kolomnamen
   const rij = CRM.state.cands.find(r => String(r.id) === String(id));
   if(!rij) return false;
+  /* Zie de toelichting in js/kandidaten.js: dit is het tweede punt waar
+     alles langskomt — fasewissel, uitval, O&O, no-show, doorschieten.
+     Alleen als de klant écht verandert; een fasewissel raakt dat veld niet. */
+  if(patch && patch.klant !== undefined && patch.klant !== rij.klant && CRM.traject &&
+     !await CRM.traject.poort(rij, {klant:patch.klant, vacatureId:patch.vacature_id, functie:patch.functie}))
+    return false;
   Object.assign(rij, patch);
   if(!CRM.demo){
     const {error} = await CRM.sb.from('candidates').update(patch).eq('id', id);
