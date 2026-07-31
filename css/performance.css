@@ -100,6 +100,13 @@
 @media (max-width:560px){
   .pf-doelkop{gap:22px}
 }
+/* Op 375px is een trendkolom nog maar 19px breed, terwijl twee staven van
+   9px plus 3px tussenruimte er 21px van maken: de staven liepen dan net
+   over de kolomgrens heen en raakten die van de buurmaand. */
+@media (max-width:420px){
+  .pf-area{gap:2px}
+  .pf-area > i{width:7px}
+}
 
 /* ═══ Naamlijsten (getekend / gestopt / nazorg) — verhuisd uit Recruitment ═══ */
 .pf-namen{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:16px}
@@ -124,4 +131,15 @@
    tekst en die blijft op één leesbare regellengte staan. */
 @media (min-width:1500px){
   .pf{max-width:none}
+  /* Twee dingen worden van breedte juist SLECHTER in plaats van fijnmaziger,
+     dus die krijgen hun eigen rem terug binnen het bredere vlak:
+     — de trendstaven bleven 13px haren in een veld van anderhalve meter;
+     — een trechterbalk van 1400px zegt niks meer dan een van 700px, terwijl
+       het oog dan wél heen en weer moet tussen fasenaam en aantal. */
+  .pf-area > i{width:18px}
+  .pf-funnel{max-width:1000px}
+  .pf-fl{flex:0 0 190px}
 }
+/* ≥1900px (teamscherm) heeft Performance geen eigen stap nodig: elk blok is
+   al een auto-fit-grid of een tabel, die zetten er vanzelf kolommen bij.
+   Bewust vastgelegd zodat dit niet leest als een vergeten stap. */

@@ -11,6 +11,20 @@ const h = CRM.h;
 const kort   = s => String(s||'').slice(0,10);
 const GARANTIE_STD = 3;                     /* maanden, als garantie_mnd leeg is */
 
+/* Datumvelden in de kandidatentabel zijn kale datums (since, geplaatst_op,
+   historie.op) — daar mag kort() gewoon de eerste tien tekens pakken. Maar
+   crm_leads.binnen_op is een timestamptz in UTC. Daar snijdt kort() de
+   UTC-dag af, en dat is 's avonds na 22:00 (zomertijd) de dag ervóór: een
+   lead die op 1 juli 00:30 binnenkwam telde dan mee in juni. Een tijdstempel
+   gaat daarom eerst door de lokale kalender, precies zoals CRM.todayISO().  */
+function dagVan(waarde){
+  const s = String(waarde||'').trim();
+  if(!s) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s.slice(0,10)) && s.length <= 10) return s.slice(0,10);
+  const d = new Date(s);
+  return isNaN(d) ? s.slice(0,10) : d.toLocaleDateString('sv-SE');
+}
+
 /* ─── Periode ────────────────────────────────────────────────── */
 let periode = 'maand', eigenVan = '', eigenTot = '';
 let recSort   = {k:'plaatsingen', dir:-1};
@@ -97,7 +111,7 @@ function garantieEind(c){
   return d.toLocaleDateString('sv-SE');
 }
 function duurzaam(c){
-  if(c.fase !== 'Gestopt') return true;
+  if(!CRM.faseIs(c.fase, 'Gestopt')) return true;
   const eind = garantieEind(c);
   if(!eind || !kort(c.gestoptOp)) return true;
   return kort(c.gestoptOp) > eind;
@@ -111,32 +125,37 @@ const FUNNEL = CRM.PHASES.filter(p => !['Afgevallen','Gestopt'].includes(p.k));
 /* Index BINNEN de trechter. Bewust niet CRM.faseIdx(): die telt Afgevallen en
    Gestopt mee, wat alleen goed gaat zolang die twee toevallig achteraan in
    CRM.PHASES staan. Zodra iemand de fases herschikt klopte de trechter niet
-   meer — met fIdx is de volgorde van CRM.PHASES niet langer een aanname. */
-const fIdx = k => FUNNEL.findIndex(f => f.k === k);
+   meer — met fIdx is de volgorde van CRM.PHASES niet langer een aanname.
+   Vergelijken gaat via CRM.faseIs, dus mét de aliassen uit data.js: in de
+   database staat de eerste fase bij een deel van de rijen nog als
+   'Voorselectie' en die heet inmiddels 'Intake'. Zonder normalisatie gaf
+   fIdx daar −1 op en vielen die kandidaten stilzwijgend uit de trechter,
+   alsof ze er nooit in hadden gezeten. */
+const fIdx = k => FUNNEL.findIndex(f => CRM.faseIs(f.k, k));
 function verste(c){
   const idxs = [];
   (c.historie||[]).forEach(x => { const i = fIdx(x.fase); if(i>=0) idxs.push(i); });
   const cur = fIdx(c.fase);
   if(cur>=0) idxs.push(cur);
-  if(c.fase==='Gestopt') idxs.push(fIdx('Gestart'));
+  if(CRM.faseIs(c.fase,'Gestopt')) idxs.push(fIdx('Gestart'));
   if(kort(c.geplaatstOp)) idxs.push(fIdx('Contract getekend'));
   return idxs.length ? Math.max.apply(null, idxs) : -1;
 }
 /* Staat deze kandidaat nú in de pijplijn? Alleen echte, lopende fases —
    een lege fase telt niet mee, anders zit de hele oude-ATS-import
    ineens in ieders pijplijn. */
-const inPijplijn = c => CRM.faseIdx(c.fase) >= 0 && !CRM.DONE.includes(c.fase);
+const inPijplijn = c => CRM.faseIdx(c.fase) >= 0 && !CRM.faseIn(c.fase, CRM.DONE);
 
 /* ─── Basisverzamelingen voor de gekozen periode ─────────────── */
 function cijfers(p){
   const cs = CRM.kandidaten();
-  const getekend = cs.filter(c => inP(c.geplaatstOp,p) && CRM.PLACED.includes(c.fase));
-  const gestopt  = cs.filter(c => c.fase==='Gestopt' && inP(c.gestoptOp,p));
+  const getekend = cs.filter(c => inP(c.geplaatstOp,p) && CRM.faseIn(c.fase, CRM.PLACED));
+  const gestopt  = cs.filter(c => CRM.faseIs(c.fase,'Gestopt') && inP(c.gestoptOp,p));
   /* Cohort voor duurzaamheid: iedereen die in deze periode getekend heeft,
      inclusief wie later gestopt is. */
-  const cohort = cs.filter(c => inP(c.geplaatstOp,p) && (CRM.PLACED.includes(c.fase) || c.fase==='Gestopt'));
+  const cohort = cs.filter(c => inP(c.geplaatstOp,p) && (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt')));
   const instroom  = cs.filter(c => inP(c.since,p));
-  const afgevallen= cs.filter(c => c.fase==='Afgevallen' && inP(laatsteBeweging(c),p));
+  const afgevallen= cs.filter(c => CRM.faseIs(c.fase,'Afgevallen') && inP(laatsteBeweging(c),p));
   return {cs, getekend, gestopt, cohort, instroom, afgevallen, netto:getekend.length-gestopt.length};
 }
 
@@ -145,7 +164,7 @@ function blokPlaatsingen(p, D){
   const ws   = D.getekend.filter(c => (c.type||'W&S')!=='Flex').length;
   const flex = D.getekend.filter(c => c.type==='Flex').length;
   const duur = D.cohort.filter(duurzaam);
-  const gestoptCohort = D.cohort.filter(c => c.fase==='Gestopt');
+  const gestoptCohort = D.cohort.filter(c => CRM.faseIs(c.fase,'Gestopt'));
   const tijdTotStop = gestoptCohort.map(c => dagenTussen(c.geplaatstOp, c.gestoptOp)).filter(n => n!=null && n>=0);
   const gemStop = gem(tijdTotStop);
 
@@ -192,7 +211,7 @@ function namenEnNazorg(D){
   const get = D.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
   const stp = D.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
   const nz = CRM.kandidaten()
-    .filter(k => k.fase==='Gestart' && k.start && !k.gestoptOp)
+    .filter(k => CRM.faseIs(k.fase,'Gestart') && k.start && !k.gestoptOp)
     .map(k => ({k, d:CRM.dagenGeleden(k.start)}))
     .filter(x => x.d != null && x.d >= 0 && x.d <= 32)
     .map(x => ({c:x.k, d:x.d, cp:[3,14,30].find(n=>n>=x.d), nu:[3,14,30].includes(x.d)}))
@@ -325,7 +344,7 @@ function blokTrechter(p, D){
   if(cohort.length < 3)
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Conversietrechter</span></div>
       <div class="card"><div class="card-b">${CRM.ui.leeg('Te weinig instroom in deze periode',
-        `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} geïmporteerde kandidaten zonder fase tellen niet mee)`:''}. Kies een langere periode voor een betrouwbaar beeld.`)}</div></div></section>`;
+        `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} kandidaten zonder pijplijnfase tellen niet mee — meestal de import uit het oude ATS)`:''}. Kies een langere periode voor een betrouwbaar beeld.`)}</div></div></section>`;
 
   const verstes = cohort.map(verste);
   const tel = FUNNEL.map((f,i) => ({fase:f.k, kleur:f.c, n:verstes.filter(v => v>=i).length}));
@@ -423,11 +442,11 @@ function blokKlanten(fin){
 
   const rijen = namen.map(naam => {
     const mijn   = cs.filter(c => (c.klant||'').trim()===naam);
-    const ooit   = mijn.filter(c => CRM.PLACED.includes(c.fase) || c.fase==='Gestopt' || c.geplaatstOp);
-    const nu     = mijn.filter(c => CRM.PLACED.includes(c.fase));
+    const ooit   = mijn.filter(c => CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt') || c.geplaatstOp);
+    const nu     = mijn.filter(c => CRM.faseIn(c.fase, CRM.PLACED));
     const duurT  = ooit.length, duurN = ooit.filter(duurzaam).length;
     const voorgesteld = mijn.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
-    const klantWees = mijn.filter(c => c.fase==='Afgevallen' && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
+    const klantWees = mijn.filter(c => CRM.faseIs(c.fase,'Afgevallen') && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
     const looptijden = ooit.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n=>n!=null && n>=0 && n<400);
     const omzet = geld ? fin.placements.filter(pl => CRM.zelfdeKlant(pl.klant, naam))
       .reduce((s,pl)=>s+(Number(pl.fee_excl)||0),0) : null;
@@ -500,12 +519,30 @@ function blokKlanten(fin){
 const BRON_GEEN_WERVING = b => /\bimport\b|oud ats|migratie/i.test(b);
 
 function blokBron(p, D){
-  const leads = (CRM.state.leads||[]).filter(l => inP(l.binnen_op, p));
+  /* binnen_op is een timestamptz: eerst naar de lokale dag, anders valt een
+     lead van na 22:00 in de vorige maand (zie dagVan bovenaan). */
+  const leads = (CRM.state.leads||[]).filter(l => { const d = dagVan(l.binnen_op); return !!d && d >= p.van && d <= p.tot; });
   const bronnen = Array.from(new Set([
     ...leads.map(l => (l.bron||'').trim()),
     ...D.instroom.map(c => (c.bron||'').trim()),
     ...D.getekend.map(c => (c.bron||'').trim())
   ].filter(Boolean)));
+
+  /* Wat NIET in de tabel kan staan omdat er geen bron bij staat. Dit is geen
+     detail: elke conclusie over Meta hangt aan dit ene veld, dus als het bij
+     een deel leeg is moet je dat zien staan naast de percentages. */
+  const geenBron = {
+    leads:    leads.filter(l => !(l.bron||'').trim()).length,
+    kand:     D.instroom.filter(c => !(c.bron||'').trim()).length,
+    plaats:   D.getekend.filter(c => !(c.bron||'').trim()).length
+  };
+  const geenBronTxt = (geenBron.leads || geenBron.kand || geenBron.plaats)
+    ? `<div class="note warn" style="margin-top:14px">Zonder bron ingevuld, dus in geen enkele regel hierboven meegeteld:
+        <span class="num">${geenBron.leads}</span> ${geenBron.leads===1?'lead':'leads'},
+        <span class="num">${geenBron.kand}</span> ${geenBron.kand===1?'kandidaat':'kandidaten'} en
+        <span class="num">${geenBron.plaats}</span> ${geenBron.plaats===1?'plaatsing':'plaatsingen'}.
+        Zolang dat veld leeg blijft, is elk percentage hierboven een ondergrens.</div>`
+    : '';
 
   if(!bronnen.length)
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per bron</span></div>
@@ -561,6 +598,7 @@ function blokBron(p, D){
       (${buiten.reduce((s,r)=>s+r.kand,0).toLocaleString('nl-NL')} kandidaten in deze periode). Die namen zijn nooit geworven,
       dus ze tellen niet mee in het totaal en krijgen geen conversiepercentage — anders lijkt elke echte bron
       opeens veel slechter dan hij is.` : ''}</p>
+    ${geenBronTxt}
   </section>`;
 }
 
@@ -600,7 +638,7 @@ const posNum = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : nul
    van de voorstellen en gesprekken werd uiteindelijk een plaatsing? */
 function conversies(){
   const cs = CRM.kandidaten().filter(c => (c.type||'W&S') !== 'Flex');
-  const klaar = cs.filter(c => CRM.DONE.includes(c.fase) || c.geplaatstOp);
+  const klaar = cs.filter(c => CRM.faseIn(c.fase, CRM.DONE) || c.geplaatstOp);
   const vg = klaar.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
   const gs = klaar.filter(c => verste(c) >= fIdx('Eerste gesprek')).length;
   const pl = klaar.filter(c => verste(c) >= fIdx('Contract getekend') || c.geplaatstOp).length;
@@ -692,10 +730,18 @@ function blokDoel(fin){
   if(!doelDatum || isNaN(new Date(doelDatum))) doelDatum = vandaag.slice(0,4) + '-12-31';
 
   /* Meetvenster: de 12 maanden tot de doeldatum (bij een jaardoel zonder
-     datum: dit kalenderjaar). */
-  const start = (doelBron === 'doel_omzet_jaar' && !S.doel_omzet_datum)
+     datum: dit kalenderjaar).
+     Ligt de doeldatum verder dan een jaar weg — bijvoorbeeld een doel voor
+     december 2028 — dan begint dat venster in de toekomst en valt er per
+     definitie geen enkele factuur in. Het blok meldde dan € 0 gerealiseerd
+     met "gefactureerd sinds 31 dec 2027": een toekomstige datum en een
+     onwaar cijfer. In dat geval meten we vanaf 1 januari van dit jaar, zodat
+     "gerealiseerd" altijd over een periode gaat die al bestaat. */
+  const vensterStart = (doelBron === 'doel_omzet_jaar' && !S.doel_omzet_datum)
     ? vandaag.slice(0,4) + '-01-01'
     : verschuifMaanden(doelDatum, -12);
+  const verDoel = vensterStart > vandaag;
+  const start = verDoel ? vandaag.slice(0,4) + '-01-01' : vensterStart;
 
   const omzet = (fin.termijnen||[])
     .filter(t => ['gefactureerd','betaald'].includes(t.status))
@@ -757,10 +803,13 @@ function blokDoel(fin){
         ? `<div class="note warn" style="margin-top:18px">De doeldatum (${h(dLbl)}) is verstreken en het doel is niet gehaald.
              Zet een nieuwe datum met <b>Doel aanpassen</b> — dan rekent dit blok het benodigde tempo opnieuw uit.</div>`
         : teGaan > 0 ? tempoHtml(plPerMnd, conv) : ''}
+      ${verDoel ? `<p class="pf-uitleg meta">De doeldatum ligt verder dan een jaar weg, dus "gerealiseerd" telt hier
+        alles wat sinds 1 januari ${h(vandaag.slice(0,4))} gefactureerd is. Zet een doeldatum binnen twaalf maanden
+        als je het tempo per maand strak wilt kunnen volgen.</p>` : ''}
       ${afwijkend ? `<p class="pf-uitleg meta">Let op: in het financebord staat een jaardoel van
         ${h(CRM.euro(doelJaar))} (doel_omzet_jaar). Dit blok rekent met het doel hierboven (doel_omzet).</p>` : ''}
       <p class="pf-uitleg meta">${gemFee != null
-        ? `Gerekend met een gemiddelde fee van ${h(CRM.euro(Math.round(gemFee)))} (uit ${fees.length} plaatsingen),
+        ? `Gerekend met een gemiddelde fee van ${h(CRM.euro(Math.round(gemFee)))} (uit ${fees.length} ${fees.length===1?'plaatsing':'plaatsingen'}),
            een blijfkans van ${Math.round(blijf*100)}% en de conversie uit onze eigen afgeronde trajecten
            (${conv.vg} voorstellen → ${conv.pl} plaatsingen).`
         : 'Nog geen plaatsingen met fee in het financebord — het benodigde tempo kan pas berekend worden zodra die er zijn.'}</p>
@@ -827,8 +876,13 @@ function blokOmzet(p, fin){
   const feeTotaal = getekendFee.reduce((s,pl)=>s+(Number(pl.fee_excl)||0),0);
   const gemFee = getekendFee.length ? Math.round(feeTotaal/getekendFee.length) : null;
 
+  /* Een plaatsing zonder klantnaam gaf hier een regel met het woord
+     "undefined" erboven. Liever eerlijk benoemen dat het veld leeg is. */
   const perKlant = {};
-  getekendFee.forEach(pl => { perKlant[pl.klant] = (perKlant[pl.klant]||0) + (Number(pl.fee_excl)||0); });
+  getekendFee.forEach(pl => {
+    const k = String(pl.klant||'').trim() || 'Zonder klantnaam';
+    perKlant[k] = (perKlant[k]||0) + (Number(pl.fee_excl)||0);
+  });
   const top = Object.entries(perKlant).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const maxK = top.length ? top[0][1] : 1;
 
