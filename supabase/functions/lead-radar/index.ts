@@ -159,7 +159,7 @@ area["name"="${regio}"]["admin_level"="4"]->.a;
   nwr["building"="industrial"]["name"]["website"](area.a);
   nwr["industrial"]["name"]["operator"](area.a);
 );
-out center tags 2500;`;
+out center tags 800;`;
     // Overpass weigert anonieme/Deno-requests (406) — dus een nette User-Agent.
     // Twee servers: valt de eerste uit (drukte → 504), dan de reserve.
     const endpoints = [
@@ -193,10 +193,12 @@ out center tags 2500;`;
     // trafo's, musea) i.p.v. echte bedrijven.
     const gebiedRe = /industrieterrein|bedrijventerrein|bedrijvenpark|industriepark|industriegebied|\bhaven\b|\bterrein\b|\bzone\b|logistiek park|business park|\bloods\b|pakhuis|\bmagazijn\b|schuur|kruit|visafslag|remise|\bsilo\b|opslag|^dc ?\d|gemaal|rioolwater|waterzuiver|\btrafo\b|substation|umformer|\bmolen\b|museum|\bkerk\b/i;
     const vandaag2 = new Date().toISOString().slice(0, 10);
+    const stempel = Date.now();
     const gezien = new Set<string>();
-    let nieuw = 0, overgeslagen = 0;
+    const rows: Record<string, unknown>[] = [];
+    let overgeslagen = 0;
     for (const el of elements) {
-      if (nieuw >= max) break;
+      if (rows.length >= max) break;
       const t = (el.tags ?? {}) as Record<string, string>;
       const naam = String(t.name ?? "").trim();
       if (!naam || naam.length < 3) { overgeslagen++; continue; }
@@ -205,16 +207,23 @@ out center tags 2500;`;
       if (isBureau(naam) || gebiedRe.test(naam)) { overgeslagen++; continue; }
       gezien.add(nn);
       const magazijn = t.building === "warehouse" || t.office === "logistics";
-      const plaats = t["addr:city"] ?? t["addr:place"] ?? t["addr:suburb"] ?? "";
-      const website = t.website ?? t["contact:website"] ?? "";
-      const { error } = await service.from("crm_leadradar").insert({
-        id: "lr" + Date.now() + Math.floor(Math.random() * 10000),
-        bedrijf: naam, plaats: String(plaats),
+      rows.push({
+        id: "lr" + stempel + "-" + rows.length,
+        bedrijf: naam, plaats: String(t["addr:city"] ?? t["addr:place"] ?? t["addr:suburb"] ?? ""),
         functies: magazijn ? "Magazijn / distributie" : "Productie / fabriek",
-        vacatures: 0, bron: "osm", url: String(website),
+        vacatures: 0, bron: "osm", url: String(t.website ?? t["contact:website"] ?? ""),
         gevonden_op: vandaag2, laatst_gezien: vandaag2, status: "nieuw",
       });
-      if (!error) nieuw++; else overgeslagen++;
+    }
+    // Eén bulk-insert (veel lichter dan tientallen losse). Valt die door één
+    // dubbele naam om, dan proberen we de rijen alsnog een voor een.
+    let nieuw = 0;
+    if (rows.length) {
+      const { error } = await service.from("crm_leadradar").insert(rows);
+      if (!error) { nieuw = rows.length; }
+      else {
+        for (const row of rows) { const { error: e2 } = await service.from("crm_leadradar").insert(row); if (!e2) nieuw++; }
+      }
     }
     return new Response(JSON.stringify({ ok: true, regio, gescand: elements.length, nieuw, overgeslagen }),
       { headers: { "Content-Type": "application/json" } });
