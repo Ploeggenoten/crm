@@ -82,3 +82,48 @@ alter table vacatures add column if not exists web_status     text default 'Nog 
 alter table vacatures add column if not exists web_url        text default '';
 alter table vacatures add column if not exists web_online_op  date;
 alter table vacatures add column if not exists web_door       text default '';
+
+
+-- ─── 4. De vier gebruikers ────────────────────────────────────
+-- Tjeerd  tjeerd@ploeggenoten.nl       eigenaar, ziet alles inclusief geld
+-- Tjerk   tjerk@ploeggenoten.nl        accountmanager
+-- Rajesh  recruitment@ploeggenoten.nl  recruiter
+-- Bryan   bryan@ploeggenoten.nl        marketeer
+--
+-- LET OP — EERST DIT, ANDERS DOET ONDERSTAANDE NIETS:
+-- de accounts zelf maak je aan in Supabase → Authentication → Users →
+-- "Add user". Dat kan alleen jij: er komt een wachtwoord aan te pas, en dat
+-- hoort niet via mij te lopen. Daarna dit script draaien.
+--
+-- De app koppelt een profiel aan een account op `id` (auth.users.id), niet
+-- op e-mailadres. Onderstaande zoekt dat id zelf op, dus je hoeft nergens
+-- een id over te typen. Ontbreekt een account nog, dan slaat die regel
+-- gewoon over — je kunt dit dus veilig opnieuw draaien nadat je de rest
+-- hebt aangemaakt.
+--
+-- `functie` bepaalt welk dashboard iemand ziet: am | recruiter | marketeer.
+-- `naam` is waar de hele app op koppelt (eigenaar van een klant, recruiter
+-- op een kandidaat, "voor wie" bij een taak). Schrijf hem dus precies zoals
+-- hij in de bestaande gegevens staat — anders ziet iemand zijn eigen werk
+-- niet meer staan.
+insert into profiles (id, naam, email, functie, rol)
+select u.id, v.naam, v.email, v.functie, v.rol
+  from (values
+    ('tjeerd@ploeggenoten.nl',      'Tjeerd', 'am',        'admin'),
+    ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'user'),
+    ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'user'),
+    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'user')
+  ) as v(email, naam, functie, rol)
+  join auth.users u on lower(u.email) = v.email
+on conflict (id) do update
+  set naam    = excluded.naam,
+      email   = excluded.email,
+      functie = excluded.functie,
+      rol     = excluded.rol;
+
+-- Controle: dit hoort vier regels te geven. Staat er iemand niet bij, dan
+-- bestaat dat account nog niet in Authentication → Users.
+select p.naam, p.email, p.functie, p.rol
+  from profiles p
+  join auth.users u on u.id = p.id
+ order by p.naam;

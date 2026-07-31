@@ -338,6 +338,8 @@ CRM.PLAATSEN = {
 CRM.PLAATS_ALIAS = {
   /* Engelse en verminkte schrijfwijzen */
   thehague:'denhaag', hague:'denhaag', sgravennage:'sgravenhage',
+  flushing:'vlissingen', hookofholland:'hoekvanholland',
+  thenetherlands:'', netherlands:'',   /* alleen een land, geen plaats */
   hellvoetsluis:'hellevoetsluis', denbosch:'shertogenbosch', shertogenbos:'shertogenbosch',
   /* Wijken en deelgemeenten: dezelfde gemeente, andere naam */
   leidschenveen:'denhaag', ypenburg:'denhaag', scheveningen:'denhaag',
@@ -347,9 +349,26 @@ CRM.PLAATS_ALIAS = {
   nieuwerkerkadijssel:'nieuwerkerka/dijssel', alphenadrijn:'alphena/drijn',
   koudekerkadrijn:'koudekerka/drijn'
 };
+/* Landnamen die achter een plaats geplakt staan. Uit de import kwam veel in
+   het Engels binnen ("Utrecht, Netherlands"), en de opschoning hieronder
+   plakte dat aan elkaar tot "utrechtnetherlands" — onbekend, dus geen
+   afstand, dus een structureel te lage matchscore. Zonder dat het ergens op
+   het scherm te zien was: een kandidaat viel gewoon nooit boven komen
+   drijven. */
+const LANDEN = /^(the\s+)?(netherlands|nederland|holland|nl|dutch)$/;
+
 CRM.plaatsSleutel = s => {
-  const k = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
-    .replace(/\(.*?\)/g,' ')                       /* "(ZH)", "(gem. Westland)" */
+  let ruw = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/\(.*?\)/g,' ');                      /* "(ZH)", "(gem. Westland)" */
+  /* Alles achter de eerste komma is provincie of land, nooit de plaatsnaam
+     zelf. "Krimpen a/d IJssel" heeft geen komma en blijft dus heel. */
+  const delen = ruw.split(',').map(d => d.trim()).filter(Boolean);
+  if(delen.length > 1){
+    /* Achterste delen die een land zijn eraf; de rest is de plaats. */
+    while(delen.length > 1 && LANDEN.test(delen[delen.length-1])) delen.pop();
+    ruw = delen[0];
+  }
+  const k = ruw
     .replace(/^\s*\d{4}\s*[a-z]{0,2}\b/,'')         /* postcode ervoor */
     .replace(/^\s*gem(eente)?\.?\s+/,'')
     .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');

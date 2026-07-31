@@ -1084,67 +1084,73 @@ function bindTaken(mount){
   };
 }
 
-/* ═══ HET JAARDOEL — de band boven het dashboard ══════════════════
-   Wens Tjeerd (31 jul 2026): "tot 31 december naar 75 plaatsingen, dat is
-   leuker om naartoe te werken." De rekenkant zit in js/data.js
-   (CRM.plaatsingenJaar); hier staat alleen hoe het eruitziet.
+/* ═══ HET MAANDDOEL — de band boven het dashboard ═════════════════
+   Wens Tjeerd (31 jul 2026): "Het doel in het dashboard moet altijd
+   maandelijks zijn. Het jaarlijkse doel van 75 voor 31 december moet in
+   Performance staan."
 
-   DRIE DOELEN WAREN ER ÉÉN TE VEEL. Er stonden er tot nu toe twee:
-   "Team deze maand: +7 / 8" als chip in de paginakop, en "Jouw maand" in
-   de rechterkolom. Met het jaardoel erbij zou hetzelfde team met dezelfde
-   maat drie keer op één scherm staan. Gekozen:
-     - het JAARDOEL krijgt de band bovenaan. Het is het gedeelde getal
-       waar iedereen naartoe werkt en het hoort dus in beeld te staan,
-       niet weggestopt in een hoek van de kop;
-     - de TEAM-MAANDCHIP is vervallen. Die mat precies hetzelfde (team,
-       plaatsingen, tegen een doel) over een kortere periode, en de
-       schema-regel in deze band — "je zou nu op 43 staan" — beantwoordt
-       de vraag waar die chip voor bedoeld was: loop ik voor of achter.
-       Het maandcijfer zelf blijft gewoon in Performance staan;
-     - "JOUW MAAND" blijft. Dat is een andere vraag: niet hoe het team
-       ervoor staat, maar hoe jij ervoor staat, en netto in plaats van
-       getekend. Het staat daarom ook op een andere plek.
+   Hier stond eerst het jaardoel. Dat klopt ook: het dashboard is je
+   werkdag, en een teller die pas over vijf maanden afloopt stuurt geen
+   dag aan. De maand doet dat wel — die is kort genoeg om vandaag nog iets
+   aan te veranderen. Het jaardoel staat in Performance, waar je naar
+   cijfers kijkt in plaats van naar werk.
 
-   Geteld wordt getekend, niet netto — zie de toelichting in js/data.js.
+   DRIE DOELEN WAREN ER ÉÉN TE VEEL en dat blijft zo. "Jouw maand" in de
+   rechterkolom blijft staan: dat is een andere vraag (jij, netto) dan
+   deze band (het team, netto). Ze staan daarom op een andere plek.
+
    Geen bedragen: het is een aantal mensen, dus iedereen mag het zien. */
-function jaarBandHTML(){
-  if(!CRM.plaatsingenJaar) return '';
-  let j; try{ j = CRM.plaatsingenJaar(); }catch(e){ console.warn('jaardoel', e); return ''; }
-  if(!j || !j.doel) return '';
+function maandBandHTML(){
+  if(!CRM.plaatsingenMaand || !CRM.maandTarget) return '';
+  let pm, doel;
+  try{ pm = CRM.plaatsingenMaand(); doel = CRM.maandTarget(); }
+  catch(e){ console.warn('maanddoel', e); return ''; }
+  if(!pm || !doel) return '';
 
-  /* "Per week nodig" wordt onzin zodra het jaar bijna om is: met nog vier
-     dagen te gaan staat er ineens dat je er 40 per week moet doen. Vanaf
-     drie weken te gaan noemen we daarom alleen nog het aantal en de dagen
-     — dat is in de eindspurt ook precies wat je wilt weten. */
-  const eindspurt = j.dagenTeGaan < 21;
-  const perWeek = String(j.perWeekNodig).replace('.', ',');
-  const restZin = !j.teGaan
-    ? 'Doel gehaald — alles hierboven is winst.'
-    : eindspurt
-      ? `${j.teGaan} te gaan in de laatste ${j.dagenTeGaan} ${j.dagenTeGaan===1?'dag':'dagen'}`
-      : `${j.teGaan} te gaan · ${j.dagenTeGaan} dagen · ${perWeek} per week nodig`;
+  const gedaan = pm.netto;
+  const teGaan = Math.max(0, doel - gedaan);
+  const pct = doel ? Math.max(0, Math.min(100, Math.round(gedaan / doel * 100))) : 0;
 
-  /* Een balk op 23% zegt niets zonder de datum erbij: in maart is dat
-     ruim op schema, in november ver achter. Daarom staat het verschil met
-     "waar je nu zou moeten staan" er altijd naast. */
-  const verschil = j.voorOfAchter;
+  /* Hoeveel werkdagen zijn er nog in deze maand? Dat is de vraag die een
+     AM 's ochtends stelt — niet hoeveel kalenderdagen. Zaterdag en zondag
+     tellen niet mee; feestdagen kennen we niet en die gokken we niet. */
+  const nu = new Date(CRM.todayISO() + 'T12:00:00');
+  const laatste = new Date(nu.getFullYear(), nu.getMonth() + 1, 0, 12);
+  let werkdagen = 0;
+  for(let d = new Date(nu); d <= laatste; d.setDate(d.getDate() + 1)){
+    const w = d.getDay();
+    if(w !== 0 && w !== 6) werkdagen++;
+  }
+
+  /* Waar zou je nu moeten staan als je de maand gelijkmatig verdeelt?
+     Een balk op 40% zegt niets zonder de datum erbij: op de 5e is dat
+     ruim voor, op de 28e ver achter. */
+  const dagInMaand = nu.getDate(), dagenInMaand = laatste.getDate();
+  const verwacht = Math.round(doel * (dagInMaand / dagenInMaand));
+  const verschil = gedaan - verwacht;
+
+  const restZin = !teGaan
+    ? 'Doel gehaald — alles hierna is winst.'
+    : `${teGaan} te gaan · nog ${werkdagen} ${werkdagen === 1 ? 'werkdag' : 'werkdagen'} deze maand`;
+
   /* Het woord zegt al welke kant het op gaat, dus zonder plus- of minteken:
-     "−26 achter op schema" leest als een dubbele ontkenning. De kleur draagt
-     de lading (olijf vooruit, rood achter), precies zoals de huisstijl het
-     voorschrijft voor cijfers met richting. */
-  const schemaZin = !j.teGaan ? ''
+     "−3 achter op schema" leest als een dubbele ontkenning. De kleur draagt
+     de lading, zoals de huisstijl voorschrijft voor cijfers met richting. */
+  const schemaZin = !teGaan ? ''
     : verschil === 0 ? 'Precies op schema'
-    : verschil > 0 ? `<span class="num pos">${verschil} vóór op schema</span> — je zou nu op <span class="num">${j.verwacht}</span> staan`
-    : `<span class="num neg">${-verschil} achter op schema</span> — je zou nu op <span class="num">${j.verwacht}</span> staan`;
+    : verschil > 0 ? `<span class="num pos">${verschil} vóór op schema</span> — je zou nu op <span class="num">${verwacht}</span> staan`
+    : `<span class="num neg">${-verschil} achter op schema</span> — je zou nu op <span class="num">${verwacht}</span> staan`;
+
+  const maandNaam = nu.toLocaleDateString('nl-NL', {month:'long'});
 
   return `<button type="button" class="card jaar" id="dash_jaar" title="Naar Performance">
     <div class="jaar-cijfer">
-      <span class="big">${j.gedaan}</span><span class="jaar-van num">/ ${j.doel}</span>
+      <span class="big">${gedaan}</span><span class="jaar-van num">/ ${doel}</span>
     </div>
     <div class="jaar-mid">
-      <div class="label jaar-kop">Samen naar ${j.doel} plaatsingen in ${h(j.jaar)}</div>
-      <div class="bar jaar-bar"><i class="${j.pct>=100?'green':''}" style="width:${j.pct}%"></i></div>
-      <div class="meta jaar-schema">${schemaZin || 'Het hele jaar telt mee: iedereen die je aan het werk hebt geholpen.'}</div>
+      <div class="label jaar-kop">Het team in ${h(maandNaam)}</div>
+      <div class="bar jaar-bar"><i class="${pct>=100?'green':''}" style="width:${pct}%"></i></div>
+      <div class="meta jaar-schema">${schemaZin || 'Netto: getekend min gestopt, zoals op het bord.'}</div>
     </div>
     <div class="jaar-rest meta">${h(restZin)}</div>
   </button>`;
@@ -1683,7 +1689,7 @@ CRM.registerModule('dashboard', {
     const rechts = kolomRechts();
 
     /* De paginakop houdt alleen nog Vernieuwen over: de teamchip is
-       vervangen door de jaardoelband, zie jaarBandHTML(). */
+       vervangen door de jaardoelband, zie maandBandHTML(). */
     if(acties) acties.innerHTML =
       `<button class="btn ghost sm" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>`;
 
@@ -1701,7 +1707,7 @@ CRM.registerModule('dashboard', {
           </div>
           ${looptRegel()}
         </section>
-        ${jaarBandHTML()}
+        ${maandBandHTML()}
         <div class="dash2-grid${agendaOpen()?'':' dicht'}${rechts?'':' geenrail'}">
           <div class="dash-links">
             <div class="dash-agenda">${tijdlijnKaart(P, W)}</div>
