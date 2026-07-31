@@ -101,6 +101,35 @@ details.kl-vac > summary b{font-size:13.5px;color:var(--ink)}
 .kl-vac-b{padding:12px 14px}
 .kl-vac-b .kl-kandlijst{background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);padding:8px}
 
+/* ─── Vacature: stand voor de website ─────────────────────────────
+   Eén rustig kader bovenaan de vacature met de twee dingen die tussen de
+   AM en de marketeer heen en weer gaan: is de informatie compleet, en
+   staat de vacature online. Bewust smal en grijs — het is een stand van
+   zaken, geen kaart op zichzelf. */
+.kl-vweb{border:1px solid var(--line-2);border-radius:var(--r-s);
+  background:var(--card-2);padding:10px 12px;margin:0 0 12px}
+.kl-vweb-kop{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.kl-vweb-bar{width:110px;flex:none}
+.kl-vweb-m{margin-top:6px;line-height:1.5}
+.kl-vweb-m a{color:var(--txt);text-decoration:underline}
+.kl-vweb-m a:hover{color:var(--ink)}
+
+/* Marketinginfo in het vacaturevenster: ingeklapt, met de teller in de
+   samenvatting. Zo blijft het venster kort voor wie snel wil vastleggen,
+   terwijl wél zichtbaar is hoeveel er nog mist. */
+details.vacinfo{border:1px solid var(--line-2);border-radius:var(--r);
+  background:var(--card-2);margin:0 0 4px}
+details.vacinfo > summary{list-style:none;cursor:pointer;padding:11px 13px;
+  display:flex;align-items:center;gap:10px;border-radius:var(--r)}
+details.vacinfo > summary::-webkit-details-marker{display:none}
+details.vacinfo > summary:hover{background:var(--well)}
+details.vacinfo > summary b{font-size:13px;color:var(--ink)}
+details.vacinfo > summary .meta{margin-top:2px}
+details.vacinfo[open] > summary{border-bottom:1px solid var(--line);
+  border-radius:var(--r) var(--r) 0 0}
+.vacinfo-b{padding:12px 13px 0;background:var(--card);border-radius:0 0 var(--r) var(--r)}
+.vacinfo-b textarea{min-height:58px}
+
 /* ─── Kandidaatregels: witte kaartjes op het vlak ─────────────── */
 .kl-kandlijst{display:flex;flex-direction:column;gap:6px}
 a.kl-kand{

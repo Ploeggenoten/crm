@@ -183,6 +183,65 @@ CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
   const gestopt  = cs.filter(c => teltAlsStop(c) && (c.gestoptOp||'').slice(0,7)===mk);
   return {getekend, gestopt, netto: getekend.length - gestopt.length};
 };
+/* ─── Jaardoel ───────────────────────────────────────────────────
+   Naast de maandtarget een doel voor het hele jaar: "tot 31 december naar
+   75 plaatsingen". Wens Tjeerd, 31 jul 2026 — een maandtarget van 8 die
+   elke maand op nul begint geeft geen gevoel van opbouw; een teller die
+   het hele jaar doorloopt wél.
+
+   Bewaard in dezelfde `targets`-tabel, met het JAARTAL als sleutel
+   ('2026'), zodat er geen kolom of tabel bij hoefde. De maandsleutels zijn
+   'JJJJ-MM' en de standaardsleutels beginnen met '__', dus die kunnen
+   elkaar niet in de weg zitten.
+
+   Geteld wordt GETEKEND, niet netto. Een stop van iemand die in maart
+   begon hoort een jaarteller niet terug te draaien: het jaardoel gaat over
+   hoeveel mensen je aan het werk hebt geholpen, niet over hoeveel er nu
+   nog zitten. Netto blijft waar het thuishoort — in de maandcijfers en in
+   Finance. */
+CRM.JAAR_TARGET_STANDAARD = 75;
+
+CRM.jaarTarget = (jaar = CRM.todayISO().slice(0,4)) => {
+  const t = (CRM.state.targets || []).find(x => String(x.maand) === String(jaar));
+  return t && t.aantal != null ? t.aantal : CRM.JAAR_TARGET_STANDAARD;
+};
+
+/* Alle plaatsingen van dit jaar, met de stand tot nu toe.
+   Terug: {getekend, doel, gedaan, teGaan, dagenTeGaan, perWeekNodig, opSchema} */
+CRM.plaatsingenJaar = (jaar = CRM.todayISO().slice(0,4)) => {
+  const cs = CRM.kandidaten();
+  const teltAlsStop = c => c.fase === 'Gestopt' && !!c.geplaatstOp && !c.vervangt;
+  const getekend = cs.filter(c => String(c.geplaatstOp || '').slice(0,4) === String(jaar) &&
+    (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
+
+  const doel = CRM.jaarTarget(jaar);
+  const gedaan = getekend.length;
+  const teGaan = Math.max(0, doel - gedaan);
+
+  /* Tot en met 31 december. Op 31 december zelf is er nog één dag te gaan,
+     niet nul — anders deel je door nul en staat er Infinity op het scherm. */
+  const vandaag = new Date(CRM.todayISO() + 'T12:00:00');
+  const eind = new Date(Number(jaar), 11, 31, 12, 0, 0);
+  const dagenTeGaan = Math.max(1, Math.round((eind - vandaag) / 86400000) + 1);
+  const wekenTeGaan = dagenTeGaan / 7;
+
+  /* Waar had je moeten staan als je het jaar gelijkmatig verdeelt? Dat is
+     eerlijker dan alleen "x van 75": in januari is 6 van 75 prima en in
+     november niet. */
+  const start = new Date(Number(jaar), 0, 1, 12, 0, 0);
+  const dagenInJaar = Math.round((new Date(Number(jaar)+1, 0, 1, 12) - start) / 86400000);
+  const dagenVoorbij = Math.max(0, Math.round((vandaag - start) / 86400000));
+  const verwacht = Math.round(doel * Math.min(1, dagenVoorbij / dagenInJaar));
+
+  return {
+    jaar: String(jaar), getekend, doel, gedaan, teGaan, verwacht,
+    voorOfAchter: gedaan - verwacht,
+    dagenTeGaan, perWeekNodig: teGaan ? Math.round((teGaan / wekenTeGaan) * 10) / 10 : 0,
+    opSchema: gedaan >= verwacht,
+    pct: doel ? Math.min(100, Math.round(gedaan / doel * 100)) : 0
+  };
+};
+
 /* Het oude bord schrijft de standaardtarget weg onder de sleutel '__default',
    het CRM onder '__default__' (js/instellingen.js schrijft ze allebei). Wie zijn
    default ooit alleen op het bord heeft gezet, kreeg hier stilzwijgend de
@@ -270,8 +329,32 @@ CRM.PLAATSEN = {
   'capelleadijssel':[51.930,4.577],  'nieuwerkerkadijssel':[51.975,4.615],
   'koudekerkadrijn':[52.121,4.598]
 };
-CRM.plaatsSleutel = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
-  .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
+/* Schrijfwijzen die naar dezelfde plaats verwijzen. Zonder deze laag geeft
+   CRM.afstandKm null voor "The Hague" of "Leidschenveen", en dan scoort
+   CRM.matchScore die kandidaat structureel te laag — een stille rekenfout
+   die overal doorwerkt waar we matchen. Stond eerst alleen in js/source.js,
+   waardoor dat scherm plaatsen kon plaatsen die de rest van de app niet
+   herkende: twee schermen, twee antwoorden over dezelfde persoon. */
+CRM.PLAATS_ALIAS = {
+  /* Engelse en verminkte schrijfwijzen */
+  thehague:'denhaag', hague:'denhaag', sgravennage:'sgravenhage',
+  hellvoetsluis:'hellevoetsluis', denbosch:'shertogenbosch', shertogenbos:'shertogenbosch',
+  /* Wijken en deelgemeenten: dezelfde gemeente, andere naam */
+  leidschenveen:'denhaag', ypenburg:'denhaag', scheveningen:'denhaag',
+  loosduinen:'denhaag', wateringseveld:'denhaag',
+  /* "a.d." wordt door de opschoning hieronder niet omgezet naar "a/d" */
+  krimpenadijssel:'krimpena/dijssel', capelleadijssel:'capellea/dijssel',
+  nieuwerkerkadijssel:'nieuwerkerka/dijssel', alphenadrijn:'alphena/drijn',
+  koudekerkadrijn:'koudekerka/drijn'
+};
+CRM.plaatsSleutel = s => {
+  const k = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/\(.*?\)/g,' ')                       /* "(ZH)", "(gem. Westland)" */
+    .replace(/^\s*\d{4}\s*[a-z]{0,2}\b/,'')         /* postcode ervoor */
+    .replace(/^\s*gem(eente)?\.?\s+/,'')
+    .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
+  return CRM.PLAATS_ALIAS[k] || k;
+};
 CRM.afstandKm = (a,b) => {
   const pa = CRM.PLAATSEN[CRM.plaatsSleutel(a)], pb = CRM.PLAATSEN[CRM.plaatsSleutel(b)];
   if(!pa || !pb) return null;

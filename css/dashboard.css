@@ -3,8 +3,13 @@
 
 .dash2{display:flex;flex-direction:column;gap:18px;max-width:1240px}
 
-/* ─── Begroeting + motivatiezin ──────────────────────────────── */
-.dash-hero{padding:2px 2px 0}
+/* ─── Begroeting + motivatiezin ──────────────────────────────────
+   De kopregel was op een breed scherm één zin links en verder niets.
+   "Wat loopt er" (de pijplijntellingen) stond helemaal onderaan de
+   pagina, waar niemand keek. Die twee vullen elkaar aan: links wie je
+   bent en welke dag het is, rechts hoe de pijplijn ervoor staat. */
+.dash-hero{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 32px;padding:2px 2px 0}
+.dash-hero-t{flex:1 1 460px;min-width:0}
 .dash-hero .dash-datum{margin-bottom:8px;letter-spacing:.01em}
 /* Alleen de eerste letter met een hoofdletter — capitalize zou ook "Juli" doen. */
 .dash-hero .dash-datum::first-letter{text-transform:uppercase}
@@ -24,34 +29,149 @@
 }
 .mot-x:hover{color:var(--ink);background:var(--card-2)}
 
-/* ─── Teamtarget-chip in de paginakop ────────────────────────── */
-.team-chip{
-  display:inline-flex;align-items:center;gap:10px;background:var(--card);
-  border:1px solid var(--line-2);border-radius:999px;padding:6px 14px;
-  font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--txt-2);
-  cursor:pointer;white-space:nowrap;transition:border-color .12s;
+/* ─── Jaardoel — de band boven het dashboard ─────────────────────
+   Vervangt de teamtarget-chip die in de paginakop stond. Eén brede band
+   in plaats van een pilletje: dit is het cijfer waar het hele team naar
+   kijkt, en op het teamscherm vult het meteen de volle breedte.
+   Het is een <button> (naar Performance) en moet dus expliciet zijn
+   knopstijl kwijt — anders erft hij het lettertype van de browser. */
+.card.jaar{
+  display:flex;align-items:center;gap:14px 28px;flex-wrap:wrap;
+  padding:14px 24px;width:100%;text-align:left;cursor:pointer;
+  font-family:var(--body);color:inherit;border-color:var(--line-2);
+  border-left:2px solid var(--olive);transition:border-color .12s;
 }
-.team-chip:hover{border-color:var(--olive-l)}
-.team-chip .tc-van{color:var(--muted);font-weight:500}
-.team-chip .bar.tc-bar{width:56px;flex:0 0 56px;height:4px}
+.card.jaar:hover{border-color:var(--olive-l);border-left-color:var(--olive)}
+.jaar-cijfer{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
+.jaar-cijfer .big{font-size:38px;line-height:1}
+.jaar-van{font-size:17px;color:var(--muted);font-weight:500}
+/* Het middenstuk krijgt de rek: op een breed scherm wordt de balk lang,
+   op een laptop klapt de band netjes om. */
+.jaar-mid{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.jaar-kop{color:var(--txt-2)}
+.bar.jaar-bar{height:6px}
+.jaar-schema{line-height:1.4}
+.jaar-rest{flex:0 0 auto;text-align:right;line-height:1.5;max-width:34ch}
+@media (max-width:700px){
+  .card.jaar{padding:12px 16px;gap:10px 16px}
+  .jaar-cijfer .big{font-size:30px}
+  .jaar-rest{text-align:left;flex:1 1 100%}
+}
 
 /* De stijl voor de oude "cockpitregel" (omzet, omzetdoel, banksaldo) is
    weg. Geld hoort niet op het dashboard — zie de toelichting in
    js/dashboard.js. Zet hier dus geen .cockpit-stijl terug. */
 
-/* ─── Hoofdindeling: tijdlijn + smalle rechterkolom ──────────── */
-.dash2-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:18px;align-items:start}
-.dash2-hoofd{min-width:0}
+/* ═══ HOOFDINDELING — drie banen ═══════════════════════════════════
+   Smal (telefoon, tablet): alles onder elkaar, agenda eerst.
+   Vanaf 1000px: agenda + "Jouw maand" links, taken rechts, rail eronder.
+   Vanaf 1500px: drie echte banen naast elkaar.
+   De regel uit base.css blijft gelden: extra breedte vullen we met MEER
+   inhoud naast elkaar, nooit met dezelfde inhoud uitgerekt.
+
+   Smal: alles onder elkaar, op volgorde van dringendheid. .dash-links is
+   dan geen kolom maar lost zich op (display:contents), zodat "Jouw maand"
+   helemaal onderaan kan staan in plaats van meteen onder de agenda. */
+.dash2-grid{display:grid;grid-template-columns:1fr;gap:18px;align-items:start;
+  grid-template-areas:"agenda" "taken" "rail" "maand"}
+.dash-links{display:contents}
+.dash-agenda,.dash-taken,.dash-rail,.dash-maand{min-width:0}
+.dash-agenda{grid-area:agenda}
+.dash-taken{grid-area:taken}
+.dash-rail{grid-area:rail}
+.dash-maand{grid-area:maand}
 .zij{display:flex;flex-direction:column;gap:16px;min-width:0}
 .dash-sec{display:flex;flex-direction:column;gap:9px}
 .dash-sec .sec-kop{display:block}
 
-/* ─── Tijdlijnkaart ──────────────────────────────────────────── */
+@media (min-width:1000px){
+  /* Laptop: links de agenda met "Jouw maand" eronder, rechts de taken, en
+     de rail over de volle breedte daaronder. .dash-links wordt hier een
+     échte kolom: dan sluit "Jouw maand" direct op de agenda aan in plaats
+     van uitgelijnd te worden op de onderkant van het takenpaneel. */
+  .dash2-grid{
+    grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+    grid-template-areas:"links taken" "rail rail";
+  }
+  .dash-links{display:flex;flex-direction:column;gap:18px;grid-area:links;min-width:0}
+  .dash-agenda,.dash-maand{grid-area:auto}
+  /* De rail als raster: hoeveel blokken een rol ook heeft (een marketeer
+     ziet andere dan een AM, zonder Outlook vervalt "Je mail"), ze verdelen
+     samen de volle breedte. auto-fit i.p.v. auto-fill, anders blijft er een
+     leeg spoor staan zodra iemand één blok minder heeft. */
+  .dash-rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+    gap:16px;align-content:start;align-items:start}
+}
+
+@media (min-width:1500px){
+  .dash2{max-width:none}
+  /* Drie banen. De taken krijgen de grootste fr-factor: dat is de baan waar
+     de meeste regels in staan en waar tekst, naam en datum naast elkaar
+     moeten passen. De agenda groeit het minst mee — een dagbaan van 800px
+     maakt de dag niet overzichtelijker, dat is dezelfde dag maar breder.
+     De rail bepaalt zelf of hij één of twee kolommen wordt (auto-fit
+     hierboven): op een gewoon breed scherm één, op een heel breed scherm
+     twee. Zo blijft er geen halve strook over, ongeacht hoeveel blokken
+     iemands rol oplevert. */
+  .dash2-grid{
+    grid-template-columns:minmax(360px,1fr) minmax(420px,1.3fr) minmax(300px,.85fr);
+    grid-template-areas:"links taken rail";
+  }
+}
+
+/* Geen meldingen, geen mailkoppeling, geen hot vacatures: dan is er geen
+   rail en hoort er ook geen lege derde baan te staan. Dit is precies het
+   geval dat op het echte scherm misging — in de demo heeft iedereen alles,
+   in productie heeft lang niet elke AM een hot vacature open. */
+@media (min-width:1000px){
+  .dash2-grid.geenrail{grid-template-areas:"links taken"}
+  .dash2-grid.geenrail .dash-rail{display:none}
+}
+@media (min-width:1500px){
+  .dash2-grid.geenrail{grid-template-columns:minmax(380px,1fr) minmax(420px,1.3fr)}
+}
+
+/* ─── Agenda ingeklapt ───────────────────────────────────────────
+   De vrijgekomen ruimte blijft niet leeg: de agenda wordt één regel over
+   de volle breedte, en taken en rail schuiven eronder en verdelen álles.
+   De rail is daar breed genoeg voor twee of drie kolommen, met "Jouw
+   maand" eronder. */
+@media (min-width:1000px){
+  .dash2-grid.dicht{
+    grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);
+    grid-template-areas:"agenda agenda" "taken rail" "taken maand";
+    /* Het takenpaneel loopt over rij 2 én 3. Zonder deze regel verdeelt de
+       browser die hoogte over beide rijen en valt er een gat van een paar
+       honderd pixels tussen de rail en "Jouw maand". Met 1fr op de laatste
+       rij krijgt die de rest en sluit alles netjes aan. */
+    grid-template-rows:auto auto 1fr;
+  }
+  .dash2-grid.dicht .dash-links{display:contents}
+  .dash2-grid.dicht .dash-agenda{grid-area:agenda}
+  .dash2-grid.dicht .dash-maand{grid-area:maand}
+  .dash2-grid.dicht .dash-rail{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+}
+@media (min-width:1000px){
+  .dash2-grid.dicht.geenrail{grid-template-areas:"agenda agenda" "taken maand"}
+}
+
+/* ─── Agendakaart ────────────────────────────────────────────── */
 .tl2-card .card-b.tl2-b{padding:8px 20px 18px}
-.tl2-vg{display:flex;align-items:center;gap:10px;min-width:0}
-.tl2-vg .meta{white-space:nowrap}
-.bar.tl2-vgbar{width:96px;flex:0 0 96px;height:5px}
 .tl2-leeg{padding:2px 2px 10px}
+
+/* De in-/uitklapknop is tegelijk de titel van de kaart: één ding om aan
+   te wijzen in plaats van een kopje met een pijltje ernaast. */
+.tl2-kop{gap:10px}
+.tl2-vouwknop{
+  display:inline-flex;align-items:center;gap:7px;background:none;border:none;padding:2px 0;
+  font-family:var(--body);font-weight:700;font-size:15px;color:var(--ink);cursor:pointer;
+}
+.tl2-vouwknop:hover{color:var(--olive)}
+.tl2-caret{font-size:10px;color:var(--muted);width:10px;line-height:1}
+/* Ingeklapt: één regel met wat er vandaag vaststaat, zodat je na het
+   inklappen nog steeds weet dat je om tien uur zit. */
+.tl2-card.dicht .card-h{border-bottom:none;border-radius:var(--r-l)}
+.tl2-dichtzin{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl2-olrow{display:flex;align-items:center;gap:12px;padding:8px 2px 10px;flex-wrap:wrap}
 /* Vandaag ↔ Week: kleiner dan de standaard .seg, hij staat naast een titel. */
 .tl2-seg button{padding:4px 12px;font-size:12px}
@@ -81,7 +201,7 @@
 @media(max-width:640px){ .tl2-wklbl{min-width:0} }
 
 /* Zachte nadruk als een melding naar de tijdlijn springt. */
-.tl2-card.flits{border-color:var(--olive-l);transition:border-color .5s}
+.tl2-card.flits,.tk-card.flits{border-color:var(--olive-l);transition:border-color .5s}
 
 /* Eén uur = tijdlabel links + slot rechts. */
 .tl2-uur{display:flex;gap:12px;border-top:1px solid var(--line);min-height:44px}
@@ -116,9 +236,6 @@
 }
 .tl2-item.klik{cursor:pointer}
 .tl2-item.klik:hover{background:#f7f9f1}
-.tl2-vink{width:15px;height:15px;flex:0 0 15px;margin:0 2px;cursor:pointer}
-/* Regels zonder vinkje (weekweergave: afspraken) blijven wel uitgelijnd. */
-.tl2-geenvink{width:15px;height:15px;flex:0 0 15px;margin:0 2px}
 .tl2-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .tl2-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl2-s{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -129,23 +246,111 @@
 .tl2-s.metlink .tl2-sub-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl2-s .tl2-teams{flex:0 0 auto;white-space:nowrap;font-weight:600}
 .tl2-w{font-size:12px;color:var(--txt-2);white-space:nowrap;flex:0 0 auto}
-/* Oranje alléén voor urgentie (over datum, deadline vandaag). */
-.tl2-item.urgent .tl2-w,.tl2-w.oranje{color:var(--amber);font-weight:600}
 
-/* Suggestieblok: voorgesteld werk in een leeg uur — gestippeld, gedempt. */
-.tl2-item.sug{border:1px dashed var(--line-2);background:var(--card-2);margin:3px 0;padding:6px 10px}
-.tl2-item.sug:hover{background:#eaeddd;border-color:var(--olive-l)}
-.tl2-item.sug .tl2-t b{font-weight:500;color:var(--txt)}
-.tl2-ruimte{color:var(--txt-2);font-weight:600;font-size:12px;letter-spacing:.02em}
-
-/* Afgevinkt: doorgestreept en gedempt, blijft staan. */
-.tl2-item.af{opacity:.6}
-.tl2-item.af .tl2-t b,.tl2-item.af .tl2-s{color:var(--muted);text-decoration:line-through}
-.tl2-item.af .tl2-w{color:var(--muted);font-weight:400}
-
-/* Nog in te plannen — onderaan de tijdlijn. */
+/* Zonder tijdstip — onderaan de agenda. */
 .tl2-rest{border-top:1px solid var(--line);margin-top:2px;padding-top:12px}
 .tl2-rest .label{margin-bottom:4px}
+
+/* ═══ TAKENPANEEL ═════════════════════════════════════════════════
+   Taken en opvolging stonden vroeger als "ruimte: …" tussen de uren van
+   de agenda. Hier staan ze in hun eigen kaart: een lijst waarin je kunt
+   prioriteren, verzetten en afvinken.                                  */
+.tk-kop{gap:10px 14px}
+.tk-seg button{padding:4px 12px;font-size:12px}
+.tk-vg{display:flex;align-items:center;gap:10px;min-width:0}
+.tk-vg .meta{white-space:nowrap}
+.bar.tk-vgbar{width:84px;flex:0 0 84px;height:5px}
+.tk-card .card-b.tk-b{padding:12px 18px 16px}
+/* Bij zestig taken hoort de pagina niet drie schermen lang te worden: dan
+   staan de agenda en de rail ergens boven in het niets. Het paneel schuift
+   dan in zichzelf — één scrollgebied, niet twee, anders weet je nooit welk
+   van de twee je onder je muis hebt. Op een telefoon niet: daar scrollt de
+   pagina toch al en is een kadertje-in-een-kadertje alleen maar lastig. */
+@media (min-width:1000px){
+  .tk-card .card-b.tk-b{max-height:min(74vh,780px);overflow-y:auto}
+}
+
+/* Snel iets opschrijven. Staat bovenaan en niet achter een knop: een taak
+   die je pas na twee klikken kunt noteren, noteer je niet. Blijft staan bij
+   het scrollen, zodat je ook onder in de lijst iets kunt bijschrijven. */
+.tk-nieuw{display:flex;gap:8px;align-items:center;margin-bottom:12px;
+  position:sticky;top:0;z-index:2;background:var(--card);padding:2px 0 8px}
+.tk-nieuw input{flex:1;min-width:0;font-size:13px;padding:7px 11px}
+.tk-nieuw .btn{flex:0 0 auto}
+
+.tk-lijst{display:flex;flex-direction:column;gap:2px}
+.tk-groep{padding-top:2px}
+.tk-glabel{display:flex;align-items:center;gap:7px;padding:12px 0 5px;color:var(--muted)}
+.tk-groep:first-child .tk-glabel{padding-top:2px}
+.tk-groep.urgent .tk-glabel{color:var(--oranje)}
+.tk-gtel{background:var(--card-2);border:1px solid var(--line);border-radius:999px;
+  font-size:10.5px;padding:0 6px;color:var(--txt-2);letter-spacing:0}
+.tk-groep.urgent .tk-gtel{background:var(--amber-bg);border-color:var(--amber-line);color:#b03d1c}
+
+/* Eén regel: vinkje, prioriteit, tekst, wanneer. */
+.tk-rij{
+  display:flex;align-items:center;gap:9px;padding:6px 8px;margin:0 -8px;
+  border-left:2px solid transparent;border-radius:var(--r-s);
+  transition:background .12s;
+}
+.tk-rij:hover{background:#f7f9f1}
+.tk-vink{width:15px;height:15px;flex:0 0 15px;margin:0;cursor:pointer}
+.tk-geenvink{width:15px;flex:0 0 15px;text-align:center;color:var(--line-2);font-size:13px;line-height:1}
+.tk-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.tk-t[data-mod]{cursor:pointer}
+.tk-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-s{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-w{font-size:11.5px;color:var(--txt-2);white-space:nowrap;flex:0 0 auto}
+/* Oranje alléén voor urgentie — huisstijl: kleur is betekenis. */
+.tk-w.oranje,.tk-rij.urgent .tk-w{color:var(--oranje);font-weight:600}
+
+/* Prioriteit: één rond knopje dat de ronde normaal → hoog → laag doorloopt.
+   Hoog krijgt er een oranje streep langs de regel bij, zodat je bij zestig
+   taken kunt scannen zonder te lezen. */
+.tk-prio{
+  width:19px;height:19px;flex:0 0 19px;padding:0;border-radius:999px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--card-2);border:1px solid var(--line);
+  font:700 11px/1 var(--body);color:var(--muted);transition:border-color .12s,color .12s;
+}
+.tk-prio:hover{border-color:var(--olive-l);color:var(--olive)}
+.tk-rij.prio-hoog{border-left-color:var(--oranje)}
+.tk-rij.prio-hoog .tk-prio{background:var(--amber-bg);border-color:var(--amber-line);color:var(--oranje)}
+.tk-rij.prio-laag{opacity:.78}
+.tk-rij.prio-laag .tk-prio{background:transparent;color:var(--line-2)}
+
+/* Wanneer: een gewone select, maar hij oogt pas als bedienbaar zodra je
+   erbij bent. Anders staan er zestig invoervelden onder elkaar. */
+.tk-wanneer{
+  width:auto;flex:0 0 auto;max-width:140px;cursor:pointer;
+  font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--txt-2);
+  background-color:transparent;border-color:transparent;border-radius:999px;
+  padding:2px 22px 2px 8px;background-position:right 7px center;
+}
+.tk-rij:hover .tk-wanneer,.tk-wanneer:focus{border-color:var(--line-2);background-color:#fff}
+
+/* Afgevinkt blijft staan waar het stond, doorgestreept. Zie de toelichting
+   in js/dashboard.js: opnieuw sorteren haalt de regel onder je muis weg. */
+.tk-rij.af{opacity:.55}
+.tk-rij.af .tk-t b,.tk-rij.af .tk-s{color:var(--muted);text-decoration:line-through}
+.tk-rij.af .tk-w{color:var(--muted);font-weight:400}
+
+.tk-meer{
+  background:none;border:none;padding:10px 0 2px;cursor:pointer;text-align:left;
+  font-family:var(--body);font-size:12px;color:var(--muted);
+}
+.tk-meer:hover{color:var(--olive)}
+.tk-leeg{padding:10px 0 6px;line-height:1.5}
+
+/* ─── Opvolging: eigen sectie onder de taken ─────────────────────
+   Bewust afgescheiden met een lijn: het ritme komt uit js/opvolging.js,
+   je kunt er geen datum of prioriteit op zetten, en afvinken geldt alleen
+   voor vandaag. Zie de toelichting bij opvolgingRijen(). */
+.tk-opv{border-top:1px solid var(--line);margin-top:14px}
+.tk-opv .tk-rij{cursor:pointer}
+.tk-opvkop{padding-top:12px;color:var(--olive)}
+.tk-komt{color:var(--muted)}
+.tk-rij.opv .tk-t b{font-weight:500;color:var(--txt)}
 
 /* ─── Weekweergave: dagblokken onder elkaar ──────────────────────
    Zelfde vorm als de dagbaan (label links, inhoud rechts), zodat het
@@ -250,15 +455,27 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
 }
 .mail-meerknop:hover{color:var(--olive)}
 
-/* ─── Wat loopt er — één rustige regel onderaan ──────────────── */
-.loopt{display:flex;gap:6px 22px;flex-wrap:wrap;align-items:center;padding:2px 2px 0;border-top:1px solid var(--line);padding-top:14px}
+/* ─── Wat loopt er — naast de begroeting ─────────────────────────
+   Stond onderaan de pagina, onder alles wat je moest scrollen. Nu vult
+   het de rechterhelft van de kopregel, waar op een breed scherm niets
+   stond. Op smal valt het onder de begroeting, met een lijn erboven. */
+.loopt{display:flex;gap:6px 22px;flex-wrap:wrap;align-items:center;
+  padding:14px 2px 0;border-top:1px solid var(--line);flex:1 1 340px}
 .loopt-i{
-  background:none;border:none;padding:0;margin:0;cursor:pointer;
+  background:none;border:none;padding:0;margin:0;cursor:pointer;text-align:left;
   font-family:var(--body);font-size:12px;color:var(--muted);
 }
 .loopt-i:hover{color:var(--olive)}
 /* Het enige gekleurde segment: het signaal dat de instroom opdroogt. */
 .loopt-i.sig{color:var(--oranje);font-weight:600}
+@media (min-width:1100px){
+  /* Naast de begroeting: geen lijn erboven (die zou de kop doorsnijden),
+     rechts uitgelijnd en met een leesmaat, zodat het geen tweede kolom
+     tekst wordt maar een rustig blokje cijfers. */
+  .loopt{border-top:none;padding-top:0;flex:0 1 auto;max-width:520px;
+    justify-content:flex-end;gap:4px 20px;margin-left:auto}
+  .loopt-i{text-align:right}
+}
 
 /* ─── Sparkline — dun olijflijntje, richting zonder woorden ──────
    Geen assen, geen raster, geen tooltip: het is richting, geen grafiek.
@@ -266,37 +483,10 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
 .zij-spark svg{display:block;opacity:.85;flex:0 0 auto}
 .zij-spark{display:flex;align-items:center;gap:8px;margin-top:10px}
 
-/* ─── Breed scherm: de rechterrail splitst in kolommen ───────────
-   Het dashboard zat op max-width:1240px vast. Op het teamscherm (±2000px)
-   stond daardoor alles in de linkerhelft en bleef rechts een leeg crème
-   vlak staan. De rem gaat er vanaf 1500px af, maar de tijdlijn rekken we
-   NIET mee uit: een dagbaan van 1700px maakt de dag niet overzichtelijker.
-   In plaats daarvan gaat alle gewonnen breedte naar de rail, die zichzelf
-   in kolommen opdeelt zodra elk blok 285px kan krijgen. Zo staan "Je mail",
-   "Hot vacatures", "Voor jou" en "Jouw maand" naast elkaar in plaats van
-   onder elkaar — de hele dag in één blik, zonder scrollen.
-
-   auto-fit (niet auto-fill): heeft een rol minder blokken — een marketeer
-   ziet geen "Jouw maand", zonder Outlook-koppeling geen "Je mail" — dan
-   vallen de lege sporen weg en verdelen de overgebleven blokken de ruimte,
-   in plaats van dat er een gat blijft staan. */
-@media (min-width:1500px){
-  .dash2{max-width:none}
-  /* De rail krijgt de grootste fr-factor: extra breedte gaat vooral daarheen.
-     De tijdlijn groeit wel mee, maar veel trager — en niet onder de 500px,
-     want dan gaan de regels in de dagbaan afkappen. De rail zet die ruimte
-     zelf om in kolommen: rond 1600px past een tweede, rond 1870px een derde.
-     Daarom staat hier geen harde stap op 1900px — auto-fit doet het beter
-     dan een vast getal, omdat het aantal blokken per rol verschilt. */
-  .dash2-grid{grid-template-columns:minmax(500px,1.15fr) minmax(600px,1.5fr)}
-  .zij{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));
-    gap:16px;align-content:start;align-items:start}
-}
-
-/* ─── Mobiel: tijdlijn boven, rechterkolom eronder ───────────── */
-@media (max-width:1000px){
-  .dash2-grid{grid-template-columns:1fr}
-}
+/* ─── Mobiel ─────────────────────────────────────────────────────
+   Alles onder elkaar (de basisregel van .dash2-grid doet dat al), en de
+   onderdelen die op 375px niet passen vallen weg of worden smaller.
+   Niets krijgt een vaste breedte, dus er ontstaat geen paginascroll. */
 @media (max-width:700px){
   .dash-hero .h1{font-size:23px}
   .mot .mot-zin{font-size:23px}
@@ -304,17 +494,22 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
      laten afbreken in plaats van de zin wegduwen. */
   .mot{flex-wrap:wrap}
   .mot-van{align-self:flex-start;padding-bottom:0;flex-basis:100%}
-  .bar.tl2-vgbar{display:none}
+  .bar.tk-vgbar{display:none}
   .tl2-tijd{width:38px;flex:0 0 38px}
   .tl2-nulijn{left:-50px}
-  .team-chip .bar.tc-bar{display:none}
   /* Weekweergave: dagkop smaller, verder exact dezelfde lijst. */
   .tl2-dag{gap:10px}
   .tl2-dkop{width:56px;flex:0 0 56px}
   .tl2-dag.vandaag{margin-left:-8px;padding-left:6px}
   /* De voortgangsteller mag onder de titel wegvallen op smal. */
-  .tl2-card .card-h{gap:8px 10px}
+  .tl2-card .card-h,.tk-card .card-h{gap:8px 10px}
   .mail-koppel{max-width:52%}
+  /* De knop "Toevoegen" is op 375px overbodig: daar is de Enter-toets van
+     het toetsenbord dichterbij dan een knop naast het veld. */
+  .tk-nieuw #tk_snelok{display:none}
+  .tk-card .card-b.tk-b{padding:10px 14px 14px}
+  .tk-rij{gap:7px}
+  .tk-wanneer{max-width:104px}
 }
 
 /* ─── Klantupdates op vrijdag — het detailpaneel ──────────────────

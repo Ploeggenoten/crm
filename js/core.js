@@ -190,6 +190,11 @@ CRM.modal = {
        niet. Escape keek naar de klasse en concludeerde dan dat er niets
        openstond — waardoor een wachtende await voorgoed bleef hangen. */
     CRM.modal._aan = true;
+    /* Klikken doorlaten zetten we hier, niet in de .on-klasse: die wordt in
+       een animatieframe gezet en dat frame loopt niet in een tab op de
+       achtergrond. Een venster dat je wél ziet maar niet kunt aanklikken is
+       erger dan de fout die we hiermee oplossen. */
+    m.style.pointerEvents = 'auto';
     if(opts.onOpen) opts.onOpen(m);
     return m;
   },
@@ -198,7 +203,14 @@ CRM.modal = {
     CRM.modal._aan = false;
     const scrim = document.getElementById('mscrim'), m = document.getElementById('modal');
     if(scrim) scrim.classList.remove('on');
-    if(m) m.classList.remove('on');
+    if(m){
+      m.classList.remove('on');
+      /* Onzichtbaar is niet weg: het venster blijft na het sluiten staan met
+         alleen opacity 0, en ving dan alle klikken op in een blok van 520px
+         bij 90vh midden op het scherm. De knop eronder reageerde niet meer,
+         terwijl er niets te zien was. Dit raakte elk scherm in de app. */
+      m.style.pointerEvents = 'none';
+    }
     const naSluiten = CRM.modal._onClose; CRM.modal._onClose = null;
     if(naSluiten) naSluiten();
     /* Focus terug naar waar hij vandaan kwam, maar alleen als hij nog in het

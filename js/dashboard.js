@@ -1,10 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════
-   MODULE: DASHBOARD — de werkdag als tijdlijn
-   Combinatie "dagstart-lijst" + "agenda centraal" (keuze Tjeerd):
-   één dagbaan van 08:00–18:00 met afspraken op hun tijd, taken en
-   voorgesteld werk in de lege uren, en alles afvinkbaar.
-   Rechts: hot vacatures, meldingen en de eigen maandstand.
-   Bedragen staan strikt achter CRM.canSeeMoney().
+   MODULE: DASHBOARD — drie banen naast elkaar
+
+   Herbouwd 31 jul 2026 na de opmerking van Tjeerd: "veel loze ruimte,
+   mijn agenda moet inklapbaar, en taken horen niet in mijn agenda."
+
+   De indeling volgt de vraag die je 's ochtends stelt, van links naar
+   rechts, en gebruikt daarmee meteen de breedte van het teamscherm:
+
+     1. AGENDA   — wat staat er vast? Alléén échte afspraken (CRM en
+                   Outlook). Inklapbaar; de stand blijft bewaard.
+     2. TAKEN    — wat moet ik doen? crm_taken met prioriteit en een
+                   weekindeling, plus de opvolging uit js/opvolging.js.
+                   Dit stond eerst als "ruimte: …" ín de agenda.
+     3. RAIL     — wat vraagt om aandacht? meldingen, mail, hot
+                   vacatures en de eigen maandstand.
+
+   Bedragen staan strikt achter CRM.canSeeMoney() — sterker nog: op dit
+   scherm staat helemaal geen bedrag, want het team kijkt mee.
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
@@ -102,6 +114,31 @@ const zetZicht = v => { try{ localStorage.setItem(ZICHT_KEY, v); }catch(e){} };
 const DAGVOL_KEY = 'crm_dash_dagvol';
 const dagVol    = () => { try{ return localStorage.getItem(DAGVOL_KEY)==='1'; }catch(e){ return false; } };
 const zetDagVol = v => { try{ localStorage.setItem(DAGVOL_KEY, v?'1':'0'); }catch(e){} };
+
+/* ═══ AGENDA OPEN OF DICHT ═══════════════════════════════════════
+   Wens Tjeerd: de agenda moet inklapbaar zijn. Zelfde soort voorkeur
+   als crm_pp_weergave en crm_rc_weergave — een gewoonte van deze
+   persoon op dit apparaat, dus localStorage en niet de database.
+   Open is de standaard: wie er niets van vindt hoort zijn dag te zien.
+
+   Ingeklapt blijft de agenda wél staan, als één regel bovenaan met de
+   eerstvolgende afspraak erin. Twee redenen: je wilt na het inklappen
+   nog steeds weten dat je om 10:00 zit, en een kop zonder inhoud is
+   makkelijker terug te vinden dan een verdwenen kaart. De vrijgekomen
+   ruimte gaat naar taken en de rail — zie css/dashboard.css. */
+const AGENDA_KEY = 'crm_dash_agenda';
+const agendaOpen    = () => { try{ return localStorage.getItem(AGENDA_KEY) !== 'dicht'; }catch(e){ return true; } };
+const zetAgendaOpen = v => { try{ localStorage.setItem(AGENDA_KEY, v ? 'open' : 'dicht'); }catch(e){} };
+
+/* ═══ WELKE TAKEN STAAN ER ═══════════════════════════════════════
+   Drie standen, want er zijn precies drie vragen: "wat moet vandaag",
+   "wat moet deze week" en "wat heb ik allemaal openstaan".
+   Standaard "Deze week": de dag alleen is te smal om vooruit te
+   plannen, en alles tegelijk is bij zestig taken geen lijst meer. */
+const TAAKZICHT_KEY = 'crm_dash_taakzicht';
+const TAAKZICHTEN   = ['vandaag','week','alles'];
+const taakZicht    = () => { try{ const v = localStorage.getItem(TAAKZICHT_KEY); return TAAKZICHTEN.includes(v) ? v : 'week'; }catch(e){ return 'week'; } };
+const zetTaakZicht = v => { try{ localStorage.setItem(TAAKZICHT_KEY, v); }catch(e){} };
 
 function groet(){
   const u = new Date().getHours();
@@ -218,176 +255,54 @@ function motivatieHTML(){
   </div>`;
 }
 
-/* ═══ DE DAG OPBOUWEN ════════════════════════════════════════════
-   Afspraken op hun tijd; taken en gegenereerd werk (leads zonder
-   opvolging, acties over datum, nazorg) als blokken in lege uren. */
+/* ═══ DE DAG OPBOUWEN — ALLEEN AFSPRAKEN ═════════════════════════
+   Hier stonden vroeger óók de taken, de leads, de acties over datum en
+   de opvolging: die werden in de lege uren geschoven met "ruimte:"
+   ervoor. Weg (wens Tjeerd, 31 jul 2026). Een agenda die zichzelf
+   volplant met werk dat op geen enkel moment vaststaat, is geen agenda
+   meer — en het maakt "heb ik vanmiddag tijd?" onbeantwoordbaar.
+   Alles wat werk is staat nu in het takenpaneel; zie bouwTaken(). */
 function bouwDag(){
-  const nu = VANDAAG(), mij = CRM.me(), cs = CRM.kandidaten();
+  const nu = VANDAAG(), cs = CRM.kandidaten();
   const uren = {}; for(let u=START_UUR; u<EIND_UUR; u++) uren[u] = [];
   const rest = [];
   const klem = u => Math.max(START_UUR, Math.min(EIND_UUR-1, u));
 
-  /* 1. CRM-afspraken vandaag: intakes, gesprekken, meeloopdagen. */
+  /* CRM-afspraken vandaag: intakes, gesprekken, meeloopdagen. Outlook
+     komt er later asynchroon bij, zie agendaVullen(). */
   cs.filter(c => actief(c) && kort(c.datum)===nu)
     .sort((a,b)=>String(a.tijd).localeCompare(String(b.tijd)))
     .forEach(c => {
-      const it = { soort:'afspraak', sesKey:'afspraak:'+c.id,
-        titel:c.naam, sub:[c.fase, c.klant].filter(Boolean).join(' · '),
+      const it = { soort:'afspraak', titel:c.naam,
+        sub:[c.fase, c.klant].filter(Boolean).join(' · '),
         tijd:c.tijd||'', mod:'kandidaten', id:c.id };
-      it.af = sessieKlaar.has(sk(it.sesKey));
       if(c.tijd) uren[klem(parseInt(c.tijd,10))].push(it);
       else rest.push(it);
     });
 
-  /* 2. Mijn taken (vandaag + achterstallig). Met tijd → op hun plek. */
-  const timedLos = [], zonderTijd = [];
-  (CRM.state.taken||[])
-    .filter(t => !t.klaar && (!t.voor || t.voor===mij) && kort(t.datum) && kort(t.datum) <= nu)
-    .sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))
-    .forEach(t => {
-      const over = kort(t.datum) < nu;
-      const refNaam = t.entiteit==='kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || t.ref) : (t.ref||'');
-      const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
-      const it = { soort:'taak', taakId:t.id, titel:t.tekst,
-        sub:[refNaam, van].filter(Boolean).join(' · '),
-        urgent:over, w: over ? 'over datum' : '',
-        mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
-           : t.entiteit==='lead' ? 'recruitment' : '', id:t.ref||'' };
-      if(t.tijd){ it.tijd = String(t.tijd).slice(0,5); timedLos.push(it); }
-      else zonderTijd.push(it);
-    });
-  timedLos.forEach(it => uren[klem(parseInt(it.tijd,10))].push(it));
-
-  /* 3. Gegenereerd werk → suggestieblokken. */
-  const blokken = zonderTijd.slice();      // echte taken eerst, dan suggesties
-
-  const leads = (CRM.state.leads||[])
-    .filter(l => CRM.LEAD_OPEN.includes(l.status))
-    .map(l => {
-      const gepland = !!kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu;
-      const oud     = l.status==='Nieuw' && (CRM.dagenGeleden(l.binnen_op)||0) >= 2;
-      return (gepland||oud) ? l : null;
-    }).filter(Boolean);
-  if(leads.length){
-    const b = { soort:'sug', key:'leads', mod:'recruitment',
-      titel:`bel je ${leads.length} nieuwe sollicitant${leads.length===1?'':'en'}`,
-      sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') };
-    b.af = sessieKlaar.has(sk('sug:leads'));
-    blokken.push(b);
-  }
-
-  const acties = cs.filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
-    .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)));
-  if(acties.length){
-    blokken.push({ soort:'sug', key:'acties', mod:'kandidaten', urgent:true,
-      candIds: acties.map(c=>c.id),
-      titel:`werk ${acties.length} ${acties.length===1?'actie':'acties'} over datum bij`,
-      sub: acties.slice(0,3).map(c=>c.naam).join(', ') + (acties.length>3?' …':'') });
-  }
-
-  /* Opvolging: nazorg, warm houden, verjaardagen en de felicitatiemail.
-     Het ritme staat NIET meer hier. Dit blok rekende vroeger vanaf de
-     plaatsingsdatum met een dag speling (dag 3/4, 14/15, 30/31) terwijl
-     het bord, de kaart en Performance vanaf de startdatum op de exacte dag
-     rekenden — dezelfde kandidaat, twee antwoorden. Alles komt nu uit
-     js/opvolging.js. Ontbreekt dat bestand, dan blijft de dag gewoon staan
-     zonder opvolging in plaats van te breken. */
-  opvolgingBlokken(mij, nu).forEach(b => blokken.push(b));
-
-  /* 4. Blokken in de lege uren plotten: vanaf nu, max 1 per leeg uur. */
-  let cursor = Math.max(START_UUR, new Date().getHours());
-  blokken.forEach(b => {
-    while(cursor < EIND_UUR && uren[cursor].length) cursor++;
-    if(cursor < EIND_UUR){ uren[cursor].push(b); cursor++; }
-    else rest.push(b);
-  });
-
-  /* 5. Voortgang: alles met een vinkje + de taken die vandaag al af zijn. */
-  const klaarVandaag = (CRM.state.taken||[]).filter(t =>
-    t.klaar && (!t.voor || t.voor===mij) && (kort(t.datum)===nu || sessieAf.has(String(t.id)))).length;
-  let getekend = 0, af = 0;
-  Object.values(uren).forEach(list => list.forEach(it => { getekend++; if(it.af) af++; }));
-  rest.forEach(it => { getekend++; if(it.af) af++; });
-
-  return { uren, rest, tot: getekend + klaarVandaag, af: af + klaarVandaag };
+  return { uren, rest };
 }
 
-/* ═══ OPVOLGING → SUGGESTIEBLOKKEN ═══════════════════════════════
-   Het ritme komt uit js/opvolging.js; dit hier is alleen de vertaling
-   naar regels in de dagbaan. Nazorg, warm houden en verjaardagen gaan
-   per soort in ÉÉN blok: drie regels op de dag in plaats van dertien
-   losse, want een lijst die je wegklikt is geen opvolging.
-   De felicitatiemail krijgt wél een eigen regel per kandidaat: die is
-   niet af te vinken maar te dóen, en opent zijn eigen venster. */
-function opvolgingBlokken(mij, nu){
-  if(!CRM.opvolging) return [];
-  let items = [];
-  try{ items = CRM.opvolging.openVoor(mij, nu) || []; }
-  catch(e){ console.warn('opvolging', e); return []; }
-  if(!items.length) return [];
-
-  const uit = [];
-  const groep = (soort, enkel, meer) => {
-    const g = items.filter(i => i.soort === soort);
-    if(!g.length) return;
-    const b = { soort:'sug', key:'opv-' + soort, mod:'kandidaten',
-      titel: g.length === 1 ? enkel(g[0]) : meer(g.length),
-      sub: g.slice(0,3).map(i => i.naam).join(', ') + (g.length > 3 ? ' …' : ''),
-      urgent: g.some(i => i.urgent) };
-    b.af = sessieKlaar.has(sk('sug:' + b.key));
-    /* Bij precies één kandidaat kun je meteen naar de kaart. */
-    if(g.length === 1) b.id = g[0].id;
-    uit.push(b);
-  };
-
-  groep('nazorg',
-    i => `bel ${i.naam} — ${i.kort}`,
-    n => `nazorg-belronde: ${n} kandidaten`);
-  groep('warm',
-    i => `houd ${i.naam} warm — getekend, maar start later`,
-    n => `houd ${n} getekende kandidaten warm`);
-  groep('verjaardag',
-    i => `${i.naam} is vandaag jarig — stuur een appje`,
-    n => `${n} kandidaten zijn vandaag jarig`);
-
-  /* Afspraken en de felicitatiemail krijgen wél een regel per persoon: dat
-     zijn geen belrondes maar losse berichten, elk met een eigen tekst die
-     de AM nakijkt. Ze openen hun eigen venster in plaats van door te
-     klikken naar de kaart. */
-  items.filter(i => i.soort === 'afspraak').forEach(i => uit.push({
-    soort:'sug', key:'opv-afspr:' + i.id + ':' + i.key, mod:'kandidaten', id:i.id,
-    opvActie:i.id + '|' + i.key, urgent:i.afspraakOp === nu,
-    /* `wanneer` komt uit opvolging.js: door de weekendregel kan een
-       herinnering op vrijdag over een afspraak van maandag gaan, en dan
-       mag hier geen "morgen" staan. */
-    titel:`${i.naam}: ${i.wanneer} ${i.kort}${i.tijd ? ' om ' + i.tijd : ''} — stuur een berichtje`,
-    sub:i.sub, w:i.wanneer }));
-
-  items.filter(i => i.soort === 'mail').forEach(i => uit.push({
-    soort:'sug', key:'opv-mail:' + i.id, mod:'kandidaten', id:i.id,
-    opvActie:i.id + '|' + i.key,
-    titel:`felicitatiemail voor ${i.naam} nakijken en versturen`,
-    sub:i.sub, w:'klaar om te sturen' }));
-
-  /* Wat andere modules aanleveren (bv. verjaardagen van contactpersonen
-     uit js/klanten.js) valt buiten de soorten hierboven: één regel per
-     item, zodat die module zelf bepaalt wat er staat. */
-  items.filter(i => !['nazorg','warm','verjaardag','mail','afspraak'].includes(i.soort)).forEach(i => {
-    const b = { soort:'sug', key:'opv-x:' + i.key + ':' + (i.ref || ''),
-      mod:i.mod || '', id:i.id || '', titel:i.titel, sub:i.sub || '', urgent:!!i.urgent };
-    b.af = sessieKlaar.has(sk('sug:' + b.key));
-    uit.push(b);
-  });
-  return uit;
+/* Hoeveel afspraken staan er vandaag, en welke is de eerstvolgende?
+   Voor de regel die overblijft als de agenda is ingeklapt. */
+function dagSamenvatting(P){
+  const alles = [];
+  Object.keys(P.uren).forEach(u => (P.uren[u]||[]).forEach(x => alles.push(x)));
+  P.rest.forEach(x => alles.push(x));
+  const nu = new Date().toTimeString().slice(0,5);
+  const metTijd = alles.filter(x => x.tijd).sort((a,b)=>String(a.tijd).localeCompare(String(b.tijd)));
+  const volgende = metTijd.find(x => x.tijd >= nu) || null;
+  return { aantal: alles.length, volgende };
 }
 
 /* ═══ DE WEEK OPBOUWEN ═══════════════════════════════════════════
    Maandag t/m vrijdag altijd; zaterdag en zondag alleen als daar
-   iets staat. Per dag: CRM-afspraken, mijn taken met datum en (later,
-   asynchroon) de Outlook-afspraken. Chronologisch: eerst wat een tijd
-   heeft, daarna de rest. */
+   iets staat. Per dag: CRM-afspraken en (later, asynchroon) de
+   Outlook-afspraken. Chronologisch: eerst wat een tijd heeft, daarna
+   de rest. Taken en opvolging horen ook hier niet meer: die staan in
+   het takenpaneel, dat zelf een weekstand heeft. */
 function bouwWeek(){
-  const ma = maandag(_weekOff), nu = VANDAAG(), mij = CRM.me(), cs = CRM.kandidaten();
+  const ma = maandag(_weekOff), nu = VANDAAG(), cs = CRM.kandidaten();
   const dagen = [];
   for(let i=0;i<7;i++){
     const d = dagPlus(ma,i), iso = dISO(d);
@@ -398,47 +313,13 @@ function bouwWeek(){
   }
   const opDag = iso => dagen.find(x => x.iso === iso);
 
-  /* 1. CRM-afspraken: intakes, gesprekken, meeloopdagen. */
+  /* CRM-afspraken: intakes, gesprekken, meeloopdagen. */
   cs.filter(actief).forEach(c => {
     const d = opDag(kort(c.datum)); if(!d) return;
-    d.items.push({ soort:'afspraak', geenVink:true, titel:c.naam,
+    d.items.push({ soort:'afspraak', titel:c.naam,
       sub:[c.fase, c.klant].filter(Boolean).join(' · '),
       tijd:c.tijd||'', mod:'kandidaten', id:c.id });
   });
-
-  /* 2. Mijn open taken met een datum in deze week. */
-  (CRM.state.taken||[]).filter(t => !t.klaar && (!t.voor || t.voor===mij)).forEach(t => {
-    const d = opDag(kort(t.datum)); if(!d) return;
-    const refNaam = t.entiteit==='kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || t.ref) : (t.ref||'');
-    const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
-    d.items.push({ soort:'taak', taakId:t.id, titel:t.tekst, buiten: d.iso !== nu,
-      sub:[refNaam, van].filter(Boolean).join(' · '),
-      urgent: d.iso < nu, w: d.iso < nu ? 'over datum' : '',
-      tijd: t.tijd ? String(t.tijd).slice(0,5) : '',
-      mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
-         : t.entiteit==='lead' ? 'recruitment' : '', id:t.ref||'' });
-  });
-
-  /* 3. Opvolging: nazorg-check-ins, warm-houd-momenten, verjaardagen en de
-     felicitatiemail. Die staan niet in crm_taken — ze worden uitgerekend uit
-     de startdatum (js/opvolging.js) — dus moeten ze hier expliciet bij.
-     Juist vooruit is dit waardevol: wie volgende week gebeld moet worden,
-     zie je nu al staan in plaats van pas op de ochtend zelf. */
-  if(CRM.opvolging){
-    try{
-      CRM.opvolging.tussen(mij, dagen[0].iso, dagen[6].iso).forEach(m => {
-        const d = opDag(m.datum); if(!d) return;
-        d.items.push({ soort:'sug', key:'opv-w:' + m.key + ':' + (m.ref||''),
-          titel: m.titel, sub: m.sub || m.naam, buiten: d.iso !== nu,
-          /* "Gemist" komt uit opvolging.js, niet uit "de dag is voorbij":
-             een check-in van gisteren die vandaag nog openstaat is niet
-             gemist, en zo noemen betekent dat niemand hem meer oppakt. */
-          urgent: !!m.open || !!m.gemist, w: m.gemist ? 'gemist' : m.open ? 'staat open' : '',
-          mod: m.mod || 'kandidaten', id: m.id || '',
-          opvActie: (m.soort === 'mail' || m.soort === 'afspraak') ? m.id + '|' + m.key : '' });
-      });
-    }catch(e){ console.warn('opvolging in de week', e); }
-  }
 
   dagen.forEach(sorteerDag);
   return dagen;
@@ -453,28 +334,16 @@ function sorteerDag(d){
   });
 }
 
-/* ═══ TIJDLIJN-MARKUP ════════════════════════════════════════════ */
+/* ═══ TIJDLIJN-MARKUP ════════════════════════════════════════════
+   Eén regel in de agenda = één afspraak. Geen vinkje meer: een afspraak
+   rond je niet af, die heb je. Het vinkwerk (en de voortgangsteller die
+   daarbij hoorde) is mee verhuisd naar het takenpaneel. */
 function rijHTML(it){
-  const vink = it.soort==='taak' ? `data-taak="${h(it.taakId)}"`
-    : it.soort==='sug' && it.key==='acties' ? `data-blok="acties" data-ids="${h((it.candIds||[]).join(','))}"`
-    : it.soort==='sug' ? `data-ses="sug:${h(it.key)}"`
-    : `data-ses="${h(it.sesKey||'')}"`;
   const klik = it.mod ? ` data-mod="${h(it.mod)}"${it.id?` data-id="${h(it.id)}"`:''}` : '';
-  /* Berichten (felicitatiemail, succesje vóór een afspraak) openen hun
-     eigen venster in plaats van door te klikken naar de kaart: de tekst
-     nakijken ís de taak. Vorm: "<kandidaat-id>|<moment-sleutel>". */
-  const actie = it.opvActie ? ` data-opvactie="${h(it.opvActie)}"` : '';
-  const w = it.w || '';
-  /* Zonder vinkje (weekweergave: afspraken) blijft de regel wel uitgelijnd.
-     data-buiten = telt niet mee in de voortgang, want die gaat over vandaag. */
-  const vinkHTML = it.geenVink
-    ? `<span class="tl2-geenvink"></span>`
-    : `<input type="checkbox" class="tl2-vink" ${vink}${it.buiten?' data-buiten="1"':''}${it.af?' checked disabled':''} title="Afvinken">`;
-  return `<div class="tl2-item${it.mod?' klik':''}${it.urgent&&!it.af?' urgent':''}${it.soort==='sug'?' sug':''}${it.af?' af':''}"${klik}${actie}>
-    ${vinkHTML}
-    <div class="tl2-t"><b>${it.soort==='sug'?'<span class="tl2-ruimte">ruimte:</span> ':''}${h(it.titel)}</b>
+  return `<div class="tl2-item${it.mod?' klik':''}"${klik}>
+    <div class="tl2-t"><b>${h(it.titel)}</b>
       ${it.sub||it.subHtml?`<span class="tl2-s${it.subKlas?' '+it.subKlas:''}">${it.subHtml||h(it.sub)}</span>`:''}</div>
-    ${it.tijd?`<span class="tl2-w num">${h(it.tijd)}</span>`:w?`<span class="tl2-w num${it.urgent?' oranje':''}">${h(w)}</span>`:''}
+    ${it.tijd?`<span class="tl2-w num">${h(it.tijd)}</span>`:''}
   </div>`;
 }
 
@@ -540,13 +409,12 @@ function dagBaanHTML(P){
     baan = rijen.join('');
   }
   /* Niets op de dag én compact: geen tien lege uurregels, alleen de lege staat. */
-  const leegTekst = getekendIets ? '' : (P.tot
-    ? 'Alles voor vandaag is afgerond. Mooi moment om vooruit te werken.'
-    : 'Niets ingepland en niets openstaand — mooi moment om vooruit te werken of nieuwe sollicitanten te bellen.');
+  const leegTekst = getekendIets ? ''
+    : 'Geen afspraken vandaag. Je werk staat rechts.';
 
   return `${leegTekst?`<div class="tl2-leeg meta">${h(leegTekst)}</div>`:''}
     ${baan?`<div class="tl2-baan">${baan}</div>`:''}
-    ${P.rest.length?`<div class="tl2-rest"><div class="label">Nog in te plannen</div>
+    ${P.rest.length?`<div class="tl2-rest"><div class="label">Zonder tijdstip</div>
       ${P.rest.map(rijHTML).join('')}</div>`:''}`;
 }
 
@@ -576,10 +444,10 @@ function weekBaanHTML(W){
   if(!W.some(d => d.items.length)){
     const toekomst = _weekOff > 0;
     return `${weekNotitie()}<div class="tl2-week leeg">${CRM.ui.leeg(
-      _weekOff === 0 ? 'Deze week staat nog niets ingepland'
+      _weekOff === 0 ? 'Deze week staat nog geen afspraak'
         : weekLabel(_weekOff) + ' staat nog leeg',
-      toekomst ? 'Geen afspraken, taken of check-ins. Mooi moment om er iets in te zetten.'
-               : 'Geen afspraken, taken of check-ins in deze week.')}</div>`;
+      toekomst ? 'Nog geen gesprekken of meeloopdagen ingepland.'
+               : 'Geen gesprekken of meeloopdagen in deze week.')}</div>`;
   }
   return `${weekNotitie()}<div class="tl2-week">${toon.map(d => `
     <div class="tl2-dag${d.vandaag?' vandaag':''}${d.verleden?' voorbij':''}" data-dag="${h(d.iso)}">
@@ -595,15 +463,35 @@ function weekBaanHTML(W){
 
 function tijdlijnKaart(P, W){
   const wk = zicht()==='week';
-  const pct = P.tot ? Math.round(P.af/P.tot*100) : 0;
+  const open = agendaOpen();
   const outlookRij = (olKan() && !olVerbonden())
     ? `<div class="tl2-olrow"><span class="meta">Je Outlook-agenda kan hier tussen de afspraken staan.</span>
        <button class="btn ghost sm" id="tl2_ol">Outlook verbinden</button></div>` : '';
 
+  /* Het inklapknopje staat vóór alles, want dat is wat je aanklikt als je
+     de agenda even weg wilt hebben. De schakelaar Vandaag/Week en het
+     bladeren verdwijnen mee: op een dichte agenda zijn dat knoppen zonder
+     zichtbaar gevolg. */
+  const knop = `<button type="button" class="tl2-vouwknop" id="tl2_klap"
+    aria-expanded="${open?'true':'false'}" aria-controls="tl2_body"
+    title="${open?'Agenda inklappen':'Agenda tonen'}">
+    <span class="tl2-caret">${open?'▾':'▸'}</span><span>Agenda</span></button>`;
+
+  if(!open){
+    const s = dagSamenvatting(P);
+    const zin = !s.aantal ? 'Geen afspraken vandaag'
+      : s.volgende ? `${s.aantal} ${s.aantal===1?'afspraak':'afspraken'} vandaag · om ${s.volgende.tijd} ${s.volgende.titel}`
+      : `${s.aantal} ${s.aantal===1?'afspraak':'afspraken'} vandaag`;
+    return `<div class="card tl2-card dicht">
+      <div class="card-h tl2-kop">${knop}
+        <span class="tl2-dichtzin meta">${h(zin)}</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn sub sm" id="tl2_klap2">Tonen</button>
+      </div></div>`;
+  }
+
   return `<div class="card tl2-card">
-    <div class="card-h">
-      <!-- De schakelaar ís de kop: een titel "Vandaag" náást een knop
-           "Vandaag" zou hetzelfde woord twee keer zetten. -->
+    <div class="card-h tl2-kop">${knop}
       <div class="seg tl2-seg">
         <button type="button" data-zicht="dag"${wk?'':' class="on"'}>Vandaag</button>
         <button type="button" data-zicht="week"${wk?' class="on"':''}>Week</button>
@@ -621,31 +509,387 @@ function tijdlijnKaart(P, W){
         <button type="button" class="tl2-wkpijl" data-wk="${_weekOff+1}"
           title="Een week vooruit" aria-label="Een week vooruit"${_weekOff>=WEEK_MAX?' disabled':''}>›</button>
       </div>`:''}
-      ${P.tot?`<div class="tl2-vg"><span class="meta num" id="tl2_vgt">${P.af} van ${P.tot} afgerond${wk?' vandaag':''}</span>
-        <div class="bar tl2-vgbar"><i id="tl2_vgb" style="width:${pct}%"></i></div></div>`:''}
       <span class="spacer"></span>
       ${wk?'':`<button type="button" class="btn sub sm" id="tl2_vol">${dagVol()?'Compact':'Hele dag tonen'}</button>`}
-      <button class="btn ghost sm" id="tl2_nieuw">+ Taak</button></div>
-    <div class="card-b tl2-b">
+    </div>
+    <div class="card-b tl2-b" id="tl2_body">
       ${outlookRij}
       ${wk ? weekBaanHTML(W) : dagBaanHTML(P)}
     </div></div>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   HET TAKENPANEEL
+   Alles wat je moet dóen: je eigen taken uit crm_taken, en daaronder
+   de opvolging die js/opvolging.js uitrekent. Bewust twee secties en
+   niet één lijst door elkaar — zie de toelichting bij opvolgingRijen().
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Prioriteit ─────────────────────────────────────────────────
+   Drie niveaus, niet vijf. Vijf betekent dat je moet nadenken over het
+   verschil tussen 2 en 3, en dat kost meer dan het oplevert. Met drie
+   is de vraag simpel: moet dit vandaag echt (hoog), hoort het er gewoon
+   bij (normaal), of kan het wachten (laag).
+
+   De kolom crm_taken.prioriteit is vrije tekst en staat in productie
+   grotendeels leeg; er zit ook oude invoer in (het taakvenster in
+   js/core.js schrijft 'Hoog' of ''). prioNorm() vangt dat op, inclusief
+   Engelse en numerieke varianten, zodat een rare waarde als 'normaal'
+   leest in plaats van als een vierde niveau.
+
+   Zetten kan met één klik: de knop loopt normaal → hoog → laag → normaal.
+   Vanaf normaal is "hoog" dus altijd één klik, en dat is de handeling die
+   je de hele dag doet. */
+const PRIO_ORDE  = { Hoog:0, '':1, Laag:2 };
+const PRIO_NA    = { '':'Hoog', Hoog:'Laag', Laag:'' };
+const PRIO_WOORD = { Hoog:'hoog', '':'normaal', Laag:'laag' };
+const PRIO_TEKEN = { Hoog:'!', '':'–', Laag:'↓' };
+function prioNorm(p){
+  const s = String(p == null ? '' : p).trim().toLowerCase();
+  if(s === 'hoog' || s === 'high' || s === 'urgent' || s === '1') return 'Hoog';
+  if(s === 'laag' || s === 'low'  || s === '3')                   return 'Laag';
+  return '';
+}
+
+/* ─── Wanneer moet het ────────────────────────────────────────────
+   Vier vaste keuzes in een gewoon <select>. Bewust geen eigen
+   uitklapmenu: een select werkt met het toetsenbord, op een telefoon en
+   met een schermlezer zonder dat wij daar code voor schrijven, en hij
+   toont meteen wat er nu staat.
+   "Deze week" = vrijdag. Dat is wat mensen bedoelen als ze zeggen dat
+   iets deze week af moet — niet zondag. */
+function weekKeuzes(){
+  const nu = VANDAAG();
+  const vr = dISO(dagPlus(maandag(0), 4));
+  return [
+    {v:nu,                              t:'Vandaag'},
+    {v:dISO(dagPlus(new Date(), 1)),    t:'Morgen'},
+    /* Is het al vrijdag of later, dan is "deze week (vrijdag)" een datum in
+       het verleden. Dan valt die keuze weg; volgende week vrijdag staat er
+       nog wel. */
+    ...(vr > nu ? [{v:vr, t:'Vrijdag'}] : []),
+    {v:dISO(dagPlus(maandag(1), 0)),    t:'Volgende week maandag'},
+    {v:dISO(dagPlus(maandag(1), 4)),    t:'Volgende week vrijdag'},
+    {v:'',                              t:'Geen datum'}
+  ];
+}
+function wanneerHTML(taakId, datum){
+  const keuzes = weekKeuzes();
+  const heeft  = keuzes.some(k => k.v === datum);
+  const eigen  = (!heeft && datum) ? [{v:datum, t:CRM.fmtDay(datum)}] : [];
+  return `<select class="tk-wanneer" data-wanneer="${h(taakId)}" title="Wanneer moet dit af?">
+    ${eigen.concat(keuzes).map(k =>
+      `<option value="${h(k.v)}"${k.v===datum?' selected':''}>${h(k.t)}</option>`).join('')}
+  </select>`;
+}
+
+/* ─── De taken indelen ───────────────────────────────────────────
+   Groepen ónder elkaar, geen tabbladen. Reden: bij tabbladen moet je
+   klikken om te ontdekken dát er iets achterstallig is, en juist dat is
+   het enige dat echt niet mag blijven liggen. Onder elkaar zie je in één
+   blik hoe je week eruitziet.
+
+   "Achterstallig" en "Zonder datum" staan er altijd bij, ook in de stand
+   "Vandaag": werk verdwijnt niet omdat je een filter kiest. Dat laatste
+   is geen detail — in productie staan er taken zonder datum, en in de
+   oude dagbaan waren die onzichtbaar omdat daar op datum werd gefilterd. */
+function bouwTaken(){
+  const nu = VANDAAG(), mij = CRM.me();
+  const eindWeek = dISO(dagPlus(maandag(0), 6));
+
+  const groepen = {
+    over:    { titel:'Achterstallig',     urgent:true,  rijen:[] },
+    vandaag: { titel:'Vandaag',           rijen:[] },
+    week:    { titel:'Verder deze week',  rijen:[] },
+    later:   { titel:'Later',             rijen:[] },
+    geen:    { titel:'Zonder datum',      rijen:[] }
+  };
+
+  (CRM.state.taken||[])
+    .filter(t => !t.klaar && (!t.voor || t.voor === mij))
+    .forEach(t => {
+      const d = kort(t.datum);
+      /* Kandidaten en contactpersonen noemen we bij naam; staat de naam er
+         niet (verwijderde kaart, import zonder koppeling), dan valt het
+         weg in plaats van dat er een id in de regel komt te staan. */
+      const refNaam = t.entiteit === 'kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || '')
+                    : (t.ref || '');
+      const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
+      const rij = { id:String(t.id), tekst:t.tekst || '(lege taak)', datum:d,
+        prio: prioNorm(t.prioriteit),
+        sub: [refNaam, van].filter(Boolean).join(' · '),
+        mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
+           : t.entiteit==='lead' ? 'recruitment' : '',
+        ref: t.ref || '' };
+      const g = !d ? 'geen' : d < nu ? 'over' : d === nu ? 'vandaag'
+              : d <= eindWeek ? 'week' : 'later';
+      /* Alleen wat vandaag af moet telt mee in de voortgangsbalk. Een taak
+         van volgende week afvinken is mooi, maar het maakt je dag niet af. */
+      rij.telt = (g === 'over' || g === 'vandaag');
+      groepen[g].rijen.push(rij);
+    });
+
+  /* Binnen een groep: prioriteit eerst, dan de datum, dan de tekst. De
+     groep zegt wanneer, de prioriteit zegt wat er binnen die dag als
+     eerste moet. */
+  Object.values(groepen).forEach(g => g.rijen.sort((a,b) =>
+    PRIO_ORDE[a.prio] - PRIO_ORDE[b.prio]
+    || String(a.datum).localeCompare(String(b.datum))
+    || String(a.tekst).localeCompare(String(b.tekst), 'nl')));
+
+  const afVandaag = (CRM.state.taken||[]).filter(t =>
+    t.klaar && (!t.voor || t.voor === mij) &&
+    (kort(t.datum) === nu || sessieAf.has(String(t.id)))).length;
+
+  return { groepen, afVandaag,
+    open: Object.values(groepen).reduce((s,g) => s + g.rijen.length, 0) };
+}
+
+/* ─── De opvolging ───────────────────────────────────────────────
+   Apart van de taken, in een eigen sectie eronder. Overwogen en niet
+   gedaan: alles door elkaar in één lijst. Twee redenen.
+     1. Afvinken betekent iets anders. Een taak vink je definitief af
+        (crm_taken.klaar). Een check-in is uitgerekend uit de startdatum
+        en komt volgende maand vanzelf terug; wat je "afvinkt" geldt
+        alleen voor vandaag. Dat door elkaar zetten maakt het vinkje
+        onbetrouwbaar, en een onbetrouwbaar vinkje gebruikt niemand.
+     2. Je kunt er geen datum of prioriteit op zetten — het ritme staat
+        vast in js/opvolging.js. Rijen die er hetzelfde uitzien maar de
+        helft van de knoppen missen, lezen als kapot.
+   Ze staan wél in hetzelfde paneel, want het is allebei werk en geen
+   afspraak. Dat was de vraag van Tjeerd.                              */
+function opvolgingRijen(){
+  const uit = { nu:[], komt:[] };
+  const mij = CRM.me(), nu = VANDAAG();
+
+  /* Werk dat uit de pijplijn zelf komt: nieuwe sollicitanten die nog niet
+     gebeld zijn en kandidaat-acties die over datum staan. Stond eerst als
+     "ruimte:"-blok in de dagbaan. */
+  const leads = (CRM.state.leads||[])
+    .filter(l => CRM.LEAD_OPEN.includes(l.status))
+    .filter(l => (kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
+              || (l.status === 'Nieuw' && (CRM.dagenGeleden(l.binnen_op)||0) >= 2));
+  if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,
+    titel:`Bel je ${leads.length} nieuwe sollicitant${leads.length===1?'':'en'}`,
+    sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') });
+
+  const acties = CRM.kandidaten()
+    .filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
+    .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)));
+  if(acties.length) uit.nu.push({ sleutel:'acties', mod:'kandidaten', urgent:true,
+    actieIds: acties.map(c=>c.id),
+    titel:`Werk ${acties.length} ${acties.length===1?'actie':'acties'} over datum bij`,
+    sub: acties.slice(0,3).map(c=>c.naam).join(', ') + (acties.length>3?' …':'') });
+
+  if(!CRM.opvolging) return uit;
+
+  let items = [];
+  try{ items = CRM.opvolging.openVoor(mij, nu) || []; }
+  catch(e){ console.warn('opvolging', e); }
+
+  /* Nazorg, warm houden en verjaardagen gaan per soort in ÉÉN regel: één
+     belronde in plaats van dertien losse regels, want een lijst die je
+     wegklikt is geen opvolging. */
+  const groep = (soort, enkel, meer) => {
+    const g = items.filter(i => i.soort === soort);
+    if(!g.length) return;
+    const r = { sleutel:'opv-' + soort, mod:'kandidaten', vink:true,
+      titel: g.length === 1 ? enkel(g[0]) : meer(g.length),
+      sub: g.slice(0,3).map(i => i.naam).join(', ') + (g.length > 3 ? ' …' : ''),
+      urgent: g.some(i => i.urgent) };
+    if(g.length === 1) r.id = g[0].id;
+    uit.nu.push(r);
+  };
+  groep('nazorg',
+    i => `Bel ${i.naam} — ${i.kort}`,
+    n => `Nazorg-belronde: ${n} kandidaten`);
+  groep('warm',
+    i => `Houd ${i.naam} warm — getekend, maar start later`,
+    n => `Houd ${n} getekende kandidaten warm`);
+  groep('verjaardag',
+    i => `${i.naam} is vandaag jarig — stuur een appje`,
+    n => `${n} kandidaten zijn vandaag jarig`);
+
+  /* Berichten (het succesje vóór een afspraak, de felicitatiemail) krijgen
+     wél een regel per persoon: elk heeft een eigen tekst die je nakijkt.
+     Ze openen hun eigen venster; nakijken ís het werk, dus geen vinkje. */
+  items.filter(i => i.soort === 'afspraak').forEach(i => uit.nu.push({
+    sleutel:'opv-afspr:' + i.id + ':' + i.key, mod:'kandidaten', id:i.id,
+    opvActie: i.id + '|' + i.key, urgent: i.afspraakOp === nu,
+    titel:`${i.naam}: ${i.wanneer} ${i.kort}${i.tijd ? ' om ' + i.tijd : ''} — stuur een berichtje`,
+    sub:i.sub, w:i.wanneer }));
+  items.filter(i => i.soort === 'mail').forEach(i => uit.nu.push({
+    sleutel:'opv-mail:' + i.id, mod:'kandidaten', id:i.id,
+    opvActie: i.id + '|' + i.key,
+    titel:`Felicitatiemail voor ${i.naam} nakijken en versturen`,
+    sub:i.sub, w:'klaar om te sturen' }));
+
+  /* De vrijdagse klantupdate-ronde opent een eigen paneel via
+     CRM.opvolging.venster(). Vroeger ving js/opvolging.js die klik zelf af
+     op de tijdlijnregel; nu vragen we het gewoon netjes. */
+  items.filter(i => i.soort === 'klantupdate').forEach(i => uit.nu.push({
+    sleutel:'opv-ku:' + i.key, venster:i.key, urgent:!!i.urgent,
+    titel:i.titel, sub:i.sub || '' }));
+
+  /* Wat andere modules aanleveren via registreerBron (bijvoorbeeld de
+     verjaardagen van contactpersonen uit js/klanten.js). */
+  items.filter(i => !['nazorg','warm','verjaardag','mail','afspraak','klantupdate'].includes(i.soort))
+    .forEach(i => uit.nu.push({ sleutel:'opv-x:' + i.key + ':' + (i.ref || ''),
+      mod:i.mod || '', id:i.id || '', titel:i.titel, sub:i.sub || '', vink:true,
+      urgent:!!i.urgent }));
+
+  uit.nu.forEach(r => { if(r.vink) r.af = sessieKlaar.has(sk('opv:' + r.sleutel)); });
+
+  /* Wat er verderop in de week aankomt. Alleen in de standen Week en Alles:
+     in de stand Vandaag zou het de vraag "wat moet er nú" verdunnen. */
+  if(taakZicht() !== 'vandaag'){
+    const tot = taakZicht() === 'alles'
+      ? dISO(dagPlus(maandag(0), 27))          // vier weken vooruit is ver genoeg
+      : dISO(dagPlus(maandag(0), 6));
+    const morgen = dISO(dagPlus(new Date(), 1));
+    const gezien = new Set(uit.nu.map(r => r.sleutel));
+    try{
+      (CRM.opvolging.tussen(mij, morgen, tot) || []).forEach(m => {
+        const sleutel = 'opvw:' + m.key + ':' + (m.ref || '');
+        if(gezien.has(sleutel)) return;
+        gezien.add(sleutel);
+        uit.komt.push({ sleutel, mod:m.mod || 'kandidaten', id:m.id || '',
+          titel:m.titel, sub:m.sub || m.naam || '', w:CRM.fmtDay(m.datum), datum:m.datum,
+          venster: m.soort === 'klantupdate' ? m.key : '',
+          opvActie: (m.soort === 'mail' || m.soort === 'afspraak') ? m.id + '|' + m.key : '' });
+      });
+    }catch(e){ console.warn('opvolging vooruit', e); }
+    uit.komt.sort((a,b) => String(a.datum).localeCompare(String(b.datum)));
+  }
+  return uit;
+}
+
+/* ─── Markup ─────────────────────────────────────────────────────── */
+function taakRijHTML(r){
+  const klik = r.mod ? ` data-mod="${h(r.mod)}"${r.ref?` data-id="${h(r.ref)}"`:''}` : '';
+  return `<div class="tk-rij prio-${h((prioNorm(r.prio)||'normaal').toLowerCase())}" data-rij="${h(r.id)}">
+    <input type="checkbox" class="tk-vink" data-taak="${h(r.id)}"${r.telt?' data-telt="1"':''} title="Afronden">
+    <button type="button" class="tk-prio" data-prio="${h(r.id)}"
+      title="Prioriteit ${h(PRIO_WOORD[r.prio])} — klik voor ${h(PRIO_WOORD[PRIO_NA[r.prio]])}"
+      aria-label="Prioriteit ${h(PRIO_WOORD[r.prio])}">${h(PRIO_TEKEN[r.prio])}</button>
+    <div class="tk-t"${klik}><b>${h(r.tekst)}</b>
+      ${r.sub?`<span class="tk-s">${h(r.sub)}</span>`:''}</div>
+    ${wanneerHTML(r.id, r.datum || '')}
+  </div>`;
+}
+
+function opvRijHTML(r){
+  const klik = r.mod ? ` data-mod="${h(r.mod)}"${r.id?` data-id="${h(r.id)}"`:''}` : '';
+  const actie  = r.opvActie ? ` data-opvactie="${h(r.opvActie)}"` : '';
+  const venster = r.venster ? ` data-venster="${h(r.venster)}"` : '';
+  const vink = r.vink
+    ? `<input type="checkbox" class="tk-vink" data-opv="opv:${h(r.sleutel)}" data-telt="1"
+         data-ids="${h((r.actieIds||[]).join(','))}"${r.sleutel==='acties'?' data-blok="acties"':''}${r.af?' checked disabled':''} title="Afvinken voor vandaag">`
+    : `<span class="tk-geenvink" aria-hidden="true">•</span>`;
+  return `<div class="tk-rij opv${r.urgent && !r.af ? ' urgent' : ''}${r.af?' af':''}"${klik}${actie}${venster}>
+    ${vink}
+    <div class="tk-t"><b>${h(r.titel)}</b>
+      ${r.sub?`<span class="tk-s">${h(r.sub)}</span>`:''}</div>
+    ${r.w?`<span class="tk-w num${r.urgent?' oranje':''}">${h(r.w)}</span>`:''}
+  </div>`;
+}
+
+/* De voortgangsteller stond in de kop van de agenda en ging altijd al over
+   taken — daar hoorde hij dus niet. Hij telt wat vandaag af moet: taken van
+   vandaag, wat achterstallig is, en de opvolging van vandaag. */
+function taakVoortgang(T, O){
+  return {
+    tot: T.groepen.over.rijen.length + T.groepen.vandaag.rijen.length
+       + O.nu.length + T.afVandaag,
+    af:  T.afVandaag + O.nu.filter(r => r.af).length
+  };
+}
+
+/* Welke groepen horen bij welke stand. Achterstallig en zonder datum
+   staan er altijd; die gaan over werk dat is blijven liggen. */
+const ZICHT_GROEPEN = {
+  vandaag: ['over','vandaag','geen'],
+  week:    ['over','vandaag','week','geen'],
+  alles:   ['over','vandaag','week','later','geen']
+};
+
+function takenPaneelHTML(T, O){
+  const stand = taakZicht();
+  const toon  = ZICHT_GROEPEN[stand];
+  const verborgen = Object.keys(T.groepen)
+    .filter(k => !toon.includes(k))
+    .reduce((s,k) => s + T.groepen[k].rijen.length, 0);
+
+  const groepHTML = k => {
+    const g = T.groepen[k];
+    if(!g.rijen.length) return '';
+    return `<div class="tk-groep${g.urgent?' urgent':''}">
+      <div class="label tk-glabel">${h(g.titel)}<span class="tk-gtel num">${g.rijen.length}</span></div>
+      ${g.rijen.map(taakRijHTML).join('')}</div>`;
+  };
+
+  const takenLijst = T.open
+    ? toon.map(groepHTML).join('') +
+      (verborgen ? `<button type="button" class="tk-meer" id="tk_alles">Nog ${verborgen} ${verborgen===1?'taak':'taken'} verderop — alles tonen</button>` : '')
+    : `<div class="tk-leeg meta">${h(T.afVandaag
+        ? 'Alles afgevinkt. Mooi moment om vooruit te werken.'
+        : 'Geen open taken. Zet hierboven neer wat er nog moet gebeuren.')}</div>`;
+
+  const opvLijst = (O.nu.length || O.komt.length)
+    ? O.nu.map(opvRijHTML).join('')
+      + (O.komt.length ? `<div class="label tk-glabel tk-komt">Komt eraan<span class="tk-gtel num">${O.komt.length}</span></div>
+          ${O.komt.map(opvRijHTML).join('')}` : '')
+    : `<div class="tk-leeg meta">Niets om op te volgen vandaag.</div>`;
+
+  const {tot, af} = taakVoortgang(T, O);
+  const pct = tot ? Math.round(af/tot*100) : 0;
+
+  return `<div class="card tk-card">
+    <div class="card-h tk-kop">
+      <div class="h2">Taken</div>
+      <div class="seg tk-seg">
+        <button type="button" data-tzicht="vandaag"${stand==='vandaag'?' class="on"':''}>Vandaag</button>
+        <button type="button" data-tzicht="week"${stand==='week'?' class="on"':''}>Deze week</button>
+        <button type="button" data-tzicht="alles"${stand==='alles'?' class="on"':''}>Alles</button>
+      </div>
+      <span class="spacer"></span>
+      ${tot?`<div class="tk-vg"><span class="meta num" id="tk_vgt">${af} van ${tot} vandaag</span>
+        <div class="bar tk-vgbar"><i id="tk_vgb" style="width:${pct}%"></i></div></div>`:''}
+    </div>
+    <div class="card-b tk-b">
+      <div class="tk-nieuw">
+        <input type="text" id="tk_snel" placeholder="Nieuwe taak voor vandaag — Enter om op te slaan"
+          autocomplete="off" aria-label="Nieuwe taak">
+        <button type="button" class="btn sm" id="tk_snelok">Toevoegen</button>
+        <button type="button" class="btn sub sm" id="tk_uitgebreid"
+          title="Datum, prioriteit en aan wie je hem geeft">Meer…</button>
+      </div>
+      <div class="tk-lijst" id="tk_lijst">${takenLijst}</div>
+      <div class="tk-opv">
+        <div class="label tk-glabel tk-opvkop">Opvolging${O.nu.length?`<span class="tk-gtel num">${O.nu.length}</span>`:''}</div>
+        ${opvLijst}
+      </div>
+    </div></div>`;
+}
+
 /* ═══ VOORTGANG + AFVINKEN ═══════════════════════════════════════ */
 function vgTeken(){
-  const t = document.getElementById('tl2_vgt'), b = document.getElementById('tl2_vgb');
-  /* In weekweergave erbij zeggen dat de teller over vandaag gaat. */
-  if(t) t.textContent = `${_vgAf} van ${_vgTot} afgerond${zicht()==='week'?' vandaag':''}`;
+  const t = document.getElementById('tk_vgt'), b = document.getElementById('tk_vgb');
+  if(t) t.textContent = `${_vgAf} van ${_vgTot} vandaag`;
   if(b) b.style.width = (_vgTot ? Math.round(_vgAf/_vgTot*100) : 0) + '%';
 }
+
+/* Afvinken laat de regel STAAN waar hij staat, doorgestreept. Opnieuw
+   sorteren zou de regel onder je muis vandaan halen en de volgende taak
+   op die plek zetten — dan vink je per ongeluk twee dingen af. Bij de
+   volgende hertekening is hij weg. */
 function rijAf(cb){
   if(!cb) return;
   cb.checked = true; cb.disabled = true;
-  const rij = cb.closest('.tl2-item');
+  const rij = cb.closest('.tk-rij');
   if(rij){ rij.classList.add('af'); rij.classList.remove('urgent'); }
-  /* Een taak van een andere dag telt niet mee: de voortgang gaat over vandaag. */
-  if(!cb.dataset.buiten){ _vgAf++; vgTeken(); }
+  /* Alleen wat in de teller zat telt ook mee als het af is. */
+  if(cb.dataset.telt){ _vgAf++; vgTeken(); }
 }
 
 async function taakAfvinken(id, cb){
@@ -666,8 +910,8 @@ async function taakAfvinken(id, cb){
   CRM.navBadges();
 }
 
-/* Suggestieblok "acties over datum": de onderliggende kandidaat-acties
-   worden echt als gedaan gemarkeerd (volgende_actie leeg). */
+/* "Acties over datum": de onderliggende kandidaat-acties worden echt als
+   gedaan gemarkeerd (volgende_actie leeg). */
 async function actiesBlokAf(cb){
   const ids = String(cb.dataset.ids||'').split(',').filter(Boolean);
   const oud = [];
@@ -691,27 +935,218 @@ async function actiesBlokAf(cb){
   CRM.navBadges();
 }
 
+/* ─── Prioriteit zetten ──────────────────────────────────────────
+   Ook hier blijft de regel staan. Je zet vaak drie, vier prioriteiten
+   achter elkaar; als de lijst na elke klik herschikt, klik je de tweede
+   keer op de verkeerde regel. De nieuwe volgorde komt bij de volgende
+   hertekening — dat is genoeg. */
+async function prioZetten(id, knop){
+  const t = (CRM.state.taken||[]).find(x => String(x.id)===String(id));
+  if(!t) return;
+  const oud = prioNorm(t.prioriteit);
+  const nieuw = PRIO_NA[oud];
+  t.prioriteit = nieuw;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_taken').update({prioriteit:nieuw}).eq('id', t.id);
+    if(error){ t.prioriteit = oud; return CRM.fout('Prioriteit opslaan mislukt', error); }
+  }
+  knop.textContent = PRIO_TEKEN[nieuw];
+  knop.title = `Prioriteit ${PRIO_WOORD[nieuw]} — klik voor ${PRIO_WOORD[PRIO_NA[nieuw]]}`;
+  knop.setAttribute('aria-label', 'Prioriteit ' + PRIO_WOORD[nieuw]);
+  const rij = knop.closest('.tk-rij');
+  if(rij) rij.className = rij.className.replace(/prio-\S+/, 'prio-' + (nieuw || 'normaal').toLowerCase());
+}
+
+/* ─── Een taak verzetten ─────────────────────────────────────────
+   Hier tekenen we het paneel WEL opnieuw. Een datum wijzigen is niet
+   "even een vinkje": je verplaatst de taak naar een andere groep, en dan
+   wil je zien waar hij terechtkomt. */
+async function datumZetten(id, datum, na){
+  const t = (CRM.state.taken||[]).find(x => String(x.id)===String(id));
+  if(!t) return;
+  const oud = t.datum;
+  t.datum = datum || null;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_taken').update({datum:t.datum}).eq('id', t.id);
+    if(error){ t.datum = oud; return CRM.fout('Datum opslaan mislukt', error); }
+  }
+  CRM.navBadges();
+  if(na) na();
+}
+
+/* ─── Snel een taak toevoegen ────────────────────────────────────
+   Voor mezelf, vandaag, normale prioriteit. Wie meer wil (een collega,
+   een andere datum) drukt op "Meer…" en krijgt het gedeelde taakvenster
+   uit js/core.js — geen tweede taakformulier in deze module.
+   Zelfde rijvorm als CRM.taakModal maakt, anders komt er een taak in de
+   database die de rest van de app niet herkent. */
+async function snelleTaak(tekst, na){
+  const t = String(tekst||'').trim();
+  if(!t) return;
+  const rij = { id:CRM.uid(), tekst:t, datum:CRM.todayISO(), klaar:false,
+    entiteit:'', ref:'', voor:CRM.me(), door:CRM.me(), prioriteit:'',
+    created_at:new Date().toISOString() };
+  CRM.state.taken.push(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_taken').insert(rij);
+    if(error){
+      CRM.state.taken = CRM.state.taken.filter(x => x.id !== rij.id);
+      return CRM.fout('Taak opslaan mislukt', error);
+    }
+  }
+  CRM.toast('Taak toegevoegd','ok');
+  CRM.navBadges();
+  if(na) na();
+}
+
 function vinkHandlers(root){
-  CRM.$$('.tl2-vink', root).forEach(cb => {
+  CRM.$$('.tk-vink', root).forEach(cb => {
     if(cb._klaar) return; cb._klaar = true;
     cb.onclick = e => e.stopPropagation();
     cb.onchange = () => {
       if(cb.disabled || !cb.checked) return;
       if(cb.dataset.taak) return taakAfvinken(cb.dataset.taak, cb);
       if(cb.dataset.blok === 'acties') return actiesBlokAf(cb);
-      if(cb.dataset.ses){ sessieKlaar.add(sk(cb.dataset.ses)); rijAf(cb); CRM.toast('Afgevinkt','ok'); }
+      if(cb.dataset.opv){ sessieKlaar.add(sk(cb.dataset.opv)); rijAf(cb); CRM.toast('Afgevinkt','ok'); }
     };
   });
 }
 
-/* ═══ TEAMTARGET-CHIP (paginakop) ════════════════════════════════ */
-function teamChipHTML(){
-  const {netto} = CRM.plaatsingenMaand();
-  const target = CRM.maandTarget();
-  const pct = target>0 ? Math.max(0, Math.min(100, Math.round(netto/target*100))) : 0;
-  return `<button type="button" class="team-chip" id="dash_team" title="Naar Performance">
-    <span>Team deze maand: ${CRM.plusMin(netto)}<span class="tc-van num"> / ${target}</span></span>
-    <span class="bar tc-bar"><i class="${pct>=100?'green':''}" style="width:${pct}%"></i></span>
+/* ─── Het paneel tekenen en bedienen ─────────────────────────────
+   Alleen dít stuk van het scherm wordt opnieuw getekend als er iets aan
+   de taken verandert. Een volledige CRM.render() zou de agenda opnieuw
+   opbouwen, de Outlook-ronde opnieuw aftrappen en de leespositie
+   verzetten — voor het toevoegen van één taak is dat te veel geweld. */
+function tekenTaken(mount){
+  const el = mount.querySelector('#dash_taken');
+  if(!el) return;
+  const T = bouwTaken(), O = opvolgingRijen();
+  const vg = taakVoortgang(T, O);
+  _vgTot = vg.tot; _vgAf = vg.af;
+  el.innerHTML = takenPaneelHTML(T, O);
+  bindTaken(mount);
+}
+
+function bindTaken(mount){
+  const el = mount.querySelector('#dash_taken');
+  if(!el) return;
+  const opnieuw = () => tekenTaken(mount);
+
+  vinkHandlers(el);
+
+  /* Vandaag ↔ Deze week ↔ Alles. Blijft bewaard, net als de weergavekeuze
+     van het pijplijnbord. */
+  CRM.$$('.tk-seg button', el).forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    if(b.classList.contains('on')) return;
+    zetTaakZicht(b.dataset.tzicht);
+    opnieuw();
+  });
+  const alles = el.querySelector('#tk_alles');
+  if(alles) alles.onclick = e => { e.stopPropagation(); zetTaakZicht('alles'); opnieuw(); };
+
+  /* Prioriteit: één klik verder in de ronde normaal → hoog → laag. */
+  CRM.$$('.tk-prio', el).forEach(b => b.onclick = e => {
+    e.stopPropagation(); prioZetten(b.dataset.prio, b);
+  });
+
+  /* Verzetten naar een andere dag. */
+  CRM.$$('.tk-wanneer', el).forEach(s => {
+    s.onclick = e => e.stopPropagation();
+    s.onchange = () => datumZetten(s.dataset.wanneer, s.value, opnieuw);
+  });
+
+  /* Snel iets opschrijven. Na het opslaan blijft de cursor in het veld
+     staan: je noteert 's ochtends zelden maar één ding. */
+  const inp = el.querySelector('#tk_snel');
+  const bewaar = async () => {
+    const tekst = inp.value.trim();
+    if(!tekst) return inp.focus();
+    inp.value = '';
+    await snelleTaak(tekst, opnieuw);
+    const vers = mount.querySelector('#tk_snel');
+    if(vers) vers.focus();
+  };
+  if(inp){
+    inp.onclick = e => e.stopPropagation();
+    inp.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); bewaar(); } };
+  }
+  const ok = el.querySelector('#tk_snelok');
+  if(ok) ok.onclick = e => { e.stopPropagation(); bewaar(); };
+
+  /* Meer… = het gedeelde taakvenster uit js/core.js (datum, prioriteit,
+     aan wie je hem geeft, en desgewenst in Outlook To Do). */
+  const meer = el.querySelector('#tk_uitgebreid');
+  if(meer) meer.onclick = async e => {
+    e.stopPropagation();
+    const rij = await CRM.taakModal({});
+    if(rij && CRM.view === 'dashboard') opnieuw();
+  };
+}
+
+/* ═══ HET JAARDOEL — de band boven het dashboard ══════════════════
+   Wens Tjeerd (31 jul 2026): "tot 31 december naar 75 plaatsingen, dat is
+   leuker om naartoe te werken." De rekenkant zit in js/data.js
+   (CRM.plaatsingenJaar); hier staat alleen hoe het eruitziet.
+
+   DRIE DOELEN WAREN ER ÉÉN TE VEEL. Er stonden er tot nu toe twee:
+   "Team deze maand: +7 / 8" als chip in de paginakop, en "Jouw maand" in
+   de rechterkolom. Met het jaardoel erbij zou hetzelfde team met dezelfde
+   maat drie keer op één scherm staan. Gekozen:
+     - het JAARDOEL krijgt de band bovenaan. Het is het gedeelde getal
+       waar iedereen naartoe werkt en het hoort dus in beeld te staan,
+       niet weggestopt in een hoek van de kop;
+     - de TEAM-MAANDCHIP is vervallen. Die mat precies hetzelfde (team,
+       plaatsingen, tegen een doel) over een kortere periode, en de
+       schema-regel in deze band — "je zou nu op 43 staan" — beantwoordt
+       de vraag waar die chip voor bedoeld was: loop ik voor of achter.
+       Het maandcijfer zelf blijft gewoon in Performance staan;
+     - "JOUW MAAND" blijft. Dat is een andere vraag: niet hoe het team
+       ervoor staat, maar hoe jij ervoor staat, en netto in plaats van
+       getekend. Het staat daarom ook op een andere plek.
+
+   Geteld wordt getekend, niet netto — zie de toelichting in js/data.js.
+   Geen bedragen: het is een aantal mensen, dus iedereen mag het zien. */
+function jaarBandHTML(){
+  if(!CRM.plaatsingenJaar) return '';
+  let j; try{ j = CRM.plaatsingenJaar(); }catch(e){ console.warn('jaardoel', e); return ''; }
+  if(!j || !j.doel) return '';
+
+  /* "Per week nodig" wordt onzin zodra het jaar bijna om is: met nog vier
+     dagen te gaan staat er ineens dat je er 40 per week moet doen. Vanaf
+     drie weken te gaan noemen we daarom alleen nog het aantal en de dagen
+     — dat is in de eindspurt ook precies wat je wilt weten. */
+  const eindspurt = j.dagenTeGaan < 21;
+  const perWeek = String(j.perWeekNodig).replace('.', ',');
+  const restZin = !j.teGaan
+    ? 'Doel gehaald — alles hierboven is winst.'
+    : eindspurt
+      ? `${j.teGaan} te gaan in de laatste ${j.dagenTeGaan} ${j.dagenTeGaan===1?'dag':'dagen'}`
+      : `${j.teGaan} te gaan · ${j.dagenTeGaan} dagen · ${perWeek} per week nodig`;
+
+  /* Een balk op 23% zegt niets zonder de datum erbij: in maart is dat
+     ruim op schema, in november ver achter. Daarom staat het verschil met
+     "waar je nu zou moeten staan" er altijd naast. */
+  const verschil = j.voorOfAchter;
+  /* Het woord zegt al welke kant het op gaat, dus zonder plus- of minteken:
+     "−26 achter op schema" leest als een dubbele ontkenning. De kleur draagt
+     de lading (olijf vooruit, rood achter), precies zoals de huisstijl het
+     voorschrijft voor cijfers met richting. */
+  const schemaZin = !j.teGaan ? ''
+    : verschil === 0 ? 'Precies op schema'
+    : verschil > 0 ? `<span class="num pos">${verschil} vóór op schema</span> — je zou nu op <span class="num">${j.verwacht}</span> staan`
+    : `<span class="num neg">${-verschil} achter op schema</span> — je zou nu op <span class="num">${j.verwacht}</span> staan`;
+
+  return `<button type="button" class="card jaar" id="dash_jaar" title="Naar Performance">
+    <div class="jaar-cijfer">
+      <span class="big">${j.gedaan}</span><span class="jaar-van num">/ ${j.doel}</span>
+    </div>
+    <div class="jaar-mid">
+      <div class="label jaar-kop">Samen naar ${j.doel} plaatsingen in ${h(j.jaar)}</div>
+      <div class="bar jaar-bar"><i class="${j.pct>=100?'green':''}" style="width:${j.pct}%"></i></div>
+      <div class="meta jaar-schema">${schemaZin || 'Het hele jaar telt mee: iedereen die je aan het werk hebt geholpen.'}</div>
+    </div>
+    <div class="jaar-rest meta">${h(restZin)}</div>
   </button>`;
 }
 
@@ -907,21 +1342,19 @@ async function agendaVullen(mount, P, W, week){
     });
     P.rest = P.rest.filter(x => x.soort !== 'outlook');
 
-    let geplaatst = 0, af = 0;
+    let geplaatst = 0;
     items.forEach(ev => {
       /* agenda(1) loopt 24 uur vooruit en pakt dus ook morgenochtend mee;
          in de dagbaan hoort alleen vandaag. */
       if(String(ev.start||'').slice(0,10) !== VANDAAG()) return;
       const tijd = String(ev.start||'').slice(11,16);
       const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
-      const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
+      const it = { soort:'outlook',
         titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev), subKlas:'metlink' };
-      it.af = sessieKlaar.has(sk(it.sesKey));
       (P.uren[uur] = P.uren[uur] || []).unshift(it);
-      geplaatst++; if(it.af) af++;
+      geplaatst++;
     });
     if(!geplaatst && !had) return;
-    _vgTot = P.tot + geplaatst; _vgAf = P.af + af;
     /* De baan opnieuw tekenen: dan komt een uur dat compact was
        weggevouwen er vanzelf bij staan. */
     const body = mount.querySelector('.tl2-card .card-b.tl2-b');
@@ -932,7 +1365,14 @@ async function agendaVullen(mount, P, W, week){
         v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
       });
     }
-    vgTeken();
+    /* Staat de agenda ingeklapt, dan verandert alleen de samenvattingsregel. */
+    const zin = mount.querySelector('.tl2-dichtzin');
+    if(zin){
+      const s = dagSamenvatting(P);
+      zin.textContent = !s.aantal ? 'Geen afspraken vandaag'
+        : s.volgende ? `${s.aantal} ${s.aantal===1?'afspraak':'afspraken'} vandaag · om ${s.volgende.tijd} ${s.volgende.titel}`
+        : `${s.aantal} ${s.aantal===1?'afspraak':'afspraken'} vandaag`;
+    }
   }else{
     if(!W) return;
     let had = false;
@@ -944,7 +1384,7 @@ async function agendaVullen(mount, P, W, week){
     items.forEach(ev => {
       const d = W.find(x => x.iso === String(ev.start||'').slice(0,10));
       if(!d) return;
-      d.items.push({ soort:'outlook', geenVink:true,
+      d.items.push({ soort:'outlook',
         titel: ev.titel||'(zonder onderwerp)', tijd:String(ev.start||'').slice(11,16),
         subHtml: olSub(ev), subKlas:'metlink' });
       raak++;
@@ -957,7 +1397,6 @@ async function agendaVullen(mount, P, W, week){
     const baan = mount.querySelector('.tl2-week');
     if(baan) baan.outerHTML = weekBaanHTML(W);
   }
-  vinkHandlers(mount);
   /* De hoogte kan een paar pixels verspringen; hou de leespositie vast. */
   if(Math.abs(window.scrollY - scrollWas) > 2) window.scrollTo(0, scrollWas);
 }
@@ -1071,7 +1510,12 @@ function maandBlok(){
     <div class="card klik" data-mod="performance" title="Naar Performance"><div class="card-b zij-b">
       <div class="zij-maand"><span class="big">${CRM.plusMin(netto)}</span><span class="zij-van num">/ ${aandeel}</span></div>
       ${CRM.ui.bar(pct, pct>=100?'green':'')}
-      <div class="meta num" style="margin-top:8px">${get} getekend · ${stop} gestopt · jouw aandeel van teamtarget ${target}</div>
+      ${/* Hier stond "jouw aandeel van teamtarget 8". Dat getal is weg: met de
+            jaardoelband erboven stonden er anders twee teamdoelen op één
+            scherm (75 voor het jaar, 8 voor de maand) en dan weet niemand
+            meer waar hij naar kijkt. Het aandeel zelf blijft — dat is de
+            noemer van dit blok. */''}
+      <div class="meta num" style="margin-top:8px">${get} getekend · ${stop} gestopt · jouw aandeel van het maandtarget</div>
       ${spark?`<div class="zij-spark">${spark}<span class="meta">jouw plaatsingen per maand</span></div>`:''}
     </div></div></div>`;
 }
@@ -1133,14 +1577,39 @@ const mailPlek = () => mailAan()
   ? `<div id="dash_mail">${_mail ? '' : `<div class="dash-sec"><div class="label sec-kop">Je mail</div>
       <div class="card"><div class="card-b mail-b"><div class="meta">Laden…</div></div></div></div>`}</div>` : '';
 
+/* ═══ DE RAIL — op volgorde van "wat wil ik als eerste weten" ════
+   Geordend naar hoe dringend het is dat je het ziet, niet naar hoe leuk
+   het is om te lezen:
+     1. Voor jou   — een collega heeft je iets gevraagd of gegeven. Als
+                     dit blijft liggen, wacht er iemand op je. Stond eerst
+                     als derde in de kolom.
+     2. Je mail    — wat er vannacht binnenkwam, gekoppeld aan je pijplijn.
+     3. Hot vacatures — de deadlines van de klant.
+     4. Jouw maand — hoe je ervoor staat. Belangrijk, maar niet iets waar
+                     je om acht uur 's ochtends iets aan doet; daarom
+                     onderaan. Bewust NIET geschrapt: het is de enige plek
+                     waar je je eigen stand ziet zonder Performance te
+                     openen, dus het is niet dubbel.
+   Blokken die niets te melden hebben geven een lege string terug en
+   verdwijnen dan helemaal — geen leeg kader in de kolom. */
 function kolomRechts(){
   const functie = (CRM.profile?.functie||'am');
   if(functie === 'marketeer')
-    return mailPlek()
+    return meldingenBlok() + mailPlek()
       + `<div id="dash_posten">${_mkt ? postenHTML(_mkt)
-      : `<div class="dash-sec"><div class="label sec-kop">Vandaag posten</div><div class="card"><div class="card-b zij-b"><div class="meta">Laden…</div></div></div></div>`}</div>`
-      + waakhondBlok() + meldingenBlok();
-  return mailPlek() + hotBlok() + meldingenBlok() + maandBlok();
+      : `<div class="dash-sec"><div class="label sec-kop">Vandaag posten</div><div class="card"><div class="card-b zij-b"><div class="meta">Laden…</div></div></div></div>`}</div>`;
+  return meldingenBlok() + mailPlek() + hotBlok();
+}
+
+/* Onder de agenda, in dezelfde baan: hoe jij ervoor staat. Dat blok stond
+   onderaan de rechterkolom en was daar op een breed scherm het enige — één
+   klein kaartje in een verder lege strook. Het hoort hier ook inhoudelijk:
+   de linkerbaan gaat over jou (jouw dag, jouw maand), de rechterbaan over
+   wat er van buiten binnenkomt. En de banen worden er even lang van.
+   Een marketeer wordt niet op plaatsingen afgerekend; die krijgt hier de
+   waakhond uit Marketing. */
+function kolomOnderAgenda(){
+  return (CRM.profile?.functie||'am') === 'marketeer' ? waakhondBlok() : maandBlok();
 }
 
 /* ═══ WAT LOOPT ER — één rustige regel onderaan ═════════════════
@@ -1203,31 +1672,55 @@ CRM.registerModule('dashboard', {
     const P = bouwDag();
     const week = zicht()==='week';
     const W = week ? bouwWeek() : null;
-    /* De voortgang gaat áltijd over vandaag, ook in weekweergave. */
-    _vgTot = P.tot; _vgAf = P.af;
+    const T = bouwTaken(), O = opvolgingRijen();
+    const vg = taakVoortgang(T, O);
+    _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
+    /* Heeft de rail niets te melden — geen meldingen, geen Outlook, geen
+       hot vacatures — dan mag er ook geen lege derde baan staan. Dat wás
+       precies het probleem: op het teamscherm bleef rechts een leeg vlak
+       over. Zonder inhoud vallen we terug op twee banen. */
+    const rechts = kolomRechts();
 
-    if(acties) acties.innerHTML = teamChipHTML() +
+    /* De paginakop houdt alleen nog Vernieuwen over: de teamchip is
+       vervangen door de jaardoelband, zie jaarBandHTML(). */
+    if(acties) acties.innerHTML =
       `<button class="btn ghost sm" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>`;
 
+    /* De indeling: begroeting met de pijplijnstand ernaast (dat vulde eerst
+       niets op de rechterhelft van de kopregel), daaronder drie banen.
+       Welke kolom hoe breed wordt, en wat er gebeurt als de agenda dicht
+       staat, regelt css/dashboard.css — daar staat ook waaróm. */
     mount.innerHTML = `
       <div class="dash2">
         <section class="dash-hero">
-          <div class="meta num dash-datum">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div>
-          <div class="h1">${h(groet())}${naam?', '+h(naam):''}</div>
-          ${motivatieHTML()}
+          <div class="dash-hero-t">
+            <div class="meta num dash-datum">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div>
+            <div class="h1">${h(groet())}${naam?', '+h(naam):''}</div>
+            ${motivatieHTML()}
+          </div>
+          ${looptRegel()}
         </section>
-        <div class="dash2-grid">
-          <div class="dash2-hoofd">${tijdlijnKaart(P, W)}</div>
-          <div class="zij">${kolomRechts()}</div>
+        ${jaarBandHTML()}
+        <div class="dash2-grid${agendaOpen()?'':' dicht'}${rechts?'':' geenrail'}">
+          <div class="dash-links">
+            <div class="dash-agenda">${tijdlijnKaart(P, W)}</div>
+            <div class="dash-maand zij">${kolomOnderAgenda()}</div>
+          </div>
+          <div class="dash-taken" id="dash_taken">${takenPaneelHTML(T, O)}</div>
+          <div class="dash-rail zij">${rechts}</div>
         </div>
-        ${looptRegel()}
       </div>`;
 
     /* Doorklikken — gedelegeerd, zodat ook later toegevoegde blokken werken. */
     mount.onclick = e => {
-      if(e.target.closest('.tl2-vink') || e.target.closest('a') ||
+      if(e.target.closest('.tk-vink') || e.target.closest('a') ||
          e.target.closest('[data-af]') || e.target.closest('.meld-rij')) return;
+      /* De vrijdagse klantupdate-ronde heeft een eigen paneel dat niet aan
+         één kandidaat hangt. Vroeger ving js/opvolging.js die klik zelf af
+         op de tijdlijnregel; nu vragen we het netjes via de publieke API. */
+      const vensterEl = e.target.closest('[data-venster]');
+      if(vensterEl && CRM.opvolging && CRM.opvolging.venster(vensterEl.dataset.venster, () => CRM.render())) return;
       /* Opvolging met een eigen venster (felicitatiemail, succesje vóór een
          afspraak): het venster erbij, niet de kaart eronder. Deze controle
          staat vóór data-mod, want de regel heeft allebei. */
@@ -1249,9 +1742,10 @@ CRM.registerModule('dashboard', {
       document.getElementById('dash_mot')?.remove();
     };
 
-    /* Paginakop: teamtarget → Performance, Vernieuwen. */
-    const tc = document.getElementById('dash_team');
-    if(tc) tc.onclick = () => CRM.ga('performance');
+    /* De jaardoelband is één grote knop naar Performance: daar staat de
+       onderbouwing (per maand, per persoon, per klant). */
+    const jb = document.getElementById('dash_jaar');
+    if(jb) jb.onclick = () => CRM.ga('performance');
     /* Vernieuwen haalt alle tabellen opnieuw op — op een matige verbinding
        duurt dat seconden. Zonder terugkoppeling leek het scherm bevroren en
        drukten mensen nog een paar keer, wat de aanroep gewoon herhaalde.
@@ -1276,15 +1770,15 @@ CRM.registerModule('dashboard', {
          knop al vervangen door een verse — herstellen hoeft dan niet. */
     };
 
-    /* + Taak: het gedeelde taakvenster. */
-    const nieuw = document.getElementById('tl2_nieuw');
-    if(nieuw) nieuw.onclick = async () => {
-      const rij = await CRM.taakModal({});
-      if(rij && CRM.view==='dashboard') CRM.render();
-    };
+    /* Het takenpaneel: afvinken, prioriteit, verzetten, toevoegen. */
+    bindTaken(mount);
 
-    /* Afvinken in de tijdlijn. */
-    vinkHandlers(mount);
+    /* De agenda in- en uitklappen. De stand blijft bewaard. */
+    CRM.$$('#tl2_klap, #tl2_klap2', mount).forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      zetAgendaOpen(!agendaOpen());
+      CRM.render();
+    });
 
     /* Vandaag ↔ Week. De keuze staat in localStorage en overleeft een herlaad. */
     CRM.$$('.tl2-seg button', mount).forEach(b => b.onclick = () => {
@@ -1328,7 +1822,12 @@ CRM.registerModule('dashboard', {
         else if(ent==='kandidaat') CRM.ga('kandidaten',{id:ref});
         else if(ent==='lead') CRM.ga('recruitment',{id:ref});
         else{
-          const kaart = mount.querySelector('.tl2-card');
+          /* Meldingen zonder eigen kaart gaan meestal over een taak die een
+             collega je heeft gegeven ("Tjerk heeft je een taak gegeven: …").
+             Die wees naar de agenda zolang de taken daarin stonden; nu wijst
+             hij naar het takenpaneel. Springt hij mis, dan gebeurt er niets
+             ergers dan dat er niets oplicht. */
+          const kaart = mount.querySelector('.tk-card') || mount.querySelector('.tl2-card');
           if(kaart){ kaart.scrollIntoView({behavior:'smooth', block:'start'});
             kaart.classList.add('flits'); setTimeout(()=>kaart.classList.remove('flits'), 1400); }
         }

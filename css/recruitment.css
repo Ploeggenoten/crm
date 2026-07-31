@@ -201,7 +201,13 @@ table.rc-qa tr:last-child td{border-bottom:none}
 .rc-route button{display:block;width:100%;text-align:left;border:1px solid var(--line);
   background:var(--card);border-radius:var(--r-s);padding:12px 14px;cursor:pointer;font-family:var(--body)}
 .rc-route button b{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
-.rc-route button small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+/* De twee routes komen op een ander eindpunt uit — een sollicitant in de
+   pijplijn tegenover een kandidatenkaart — en dat kost één regel uitleg
+   meer bij de één dan bij de ander. Vaste hoogte voor de toelichting houdt
+   de blokken even groot; een keuze waarvan het ene vak groter is dan het
+   andere leest als een voorkeur die we niet bedoelen. */
+.rc-route button small{display:block;font-size:12px;color:var(--muted);margin-top:2px;
+  line-height:1.45;min-height:calc(2 * 1.45em)}
 .rc-route button:hover{border-color:var(--olive-l);background:var(--card-2)}
 
 /* ─── Uitvalformulier: keuzeblokken ──────────────────────────── */

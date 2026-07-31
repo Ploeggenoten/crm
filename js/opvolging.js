@@ -773,27 +773,12 @@ function klantRondeVenster(vrijdag, na){
   CRM.drawer.open(rondeHtml(r), {onOpen:bind});
 }
 
-/* Het dashboard kent (nog) maar één ingang voor opvolging met een eigen
-   venster, en die zoekt een KANDIDAAT op bij het id — zie het verzoek
-   onderaan dit bestand. Tot dat rechtgetrokken is vangen we de klik op onze
-   eigen regel hier zelf op, in de capture-fase, zodat de gewone doorklik
-   naar Klanten er niet ook nog achteraan komt. Het vinkje van het dashboard
-   laten we met rust: dat is van het dashboard.
-   Herkennen doen we aan de sleutel die we zelf hebben meegegeven en die het
-   dashboard onveranderd in `data-ses` zet. Verandert dat, dan gebeurt er
-   niets ergers dan de doorklik naar Klanten. */
-document.addEventListener('click', e => {
-  const t = e.target;
-  if(!t || typeof t.closest !== 'function') return;
-  if(t.closest('.tl2-vink')) return;
-  const rij = t.closest('.tl2-item');
-  if(!rij) return;
-  const merk = rij.querySelector('[data-ses]');
-  const m = merk && /klantupdate:(\d{4}-\d{2}-\d{2})/.exec(merk.getAttribute('data-ses') || '');
-  if(!m) return;
-  e.preventDefault(); e.stopPropagation();
-  klantRondeVenster(m[1]);
-}, true);
+/* De vrijdagse klantupdate-ronde opent zijn eigen venster. Dat liep eerst via
+   een klikonderschepping op de dashboardregels, omdat het dashboard geen
+   ingang bood voor een opvolgmoment zonder kandidaat. Sinds de herindeling
+   roept het dashboard `CRM.opvolging.venster(key, na)` gewoon rechtstreeks
+   aan — de onderschepping keek naar `.tl2-item`-regels die niet meer
+   bestaan en is daarom weggehaald. */
 
 /* ═══ PUBLIEKE API ════════════════════════════════════════════════ */
 const OPV = CRM.opvolging = {

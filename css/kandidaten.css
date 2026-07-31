@@ -81,6 +81,11 @@
 .kd-mistchip{cursor:pointer;font-family:var(--body);font-weight:600;font-size:12px;
   line-height:1.6;padding:3px 11px;border-style:dashed;color:var(--txt-2)}
 .kd-mistchip:hover{border-style:solid;border-color:var(--olive-l);color:var(--olive);background:#fff}
+/* Eén chip mag zich onderscheiden: het CV inlezen vult meerdere gaten in
+   één handeling, de andere chips openen één veld. Vandaar een doorgetrokken
+   rand in plaats van de streepjes — geen tweede kleur op het scherm. */
+.kd-mistchip.sterk{border-style:solid;border-color:var(--olive);color:var(--olive);background:#fff}
+.kd-mistchip.sterk:hover{background:var(--card-2)}
 /* Kort oplichten waar je heen springt — anders zoek je het veld alsnog. */
 .kd-wijs{background:var(--card-2);border-color:var(--olive-l) !important;
   box-shadow:0 0 0 3px rgba(111,160,60,.15)}
@@ -114,21 +119,10 @@
 .kd-sterbtn.aan{color:var(--olive);opacity:.8}
 .kd-sterbtn:hover{transform:scale(1.12);color:var(--olive)}
 
-/* ─── CV-verrijking: aanvullingen (groen) en conflicten (rood) ── */
+/* Merkteken bij een veld dat uit het CV is overgenomen. De rest van de
+   oude verrijkings-CSS (aanvullingen/conflicten) is weg: dat venster staat
+   nu in js/cvparse.js met een eigen stylesheet. */
 .kd-cvchip{font-size:10.5px;padding:0 7px;vertical-align:middle}
-.kd-cvaanv{display:flex;flex-direction:column;gap:1px}
-.kd-cvaanv-rij{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;
-  padding:6px 0;border-bottom:1px solid #eef0e4;font-size:13px}
-.kd-cvaanv-rij:last-child{border-bottom:none}
-.kd-cvaanv-rij > .label{margin:0}
-.kd-conflict{border:1px solid var(--red-line);background:var(--red-bg);border-radius:var(--r-s);
-  padding:11px 13px;margin-bottom:10px}
-.kd-conflict-lbl{font-size:12px;font-weight:700;color:#a4301f;margin-bottom:8px}
-.kd-conflict-opties{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.kd-copt{background:#fff;border:1px solid var(--line-2);border-radius:var(--r-s);padding:8px 11px;
-  font-family:var(--body);font-size:11.5px;color:var(--txt-2);cursor:pointer;text-align:left;line-height:1.4}
-.kd-copt b{display:block;font-size:13px;color:var(--ink);margin-top:2px;word-break:break-word}
-.kd-copt.aan{border-color:var(--olive);box-shadow:0 0 0 1px var(--olive);color:var(--olive)}
 
 /* ─── CV ──────────────────────────────────────────────────────── */
 .kd-cvlijst{display:flex;flex-direction:column;gap:2px;margin-top:8px}
@@ -223,8 +217,6 @@ label.kd-taak input{margin-top:3px}
 @media (max-width:900px){
   .kd-meter{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;flex:1 1 100%}
   .kd-veld{grid-template-columns:1fr}
-  .kd-conflict-opties{grid-template-columns:1fr}
-  .kd-cvaanv-rij{grid-template-columns:1fr auto;grid-auto-flow:dense}
 }
 
 /* ─── Filterbalk op mobiel ────────────────────────────────────── */
@@ -282,3 +274,5 @@ label.kd-taak input{margin-top:3px}
 .kd-mistlijst button:focus-visible{outline:2px solid var(--olive);outline-offset:2px;border-radius:2px}
 .kd-mistlijst span:first-child{font-weight:600;color:var(--txt-2)}
 .kd-mistlijst .meta{flex:1;min-width:0}
+
+

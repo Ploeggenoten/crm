@@ -1,8 +1,134 @@
 /* ═══════════════════════════════════════════════════════════════
-   HOT VACATURES — rustige prioriteitenkaarten met net iets meer
-   aanwezigheid dan gewone lijsten. Olijf op de prioriteit; de
-   deadlinekleur alleen op het deadline-element zelf.
+   OPENSTAANDE VACATURES (+ HOT)
+
+   Twee standen, één rustige vorm. Op de openstaande kaart draagt
+   maar één ding kleur: de waarschuwing als er iets vastloopt. Het
+   getal "nog te vullen" is groot genoeg om zonder kleur op te vallen.
+   De verdeelbalk is de uitzondering — daar ís kleur de betekenis
+   (olijf = geplaatst, blauw = in procedure, grijs = nog open).
    ═══════════════════════════════════════════════════════════════ */
+
+/* ═══ OPENSTAAND — de lijst ═══════════════════════════════════ */
+
+.ov-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ov-bar select{max-width:190px}
+.ov-uitleg{max-width:74ch;margin:-4px 0 16px}
+
+/* auto-fit: op een teamscherm komen er kolommen bij in plaats van
+   witruimte, terwijl de kaart zelf ongeveer even breed blijft.
+   Kaarten in dezelfde rij zijn even hoog (geen align-items:start), zodat de
+   voetregel overal op dezelfde hoogte staat en het oog die kan aflopen. */
+.ovlijst{display:grid;gap:14px;
+  grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+
+.ovcard{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r-l);
+  padding:16px 18px 14px;cursor:pointer;transition:border-color .12s;
+  display:flex;flex-direction:column;min-width:0;
+}
+.ovcard:hover{border-color:var(--olive-l)}
+.ovcard:focus-visible{outline:2px solid var(--olive);outline-offset:2px}
+.ovcard.hot{border-left:3px solid var(--olive);padding-left:15px}
+
+.ov-kop{display:flex;align-items:flex-start;gap:14px}
+.ov-wie{flex:1;min-width:0}
+.ov-functie{
+  margin:0;font-family:var(--body);font-size:16px;font-weight:700;
+  line-height:1.3;letter-spacing:-.01em;color:var(--ink);
+}
+.ov-klant{font-size:12.5px;color:var(--txt-2);margin-top:3px}
+.ov-klant .ov-punt{color:var(--line-2);margin:0 1px}
+
+/* Het hoofdgetal: hoeveel er nog te vullen zijn. Grote kerncijfers
+   mogen Anton (huisstijl); de regel eronder blijft Inter. */
+.ov-vullen{display:flex;flex-direction:column;align-items:flex-end;flex:0 0 auto;text-align:right}
+.ov-getal{font-family:var(--disp);font-weight:400;font-size:27px;line-height:1;
+  letter-spacing:.5px;color:var(--ink)}
+.ov-vlbl{font-size:11px;color:var(--txt-2);margin-top:4px;white-space:nowrap}
+
+.ov-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.ov-chips .chip{font-size:11px;padding:1px 9px}
+
+/* Verdeelbalk: geplaatst · in procedure · nog open, als deel van het
+   gevraagde aantal. Eén blik en je ziet waar de ruimte zit. */
+.ov-balk{display:flex;height:8px;border-radius:99px;overflow:hidden;
+  background:var(--card-2);gap:2px;margin:12px 0 10px}
+.ov-balk i{display:block;height:100%;border-radius:99px;min-width:6px}
+.ov-balk i.vol{background:var(--olive)}
+.ov-balk i.proc{background:var(--blue)}
+.ov-balk i.leeg{background:var(--line-2)}
+
+.ov-voet{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:12px;color:var(--txt-2);margin-top:auto}
+.ov-voet .ov-stand{color:var(--ink)}
+/* Scheidingsteken in plaats van alleen een gat: "3 in procedure" en
+   "30 dagen open" zijn twee verschillende dingen. */
+.ov-voet .ov-meta::before{content:'·';margin-right:9px;color:var(--line-2)}
+.ov-voet .ov-meta.oud{color:var(--ink);font-weight:600}
+.ov-knel{margin-left:auto;font-size:11px;padding:1px 9px}
+
+/* "Hot maken" hoort bij de kaart maar mag hem niet volplempen: hij verschijnt
+   als je erover gaat. Op een apparaat zonder muis is er geen hover-stand, dus
+   daar staat de knop er gewoon. */
+.ov-hotknop{margin-left:auto;opacity:0;transition:opacity .12s;padding:3px 9px;font-size:11.5px}
+.ov-voet > .ov-knel ~ .ov-hotknop{margin-left:0}
+.ovcard:hover .ov-hotknop,.ovcard:focus-within .ov-hotknop,.ov-hotknop:focus-visible{opacity:1}
+@media (hover:none){ .ov-hotknop{opacity:1} }
+
+/* ── Wat buiten de lijst valt: on hold en vol-maar-open ──────── */
+.ov-rest{margin-top:24px;border-top:1px solid var(--line);padding-top:10px;max-width:960px}
+.ov-restlijst{margin-top:6px}
+.ov-restrij{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;margin:0 -10px;
+  border-radius:var(--r-s);cursor:pointer;font-size:13px;
+}
+.ov-restrij:hover{background:var(--card-2)}
+.ov-restrij b{font-weight:600;color:var(--ink)}
+.ov-restrij .meta{flex:1;min-width:0}
+.ov-restrij .chip{font-size:11px;padding:1px 9px}
+.ov-ga{color:var(--muted);font-size:13px}
+.ov-restrij:hover .ov-ga{color:var(--olive)}
+
+/* ═══ DETAILPAGINA ════════════════════════════════════════════ */
+
+.ovd{display:flex;flex-direction:column;gap:16px}
+.ovd-let{margin:0}
+.ovd-kpi{gap:12px}
+
+/* Links wat je leest (kandidaten, matches, de tekst), rechts wat je
+   opzoekt (feiten, hot, historie). */
+.ovd-body{display:grid;gap:16px;align-items:start;
+  grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.ovd-kol{display:flex;flex-direction:column;gap:16px;min-width:0}
+
+.ovd-veld{display:flex;gap:14px;align-items:baseline;
+  padding:8px 0;border-bottom:1px solid var(--line)}
+.ovd-veld:last-child{border-bottom:none;padding-bottom:0}
+.ovd-veld .label{flex:0 0 148px;margin:0}
+.ovd-veld > span:last-child{flex:1;min-width:0;font-size:13px;color:var(--ink);
+  overflow-wrap:anywhere}
+.ovd-veld .meta{font-weight:400}
+
+.ovd-tekst{margin-bottom:18px}
+.ovd-tekst:last-child{margin-bottom:0}
+.ovd-tekst p{margin:6px 0 0;font-size:13.5px;line-height:1.65;color:var(--txt);max-width:68ch}
+
+.ovd-match{display:flex;flex-direction:column;gap:1px}
+.ovd-mrij{display:flex;align-items:center;gap:10px;padding:8px 10px;margin:0 -10px;
+  border-radius:var(--r-s);cursor:pointer}
+.ovd-mrij:hover{background:var(--card-2)}
+.ovd-score{
+  flex:0 0 auto;min-width:32px;height:24px;padding:0 7px;border-radius:99px;
+  background:var(--card-2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:var(--txt-2);
+}
+.ovd-mwie{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ovd-mwie b{font-size:13px;font-weight:600;color:var(--ink)}
+.ovd-mrij .chip{font-size:11px;padding:1px 9px}
+.ovd-mrij:hover .hk-ga{color:var(--olive)}
+
+/* ═══ HOT — rustige prioriteitenkaarten ═══════════════════════ */
 
 .hotlijst{display:flex;flex-direction:column;gap:14px;max-width:960px}
 
@@ -65,9 +191,9 @@
 .hot-funtekst span{display:inline-flex;align-items:center;gap:5px}
 .hot-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;display:inline-block}
 .hot-afspraak{font-size:12px;color:var(--txt-2)}
-.hot-acties{margin-left:auto;display:flex;gap:2px;flex:0 0 auto}
+.hot-acties{margin-left:auto;display:flex;gap:2px;flex:0 0 auto;flex-wrap:wrap}
 
-/* ── Uitklap: gekoppelde kandidaten ─────────────────────────── */
+/* ── Kandidaatrijen (uitklap én detailpagina) ───────────────── */
 .hot-uitklap{border-top:1px solid var(--line);margin-top:14px;padding:12px 0 2px 64px}
 .hk-row{
   display:flex;align-items:center;gap:10px;padding:7px 10px;margin:0 -10px;
@@ -97,19 +223,29 @@
 }
 .hi-preview .meta{font-weight:400}
 
-/* ── Breed scherm: kaarten naast elkaar ─────────────────────────
+/* ── Breed scherm: hot-kaarten naast elkaar ─────────────────────
    960px was de leesbreedte van één kaart; op een teamscherm betekende dat
    dat je nog steeds maar drie vacatures tegelijk zag met de helft van het
-   scherm leeg ernaast. De kaart zelf blijft ongeveer even breed — er komen
-   alleen kolommen bij, zodat de hele hotlijst in één blik past.
-   align-items:start zodat een uitgeklapte kaart zijn buurman niet oprekt. */
+   scherm leeg ernaast. align-items:start zodat een uitgeklapte kaart zijn
+   buurman niet oprekt. */
 @media (min-width:1500px){
   .hotlijst{max-width:none;display:grid;align-items:start;
     grid-template-columns:repeat(auto-fit,minmax(500px,1fr))}
 }
 
+/* ── Detailpagina op een smaller scherm ─────────────────────── */
+@media (max-width:1100px){
+  .ovd-body{grid-template-columns:1fr}
+}
+
 /* ── Mobiel ─────────────────────────────────────────────────── */
 @media (max-width:700px){
+  .ov-bar{gap:8px}
+  .ov-bar .searchbox{flex:1 1 100%}
+  .ov-bar select{max-width:none;flex:1 1 100%}
+  .ov-knel{margin-left:0}
+  .ovd-veld{flex-direction:column;gap:3px}
+  .ovd-veld .label{flex:none}
   .hot-top{flex-wrap:wrap}
   .hot-deadline{align-items:flex-start;width:100%;flex-direction:row;gap:8px;align-items:baseline;padding-left:64px}
   .hot-doel,.hot-onder,.hot-uitklap{padding-left:0}

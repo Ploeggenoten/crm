@@ -87,6 +87,120 @@ const EVAL_CRIT = [
 ];
 const VAC_STATUS = ['Open','On hold','Vervuld','Gesloten'];
 
+/* ─── Vacature-informatie voor de website ─────────────────────────
+   Bij een nieuwe vacature krijgt de marketeer een melding. Zo'n melding
+   is alleen iets waard als er ook staat wát er op de site moet komen —
+   anders begint het heen-en-weer over werktijden en certificaten alsnog.
+   Daarom vraagt het vacaturevenster naast functie en aantal ook de
+   dingen die je in een vacaturetekst voor productie, logistiek en
+   industrie echt nodig hebt.
+
+   Ze staan in een apart, ingeklapt blok. Een AM die snel een opdracht
+   wil vastleggen scrollt niet eerst langs zeven velden; wie de info wél
+   heeft klikt één keer. De teller in de samenvatting maakt zichtbaar
+   hoeveel er nog mist, en diezelfde teller gaat mee in de melding.
+   Dezelfde opzet als CRM.volledigheid bij kandidaten: één lijst met
+   labels, zodat het venster, de vacaturekaart en de melding nooit iets
+   anders zeggen. */
+const VAC_CONTRACT = ['Uitzicht op vast','Direct in dienst bij de klant',
+  'Tijdelijk of seizoenswerk','Uitzenden zonder uitzicht op vast'];
+const VAC_BEREIK = ['Goed met het OV','Met OV te doen, eigen vervoer handiger',
+  'Alleen met eigen vervoer','Op fietsafstand'];
+const VAC_WEB = ['Nog niet online','Staat online','Niet nodig'];
+
+const VAC_INFOVELDEN = [
+  {k:'werktijden',     lbl:'Werktijden'},
+  {k:'ploegendienst',  lbl:'Ploegendienst'},
+  {k:'contractvorm',   lbl:'Contractvorm'},
+  {k:'eisen',          lbl:'Ervaring en certificaten'},
+  {k:'bereikbaarheid', lbl:'Bereikbaarheid'},
+  {k:'over_bedrijf',   lbl:'Over het bedrijf'},
+  {k:'waarom_hier',    lbl:'Waarom hier werken'},
+  /* Het salaris staat al bovenin het venster, maar telt hier wel mee:
+     zonder loonindicatie krijgt een vacature in deze branches nauwelijks
+     reacties, dus voor de website is het geen bijzaak. */
+  {k:'salaris',        lbl:'Salarisindicatie', vul:v => v.sal_min != null || v.sal_max != null}
+];
+const vacInfo = v => {
+  const r = v || {};
+  const mist = VAC_INFOVELDEN.filter(f => f.vul ? !f.vul(r) : !String(r[f.k]||'').trim());
+  const totaal = VAC_INFOVELDEN.length;
+  return {mist, klaar: totaal - mist.length, totaal,
+          pct: Math.round((totaal - mist.length) / totaal * 100)};
+};
+/* Alle acht labels achter elkaar is een muur tekst die niemand leest — en in
+   een melding helemaal. Noem er hooguit een paar en tel de rest op. */
+const mistTekst = (info, max = 3) => {
+  const lbls = info.mist.map(x => x.lbl.toLowerCase());
+  if(lbls.length <= max) return lbls.join(', ');
+  return lbls.slice(0, max).join(', ') + ` en nog ${lbls.length - max}`;
+};
+
+/* De kolommen hiervoor (en die van de websitestand) komen pas in de database
+   nadat de wijziging onderaan dit bestand gedraaid is. Zolang ze er niet zijn
+   tonen we de velden niet en sturen we ze niet mee — anders sneuvelt de hele
+   opslag en kan er niets meer aan een vacature gewijzigd worden. In demo is er
+   geen database, dus daar mag alles. */
+const heeftVacInfoVelden = () => {
+  if(CRM.demo) return true;
+  const rij = (CRM.state.vacs || []).find(Boolean);
+  return !!rij && 'werktijden' in rij && 'web_status' in rij;
+};
+
+/* Wie is marketeer? Altijd uit de profielen, nooit op naam: er kan er een
+   tweede bijkomen en een rol kan wisselen. Geen marketeer in het team
+   levert een lege lijst op — dan gaat er gewoon geen melding uit. */
+const marketeers = () => (CRM.state.profiles || [])
+  .filter(p => (p.functie||'') === 'marketeer' && p.naam)
+  .map(p => p.naam);
+
+/* CRM.meld slaat een melding aan jezelf over. Zet de marketeer zelf een
+   vacature op, dan krijgt diegene dus terecht niets. Geeft terug hoeveel
+   meldingen er echt uit zijn gegaan, zodat de toast niet iets belooft wat
+   niet gebeurd is. */
+async function meldMarketeers(soortTekst, klant){
+  const wie = marketeers();
+  if(!wie.length) return 0;
+  let uit = 0;
+  for(const naam of wie){
+    /* entiteit 'klant': de doorklik in het dashboard en in Teams komt dan uit
+       op de klantkaart, en die opent op het tabblad Vacatures. */
+    const m = await CRM.meld(naam, 'vacature', soortTekst, klant ? 'klant' : '', klant || '');
+    if(m) uit++;
+  }
+  return uit;
+}
+async function meldNieuweVacature(k, v){
+  const info  = vacInfo(v);
+  const klant = k?.naam || v.klant || '';
+  const waar  = v.locatie || k?.locatie || '';
+  const plek  = (Number(v.aantal)||1) > 1 ? ` (${Number(v.aantal)||1} plekken)` : '';
+  const am    = v.eigenaar || k?.eigenaar || 'de accountmanager';
+  const tekst = `Nieuwe vacature${klant ? ' bij ' + klant : ''}: ${v.functie}${plek}`
+    + (waar ? ` in ${waar}` : '') + '. Graag op de website zetten. '
+    + (info.mist.length
+        ? `Nog niet compleet: ${mistTekst(info)} ${info.mist.length===1?'ontbreekt':'ontbreken'}. Vraag dat na bij ${am}.`
+        : 'Alle informatie voor de tekst staat erbij.');
+  return meldMarketeers(tekst, klant);
+}
+async function meldInfoAangevuld(k, v){
+  const klant = k?.naam || v.klant || '';
+  return meldMarketeers(
+    `De informatie voor de vacature ${v.functie}${klant ? ' bij ' + klant : ''} is aangevuld. `
+    + 'Alles wat je voor de tekst nodig hebt staat er nu in.', klant);
+}
+/* De lus terug: de AM die de vacature aanmeldde hoort te weten dat hij online
+   staat, anders blijft het gissen. Zet de AM hem zelf online, dan slaat
+   CRM.meld de melding aan zichzelf over. */
+async function meldOnline(k, v){
+  const naar  = v.eigenaar || k?.eigenaar || '';
+  const klant = k?.naam || v.klant || '';
+  if(!naar) return;
+  await CRM.meld(naar, 'vacature',
+    `${CRM.me()} heeft de vacature ${v.functie}${klant ? ' bij ' + klant : ''} op de website gezet.`,
+    klant ? 'klant' : '', klant || '');
+}
+
 /* Contactpersonen worden (nog) niet door core geladen — hier eenmalig ophalen. */
 let _contGeladen = false;
 function zorgContacten(){
@@ -1612,6 +1726,16 @@ function tabVacatures(el, k, c){
     const v = c.vs.find(x => String(x.id) === b.dataset.vplan); if(!v) return;
     planModal(k, {titel:`Overleg ${v.functie} — ${k.naam}`});
   });
+  /* Aanvullen opent hetzelfde venster, maar met het informatieblok al open —
+     je klikte er tenslotte juist op om dat in te vullen. */
+  el.querySelectorAll('[data-vinfo]').forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    vacatureModal(k, c.vs.find(v => String(v.id) === b.dataset.vinfo), {infoOpen:true});
+  });
+  el.querySelectorAll('[data-vweb]').forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    websiteModal(k, c.vs.find(v => String(v.id) === b.dataset.vweb));
+  });
   el.querySelectorAll('[data-kand]').forEach(a => a.onclick = e => {
     e.preventDefault(); CRM.ga('kandidaten',{id:a.dataset.kand});
   });
@@ -1635,14 +1759,76 @@ function vacatureHtml(v, k){
       ${sal}
       <span class="chip${open?' green':''}">${h(v.status||'Open')}</span>
       ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
+      ${webChip(v, open, dg)}
       <button class="btn sub sm" data-vplan="${h(String(v.id))}">Inplannen</button>
       <button class="btn sub sm" data-vbew="${h(String(v.id))}">Bewerken</button>
     </summary>
     <div class="kl-vac-b">
+      ${webBlokHtml(v, open)}
       ${v.omschrijving ? `<p class="sub" style="margin:0 0 10px">${h(v.omschrijving)}</p>` : ''}
       ${kandidaten.length ? `<div class="kl-kandlijst">${kandidaten.map(c=>kandRegel(c)).join('')}</div>`
         : '<p class="meta" style="margin:0">Nog geen kandidaten gekoppeld aan deze vacature.</p>'}
     </div></details>`;
+}
+
+/* Chip in de samenvatting. Bewust karig: de samenvattingsregel heeft al drie
+   chips, en kleur hoort betekenis te hebben. Dus alleen als het iets zégt —
+   hij staat online, of hij staat er na een week nog steeds niet op. De
+   tussenstand ("net aangemeld") leest de AM in het blok eronder.
+   Alleen bij een open vacature: een vervulde vacature hoort er juist af. */
+const WEB_TRAAG_DAGEN = 7;
+function webChip(v, open, dg){
+  if(!heeftVacInfoVelden()) return '';
+  const st = v.web_status || 'Nog niet online';
+  /* Staat een vervulde vacature nog online, dan is dat juist wél nieuws:
+     dan komen er reacties op iets wat niet meer bestaat. */
+  if(st === 'Staat online')
+    return `<span class="chip${open?' green':' amber'}">${open?'op de website':'staat nog online'}</span>`;
+  if(st === 'Niet nodig' || !open) return '';
+  if(dg == null || dg < WEB_TRAAG_DAGEN) return '';
+  return `<span class="chip amber">nog niet online · <span class="num">${dg}</span> dgn</span>`;
+}
+
+/* Het blok waar de twee kanten van de lus samenkomen: hoeveel informatie de
+   marketeer al heeft, en of de vacature online staat. De AM leest hier of er
+   nog iets nagevraagd wordt; de marketeer legt hier vast dat het gedaan is. */
+function webBlokHtml(v, open){
+  if(!heeftVacInfoVelden()) return '';
+  const st = v.web_status || 'Nog niet online';
+  /* Bij een vervulde of gesloten vacature valt er niets meer te plaatsen —
+     dan hoort dit blok er ook niet te staan. Enige uitzondering: hij staat
+     nog online. Dat moet iemand er juist afhalen. */
+  if(!open && st !== 'Staat online') return '';
+  const info = vacInfo(v);
+  const id   = h(String(v.id));
+  /* Groen als het compleet is, anders oranje. Geen rood: een half ingevulde
+     vacature is werk in uitvoering, geen fout. */
+  const kl   = info.mist.length ? 'amber' : 'green';
+  const url  = veiligeUrl(v.web_url || '');
+  let regel;
+  if(st === 'Staat online'){
+    regel = `Staat online${v.web_online_op ? ' sinds ' + h(CRM.fmtDateShort(v.web_online_op)) : ''}`
+      + (v.web_door ? `, gezet door ${h(v.web_door)}` : '') + '.'
+      + (open ? '' : ` De vacature is ${h((v.status||'').toLowerCase())} — hij kan van de site af.`)
+      + (url ? ` <a href="${h(url)}" target="_blank" rel="noopener noreferrer">Bekijk de pagina</a>` : '');
+  }else if(st === 'Niet nodig'){
+    regel = 'Deze vacature hoeft niet op de website.';
+  }else{
+    regel = 'Nog niet online. ' + (info.mist.length
+      ? `De marketeer mist nog: ${h(mistTekst(info))}.`
+      : 'Alle informatie voor de tekst staat erin.');
+  }
+  return `<div class="kl-vweb">
+    <div class="kl-vweb-kop">
+      <span class="label">Voor de website</span>
+      <div class="bar kl-vweb-bar"><i class="${kl}" style="width:${info.pct}%"></i></div>
+      <span class="meta"><span class="num">${info.klaar}</span> van <span class="num">${info.totaal}</span></span>
+      <span class="spacer"></span>
+      <button class="btn sub sm" data-vinfo="${id}">${info.mist.length?'Info aanvullen':'Info bekijken'}</button>
+      <button class="btn sub sm" data-vweb="${id}">Websitestand</button>
+    </div>
+    <div class="meta kl-vweb-m">${regel}</div>
+  </div>`;
 }
 
 function laatsteKandContact(c){
@@ -2182,10 +2368,13 @@ function klantModal(k){
 }
 
 /* ─── Vacature toevoegen / bewerken ───────────────────────────── */
-function vacatureModal(k, v){
+function vacatureModal(k, v, opts){
+  const extra = heeftVacInfoVelden();
   const n = v || {id:'', klant:k.naam, functie:'', locatie:k.locatie||'', aantal:1,
     sal_min:null, sal_max:null, type:'W&S', status:'Open', eigenaar:k.eigenaar||CRM.me(),
     aangemaakt:CRM.todayISO(), omschrijving:''};
+  const kies = (lijst, nu) => '<option value=""></option>' +
+    lijst.map(s => `<option${nu===s?' selected':''}>${h(s)}</option>`).join('');
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${v?'Vacature bewerken':'Nieuwe vacature'}</div>
       <p class="sub" style="margin:6px 0 0">${h(k.naam)}</p></div>
@@ -2202,7 +2391,39 @@ function vacatureModal(k, v){
         <div class="f-row"><label>Maandloon vanaf</label><input type="number" id="v_smin" value="${n.sal_min==null?'':n.sal_min}"></div>
         <div class="f-row"><label>Maandloon tot</label><input type="number" id="v_smax" value="${n.sal_max==null?'':n.sal_max}"></div>
       </div>
-      <div class="f-row"><label>Omschrijving</label><textarea id="v_oms" placeholder="Ploegendienst, VCA gewenst, eigen vervoer nodig…">${h(n.omschrijving||'')}</textarea></div>
+      <div class="f-row"><label>Omschrijving</label>
+        <textarea id="v_oms" placeholder="Wat je collega's over deze opdracht moeten weten.">${h(n.omschrijving||'')}</textarea>
+        ${extra ? '<span class="hint">Werktijden, certificaten en vervoer horen hieronder — dan komen ze bij de marketeer terecht.</span>' : ''}</div>
+      ${extra ? `
+      <details class="vacinfo" id="v_info"${opts && opts.infoOpen ? ' open':''}>
+        <summary>
+          <div style="min-width:0;flex:1">
+            <b>Informatie voor de vacaturetekst</b>
+            <div class="meta" id="v_infomist"></div>
+          </div>
+          <span class="chip" id="v_infotel"></span>
+        </summary>
+        <div class="vacinfo-b">
+          <div class="f-grid">
+            <div class="f-row"><label>Werktijden</label>
+              <input type="text" id="v_tijden" value="${h(n.werktijden||'')}" placeholder="06:00–14:30, ma t/m vr"></div>
+            <div class="f-row"><label>Ploegendienst</label>
+              <select id="v_ploeg">${kies(CRM.PLOEGEN||[], n.ploegendienst||'')}</select></div>
+            <div class="f-row"><label>Contractvorm</label>
+              <select id="v_contract">${kies(VAC_CONTRACT, n.contractvorm||'')}</select></div>
+            <div class="f-row"><label>Bereikbaarheid</label>
+              <select id="v_bereik">${kies(VAC_BEREIK, n.bereikbaarheid||'')}</select></div>
+          </div>
+          <div class="f-row"><label>Ervaring en certificaten</label>
+            <input type="text" id="v_eisen" value="${h(n.eisen||'')}" placeholder="Heftruckcertificaat, VCA, ervaring in de voedingsindustrie">
+            <span class="hint">Staat er niets? Zet dan "geen ervaring nodig" — dat is ook informatie.</span></div>
+          <div class="f-row"><label>Wat voor bedrijf is het</label>
+            <textarea id="v_bedrijf" rows="2" placeholder="Familiebedrijf, 80 medewerkers, maakt maaltijdsalades voor supermarkten.">${h(n.over_bedrijf||'')}</textarea></div>
+          <div class="f-row"><label>Waarom zou je hier willen werken</label>
+            <textarea id="v_waarom" rows="2" placeholder="Vast team, warme sfeer, heftruckcertificaat op kosten van de zaak.">${h(n.waarom_hier||'')}</textarea></div>
+        </div>
+      </details>` :
+      `<p class="meta" style="margin:0">De extra velden voor de website verschijnen zodra de databasewijziging gedraaid is.</p>`}
     </div>
     <div class="modal-f">
       ${v?'<button class="btn sub" id="v_weg">Verwijderen</button>':''}
@@ -2210,10 +2431,42 @@ function vacatureModal(k, v){
       <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="v_ok">Opslaan</button>
     </div>`, {onOpen(m){
+    const w = id => { const el = m.querySelector('#'+id); return el ? el.value.trim() : ''; };
+    /* De marketingvelden en het salaris uitlezen als één vacature-achtig
+       object, zodat de teller in dit venster exact hetzelfde rekent als de
+       vacaturekaart en de melding aan de marketeer. */
+    const nu = () => ({
+      werktijden:w('v_tijden'), ploegendienst:w('v_ploeg'), contractvorm:w('v_contract'),
+      eisen:w('v_eisen'), bereikbaarheid:w('v_bereik'),
+      over_bedrijf:w('v_bedrijf'), waarom_hier:w('v_waarom'),
+      sal_min: w('v_smin')==='' ? null : Number(w('v_smin')),
+      sal_max: w('v_smax')==='' ? null : Number(w('v_smax'))
+    });
+    /* Meelopende teller: je ziet tijdens het invullen wat er nog mist, ook
+       met het blok dichtgeklapt. Zonder die teller is een ingeklapt blok
+       makkelijk te vergeten. */
+    const tel = m.querySelector('#v_infotel'), mistEl = m.querySelector('#v_infomist');
+    function verversTeller(){
+      if(!tel) return;
+      const inf = vacInfo(nu());
+      tel.textContent = `${inf.klaar}/${inf.totaal}`;
+      tel.className = 'chip' + (inf.mist.length ? (inf.klaar ? ' amber' : '') : ' green');
+      mistEl.textContent = inf.mist.length
+        ? 'Nog nodig: ' + mistTekst(inf)
+        : 'Compleet — de marketeer kan hiermee vooruit.';
+    }
+    if(tel){
+      verversTeller();
+      ['v_tijden','v_ploeg','v_contract','v_eisen','v_bereik','v_bedrijf','v_waarom','v_smin','v_smax']
+        .forEach(id => { const el = m.querySelector('#'+id); if(el) el.oninput = el.onchange = verversTeller; });
+    }
     m.querySelector('#v_ok').onclick = async () => {
       const functie = m.querySelector('#v_functie').value.trim();
       if(!functie) return CRM.toast('Vul een functie in','err');
       const smin = m.querySelector('#v_smin').value, smax = m.querySelector('#v_smax').value;
+      /* Vóór het overschrijven vastleggen: was de informatie hiervóór nog
+         niet compleet? Alleen dán is aanvullen nieuws voor de marketeer. */
+      const wasOnvolledig = extra && vacInfo(n).mist.length > 0;
       const rij = Object.assign({}, n, {
         klant:k.naam, functie, locatie:m.querySelector('#v_loc').value.trim(),
         aantal:Number(m.querySelector('#v_aantal').value)||1,
@@ -2223,18 +2476,94 @@ function vacatureModal(k, v){
         sal_max: smax === '' ? null : Number(smax),
         omschrijving:m.querySelector('#v_oms').value.trim()
       });
+      /* Alleen meesturen als de kolommen bestaan — zie heeftVacInfoVelden. */
+      if(extra) Object.assign(rij, nu(), {
+        web_status:   n.web_status || 'Nog niet online',
+        web_url:      n.web_url || '',
+        web_online_op:n.web_online_op || null,
+        web_door:     n.web_door || ''
+      });
       /* In productie is vacatures.id een uuid met database-default — geen
          eigen id meesturen bij nieuw; in demo wél (geen database). */
       if(!rij.id && CRM.demo) rij.id = k.naam + '::' + functie;
       CRM.modal.close();
       await bewaarRij('vacatures','vacs', rij, !!v);
-      if(!v) await CRM.logActiviteit('klant', k.naam, 'systeem', 'Vacature ' + functie + ' aangemaakt');
+      if(!v){
+        await CRM.logActiviteit('klant', k.naam, 'systeem', 'Vacature ' + functie + ' aangemaakt');
+        /* De marketeer moet weten dat er iets te plaatsen valt. Bij bewerken
+           niet opnieuw melden — dan zou elke tikfout een bericht opleveren. */
+        const uit = await meldNieuweVacature(k, rij);
+        if(uit) CRM.toast(vacInfo(rij).mist.length
+          ? 'Opgeslagen — de marketeer heeft een melding, mét wat er nog mist'
+          : 'Opgeslagen — de marketeer heeft een melding', 'ok');
+      }else if(wasOnvolledig && extra && !vacInfo(rij).mist.length
+               && (rij.web_status||'Nog niet online') === 'Nog niet online'){
+        /* De andere kant van de lus: de AM heeft nagevraagd wat ontbrak, dus
+           de marketeer kan nu verder. Eén keer, niet bij elke wijziging. */
+        if(await meldInfoAangevuld(k, rij))
+          CRM.toast('Opgeslagen — de marketeer weet dat de info compleet is','ok');
+      }
       CRM.render();
     };
     const weg = m.querySelector('#v_weg');
     if(weg) weg.onclick = async () => {
       if(!await CRM.bevestig('Vacature verwijderen?', n.functie)) return;
       CRM.modal.close(); await verwijderRij('vacatures','vacs', n.id); CRM.render();
+    };
+  }});
+}
+
+/* ─── Websitestand van een vacature ───────────────────────────────
+   Hiermee sluit de lus. De marketeer legt vast dat de vacature online
+   staat; de AM die hem aanmeldde krijgt daar een melding van en ziet het
+   daarna op de vacature zelf. Bewust geen workflow met stappen en
+   goedkeuringen: drie standen, een datum en een link is genoeg.
+   Iedereen mag het invullen — soms zet de AM een vacature zelf online,
+   en dan hoort daar geen drempel voor te staan. */
+function websiteModal(k, v){
+  if(!v || !heeftVacInfoVelden()) return;
+  const st   = v.web_status || 'Nog niet online';
+  const info = vacInfo(v);
+  const am   = v.eigenaar || k.eigenaar || '';
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Vacature op de website</div>
+      <p class="sub" style="margin:6px 0 0">${h(v.functie)} — ${h(k.naam)}</p></div>
+    <div class="modal-b">
+      ${info.mist.length ? `<div class="note warn" style="margin:0 0 16px">Nog niet alles is bekend:
+        ${h(mistTekst(info))}.${am ? ` Vraag dat eerst na bij ${h(am)}.` : ''}</div>` : ''}
+      <div class="f-row"><label>Stand</label><select id="w_st">
+        ${VAC_WEB.map(s=>`<option${st===s?' selected':''}>${h(s)}</option>`).join('')}</select></div>
+      <div class="f-grid">
+        <div class="f-row"><label>Online sinds</label>
+          <input type="date" id="w_op" value="${h(String(v.web_online_op||'').slice(0,10))}"></div>
+        <div class="f-row"><label>Link naar de pagina</label>
+          <input type="url" id="w_url" value="${h(v.web_url||'')}" placeholder="https://ploeggenoten.nl/vacatures/…"></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="w_ok">Opslaan</button>
+    </div>`, {onOpen(m){
+    m.querySelector('#w_ok').onclick = async () => {
+      const nieuw = m.querySelector('#w_st').value;
+      const url   = m.querySelector('#w_url').value.trim();
+      /* Online zonder datum is vandaag; staat de vacature niet online, dan
+         hoort er ook geen datum of naam bij te blijven staan. */
+      const op = nieuw === 'Staat online'
+        ? (m.querySelector('#w_op').value || CRM.todayISO()) : '';
+      const wasOnline = st === 'Staat online';
+      const rij = Object.assign({}, v, {
+        web_status: nieuw, web_url: url, web_online_op: op || null,
+        web_door: nieuw === 'Staat online' ? (v.web_door || CRM.me()) : ''
+      });
+      CRM.modal.close();
+      await bewaarRij('vacatures','vacs', rij, true);
+      if(nieuw === 'Staat online' && !wasOnline){
+        await CRM.logActiviteit('klant', k.naam, 'systeem',
+          `Vacature ${v.functie} staat op de website`);
+        await meldOnline(k, rij);
+      }
+      CRM.render();
     };
   }});
 }
@@ -2565,6 +2894,56 @@ CRM.registerModule('klanten', {
       onderwerp of de locatie, niet op het e-mailadres van een contactpersoon.
       Graag `attendees` meenemen en als `deelnemers:[email]` teruggeven — deze
       module leest dat veld al defensief uit. */
+
+/* ═══════════════════════════════════════════════════════════════
+   VERZOEK AAN COORDINATOR — databasewijziging (vacature → website)
+   Onderstaande kolommen horen in supabase/nog-te-draaien.sql en daarna
+   in supabase/schema.sql. Zolang ze er niet zijn draait alles gewoon
+   door: heeftVacInfoVelden() verbergt de velden en stuurt ze niet mee.
+
+   -- Informatie die de marketeer nodig heeft voor de vacaturetekst.
+   alter table vacatures add column if not exists werktijden     text default '';
+   alter table vacatures add column if not exists ploegendienst  text default '';
+   alter table vacatures add column if not exists contractvorm   text default '';
+   alter table vacatures add column if not exists eisen          text default '';
+   alter table vacatures add column if not exists bereikbaarheid text default '';
+   alter table vacatures add column if not exists over_bedrijf   text default '';
+   alter table vacatures add column if not exists waarom_hier    text default '';
+
+   -- Staat de vacature op de website? Sluit de lus terug naar de AM.
+   alter table vacatures add column if not exists web_status    text default 'Nog niet online';
+   alter table vacatures add column if not exists web_url       text default '';
+   alter table vacatures add column if not exists web_online_op date;
+   alter table vacatures add column if not exists web_door      text default '';
+   ═══════════════════════════════════════════════════════════════ */
+
+/* VERZOEK AAN COORDINATOR — js/dashboard.js, kolomRechts() (regel ~1022).
+   De marketeer krijgt nu een melding in "Voor jou", maar heeft geen lijst van
+   vacatures die nog online moeten. Voorstel: in de marketeer-tak van
+   kolomRechts() een blok "Nog op de website zetten" tussen postenHTML() en
+   waakhondBlok(), gevuld met:
+
+     (CRM.state.vacs||[])
+       .filter(v => (v.status||'Open')==='Open'
+                 && (v.web_status||'Nog niet online')==='Nog niet online')
+       .sort((a,b) => String(a.aangemaakt).localeCompare(String(b.aangemaakt)))
+
+   Per regel: functie, klant en CRM.dagenGeleden(v.aangemaakt); klik naar
+   CRM.ga('klanten',{id:v.klant}). Een vacature ouder dan 7 dagen in oranje —
+   die grens staat hier als WEB_TRAAG_DAGEN en hoort op één plek te leven.
+
+   Verder: het is beter als er een echte agenda-achtige herinnering komt zodra
+   een open vacature een week niet online staat. Dat kan pas als er een plek is
+   die dagelijks draait; CRM.opvolging.registreerBron(fn) is daar de aangewezen
+   plek voor, maar dat bestand is niet van deze module. */
+
+/* VERZOEK AAN CORE — js/core.js, teamsMelding() (regel ~487) en de
+   meldingklik in js/dashboard.js (regel ~1213): allebei kennen ze alleen
+   entiteit 'klant' | 'kandidaat' | 'lead' | 'taak'. Meldingen over een
+   vacature landen daarom op de klantkaart en niet op de vacature zelf. Dat
+   werkt (de kaart opent op het tabblad Vacatures), maar bij een klant met
+   acht vacatures moet je nog zoeken. Graag entiteit 'vacature' toevoegen,
+   met ref = het vacature-id, en doorsturen als #klanten/<klant>?vac=<id>. */
 
 /* VERZOEK AAN CORE: de mail-bouwstenen (`CRM.mailUI` bovenaan de registratie in
    dit bestand + de `.ml-*`-stijl onderaan css/klanten.css) worden gedeeld met

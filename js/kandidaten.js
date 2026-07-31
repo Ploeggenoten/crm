@@ -971,10 +971,10 @@ function kaart(mount, acties, id){
     const ok = await zetGolden(c.id, !isGolden(c.id));
     if(ok) CRM.render();
   };
-  const cvKnop = mount.querySelector('#c_cvlees');
-  if(cvKnop) cvKnop.onclick = () => CRM.cvParse
-    ? CRM.cvParse.open({kandidaat:c, onKlaar:() => CRM.render()})
-    : cvModal(c);
+  /* Twee knoppen, één handeling: de knop in de kop van "CV & ervaring" en de
+     knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
+     naar het lege blok en niet naar de kopregel. */
+  mount.querySelectorAll('#c_cvlees, #c_cvleeg').forEach(b => b.onclick = () => cvLezen(c));
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
   if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
   const certKnop = mount.querySelector('#c_certnieuw');
@@ -1070,23 +1070,28 @@ function gaten(c){
     const f = ALLE_VELDEN.find(x => x.k === k);
     uit.push({k, lbl:(f ? f.lbl : k)});
   });
-  if(!c.cv) uit.push({k:'__cv', lbl:'CV inlezen'});
-  return uit.slice(0,3);
+  if(c.cv) return uit.slice(0,3);
+  /* De CV-knop stond achteraan en viel daardoor juist weg bij de kaarten waar
+     hij het hardst nodig is: een verse kaart mist drie velden en dan sneed
+     slice(0,3) hem er precies af. Eén cv inlezen vult in één handeling wat
+     hier per veld gevraagd wordt, dus bij twee of meer gaten staat hij
+     vooraan en opvallend; anders sluit hij gewoon achteraan aan. */
+  const sterk = uit.length >= 2;
+  const cvGat = {k:'__cv', lbl:'CV inlezen', sterk};
+  return sterk ? [cvGat, ...uit.slice(0,2)] : [...uit, cvGat].slice(0,3);
 }
 function mistHtml(c){
   const g = gaten(c);
   return `<div class="card-f kd-mist" id="kd_mist"${g.length?'':' hidden'}>${g.length ? `
     <span class="label">Wat mist nog</span>
-    ${g.map(x => `<button type="button" class="chip btn-like kd-mistchip" data-mist="${h(x.k)}"
-      title="Meteen invullen">${h(x.lbl)}</button>`).join('')}
+    ${g.map(x => `<button type="button" class="chip btn-like kd-mistchip${x.sterk?' sterk':''}" data-mist="${h(x.k)}"
+      title="${x.sterk?'Vult in één keer meerdere velden':'Meteen invullen'}">${h(x.lbl)}</button>`).join('')}
     <span class="spacer"></span>
     <span class="meta">klik om het meteen in te vullen</span>` : ''}</div>`;
 }
 function bindMist(root, c){
   (root || document).querySelectorAll('[data-mist]').forEach(b => b.onclick = () => {
-    if(b.dataset.mist === '__cv') return CRM.cvParse
-      ? CRM.cvParse.open({kandidaat:c, onKlaar:() => CRM.render()})
-      : cvModal(c);
+    if(b.dataset.mist === '__cv') return cvLezen(c);
     springNaarVeld(b.dataset.mist, c);
   });
 }
@@ -1436,8 +1441,13 @@ function cvHtml(c){
            zónder certificaten is er geen lijstje, en dan moet je er alsnog
            eentje kwijt kunnen. -->
       <button class="btn ghost sm" id="c_certnieuw">Certificaat toevoegen</button>
-      <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
-    <div class="card-b">${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Lees een CV in (PDF of tekst) — lege velden worden aangevuld en afwijkingen worden rood gemarkeerd.') : `
+      <!-- Is er nog niets, dan is dit de enige zinnige vervolgstap op dit
+           blok en staat de knop gevuld in plaats van als randje. Zodra er
+           wel gegevens staan zakt hij terug naar een gewone hulpknop. -->
+      <button class="btn ${leeg?'':'ghost '}sm" id="c_cvlees">CV inlezen</button></div>
+    <div class="card-b">${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens',
+      'Lees een CV in (PDF, Word of tekst) — werkervaring, opleidingen, certificaten, talen en de pasfoto komen er in één keer in. Je ziet per gegeven wat het CV zegt voordat er iets wordt overgenomen.',
+      '<button class="btn" id="c_cvleeg">CV inlezen</button>') : `
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
       ${werk.length?`<div class="label">Werkervaring</div>
         <div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
@@ -1466,251 +1476,15 @@ function cvBestandHtml(c){
   return CRM.cvParse ? CRM.cvParse.bestandHtml(c) : '';
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   CV-VERRIJKING — parse client-side, lege velden aanvullen (groen),
-   afwijkingen rood markeren. Nooit stil overschrijven.
-   Eigen compacte parser; bewust niets uit recruitment.js gebruikt.
-   ═══════════════════════════════════════════════════════════════ */
-let _pdfjs = null;
-function laadPdfJs(){
-  if(_pdfjs) return _pdfjs;
-  _pdfjs = new Promise((res, rej) => {
-    if(window.pdfjsLib) return res(window.pdfjsLib);
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
-    s.onload = () => {
-      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }catch(e){}
-      res(window.pdfjsLib);
-    };
-    s.onerror = () => { _pdfjs = null; rej(new Error('pdf.js kon niet geladen worden')); };
-    document.head.appendChild(s);
-  });
-  return _pdfjs;
-}
-async function pdfTekst(file){
-  const lib = await laadPdfJs();
-  const doc = await lib.getDocument({data:await file.arrayBuffer()}).promise;
-  let uit = '';
-  for(let p = 1; p <= Math.min(doc.numPages, 10); p++){
-    const items = (await (await doc.getPage(p)).getTextContent()).items;
-    let vorigeY = null, regel = ''; const regels = [];
-    items.forEach(it => {
-      const y = it.transform[5];
-      if(vorigeY !== null && Math.abs(y - vorigeY) > 3){ if(regel.trim()) regels.push(regel.trim()); regel = ''; }
-      regel += it.str + ' '; vorigeY = y;
-    });
-    if(regel.trim()) regels.push(regel.trim());
-    uit += regels.join('\n') + '\n';
-  }
-  return uit;
-}
-
-const CV_TALEN = ['Nederlands','Engels','Duits','Frans','Spaans','Pools','Roemeens','Bulgaars',
-  'Hongaars','Turks','Arabisch','Portugees','Italiaans','Oekraïens','Russisch','Slowaaks','Tsjechisch'];
-const CV_CERTS = [
-  [/heftruck|vorkheftruck|forklift/i, 'Heftruckcertificaat'],
-  [/reachtruck|reach truck/i, 'Reachtruck'],
-  [/\bept\b|elektrische pallet/i, 'EPT'],
-  [/\bvca\b/i, 'VCA'],
-  [/hoogwerker/i, 'Hoogwerker'],
-  [/\bbhv\b/i, 'BHV'],
-  [/lascertificaat|lasdiploma|\bnen\s?9606\b/i, 'Lascertificaat']
-];
-
-function parseCvTekst(t){
-  t = String(t||'');
-  const regels = t.split(/\r?\n/).map(r => r.trim()).filter(Boolean);
-  const uit = {telefoon:'', email:'', woonplaats:'', talen:[], certificaten:[],
-               rijbewijs:'', werk:[], ervaringJaren:null, functie:'', nietGevonden:[]};
-
-  const em = t.match(/[\w.+-]+@[\w-]+\.[\w.]{2,}/);
-  if(em) uit.email = em[0];
-
-  const tel = t.match(/(?:\+31|0031|0)\s?6[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}/)
-           || t.match(/(?:\+\d{1,3}[\s-]?)?(?:\d[\s.-]?){9,12}\d/);
-  if(tel) uit.telefoon = tel[0].trim().replace(/\s{2,}/g,' ');
-
-  /* Woonplaats: eerst postcode + plaats op dezelfde regel, anders een
-     hoofdletterwoord dat in onze plaatsentabel voorkomt. */
-  const pc = t.match(/\b\d{4}[ \t]?[A-Za-z]{2}\b[ \t,]+([A-ZÀ-Ž][\wÀ-ž'’-]{2,24}(?:[ \t][A-ZÀ-Ž][\wÀ-ž'’-]{2,24})?)/);
-  if(pc) uit.woonplaats = pc[1].trim();
-  if(!uit.woonplaats){
-    const kandidaten = t.match(/[A-ZÀ-Ž][a-zà-ž'’-]{2,}(?:[ \/-](?:a\/d[ ])?[A-ZÀ-Ž][a-zà-ž'’-]{2,})?/g) || [];
-    const gevonden = kandidaten.find(w => CRM.PLAATSEN[CRM.plaatsSleutel(w)]);
-    if(gevonden) uit.woonplaats = gevonden;
-  }
-
-  CV_TALEN.forEach(x => { if(new RegExp('\\b'+x+'\\b','i').test(t)) uit.talen.push(x); });
-  CV_CERTS.forEach(([re, lbl]) => { if(re.test(t)) uit.certificaten.push(lbl); });
-  const rb = t.match(/rijbewijs[^\n]{0,40}/i);
-  if(rb){
-    const cats = (rb[0].match(/\b(AM|A|BE|B|CE|C|D)\b/g)||[]).join('/');
-    uit.rijbewijs = cats || 'genoemd in CV';
-  }
-
-  /* Werkervaring: regels met een jaartalbereik. Ervaring = nu − vroegste
-     startjaar van het werkverleden (niet van álle jaartallen — daar zit
-     ook een geboortejaar of een opleiding tussen). Regels onder een
-     "Opleiding"-kop tellen we niet als werk. */
-  const jaarRe = /((19|20)\d{2})\s*[–—\-\/tot ]{1,6}\s*((19|20)\d{2}|heden|nu)/i;
-  const startjaren = [];
-  let sectie = 'werk';
-  regels.forEach((r, i) => {
-    if(/^(opleiding|opleidingen|onderwijs|educatie|education|cursussen)\b/i.test(r)){ sectie = 'opleiding'; return; }
-    if(/^(werkervaring|ervaring|werkverleden|loopbaan|experience)\b/i.test(r)){ sectie = 'werk'; return; }
-    if(sectie === 'opleiding') return;
-    const m = r.match(jaarRe);
-    if(m && r.length < 140){
-      let regel = r;
-      if(regel.replace(jaarRe,'').replace(/[^a-zA-Z]/g,'').length < 4 && regels[i+1]) regel = r + ' — ' + regels[i+1];
-      const periode = (regel.match(jaarRe)||[''])[0].trim();
-      const functie = regel.replace(jaarRe,'').replace(/^[\s\-–—:•]+|[\s\-–—:•]+$/g,'').slice(0,80);
-      if(uit.werk.length < 8) uit.werk.push({functie: functie || '—', periode});
-      startjaren.push(+m[1]);
-    }
-  });
-  if(startjaren.length){
-    const vroegst = Math.min.apply(null, startjaren.filter(j => j >= 1960 && j <= new Date().getFullYear()));
-    if(isFinite(vroegst)) uit.ervaringJaren = Math.max(0, Math.min(45, new Date().getFullYear() - vroegst));
-  }
-
-  const functies = Array.from(new Set((CRM.state.vacs||[]).map(v => v.functie).filter(Boolean)));
-  const fg = functies.find(f => new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i').test(t));
-  if(fg) uit.functie = fg;
-  else if(uit.werk.length && uit.werk[0].functie !== '—') uit.functie = uit.werk[0].functie.slice(0,60);
-
-  if(!uit.telefoon)      uit.nietGevonden.push('telefoonnummer');
-  if(!uit.email)         uit.nietGevonden.push('e-mailadres');
-  if(!uit.woonplaats)    uit.nietGevonden.push('woonplaats');
-  if(!uit.talen.length)  uit.nietGevonden.push('talen');
-  if(!uit.werk.length)   uit.nietGevonden.push('werkverleden met jaartallen');
-  if(!uit.certificaten.length) uit.nietGevonden.push('certificaten');
-  return uit;
-}
-
-/* Telefoonnummers vergelijken los van spaties/landcode. */
-const telNorm = t => {
-  let n = String(t||'').replace(/\D/g,'');
-  if(n.startsWith('0031')) n = '0'+n.slice(4);
-  else if(n.startsWith('31') && n.length > 9) n = '0'+n.slice(2);
-  return n;
-};
-
-function cvModal(c){
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">CV inlezen</div>
-      <p class="sub" style="margin:6px 0 0">PDF of tekstbestand — wordt in je browser gelezen, er gaat niets naar
-      een externe dienst. Lege velden worden aangevuld; wijkt het CV af van de kaart, dan zie je dat rood en kies je zelf.</p></div>
-    <div class="modal-b">
-      <input type="file" id="cvv_file" accept=".pdf,.txt,.md,text/plain,application/pdf">
-      <div id="cvv_uit" style="margin-top:14px"></div>
-    </div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button>
-      <button class="btn" id="cvv_ok" disabled>Verwerken</button></div>`, {onOpen(m){
-    const uitEl = m.querySelector('#cvv_uit'), ok = m.querySelector('#cvv_ok');
-    let p = null, bestand = '', aanvullingen = [], conflicten = [];
-
-    m.querySelector('#cvv_file').onchange = async e => {
-      const f = e.target.files[0]; if(!f) return;
-      bestand = f.name;
-      uitEl.innerHTML = CRM.ui.laden('CV lezen…');
-      ok.disabled = true;
-      try{
-        const tekst = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
-          ? await pdfTekst(f) : await f.text();
-        if(!tekst.trim()){
-          uitEl.innerHTML = '<div class="note warn">Er kwam geen tekst uit dit bestand. Waarschijnlijk is het een gescande pdf (een plaatje). Vul de gegevens dan handmatig in.</div>';
-          return;
-        }
-        p = parseCvTekst(tekst);
-
-        /* Vergelijken met de kaart: aanvullen (leeg) of conflict (anders). */
-        aanvullingen = []; conflicten = [];
-        const paren = [
-          ['telefoon',   'Telefoon',   (a,b) => telNorm(a) === telNorm(b)],
-          ['email',      'E-mail',     (a,b) => a.toLowerCase() === b.toLowerCase()],
-          ['woonplaats', 'Woonplaats', (a,b) => CRM.plaatsSleutel(a) === CRM.plaatsSleutel(b)]
-        ];
-        paren.forEach(([k, lbl, eq]) => {
-          const kaartW = String(c[k]||'').trim(), cvW = String(p[k]||'').trim();
-          if(!cvW) return;
-          if(!kaartW) aanvullingen.push({k, lbl, w:cvW});
-          else if(!eq(kaartW, cvW)) conflicten.push({k, lbl, kaart:kaartW, cv:cvW, keuze:'kaart'});
-        });
-        if(p.functie && !String(c.functie||'').trim()) aanvullingen.push({k:'functie', lbl:'Gezochte functie', w:p.functie});
-        if(p.talen.length && !String(c.talen||'').trim()) aanvullingen.push({k:'talen', lbl:'Talen', w:p.talen.join(', ')});
-        if(p.rijbewijs && p.rijbewijs !== 'genoemd in CV' && !String(c.rijbewijs||'').trim())
-          aanvullingen.push({k:'rijbewijs', lbl:'Rijbewijs', w:p.rijbewijs});
-
-        const extra = [];
-        if(p.werk.length)         extra.push(p.werk.length + ' werkervaring-regels');
-        if(p.certificaten.length) extra.push('certificaten: ' + p.certificaten.join(', '));
-        if(p.ervaringJaren != null) extra.push('± ' + p.ervaringJaren + ' jaar ervaring');
-
-        uitEl.innerHTML = `
-          ${conflicten.length ? `
-            <div class="label" style="margin-bottom:8px;color:var(--red)">Klopt niet met de kaart — kies per regel</div>
-            ${conflicten.map((cf,i) => `<div class="kd-conflict" data-ci="${i}">
-              <div class="kd-conflict-lbl">${h(cf.lbl)} wijkt af</div>
-              <div class="kd-conflict-opties">
-                <button type="button" class="kd-copt aan" data-keus="kaart">Kaart houden<b>${h(cf.kaart)}</b></button>
-                <button type="button" class="kd-copt" data-keus="cv">CV overnemen<b>${h(cf.cv)}</b></button>
-              </div>
-            </div>`).join('')}` : ''}
-          ${aanvullingen.length ? `
-            <div class="label" style="margin:${conflicten.length?'14px':'0'} 0 8px">Wordt aangevuld (was leeg op de kaart)</div>
-            <div class="kd-cvaanv">${aanvullingen.map(a =>
-              `<div class="kd-cvaanv-rij"><span class="label">${h(a.lbl)}</span><span>${h(a.w)}</span><span class="chip green kd-cvchip">uit CV</span></div>`).join('')}
-            </div>` : ''}
-          ${extra.length ? `<div class="meta" style="margin-top:12px">Gaat naar CV &amp; ervaring: ${h(extra.join(' · '))}.</div>` : ''}
-          ${!conflicten.length && !aanvullingen.length && !extra.length
-            ? '<div class="note warn">Uit dit CV viel niets bruikbaars te halen.</div>' : ''}
-          ${p.nietGevonden.length ? `<div class="note warn" style="margin-top:12px">Niet gevonden in het CV: ${h(p.nietGevonden.join(', '))}.</div>`
-                                  : '<div class="note ok" style="margin-top:12px">Alles gevonden in het CV.</div>'}`;
-
-        uitEl.querySelectorAll('.kd-conflict').forEach(blok => {
-          blok.querySelectorAll('.kd-copt').forEach(b => b.onclick = () => {
-            conflicten[Number(blok.dataset.ci)].keuze = b.dataset.keus;
-            blok.querySelectorAll('.kd-copt').forEach(x => x.classList.toggle('aan', x === b));
-          });
-        });
-        ok.disabled = !(conflicten.length || aanvullingen.length || extra.length);
-      }catch(err){
-        uitEl.innerHTML = `<div class="note err">Lezen mislukt: ${h(err.message)}</div>`;
-      }
-    };
-
-    ok.onclick = async () => {
-      if(!p) return;
-      const uitCv = [];
-      aanvullingen.forEach(a => { c[a.k] = a.w; uitCv.push(a.k); });
-      const gekozenCv = conflicten.filter(cf => cf.keuze === 'cv');
-      gekozenCv.forEach(cf => { c[cf.k] = cf.cv; uitCv.push(cf.k); });
-
-      const oud = c.cv || {};
-      c.cv = Object.assign({}, oud, {
-        functie:       p.functie || oud.functie || '',
-        ervaringJaren: p.ervaringJaren != null ? p.ervaringJaren : (oud.ervaringJaren != null ? oud.ervaringJaren : null),
-        talen:         p.talen.length ? p.talen : (oud.talen || []),
-        certificaten:  p.certificaten.length ? p.certificaten : (oud.certificaten || []),
-        werkgevers:    p.werk.length ? p.werk : (oud.werkgevers || []),
-        bestand, op:new Date().toISOString(),
-        uitCv: uniek([...(Array.isArray(oud.uitCv)?oud.uitCv:[]), ...uitCv])
-      });
-      await bewaarKandidaat(c);
-
-      const delen = [];
-      if(aanvullingen.length) delen.push('aangevuld: ' + aanvullingen.map(a=>a.lbl.toLowerCase()).join(', '));
-      conflicten.forEach(cf => delen.push(cf.lbl.toLowerCase() + ' week af — ' + (cf.keuze==='cv' ? 'CV overgenomen' : 'kaartwaarde gehouden')));
-      if(p.nietGevonden.length) delen.push('niet gevonden: ' + p.nietGevonden.join(', '));
-      await CRM.logActiviteit('kandidaat', c.id, 'doc', 'CV ingelezen (' + bestand + '). ' + (delen.join('; ') || 'Geen wijzigingen.'));
-
-      CRM.modal.close();
-      CRM.toast('CV verwerkt','ok');
-      CRM.render();
-    };
-  }});
+/* ─── CV inlezen ─────────────────────────────────────────────────
+   De parser zelf staat in js/cvparse.js (CRM.cvParse): één module voor
+   alle schermen, zodat een cv met twee kolommen overal hetzelfde wordt
+   gelezen. De eigen compacte parser die hier stond las een pdf regel
+   voor regel op y-positie en weefde bij een zijbalk de twee kolommen
+   door elkaar; die is weg. */
+function cvLezen(c){
+  if(!CRM.cvParse) return CRM.toast('De CV-lezer is niet geladen — herlaad de pagina','err');
+  CRM.cvParse.open({kandidaat:c, onKlaar:() => CRM.render()});
 }
 
 /* ─── Intake ──────────────────────────────────────────────────── */
@@ -2250,3 +2024,46 @@ CRM.registerModule('kandidaten', {
       tekstvergelijking op een naam die een gebruiker kan overtypen. Een
       echte vlag op de rij (bv. `candidates.geanonimiseerd_op`) zou dat
       dichttimmeren. */
+
+/* ═══════════════════════════════════════════════════════════════
+   VERZOEK AAN COORDINATOR — CV inlezen (31 jul 2026)
+
+   1. css/base.css — DIT IS DE OORZAAK van "ik kan niet op de parser
+      klikken op de grote kandidatenkaart", en het raakt elk scherm.
+
+      `.modal` staat `position:fixed` in het midden van het beeld en
+      wordt bij sluiten alleen op `opacity:0` gezet. `.scrim` krijgt in
+      diezelfde situatie wél `pointer-events:none` (regel 356-358),
+      `.modal` niet. Na élk gesloten venster blijft er dus een
+      onzichtbaar blok van maximaal 520px breed en 90vh hoog midden op
+      het scherm liggen dat alle klikken opvangt. Gemeten op 1180×760:
+      vóór het openen van een venster is de knop CV inlezen klikbaar,
+      ná één keer openen en sluiten is `document.elementFromPoint()` op
+      diezelfde knop `div.modal-b`. Bij de bredere `.cvp-modal` is het
+      dode vlak nog groter.
+
+      Twee regels bij `.modal` en `.modal.on` (regel 376-382):
+        .modal{ ... pointer-events:none}
+        .modal.on{ ... pointer-events:auto}
+
+      Tot die tijd staat de eerste van die twee onderaan
+      css/kandidaten.css, met dezelfde uitleg. Zet je hem in base.css,
+      haal hem hier dan weg — hij hoort niet in een modulestylesheet.
+
+   2. index.html — het versiemerk `?v=20260731a` staat nog op de oude
+      waarde. Zonder ophogen krijgt Tjeerd de gewijzigde js/css niet te
+      zien; tijdens het testen serveerde de browser hardnekkig de oude
+      css/kandidaten.css terwijl de server de nieuwe al had.
+
+   3. js/feest.js — de feestkaart komt in demo-modus over het midden van
+      het scherm te staan en `.feest-kaart` heeft `pointer-events:auto`.
+      Zolang die kaart in beeld is, is de knop CV inlezen er niet meer
+      doorheen te klikken. Minder erg dan punt 1 (hij gaat vanzelf naar
+      de ruststand rechtsboven), maar het is dezelfde klacht.
+
+   4. supabase/schema.sql — niets verplicht. Wel handig: de nieuwe route
+      "+ Sollicitant → CV inlezen" in js/recruitment.js maakt een
+      kandidaat zonder vacature. Wil je later kunnen zien welke
+      kandidaten zo binnenkomen, dan is een waarde 'CV' in de bronlijst
+      (CRM.LEAD_BRONNEN in js/data.js) preciezer dan 'Handmatig', dat we
+      nu gebruiken omdat het een bestaande waarde is. */
