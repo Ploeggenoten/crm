@@ -41,17 +41,27 @@ const UITSLUITEN = [
   // platforms / vacaturebanken
   "werkzoeken", "indeed", "monsterboard", "nationale vacaturebank", "jooble",
   "joblift", "vacaturevoordeel", "nvb banen", "werk.nl", "linkedin", "glassdoor",
+  // bureaus met merknaam zonder bureau-woord (herkend uit eerdere runs)
+  "logistic force", "pdz", "processionals", "profield", "attract", "jigler",
+  "talect", "digiplein", "sectorinstituut", "raaak", "wr.nl",
   // onszelf / directe concurrent
   "ploeggenoten", "pronkert"
 ];
 
 // Naampatronen die vrijwel altijd op een bureau/bemiddelaar wijzen.
-const AGENCY_RE = /(uitzend|detach|payroll|flex(werk|kracht|pool|force|iforce|ibility|team)|\bflex\b|werving|recruit|staffing|resourc|bemiddel|interim|secondment|inhuur|\bzzp\b|personeels?(diensten|bemiddeling|voorziening)|arbeidsbemiddel|talent\s?(pool|acquisition|solutions|force)|banenpagina|vacatureb|jobboard|jobbird|werkgeversdienst|employment agency|human\s?resources?|hr[-\s]?services|payrolling|contracting|\bwerkt\b|\bbanen\b)/i;
+// Fragmenten (geen woordgrens) omdat NL-bureaunamen vaak samengesteld zijn
+// (Perflexxion, Dujob, Apluspersoneel, NLwerkt, …).
+const AGENCY_RE = /(uitzend|detach|payroll|flex|werving|recruit|staffing|resourc|bemiddel|interim|secondment|inhuur|\bzzp\b|personeel|professional|\btalent|banenpagina|vacature|jobboard|jobbird|job\b|jobs|solliciteren|werkgeversdienst|employment agency|human\s?resources?|hr[-\s]?services|payrolling|contracting|planit|werkt\b|matchmak|\bprocess\s?jobs|\bhr\b)/i;
 
 const isBureau = (naam: string) => {
   const n = naam.toLowerCase();
   return UITSLUITEN.some((u) => n.includes(u)) || AGENCY_RE.test(n);
 };
+
+// Een eindbedrijf werft voor z'n eigen vestiging; een bureau strooit over veel
+// steden. 3+ verschillende plaatsen is een sterk bureau-signaal.
+const telPlaatsen = (s: string) =>
+  new Set(String(s || "").split(/[,;]/).map((p) => p.trim().toLowerCase()).filter(Boolean)).size;
 
 const norm = (s: string) => s.toLowerCase().replace(/\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
 
@@ -120,11 +130,11 @@ Deno.serve(async (req) => {
   // handmatig toegevoegde rijen niet aan.
   if (body.opschonen) {
     const { data: alle } = await service.from("crm_leadradar")
-      .select("id,bedrijf,bron,status").neq("status", "genegeerd");
+      .select("id,bedrijf,bron,status,plaats").neq("status", "genegeerd");
     let weg = 0;
     for (const r of alle ?? []) {
       if (r.bron === "handmatig") continue;
-      if (isBureau(String(r.bedrijf ?? ""))) {
+      if (isBureau(String(r.bedrijf ?? "")) || telPlaatsen(String(r.plaats ?? "")) >= 3) {
         await service.from("crm_leadradar")
           .update({ status: "genegeerd", status_door: "filter-bureau" }).eq("id", r.id);
         weg++;
@@ -173,6 +183,8 @@ Deno.serve(async (req) => {
   const vandaag = new Date().toISOString().slice(0, 10);
   let nieuw = 0, bijgewerkt = 0;
   for (const [nn, b] of bedrijven) {
+    // 3+ steden = bureau-signaal: een eindfabriek werft voor de eigen vestiging.
+    if (b.plaatsen.size >= 3) continue;
     const { data: bestaand } = await service.from("crm_leadradar").select("id,status,vacatures").ilike("bedrijf", b.naam).limit(1);
     if (bestaand?.length) {
       // Genegeerde bedrijven met rust laten; anders 'laatst gezien' + telling verversen
