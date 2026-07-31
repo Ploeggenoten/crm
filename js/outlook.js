@@ -33,6 +33,7 @@ const MS_SCOPES = MS_KERN.concat(MS_EXTRA);
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
 let _msal = null, _account = null, _laadBelofte = null;
+let _herstelBelofte = null;   /* zie CRM.outlook.herstel() onderaan dit bestand */
 
 /* ─── Hulpjes ─────────────────────────────────────────────────── */
 const isoLokaal = d => {                       // "2026-07-30T14:00:00" zonder UTC-verschuiving
@@ -535,6 +536,35 @@ CRM.outlook = {
     const start = combineer(opts.datum, opts.tijd);
     const eind  = new Date(start.getTime() + (opts.duurMin || 45)*60000);
     return composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers});
+  },
+
+  /* Bestaande koppeling terughalen uit het browsergeheugen.
+     Zonder dit stond `_account` bij elke paginalading op null, want msalLaden()
+     werd alleen aangeroepen vanuit token() — dus pas nádat je op "Outlook
+     verbinden" had gedrukt. De sessie stond er al die tijd wel, het scherm wist
+     het alleen niet: verbonden() gaf false en de knop bleef staan. Vandaar dat
+     je elke keer opnieuw moest verbinden terwijl er niets verlopen was. */
+  herstel(){
+    if(_herstelBelofte) return _herstelBelofte;
+    _herstelBelofte = (async () => {
+      if(!CRM.outlook.beschikbaar()) return false;
+      try{ await msalLaden(); }
+      catch(e){ console.warn('Outlook-koppeling terughalen mislukt', e); return false; }
+      return !!_account;
+    })();
+    return _herstelBelofte;
   }
 };
+
+/* Meteen bij het laden proberen, zodat de knop "Outlook verbinden" niet
+   verschijnt bij iemand die allang verbonden is. Lukt het, dan één keer
+   opnieuw tekenen zodat agenda en mail meekomen. Mislukt het, dan gebeurt er
+   niets bijzonders: de knop staat er dan terecht. */
+if(CRM.outlook.beschikbaar()){
+  CRM.outlook.herstel().then(verbonden => {
+    if(!verbonden) return;
+    try{ if(CRM.view) CRM.render(); }
+    catch(e){ console.warn('hertekenen na Outlook-herstel', e); }
+  });
+}
 })();
