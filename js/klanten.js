@@ -1710,7 +1710,11 @@ function tabDocumenten(el, k){
     ${docs.length ? `<div class="tblwrap"><table class="tbl"><thead><tr>
         <th>Document</th><th>Soort</th><th>Toegevoegd</th><th>Door</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr>
-          <td>${veiligeUrl(d.url) ? `<a href="${h(veiligeUrl(d.url))}" target="_blank" rel="noopener">${h(d.naam)}</a>` : h(d.naam)}</td>
+          <!-- Geen <a href> meer: sinds de documentenmap dicht staat bewaren we
+               het PAD, niet een url. De ondertekende link ontstaat pas bij de
+               klik (CRM.opslag.open), verloopt vanzelf en staat dus nergens in
+               de DOM waar hij gekopieerd of gedeeld kan worden. -->
+          <td>${d.url ? `<button class="lnk" data-docopen="${h(d.id)}">${h(d.naam)}</button>` : h(d.naam)}</td>
           <td class="sub">${h(d.soort||'—')}</td>
           <td class="sub num">${h(CRM.fmtDate(d.op))}</td>
           <td class="sub">${h(d.door||'—')}</td>
@@ -1721,8 +1725,15 @@ function tabDocumenten(el, k){
 
   if(CRM.bestandenUI) CRM.bestandenUI.laad(el, k.naam, 'kl_bestanden');
   el.querySelector('#d_nieuw').onclick = () => docModal(k);
+  el.querySelectorAll('[data-docopen]').forEach(b => b.onclick = async () => {
+    const rij = (CRM.state.documenten||[]).find(x => String(x.id) === b.dataset.docopen);
+    if(!rij) return;
+    const oud = b.textContent; b.textContent = 'Even…'; b.disabled = true;
+    try{ await CRM.opslag.open(rij.url); }
+    finally{ b.textContent = oud; b.disabled = false; }
+  });
   el.querySelectorAll('[data-dweg]').forEach(b => b.onclick = async () => {
-    if(!await CRM.bevestig('Document loskoppelen?')) return;
+    if(!await CRM.bevestig('Document loskoppelen?', '', {gevaarlijk:true, knop:'Ja, loskoppelen'})) return;
     await verwijderRij('crm_documenten','documenten', b.dataset.dweg); CRM.render();
   });
 }

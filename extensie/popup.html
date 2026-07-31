@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<style>
+  body{ width:280px; margin:0; padding:16px; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; color:#1b1b1b; }
+  h1{ font-size:15px; margin:0 0 4px; }
+  p.sub{ margin:0 0 14px; font-size:12px; color:#666; }
+  label{ display:block; font-size:12px; color:#555; margin:8px 0 3px; }
+  input{ width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; font-size:13px; box-sizing:border-box; }
+  button{ width:100%; margin-top:12px; background:#1a6b3c; color:#fff; border:none; border-radius:9px; padding:10px; font-size:14px; font-weight:600; cursor:pointer; }
+  button.grijs{ background:#eee; color:#333; }
+  .melding{ font-size:12px; margin-top:10px; min-height:16px; }
+  .ok{ color:#1a6b3c; } .err{ color:#c0392b; }
+  .status{ font-size:13px; background:#f2f7f3; border:1px solid #d7e6db; border-radius:8px; padding:10px; }
+  .verborgen{ display:none; }
+</style>
+</head>
+<body>
+  <h1>Ploeggenoten CRM</h1>
+  <p class="sub">Log één keer in met je CRM-account. Daarna voeg je op LinkedIn met de knop rechtsonder leads toe.</p>
+
+  <div id="uitgelogd">
+    <label>E-mail</label>
+    <input id="email" type="email" placeholder="jij@ploeggenoten.nl" autocomplete="username" />
+    <label>Wachtwoord</label>
+    <input id="pw" type="password" autocomplete="current-password" />
+    <button id="login">Inloggen</button>
+  </div>
+
+  <div id="ingelogd" class="verborgen">
+    <div class="status">Ingelogd als <b id="wie"></b></div>
+
+    <label>Jouw naam (voor <code>{mij}</code> in het connectie-bericht)</label>
+    <input id="s_naam" placeholder="bv. Tjeerd" />
+    <label>Connectie-sjabloon</label>
+    <textarea id="s_sjabloon" rows="4" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea>
+    <div style="font-size:11px;color:#777;margin-top:4px;">Plaatshouders: <code>{voornaam}</code>, <code>{functie}</code>, <code>{bedrijf}</code>, <code>{mij}</code>.</div>
+    <button id="s_bewaar">Instellingen bewaren</button>
+
+    <button id="logout" class="grijs">Uitloggen</button>
+  </div>
+
+  <div class="melding" id="melding"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -241,7 +241,12 @@
       cands:CANDS, clients:KLANTEN, vacs:VACS, leads:LEADS, activiteiten:ACTS,
       taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN, meldingen:MELDINGEN,
       ooSessions:OO,
-      profiles:RECS.map((n,i)=>({id:'p'+i,naam:n,rol:i===0?'admin':'user'})),
+      /* Bryan hoort erbij: ?demo=team logt als hem in. Zonder profiel bleef
+   "Mijn klanten" altijd leeg, stond hij niet in de keuzelijst van het
+   taakvenster en toonde "Jouw maand" per definitie 0 — precies de rol
+   die het meest getest moet worden was niet realistisch te doorlopen. */
+      profiles:[...RECS, 'Bryan'].map((n,i)=>({id:'p'+i,naam:n,
+        rol:i===0?'admin':'user', functie:n==='Bryan'?'marketeer':'am'})),
       /* Bewust de sleutel die het OUDE BORD wegschrijft ('__default', niet
          '__default__'). Zo loopt de demo over dezelfde regel als productie en
          zou een leesfout hier meteen opvallen. */

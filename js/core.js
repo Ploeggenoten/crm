@@ -127,18 +127,27 @@ CRM.drawer = {
     }
     if(!dr){ dr = document.createElement('div'); dr.id='drawer'; dr.className='drawer'; document.body.appendChild(dr); }
     dr.innerHTML = html;
+    dr.setAttribute('role','dialog'); dr.setAttribute('aria-modal','true');
+    if(!dr.hasAttribute('tabindex')) dr.tabIndex = -1;
     document.body.style.overflow='hidden';
-    requestAnimationFrame(()=>{ scrim.classList.add('on'); dr.classList.add('on'); });
+    CRM.drawer._focusTerug = document.activeElement;
+    cancelAnimationFrame(CRM.drawer._frame);
+    CRM.drawer._frame = requestAnimationFrame(()=>{
+      CRM.drawer._frame = null; scrim.classList.add('on'); dr.classList.add('on'); focusIn(dr);
+    });
     CRM.$$('[data-close]', dr).forEach(b => b.onclick = () => CRM.drawer.close());
     if(opts.onOpen) opts.onOpen(dr);
     CRM.drawer._onClose = opts.onClose || null;
     return dr;
   },
   close(){
+    cancelAnimationFrame(CRM.drawer._frame); CRM.drawer._frame = null;
     const scrim = document.getElementById('scrim'), dr = document.getElementById('drawer');
     if(scrim) scrim.classList.remove('on');
     if(dr) dr.classList.remove('on');
     document.body.style.overflow='';
+    const terug = CRM.drawer._focusTerug; CRM.drawer._focusTerug = null;
+    if(terug && terug.isConnected) terug.focus({preventScroll:true});
     const cb = CRM.drawer._onClose; CRM.drawer._onClose = null;
     if(cb) setTimeout(cb, 200);
   },
@@ -146,6 +155,18 @@ CRM.drawer = {
 };
 
 /* ─── Modaal + bevestiging ────────────────────────────────────── */
+/* Het openen gebeurt in een animatieframe zodat de overgang loopt. Dat frame
+   werd nooit geannuleerd bij sluiten: viel close() ertussen — of stond de tab
+   op de achtergrond, waar animatieframes stilstaan — dan zette dat late frame
+   de modal alsnog open, over het scherm heen. Vandaar het frame-id.
+   Daarnaast nemen paneel en modaal nu de focus over en geven hem terug: zonder
+   dat liep Tab door de pagina áchter het scherm, waar je de focusring niet
+   ziet en dus blind formuliervelden bedient. */
+let _mFrame = null, _mFocusTerug = null;
+function focusIn(el){
+  const eerste = el.querySelector('input,select,textarea,button,[href],[tabindex]:not([tabindex="-1"])');
+  (eerste || el).focus({preventScroll:true});
+}
 CRM.modal = {
   open(html, opts={}){
     let scrim = document.getElementById('mscrim'), m = document.getElementById('modal');
@@ -154,28 +175,55 @@ CRM.modal = {
     scrim.style.zIndex = 42; m.style.zIndex = 43;
     scrim.onclick = () => { if(opts.sluitbaar !== false) CRM.modal.close(); };
     m.innerHTML = html;
-    requestAnimationFrame(()=>{ scrim.classList.add('on'); m.classList.add('on'); });
+    m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true');
+    if(!m.hasAttribute('tabindex')) m.tabIndex = -1;
+    _mFocusTerug = document.activeElement;
+    cancelAnimationFrame(_mFrame);
+    _mFrame = requestAnimationFrame(()=>{ _mFrame = null; scrim.classList.add('on'); m.classList.add('on'); focusIn(m); });
     CRM.$$('[data-mclose]', m).forEach(b => b.onclick = () => CRM.modal.close());
+    /* Sluit de modal op een andere manier dan via de knoppen — Escape, een klik
+       op de achtergrond — dan moet een wachtende `await` alsnog verder. Zonder
+       dit bleef alles ná de await voorgoed hangen. */
+    CRM.modal._onClose = opts.onClose || null;
+    /* Eigen vlag in plaats van "heeft de klasse .on". Die klasse wordt in een
+       animatieframe gezet, en in een tab op de achtergrond loopt dat frame
+       niet. Escape keek naar de klasse en concludeerde dan dat er niets
+       openstond — waardoor een wachtende await voorgoed bleef hangen. */
+    CRM.modal._aan = true;
     if(opts.onOpen) opts.onOpen(m);
     return m;
   },
   close(){
+    cancelAnimationFrame(_mFrame); _mFrame = null;
+    CRM.modal._aan = false;
     const scrim = document.getElementById('mscrim'), m = document.getElementById('modal');
     if(scrim) scrim.classList.remove('on');
     if(m) m.classList.remove('on');
+    const naSluiten = CRM.modal._onClose; CRM.modal._onClose = null;
+    if(naSluiten) naSluiten();
+    /* Focus terug naar waar hij vandaan kwam, maar alleen als hij nog in het
+       document staat — een hertekening kan het element hebben vervangen. */
+    if(_mFocusTerug && _mFocusTerug.isConnected) _mFocusTerug.focus({preventScroll:true});
+    _mFocusTerug = null;
   }
 };
-CRM.bevestig = (vraag, tekst='') => new Promise(res => {
+/* opts: {knop, gevaarlijk}. `gevaarlijk` maakt de bevestigknop merkoranje en
+   noemt hem naar de handeling, zodat wissen er niet hetzelfde uitziet als een
+   onschuldige vraag. Escape of een klik naast de modal geldt als annuleren. */
+CRM.bevestig = (vraag, tekst='', opts={}) => new Promise(res => {
+  const knop = opts.knop || (opts.gevaarlijk ? 'Ja, verwijderen' : 'Ja, doorgaan');
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${h(vraag)}</div></div>
     ${tekst ? `<div class="modal-b"><p class="sub" style="margin:0">${h(tekst)}</p></div>` : '<div style="height:8px"></div>'}
     <div class="modal-f">
       <button class="btn ghost" id="bv_nee">Annuleren</button>
-      <button class="btn" id="bv_ja">Ja, doorgaan</button>
-    </div>`, {onOpen(m){
-      m.querySelector('#bv_nee').onclick = ()=>{ CRM.modal.close(); res(false); };
-      m.querySelector('#bv_ja').onclick  = ()=>{ CRM.modal.close(); res(true);  };
-    }});
+      <button class="btn${opts.gevaarlijk ? ' danger' : ''}" id="bv_ja">${h(knop)}</button>
+    </div>`, {
+      onClose(){ res(false); },
+      onOpen(m){
+        m.querySelector('#bv_nee').onclick = ()=>{ CRM.modal._onClose = null; CRM.modal.close(); res(false); };
+        m.querySelector('#bv_ja').onclick  = ()=>{ CRM.modal._onClose = null; CRM.modal.close(); res(true);  };
+      }});
 });
 /* Kleine invoer-prompt (vervangt window.prompt — die oogt onprofessioneel). */
 CRM.vraag = (titel, opts={}) => new Promise(res => {
@@ -190,12 +238,15 @@ CRM.vraag = (titel, opts={}) => new Promise(res => {
     <div class="modal-f">
       <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="vr_ok">${h(opts.knop||'Opslaan')}</button>
-    </div>`, {onOpen(m){
+    </div>`, {
+      onClose(){ res(null); },
+      onOpen(m){
       const inp = m.querySelector('#vr_in'); setTimeout(()=>inp.focus(),60);
-      const ok = ()=>{ const v = inp.value.trim(); CRM.modal.close(); res(v||null); };
+      const sluit = v => { CRM.modal._onClose = null; CRM.modal.close(); res(v); };
+      const ok = ()=> sluit(inp.value.trim() || null);
       m.querySelector('#vr_ok').onclick = ok;
       if(!multi) inp.onkeydown = e => { if(e.key==='Enter') ok(); };
-      m.querySelector('[data-mclose]').onclick = ()=>{ CRM.modal.close(); res(null); };
+      m.querySelector('[data-mclose]').onclick = ()=> sluit(null);
     }});
 });
 
@@ -523,20 +574,179 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
     }});
 });
 
+/* ─── Opslag: bestanden uit de map 'crm-docs' ─────────────────────
+   Die map is NIET publiek (zie supabase/schema.sql, blok 10). Er zitten
+   CV's, identiteitsbewijzen en contracten in, dus er bestaat bewust geen
+   vaste url naar een bestand. In de database bewaren we het PAD; pas als
+   iemand een bestand opent maakt deze helper een tijdelijke ondertekende
+   link, die vanzelf verloopt.
+
+   Alles loopt via dit ene object, zodat er niet op drie plekken iets
+   anders gebeurt. Er komen vier soorten waarden binnen:
+     pad        'klant/Acme_BV/1699_swo.pdf'   → ondertekenen
+     oude url   'https://…/object/public/crm-docs/…' → pad eruit halen
+     extern     'https://…sharepoint.com/…'    → laten staan, handmatig
+                                                  gekoppeld bestand
+     blob:      demo-modus, alleen dit venster
+   Al het andere (javascript:, data:, …) wordt geweigerd. ────────── */
+const OPSLAG_MAP    = 'crm-docs';
+const OPSLAG_GELDIG = 3600;                 // seconden dat een link werkt
+const OPSLAG_MARGE  = 60000;                // ms speling voor we hergebruiken
+const _opslagCache  = new Map();            // sleutel -> {url, tot}
+
+/* Supabase-fouten omzetten naar iets dat een mens kan lezen én oplossen. */
+function opslagFoutTekst(err){
+  const m    = String(err?.message || err?.error || err || '');
+  const code = String(err?.statusCode ?? err?.status ?? '');
+  if(/bucket not found/i.test(m) || /bucket/i.test(m) && /not found|exist/i.test(m))
+    return 'De documentmap bestaat nog niet in Supabase. Draai supabase/schema.sql in de SQL-editor — blok 10 maakt de map aan. Daarna werkt uploaden en openen meteen.';
+  if(/jwt|session|token is expired|invalid claim/i.test(m))
+    return 'Je sessie is verlopen. Log opnieuw in en probeer het nog een keer.';
+  if(code==='403' || code==='401' || /unauthor|not allowed|permission|policy|forbidden|violates row-level/i.test(m))
+    return 'Je hebt geen toegang tot dit bestand. Log opnieuw in; blijft het misgaan, vraag Tjeerd om je account te controleren.';
+  if(code==='404' || /not found|does not exist|no such/i.test(m))
+    return 'Dit bestand staat niet meer in de opslag. Waarschijnlijk is het verwijderd — koppel het opnieuw.';
+  if(/failed to fetch|network|load failed/i.test(m))
+    return 'Geen verbinding met de opslag. Controleer je internetverbinding en probeer het opnieuw.';
+  return 'Kon geen link naar dit bestand maken' + (m ? ' — ' + m : '') + '.';
+}
+
+CRM.opslag = {
+  map: OPSLAG_MAP,
+  foutTekst: opslagFoutTekst,
+
+  /* Wat voor waarde is dit? Geeft {soort, pad, url}. */
+  duiding(waarde){
+    const s = String(waarde == null ? '' : waarde).trim();
+    if(!s) return {soort:'leeg', pad:'', url:''};
+    if(/^blob:/i.test(s)) return {soort:'blob', pad:'', url:s};
+    if(/^https?:\/\//i.test(s)){
+      /* Oude rij met een volledige url naar onze eigen map: pad eruit halen.
+         Die url is met een dichte map toch niets meer waard. */
+      const m = s.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/crm-docs\/([^?#]+)/i);
+      if(m){ try{ return {soort:'pad', pad:decodeURIComponent(m[1]), url:''}; }
+             catch(e){ return {soort:'pad', pad:m[1], url:''}; } }
+      return {soort:'extern', pad:'', url:s};
+    }
+    /* Een waarde mét schema die hierboven niet langskwam is géén pad:
+       javascript:, data:, file: — die gaan er niet doorheen. */
+    if(/^[a-z][a-z0-9+.-]*:/i.test(s)) return {soort:'geweigerd', pad:'', url:''};
+    return {soort:'pad', url:'', pad: s.replace(/^\/+/,'').replace(/^crm-docs\//i,'')};
+  },
+
+  /* Het pad binnen de map, of '' als het geen eigen bestand is. */
+  pad(waarde){ const d = this.duiding(waarde); return d.soort==='pad' ? d.pad : ''; },
+
+  /* Tijdelijke ondertekende link. Geeft {url, fout}; `fout` is al een
+     leesbare Nederlandse melding, klaar om te tonen.
+     opts.download = bestandsnaam → de browser bewaart in plaats van tonen. */
+  async link(waarde, opts={}){
+    const d = this.duiding(waarde);
+    if(d.soort === 'leeg')      return {url:'', fout:'Er hoort geen bestand bij deze regel.'};
+    if(d.soort === 'geweigerd') return {url:'', fout:'Deze link is geweigerd: hij wijst niet naar een bestand.'};
+    if(d.soort === 'blob' || d.soort === 'extern') return {url:d.url, fout:''};
+
+    const sleutel = d.pad + (opts.download ? ' dl' : '');
+    const c = _opslagCache.get(sleutel);
+    if(c && c.tot > Date.now() + OPSLAG_MARGE) return {url:c.url, fout:''};
+
+    try{
+      const {data, error} = await sb.storage.from(OPSLAG_MAP)
+        .createSignedUrl(d.pad, OPSLAG_GELDIG, opts.download ? {download:opts.download} : undefined);
+      if(error) return {url:'', fout: opslagFoutTekst(error)};
+      const url = data?.signedUrl || data?.signedURL || '';
+      if(!url) return {url:'', fout:'De opslag gaf geen link terug voor dit bestand.'};
+      _opslagCache.set(sleutel, {url, tot: Date.now() + OPSLAG_GELDIG*1000});
+      return {url, fout:''};
+    }catch(e){ return {url:'', fout: opslagFoutTekst(e)}; }
+  },
+
+  /* Een eerder gemaakte link vergeten — na een upload op hetzelfde pad,
+     of als hij geweigerd wordt. Zonder argument: alles. */
+  wis(waarde){
+    if(waarde == null){ _opslagCache.clear(); return; }
+    const p = this.pad(waarde);
+    if(p){ _opslagCache.delete(p); _opslagCache.delete(p + ' dl'); }
+  },
+
+  /* Klikafhandelaar voor een document. Asynchroon mag hier: de gebruiker
+     heeft net geklikt en wacht toch al op het bestand. */
+  async open(waarde, opts={}){
+    const {url, fout} = await this.link(waarde, opts);
+    if(fout){ CRM.toast(fout, 'err'); return false; }
+    /* Laatste hek: alleen echte http(s)- of blob-links openen. */
+    if(!/^(https?:\/\/|blob:)/i.test(url)){
+      CRM.toast('Deze link is geweigerd: hij wijst niet naar een bestand.', 'err'); return false;
+    }
+    const w = window.open(url, '_blank', 'noopener,noreferrer');
+    if(!w) CRM.toast('Je browser blokkeerde het nieuwe tabblad. Sta pop-ups toe voor deze pagina.', 'err');
+    return true;
+  },
+
+  /* Een al bekende, nog geldige link — synchroon, dus bruikbaar in HTML.
+     Geeft '' als er nog ondertekend moet worden. */
+  srcNu(waarde){
+    const d = this.duiding(waarde);
+    if(d.soort === 'blob' || d.soort === 'extern') return d.url;
+    if(d.soort !== 'pad') return '';
+    const c = _opslagCache.get(d.pad);
+    return (c && c.tot > Date.now() + OPSLAG_MARGE) ? c.url : '';
+  },
+
+  /* AFBEELDINGEN. Een `src` moet er staan op het moment dat we tekenen,
+     maar ondertekenen kost een netwerkronde. Daarom in twee stappen:
+     de renderplek tekent gewoon zijn terugval (initialen) en zet er
+     `data-opslagfoto="<pad>"` op; daarna vult deze functie de foto in.
+     Zit de link al in de sessiecache, dan kan de renderplek hem via
+     srcNu() meteen meegeven en gebeurt er hier niets — geen geknipper
+     bij een tweede keer tekenen. Lukt het niet, dan blijven de initialen
+     staan met de reden in de tooltip: nooit een kapot plaatje. */
+  async vulAfbeeldingen(root){
+    const r = root || document;
+    const els = [];
+    if(r.nodeType === 1 && r.hasAttribute && r.hasAttribute('data-opslagfoto')) els.push(r);
+    els.push(...CRM.$$('[data-opslagfoto]', r));
+    for(const el of els){
+      const waarde = el.getAttribute('data-opslagfoto');
+      el.removeAttribute('data-opslagfoto');          // niet twee keer doen
+      const terugval = el.innerHTML;                  // de initialen
+      const {url, fout} = await this.link(waarde);
+      if(fout || !/^(https?:\/\/|blob:)/i.test(url)){
+        el.title = fout || 'Deze foto kon niet geladen worden.';
+        continue;
+      }
+      const img = new Image();
+      img.alt = ''; img.loading = 'lazy';
+      img.onerror = () => {                           // verlopen of ingetrokken
+        this.wis(waarde);
+        el.classList.remove('foto'); el.innerHTML = terugval;
+        el.title = 'De link naar deze foto is verlopen. Ververs de pagina om hem opnieuw op te halen.';
+      };
+      img.src = url;
+      el.classList.add('foto'); el.innerHTML = ''; el.appendChild(img);
+    }
+  }
+};
+
 /* ─── Eigen profielfoto ───────────────────────────────────────── */
 CRM.tekenEigenAvatar = () => {
   const el = document.getElementById('whoava'); if(!el) return;
-  const foto = CRM.profile?.foto_url;
-  el.innerHTML = foto ? `<img src="${h(foto)}" alt="">` : h(CRM.initialen(CRM.profile?.naam || CRM.user?.email || '?'));
+  const foto = CRM.profile?.foto_url || '';
+  const nu   = foto ? CRM.opslag.srcNu(foto) : '';
   el.title = 'Profielfoto wijzigen';
+  if(nu){ el.innerHTML = `<img src="${h(nu)}" alt="">`; return; }
+  el.innerHTML = h(CRM.initialen(CRM.profile?.naam || CRM.user?.email || '?'));
+  if(foto){ el.setAttribute('data-opslagfoto', foto); CRM.opslag.vulAfbeeldingen(el); }
 };
 CRM.accountModal = () => {
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Jouw profiel</div></div>
     <div class="modal-b">
       <div class="row" style="gap:14px;margin-bottom:14px">
-        <div class="ava lg ${CRM.profile?.foto_url?'foto':''}" id="pf_prev" style="background:${CRM.avaKleur(CRM.me())}">${
-          CRM.profile?.foto_url ? `<img src="${h(CRM.profile.foto_url)}" alt="">` : h(CRM.initialen(CRM.me()))}</div>
+        <div class="ava lg ${CRM.opslag.srcNu(CRM.profile?.foto_url)?'foto':''}" id="pf_prev"
+             style="background:${CRM.avaKleur(CRM.me())}"${
+          CRM.profile?.foto_url && !CRM.opslag.srcNu(CRM.profile.foto_url) ? ` data-opslagfoto="${h(CRM.profile.foto_url)}"` : ''}>${
+          CRM.opslag.srcNu(CRM.profile?.foto_url) ? `<img src="${h(CRM.opslag.srcNu(CRM.profile.foto_url))}" alt="">` : h(CRM.initialen(CRM.me()))}</div>
         <div><b>${h(CRM.me())}</b><div class="meta">${h(CRM.user?.email||'')}</div></div>
       </div>
       <div class="f-row"><label>Profielfoto</label>
@@ -549,6 +759,7 @@ CRM.accountModal = () => {
       <button class="btn" id="pf_save" disabled>Opslaan</button>
     </div>`, {onOpen(m){
       const file = m.querySelector('#pf_file'), save = m.querySelector('#pf_save'), prev = m.querySelector('#pf_prev');
+      CRM.opslag.vulAfbeeldingen(m);     // ondertekende link voor de voorvertoning
       let gekozen = null;
       file.onchange = () => {
         gekozen = file.files[0] || null; save.disabled = !gekozen;
@@ -557,22 +768,28 @@ CRM.accountModal = () => {
       save.onclick = async () => {
         if(!gekozen) return;
         save.disabled = true; save.textContent = 'Bezig…';
+        const herstel = () => { save.disabled = false; save.textContent = 'Opslaan'; };
         try{
-          let url;
-          if(CRM.demo){ url = URL.createObjectURL(gekozen); }
+          let waarde;
+          if(CRM.demo){ waarde = URL.createObjectURL(gekozen); }
           else{
-            const ext = (gekozen.name.split('.').pop()||'jpg').toLowerCase();
+            const ext = ((gekozen.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')) || 'jpg';
             const pad = `profielen/${CRM.user.id}.${ext}`;
-            const {error} = await sb.storage.from('crm-docs').upload(pad, gekozen, {upsert:true});
-            if(error) throw error;
-            url = sb.storage.from('crm-docs').getPublicUrl(pad).data.publicUrl + '?v=' + Date.now();
-            const {error:e2} = await sb.from('profiles').update({foto_url:url}).eq('id', CRM.user.id);
+            const {error} = await sb.storage.from(CRM.opslag.map).upload(pad, gekozen, {upsert:true});
+            if(error){ CRM.toast(CRM.opslag.foutTekst(error), 'err'); herstel(); return; }
+            /* We bewaren het PAD, niet een url. De map is niet publiek, dus
+               een publieke url werkt niet; en een ondertekende url in de
+               database veroudert en lekt. De link wordt bij het tonen
+               gemaakt, door CRM.opslag. */
+            const {error:e2} = await sb.from('profiles').update({foto_url:pad}).eq('id', CRM.user.id);
             if(e2) throw e2;
+            CRM.opslag.wis(pad);      // oude link bij hetzelfde pad vergeten
+            waarde = pad;
           }
-          CRM.profile.foto_url = url;
+          CRM.profile.foto_url = waarde;
           CRM.tekenEigenAvatar();
           CRM.modal.close(); CRM.toast('Profielfoto bijgewerkt','ok');
-        }catch(e){ CRM.fout('Foto opslaan mislukt', e); save.disabled=false; save.textContent='Opslaan'; }
+        }catch(e){ CRM.fout('Foto opslaan mislukt', e); herstel(); }
       };
     }});
 };
@@ -666,6 +883,6 @@ window.addEventListener('DOMContentLoaded', () => {
       CRM.ga(hash[0], nieuwId ? {id:nieuwId} : {});
   });
   document.addEventListener('keydown', e => {
-    if(e.key==='Escape'){ if(document.getElementById('modal')?.classList.contains('on')) CRM.modal.close(); else CRM.drawer.close(); }
+    if(e.key==='Escape'){ if(CRM.modal._aan) CRM.modal.close(); else CRM.drawer.close(); }
   });
 });

@@ -43,12 +43,12 @@ const contactenVan = naam => (CRM.state.contacten||[]).filter(c => c.klant===naa
 const docsVan    = naam => (CRM.state.documenten||[]).filter(d => d.entiteit==='klant' && d.ref===naam);
 const volgendeTaak = naam => takenVan(naam).filter(t=>!t.klaar).sort((a,b)=>String(a.datum||'9').localeCompare(String(b.datum||'9')))[0] || null;
 const eigenaren = () => [...new Set(CRM.state.clients.map(c=>c.eigenaar).filter(Boolean))].sort();
-/* Alleen echte weblinks openen — een `javascript:`-URL in een documentveld
-   mag niet uitgevoerd worden als iemand erop klikt. */
-const veiligeUrl = u => {
-  const s = String(u||'').trim();
-  return /^(https?:|blob:)/i.test(s) ? s : '';
-};
+/* Documenten worden nooit als kant-en-klare link in de HTML gezet: de
+   opslagmap is niet publiek, dus de link wordt pas bij de klik gemaakt.
+   CRM.opslag doet dat én weigert alles wat geen bestand is (javascript:,
+   data:). Hier alleen bepalen of er überhaupt iets te openen valt. */
+const heeftBestand = d => CRM.opslag.duiding(d && d.url).soort !== 'leeg'
+                       && CRM.opslag.duiding(d && d.url).soort !== 'geweigerd';
 
 /* ─── Formulier-modaal (kans en inplannen; taken gaan via CRM.taakModal) ── */
 function formModal(titel, velden, knop='Opslaan'){
@@ -551,7 +551,8 @@ function tabInhoud(naam){
           return `<div class="label" style="margin:10px 0 6px">${h(s)}</div>` + g.map(d=>`<div class="s-ct">
             <div style="flex:1;min-width:0"><b class="trunc">${h(d.naam)}</b>
               <div class="meta">${h(d.door||'')} · ${h(CRM.geleden(d.op))}${d.grootte?` · ${Math.round(d.grootte/1024)} kB`:''}</div></div>
-            ${veiligeUrl(d.url) ? `<a class="btn sm ghost" href="${h(veiligeUrl(d.url))}" target="_blank" rel="noopener">Openen</a>` : '<span class="meta">geen link</span>'}</div>`).join('');
+            ${heeftBestand(d) ? `<button class="btn sm ghost" data-docopen="${h(d.id)}">Openen</button>
+              <button class="btn sm ghost" data-docdl="${h(d.id)}">Bewaren</button>` : '<span class="meta">geen bestand</span>'}</div>`).join('');
         }).join('')
         : CRM.ui.leeg('Nog geen documenten','Zet hier de SWO, de offerte en andere afspraken — dan staat alles bij de klant zelf.')
       }</div></div>`;
@@ -603,6 +604,21 @@ function bindTab(body, dr, naam){
 
   CRM.$$('[data-nieuwekans]', body).forEach(b=>b.onclick=()=>nieuweKans(naam));
 
+  /* Openen/bewaren gaat via een klik, niet via een href: pas op dat moment
+     wordt er een tijdelijke ondertekende link gemaakt. In de HTML staat
+     alleen het id van de regel, dus geen enkele link in het scherm. */
+  const docVan = id => docsVan(naam).find(d => String(d.id) === String(id));
+  const openDoc = async (b, alsDownload) => {
+    const d = docVan(b.dataset.docopen || b.dataset.docdl);
+    if(!d) return CRM.toast('Dit document staat niet meer in de lijst — ververs de pagina.','err');
+    const tekst = b.textContent;
+    b.disabled = true; b.textContent = 'Even…';
+    await CRM.opslag.open(d.url, alsDownload ? {download: d.naam || 'document'} : {});
+    b.disabled = false; b.textContent = tekst;
+  };
+  CRM.$$('[data-docopen]', body).forEach(b => b.onclick = () => openDoc(b, false));
+  CRM.$$('[data-docdl]',   body).forEach(b => b.onclick = () => openDoc(b, true));
+
   const file = body.querySelector('#doc_file');
   if(file) file.onchange = async () => {
     const f = file.files[0]; if(!f) return;
@@ -632,9 +648,13 @@ async function uploadDoc(naam, bestand, soort){
     return;
   }
   const pad = `klant/${naam.replace(/[^\w.-]+/g,'_')}/${Date.now()}_${bestand.name.replace(/[^\w.-]+/g,'_')}`;
-  const up = await CRM.sb.storage.from('crm-docs').upload(pad, bestand, {upsert:false});
-  if(up.error) return CRM.fout('Uploaden mislukt', up.error);
-  rij.url = CRM.sb.storage.from('crm-docs').getPublicUrl(pad).data.publicUrl;
+  const up = await CRM.sb.storage.from(CRM.opslag.map).upload(pad, bestand, {upsert:false});
+  if(up.error) return CRM.toast(CRM.opslag.foutTekst(up.error), 'err');
+  /* Het PAD bewaren, geen url. De map is niet publiek (er komen CV's, ID's
+     en contracten in), dus een publieke url bestaat niet meer; en een
+     ondertekende url in de database veroudert en lekt. De link wordt pas
+     bij het openen gemaakt — zie CRM.opslag in js/core.js. */
+  rij.url = pad;
   const {error} = await CRM.sb.from('crm_documenten').insert(rij);
   if(error) return CRM.fout('Document opslaan mislukt', error);
   CRM.state.documenten.unshift(rij);

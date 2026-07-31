@@ -79,6 +79,26 @@ table.tbl tr.fin-sum td{border-top:1px solid var(--line-2);font-weight:700;color
 /* De krapste week in de 13-weken tabel licht op. */
 table.tbl tr.fin-laagst td{background:var(--well)}
 
+/* ─── Brede schermen: meer naast elkaar, niets uitgerekt ──────────
+   Finance heeft geen eigen leesbreedte-rem (de .grid-klassen uit base.css
+   zetten al kolommen bij), dus hier gaat het puur om de blokken die vast
+   één kolom waren. Op het teamscherm (±2000px) scheelt dat scrollen:
+   je ziet gevaren, kansen en sterktes in één blik.                      */
+@media (min-width:1500px){
+  /* Advieskaarten: twee kolommen, kaarten blijven heel. */
+  .fin-advlijst{display:block;column-count:2;column-gap:14px}
+  .fin-adv{break-inside:avoid;margin-bottom:10px}
+  /* De losse blokken in de belasting- en GPS-kaart naast elkaar. */
+  .fin-keten{flex-wrap:nowrap}
+}
+@media (min-width:1900px){
+  .fin-advlijst{column-count:3}
+  /* Weekstaafjes krijgen lucht in plaats van dat ze uitrekken. */
+  .fin-bars{height:160px;gap:10px}
+  .fin-bars .fb i{max-width:44px}
+  .fin-bars .fb span{font-size:10.5px}
+}
+
 /* ─── Mobiel: kaarten en tabellen mogen krimpen, nooit de pagina ─── */
 @media (max-width:640px){
   .fin-keten{gap:6px}

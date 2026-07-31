@@ -1429,7 +1429,7 @@ function uitvalHtml(c){
       <span class="spacer"></span>
       <button class="btn ghost sm" id="c_uitval">${leeg ? 'Reden vastleggen' : 'Bijwerken'}</button></div>
     <div class="card-b">
-      ${leeg ? `<div class="note warn" style="margin:0 0 12px">De fase staat op ${h(c.fase)}, maar er is nog geen reden vastgelegd.
+      ${leeg ? `<div class="note warn" style="margin:0 0 12px">De fase staat op ${h(CRM.faseNorm(c.fase))}, maar er is nog geen reden vastgelegd.
         Zonder reden telt deze kaart nergens mee in de uitvalcijfers.</div>` : ''}
       <div class="kd-velden">
         ${afgevallen

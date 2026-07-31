@@ -33,7 +33,9 @@ const PG = {
   naam:'Ploeggenoten B.V.',
   adres:'J. Keplerweg 10L',
   pcplaats:'2408 AC Alphen aan den Rijn',
-  kvk:'99598817',
+  /* 99634236 is het juiste nummer (bevestigd door Tjeerd, 31 jul 2026).
+     In de getekende overeenkomst met Bunge staat 99598817 — dat is fout. */
+  kvk:'99634236',
   email:'tjeerd@ploeggenoten.nl',
   telefoon:'+31 6 13 555 372'
 };
