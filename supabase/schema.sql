@@ -41,7 +41,8 @@ alter table clients add column if not exists postcode    text default '';
 alter table clients add column if not exists plaats      text default '';
 alter table clients add column if not exists kvk         text default '';
 
--- Profielfoto per gebruiker (zichtbaar voor het team).
+-- Profielfoto per gebruiker (zichtbaar voor het team). Bevat het PAD in de
+-- map 'crm-docs' (bv. 'profielen/<user-id>.jpg'), niet een url — zie blok 10.
 alter table profiles add column if not exists foto_url   text default '';
 -- Functie bepaalt welk dashboard iemand ziet: am | recruiter | marketeer
 alter table profiles add column if not exists functie    text default '';
@@ -179,6 +180,10 @@ create unique index if not exists crm_leadradar_bedrijf on crm_leadradar(lower(b
 create index if not exists crm_leadradar_status on crm_leadradar(status, laatst_gezien desc);
 
 -- ─── 5. Documenten (bestanden bij klant/kandidaat) ────────────
+-- `url` bevat GEEN publieke url meer (zie blok 10). Twee soorten waarden:
+--   pad in onze eigen map   'klant/Acme_BV/1699_swo.pdf'
+--   externe link            'https://…sharepoint.com/…'  (handmatig gekoppeld)
+-- Een ondertekende link wordt pas bij het openen gemaakt, in de app.
 create table if not exists crm_documenten (
   id        text primary key,
   entiteit  text not null,
@@ -322,12 +327,32 @@ begin
 end $$;
 
 -- ─── 10. Opslag voor documenten en CV's ───────────────────────
+-- LET OP — deze map staat BEWUST op niet-publiek, en dat moet zo blijven.
+-- Hierin komen CV's, kopieën van identiteitsbewijzen, contracten en
+-- samenwerkingsovereenkomsten. `public = true` betekent bij Supabase niet
+-- "handig voor het team", maar: iedereen die de link heeft kan het bestand
+-- opvragen — zonder account, zonder inlog, zonder dat wij het zien. En zo'n
+-- link is geen geheim: hij is te raden uit een naam plus datum, en hij
+-- belandt in mail, in chats en in screenshots.
+--
+-- De app heeft die publieke link ook niet nodig. Hij bewaart het PAD van
+-- een bestand en maakt op het moment van openen een tijdelijke ondertekende
+-- link (createSignedUrl in js/core.js, CRM.opslag). Die verloopt vanzelf.
+--
+-- Zet `public` dus NIET terug op true omdat "een foto niet laadt" — dan
+-- staat het complete dossier van elke kandidaat open op het internet.
 insert into storage.buckets (id, name, public)
-values ('crm-docs','crm-docs', true)
+values ('crm-docs','crm-docs', false)
 on conflict (id) do nothing;
+-- `on conflict do nothing` laat een BESTAANDE map ongemoeid. Is de map ooit
+-- als publieke map aangemaakt, dan zet alleen deze regel hem alsnog dicht.
+update storage.buckets set public = false where id = 'crm-docs';
 
+-- Lezen: alleen ingelogde teamleden. Zonder `to authenticated` geldt een
+-- policy óók voor de anon-rol — dan is de map alsnog voor iedereen open,
+-- hoe dicht de bucket-instelling hierboven ook staat.
 drop policy if exists crm_docs_lezen on storage.objects;
-create policy crm_docs_lezen on storage.objects for select
+create policy crm_docs_lezen on storage.objects for select to authenticated
   using (bucket_id = 'crm-docs');
 drop policy if exists crm_docs_schrijven on storage.objects;
 create policy crm_docs_schrijven on storage.objects for insert to authenticated
