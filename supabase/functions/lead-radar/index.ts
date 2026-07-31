@@ -160,19 +160,27 @@ area["name"="${regio}"]["admin_level"="4"]->.a;
   nwr["industrial"]["name"]["operator"](area.a);
 );
 out center tags 2500;`;
+    // Overpass weigert anonieme/Deno-requests (406) — dus een nette User-Agent.
+    // Twee servers: valt de eerste uit (drukte → 504), dan de reserve.
+    const endpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+    ];
+    const osmHeaders = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "Ploeggenoten-CRM-Leadradar/1.0 (+https://ploeggenoten.github.io/crm/)",
+      "Accept": "application/json",
+    };
     let elements: Record<string, unknown>[] = [];
-    try {
-      const r = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "data=" + encodeURIComponent(ql),
-      });
-      if (!r.ok) return new Response(JSON.stringify({ error: "overpass status " + r.status }), { status: 502 });
-      const j = await r.json();
-      elements = (j.elements ?? []) as Record<string, unknown>[];
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "overpass onbereikbaar", detail: String(e) }), { status: 502 });
+    let gelukt = false, laatst = 0;
+    for (const ep of endpoints) {
+      try {
+        const r = await fetch(ep, { method: "POST", headers: osmHeaders, body: "data=" + encodeURIComponent(ql) });
+        laatst = r.status;
+        if (r.ok) { const j = await r.json(); elements = (j.elements ?? []) as Record<string, unknown>[]; gelukt = true; break; }
+      } catch (_e) { /* volgende server proberen */ }
     }
+    if (!gelukt) return new Response(JSON.stringify({ error: "overpass onbereikbaar", status: laatst }), { status: 502 });
 
     // Dedup tegen bestaande klanten én bestaande radar-rijen.
     const { data: clients2 } = await service.from("clients").select("naam");
