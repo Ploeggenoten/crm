@@ -21,16 +21,37 @@ const QUERIES = [
   "machinebediende", "inpakmedewerker", "logistiek medewerker"
 ];
 
-// Uitzenders / bureaus / platformen — geen leads, dat zijn wij zelf of concurrenten.
+// Uitzenders / detacheerders / platformen — geen leads, dat zijn wij zelf of
+// concurrenten. Twee lagen: (1) een concrete namenlijst, (2) een
+// patroon-filter AGENCY_RE dat het gros van de bureaunamen wegvangt.
 const UITSLUITEN = [
-  "uitzend", "recruitment", "werving", "detacher", "flexwerk", "payroll",
+  // grote uitzend-/detacheerorganisaties NL
   "randstad", "adecco", "manpower", "olympia", "youngcapital", "young capital",
-  "tempo-team", "tempo team", "sd worx", "asa talent", "timing", "unique",
-  "start people", "startpeople", "otto work", "covebo", "eu-flex", "euflex",
+  "tempo-team", "tempo team", "sd worx", "asa talent", "asa ", "timing", "unique",
+  "start people", "startpeople", "otto work", "otto workforce", "covebo", "eu-flex", "euflex",
   "abiant", "luba", "actief werkt", "in person", "inperson", "jobmatch",
+  "tigris", "driessen", "continu", "maandag", "yacht", "brunel", "hays", "gi group",
+  "gigroup", "trigion", "dactylo", "e&a", "flexcraft", "teamflex", "flexforce",
+  "workx", "workflex", "adver-online", "adver online", "jobbird", "jobrepublic",
+  "undutchables", "projob", "proned", "olympia uitzend", "vhb", "werktalent",
+  "werk talent", "flexteam", "flexpedia", "personato", "peak", "peakz", "endeavour",
+  "salarisdienst", "carrière", "carriere uitzend", "dpa", "nl flex", "nlflex",
+  "flexforce", "match", "matchd", "flexibility", "please", "please payroll",
+  "vialumina", "vialuminis", "goflex", "go flex", "seasons", "sync ",
+  // platforms / vacaturebanken
   "werkzoeken", "indeed", "monsterboard", "nationale vacaturebank", "jooble",
+  "joblift", "vacaturevoordeel", "nvb banen", "werk.nl", "linkedin", "glassdoor",
+  // onszelf / directe concurrent
   "ploeggenoten", "pronkert"
 ];
+
+// Naampatronen die vrijwel altijd op een bureau/bemiddelaar wijzen.
+const AGENCY_RE = /(uitzend|detach|payroll|flex(werk|kracht|pool|force|iforce|ibility|team)|\bflex\b|werving|recruit|staffing|resourc|bemiddel|interim|secondment|inhuur|\bzzp\b|personeels?(diensten|bemiddeling|voorziening)|arbeidsbemiddel|talent\s?(pool|acquisition|solutions|force)|banenpagina|vacatureb|jobboard|jobbird|werkgeversdienst|employment agency|human\s?resources?|hr[-\s]?services|payrolling|contracting|\bwerkt\b|\bbanen\b)/i;
+
+const isBureau = (naam: string) => {
+  const n = naam.toLowerCase();
+  return UITSLUITEN.some((u) => n.includes(u)) || AGENCY_RE.test(n);
+};
 
 const norm = (s: string) => s.toLowerCase().replace(/\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
 
@@ -94,6 +115,25 @@ Deno.serve(async (req) => {
       { headers: { "Content-Type": "application/json" } });
   }
 
+  // Modus 'opschonen': bestaande bureau-rijen uit de radar filteren.
+  // Zet ze op 'genegeerd' (omkeerbaar, verdwijnt uit de Nieuw-lijst) — raakt
+  // handmatig toegevoegde rijen niet aan.
+  if (body.opschonen) {
+    const { data: alle } = await service.from("crm_leadradar")
+      .select("id,bedrijf,bron,status").neq("status", "genegeerd");
+    let weg = 0;
+    for (const r of alle ?? []) {
+      if (r.bron === "handmatig") continue;
+      if (isBureau(String(r.bedrijf ?? ""))) {
+        await service.from("crm_leadradar")
+          .update({ status: "genegeerd", status_door: "filter-bureau" }).eq("id", r.id);
+        weg++;
+      }
+    }
+    return new Response(JSON.stringify({ ok: true, opgeschoond: weg }),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
   const APP_ID = Deno.env.get("ADZUNA_APP_ID"), APP_KEY = Deno.env.get("ADZUNA_APP_KEY");
   if (!APP_ID || !APP_KEY)
     return new Response(JSON.stringify({ error: "secrets ADZUNA_APP_ID/ADZUNA_APP_KEY ontbreken" }), { status: 500 });
@@ -117,7 +157,7 @@ Deno.serve(async (req) => {
         if (!naam) continue;
         const nn = norm(naam);
         if (!nn || bekend.has(nn)) continue;
-        if (UITSLUITEN.some((u) => naam.toLowerCase().includes(u))) continue;
+        if (isBureau(naam)) continue;
         const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
         b.n++;
         b.functies.add(q);
