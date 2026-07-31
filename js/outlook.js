@@ -92,9 +92,21 @@ async function token(interactiefOk = true){
   for(const set of [MS_SCOPES, MS_KERN]){
     try{ return (await _msal.acquireTokenSilent({scopes:set, account:_account})).accessToken; }
     catch(e){
+      /* Microsoft houdt de vernieuwing van een browser-app kort (ongeveer een
+         dag). Loopt die af, dan lukt stil vernieuwen niet meer. Vóór we een
+         venster openen proberen we eerst ssoSilent: dat gebruikt de Microsoft-
+         sessie die in dezelfde browser al openstaat en heeft geen venster
+         nodig. Scheelt in de praktijk vrijwel alle popups — en die werden ook
+         nog eens geblokkeerd als ze niet uit een klik kwamen, waardoor de
+         agenda gewoon verdween zonder uitleg. */
+      try{
+        const r = await _msal.ssoSilent({scopes:set, account:_account,
+                                         loginHint:_account?.username});
+        if(r?.accessToken) return r.accessToken;
+      }catch(e2){ /* geen Microsoft-sessie meer; hieronder het venster */ }
       if(!interactiefOk) continue;
       try{ return (await _msal.acquireTokenPopup({scopes:set, account:_account})).accessToken; }
-      catch(e2){ /* volgende set proberen */ }
+      catch(e3){ /* volgende set proberen */ }
     }
   }
   return null;
@@ -191,7 +203,50 @@ function bestandRij(r){
 }
 
 /* ─── Publieke API voor modules ───────────────────────────────── */
+/* ─── Vanzelf verversen ───────────────────────────────────────────
+   Wens Tjeerd: "ik wil dat het systeem Outlook vaak ververst en dat ik niet
+   zelf op dat knopje moet drukken."
+
+   Twee dingen die dit meer zijn dan een setInterval:
+   1. In een tabblad op de achtergrond gebeurt er niets. Elke vijf minuten
+      Graph bevragen terwijl niemand kijkt kost alleen maar aanvragen, en die
+      koppeling gaf al eerder een 429 (te veel verzoeken) bij bulkwerk.
+   2. Kom je terug bij het tabblad, dan wordt er meteen ververst — dát is het
+      moment waarop je verouderde gegevens zou zien. Wel met een ondergrens,
+      zodat heen-en-weer klikken tussen tabbladen geen regen van aanvragen
+      oplevert.                                                            */
+let _tikker = null, _luisteraars = [], _laatst = 0;
+const MIN_TUSSENPOOS = 60 * 1000;      // nooit vaker dan één keer per minuut
+
+async function _ververs(reden){
+  if(!CRM.outlook.verbonden()) return;
+  if(Date.now() - _laatst < MIN_TUSSENPOOS) return;
+  _laatst = Date.now();
+  for(const fn of _luisteraars){
+    try{ await fn(reden); }
+    catch(e){ console.warn('outlook verversen', e); }   // één luisteraar mag de rest niet slopen
+  }
+}
+
 CRM.outlook = {
+  /* Meld je aan om bij elke verversing bijgewerkt te worden. Geeft een
+     functie terug waarmee je je weer afmeldt (bij het verlaten van een
+     scherm), zodat er geen luisteraars blijven hangen na een hertekening. */
+  bijVerversen(fn, minuten = 5){
+    _luisteraars.push(fn);
+    if(!_tikker){
+      _tikker = setInterval(() => {
+        if(document.visibilityState === 'visible') _ververs('tijd');
+      }, Math.max(1, minuten) * 60 * 1000);
+      document.addEventListener('visibilitychange', () => {
+        if(document.visibilityState === 'visible') _ververs('terug');
+      });
+    }
+    return () => { _luisteraars = _luisteraars.filter(x => x !== fn); };
+  },
+  /* Handmatig aanstoten (de knop Vernieuwen) — negeert de ondergrens. */
+  nuVerversen(){ _laatst = 0; return _ververs('handmatig'); },
+
   /* Is de volledige koppeling beschikbaar (registratie gedaan)? */
   beschikbaar: () => !!MS_CLIENT_ID && !CRM.demo,
   /* Is déze gebruiker verbonden? */

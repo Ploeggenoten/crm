@@ -131,6 +131,21 @@ a.kl-kand b{font-size:13px;font-weight:600;display:block}
 .kl-ct-lc{white-space:nowrap;font-size:11.5px}
 .kl-ctzoek{width:100%}
 
+/* ─── Jarig deze maand — boven de contactpersonen.
+   Groen, want dit is een kans en geen probleem (signalen zijn amber).
+   Alleen dag en maand; het jaartal komt hier nooit in beeld.
+   Rijen zijn klikbaar: ze openen hetzelfde dossier als de lijst eronder. */
+.kl-jarig{margin-top:10px;padding:9px 10px;border-radius:var(--r-s);
+  background:var(--green-bg);border:1px solid var(--green-line)}
+.kl-jarig-kop{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:#1e6b3f;margin-bottom:5px}
+.kl-jarig-rij{display:flex;align-items:baseline;gap:8px;padding:3px 4px;margin:0 -4px;
+  border-radius:var(--r-s);cursor:pointer;font-size:13px;color:var(--txt)}
+.kl-jarig-rij:hover{background:rgba(255,255,255,.6)}
+.kl-jarig-rij b{min-width:0;font-weight:600}
+.kl-jarig-rij .num{margin-left:auto;font-size:11.5px;color:var(--txt-2);white-space:nowrap}
+.kl-jarig-rij.nu .num{color:#1e6b3f;font-weight:700}
+
 /* ─── Evaluaties: witte kaarten op het sectievlak ─────────────── */
 .kl-evverloop{margin-bottom:14px}
 .kl-evrij{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px}

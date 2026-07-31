@@ -45,6 +45,39 @@ const maandJaar = iso => {
   const d = new Date(iso); if(isNaN(d)) return String(iso);
   return d.toLocaleDateString('nl-NL',{month:'short',year:'numeric'});
 };
+
+/* ─── Verjaardag van een contactpersoon ───────────────────────────
+   ALTIJD alleen dag en maand — nooit het jaartal en nooit de leeftijd.
+   Bij een zakelijk contact is die leeftijd niet ter zake, en om iemand
+   te feliciteren heb je hem ook niet nodig. Het jaartal blíjft wel in
+   de database staan (een datumkolom heeft nu eenmaal een jaar), dus we
+   rekenen hier met de sleutel 'MM-DD' en formatteren met een vást jaar:
+   zo komt het echte geboortejaar nergens in de DOM terecht.
+   Privacy: dit is een persoonsgegeven. Het hoort op de klantkaart en in
+   de takenlijst — niet in exports, documentgeneratoren of tooltips die
+   verder gedeeld worden. */
+const mmdd = iso => { const m = /^\d{4}-(\d{2}-\d{2})/.exec(String(iso||'')); return m ? m[1] : ''; };
+const dagMaand = iso => {
+  const md = mmdd(iso); if(!md) return '';
+  /* 2000 is een schrikkeljaar, dus 29 februari bestaat en verschuift niet. */
+  const d = new Date(2000, Number(md.slice(0,2)) - 1, Number(md.slice(3)));
+  return isNaN(d) ? '' : d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'});
+};
+const schrikkeljaar = j => (j % 4 === 0 && j % 100 !== 0) || j % 400 === 0;
+/* Lokale datum als YYYY-MM-DD — zelfde route als CRM.todayISO(), dus geen
+   UTC-verschuiving die een verjaardag een dag laat verspringen. */
+const isoVan = d => d.toLocaleDateString('sv-SE');
+
+/* De kolom crm_contacten.geboortedatum komt pas in de database nadat
+   supabase/schema.sql opnieuw is gedraaid. Zolang hij er niet is, tonen we
+   het veld niet en sturen we het niet mee bij opslaan — anders faalt de hele
+   update en kan er níéts meer aan een contactpersoon gewijzigd worden.
+   `select *` levert de kolom als sleutel op zodra hij bestaat, dus daar
+   kunnen we op afgaan (zelfde vangnet als heeftVestigingVelden verderop). */
+const heeftGeboortedatum = () => {
+  const rij = (CRM.state.contacten || []).find(Boolean);
+  return !!rij && 'geboortedatum' in rij;
+};
 const EVAL_CRIT = [
   {k:'samenwerking',   lbl:'Samenwerking'},
   {k:'communicatie',   lbl:'Communicatie'},
@@ -59,6 +92,10 @@ let _contGeladen = false;
 function zorgContacten(){
   if(!Array.isArray(CRM.state.contacten))  CRM.state.contacten  = [];
   if(!Array.isArray(CRM.state.documenten)) CRM.state.documenten = [];
+  /* In demo is er geen database en dus ook geen kolom om op te controleren.
+     Eén keer de sleutel zetten zodat heeftGeboortedatum() daar 'ja' zegt en
+     het veld gewoon te proberen is; de waarde blijft leeg tot je hem invult. */
+  if(CRM.demo) for(const c of CRM.state.contacten) if(!('geboortedatum' in c)) c.geboortedatum = null;
   if(CRM.demo || _contGeladen) return;
   _contGeladen = true;
   CRM.sb.from('crm_contacten').select('*').then(r => {
@@ -117,7 +154,11 @@ function zorgAfspraken(){
    drie mappen op klantnaam en is een rij een simpele lookup. */
 let _idx = null, _idxStempel = '';
 const stempel = () => [CRM.state.cands.length, CRM.state.vacs.length,
-  CRM.state.activiteiten.length, CRM.state.clients.length].join('/');
+  CRM.state.activiteiten.length, CRM.state.clients.length,
+  /* Contactpersonen erbij: die worden asynchroon geladen (core én de eigen
+     fallback hierboven), dus zonder deze teller bleef een index die vóór het
+     laden is gebouwd hangen op een lege contactenlijst. */
+  (CRM.state.contacten||[]).length].join('/');
 function verversIndex(){ _idx = null; }
 function index(){
   const s = stempel();
@@ -125,17 +166,21 @@ function index(){
   const bij = (map, sleutel, waarde) => {
     const l = map.get(sleutel); if(l) l.push(waarde); else map.set(sleutel, [waarde]);
   };
-  const kand = new Map(), vac = new Map(), act = new Map(), actKand = new Map();
+  const kand = new Map(), vac = new Map(), act = new Map(), actKand = new Map(), cont = new Map();
   CRM.kandidaten().forEach(c => bij(kand, c.klant, c));
   (CRM.state.vacs||[]).forEach(v => bij(vac, v.klant, v));
+  (CRM.state.contacten||[]).forEach(c => bij(cont, c.klant, c));
   (CRM.state.activiteiten||[]).forEach(a => {
     if(a.entiteit === 'klant')         bij(act,     String(a.ref), a);
     else if(a.entiteit === 'kandidaat') bij(actKand, String(a.ref), a);
   });
-  _idx = {kand, vac, act, actKand}; _idxStempel = s;
+  _idx = {kand, vac, act, actKand, cont}; _idxStempel = s;
   return _idx;
 }
 const LEEG = [];
+/* Contactpersonen van één klant — via dezelfde index, dus geen scan over
+   alle contacten per rij. */
+const contactenVan = naam => index().cont.get(naam) || LEEG;
 
 /* Laatste contactmoment: nieuwste van clients.laatst_contact en de activiteiten. */
 function laatsteContact(k){
@@ -1139,12 +1184,44 @@ function laatsteContactPersoon(ct){
   return ops.length ? ops[ops.length-1] : null;
 }
 
+/* Wie is er deze maand jarig bij deze klant? Dát is het moment waarop een AM
+   belt — daarom staat het boven de contactpersonenlijst en niet weggestopt in
+   een dossier. Alleen dag en maand; het jaartal blijft in de database.
+   Staat de kolom nog niet in de database, dan komt hier niets: dan hoort er
+   ook niets te staan. Geen enkele verjaardag deze maand → geen blok (de lege
+   staat van de lijst eronder vertelt de rest). */
+function jarigBlokHtml(contacten){
+  if(!heeftGeboortedatum()) return '';
+  const vandaag = CRM.todayISO();
+  const maandNu = vandaag.slice(5,7), dagNu = vandaag.slice(8,10);
+  const rij = contacten
+    .map(c => ({c, md: mmdd(c.geboortedatum)}))
+    .filter(x => x.md.slice(0,2) === maandNu)
+    .sort((a,b) => a.md.localeCompare(b.md) || String(a.c.naam).localeCompare(String(b.c.naam),'nl'));
+  if(!rij.length) return '';
+  return `<div class="kl-jarig">
+    <span class="kl-jarig-kop">Jarig deze maand</span>
+    ${rij.map(({c, md}) => {
+      const dag = md.slice(3);
+      const wanneer = dag === dagNu ? 'vandaag'
+        : (dag < dagNu ? 'was ' : '') + dagMaand(c.geboortedatum);
+      return `<div class="kl-jarig-rij${dag === dagNu ? ' nu' : ''}" data-ct="${h(c.id)}"
+        title="Open het dossier van ${h(c.naam)}">
+        <b class="trunc">${h(c.naam)}</b><span class="num">${h(wanneer)}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 function contactLijst(el, k){
   if(!el) return;
   const q = contactZoek.trim().toLowerCase();
-  const alle = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+  const alle = contactenVan(k.naam).slice()
     .sort((a,b) => (b.hoofd?1:0) - (a.hoofd?1:0) || String(a.naam).localeCompare(String(b.naam),'nl'));
   const rij = q ? alle.filter(x => (String(x.naam)+' '+String(x.functie||'')).toLowerCase().includes(q)) : alle;
+  /* Boven de lijst, dus ook zichtbaar als het zoekveld de jarige wegfiltert
+     of de lijst mobiel is ingeklapt. */
+  const jarig = jarigBlokHtml(alle);
 
   /* Zoekveld alleen tonen als er iets te zoeken valt — bij nul of twee
      contactpersonen is het een dood bedieningselement in een smalle rail. */
@@ -1156,14 +1233,15 @@ function contactLijst(el, k){
     return;
   }
   if(!rij.length){
-    el.innerHTML = CRM.ui.leeg('Geen contactpersoon gevonden','Probeer een ander zoekwoord.');
+    el.innerHTML = jarig + CRM.ui.leeg('Geen contactpersoon gevonden','Probeer een ander zoekwoord.');
+    el.querySelectorAll('[data-ct]').forEach(r => r.onclick = () => contactDrawer(k, r.dataset.ct));
     return;
   }
   /* Mobiel: ingeklapt tot de eerste drie, met "toon alle". */
   const mobiel = window.matchMedia && window.matchMedia('(max-width:900px)').matches;
   const inklappen = mobiel && !contactAlles && !q && rij.length > 3;
   const toon = inklappen ? rij.slice(0,3) : rij;
-  el.innerHTML = `<div class="kl-contacten">${toon.map(x => {
+  el.innerHTML = jarig + `<div class="kl-contacten">${toon.map(x => {
     const lc = laatsteContactPersoon(x);
     return `
     <div class="kl-ct" data-ct="${h(x.id)}" title="Open het dossier van ${h(x.naam)}">
@@ -1205,6 +1283,10 @@ function contactDrawer(k, ctId){
       tekst: a.tekst
     };
   });
+  /* Verjaardag: alleen dag en maand, en alleen als de kolom er is én iemand
+     hem heeft ingevuld. Vandaag jarig krijgt een chip, want dan bel je nú. */
+  const jarigOp = heeftGeboortedatum() ? dagMaand(ct.geboortedatum) : '';
+  const jarigNu = !!jarigOp && mmdd(ct.geboortedatum) === CRM.todayISO().slice(5);
   const links = [
     ct.telefoon ? `<a class="num" href="tel:${h(String(ct.telefoon).replace(/\s/g,''))}">${h(ct.telefoon)}</a>` : '',
     ct.email    ? `<a href="mailto:${h(ct.email)}">${h(ct.email)}</a>` : '',
@@ -1215,8 +1297,10 @@ function contactDrawer(k, ctId){
     <div class="drawer-h">
       <div style="min-width:0;flex:1">
         <div class="row tight" style="gap:10px"><div class="h2" style="font-size:17px">${h(ct.naam)}</div>
-          ${ct.hoofd?'<span class="chip green">Hoofdcontact</span>':''}</div>
-        <div class="meta" style="margin-top:3px">${h([ct.functie, k.naam].filter(Boolean).join(' · '))}</div>
+          ${ct.hoofd?'<span class="chip green">Hoofdcontact</span>':''}
+          ${jarigNu?'<span class="chip green">Jarig vandaag</span>':''}</div>
+        <div class="meta" style="margin-top:3px">${h([ct.functie, k.naam].filter(Boolean).join(' · '))}${
+          jarigOp && !jarigNu ? ` · jarig op <span class="num">${h(jarigOp)}</span>` : ''}</div>
         ${links ? `<div class="kl-contact">${links}</div>` : '<div class="kl-contact meta">Nog geen contactgegevens</div>'}
       </div>
       <button class="btn ghost sm x" data-close>Sluiten</button>
@@ -1318,6 +1402,7 @@ function verslagModal(k, ct){
 
 function contactModal(k, ct, na){
   const n = ct || {id:CRM.uid(), klant:k.naam, naam:'', functie:'', telefoon:'', email:'', linkedin:'', hoofd:false, note:''};
+  const jarig = heeftGeboortedatum();
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${ct?'Contactpersoon bewerken':'Nieuwe contactpersoon'}</div></div>
     <div class="modal-b">
@@ -1326,6 +1411,9 @@ function contactModal(k, ct, na){
         <div class="f-row"><label>Functie</label><input type="text" id="c_functie" value="${h(n.functie)}"></div>
         <div class="f-row"><label>Telefoon</label><input type="tel" id="c_tel" value="${h(n.telefoon)}"></div>
         <div class="f-row"><label>E-mail</label><input type="email" id="c_mail" value="${h(n.email)}"></div>
+        ${jarig ? `<div class="f-row"><label for="c_gb">Geboortedatum</label>
+          <input type="date" id="c_gb" value="${h(String(n.geboortedatum||'').slice(0,10))}">
+          <span class="hint">Alleen dag en maand komen in beeld — nooit het jaartal of de leeftijd.</span></div>` : ''}
       </div>
       <div class="f-row"><label>LinkedIn</label><input type="url" id="c_li" value="${h(n.linkedin||'')}" placeholder="https://linkedin.com/in/…"></div>
       <div class="f-row"><label>Notitie</label><textarea id="c_note">${h(n.note)}</textarea></div>
@@ -1344,6 +1432,10 @@ function contactModal(k, ct, na){
           linkedin:m.querySelector('#c_li').value.trim(),
           note:m.querySelector('#c_note').value.trim(), hoofd:m.querySelector('#c_hoofd').checked
         });
+        /* Geboortedatum alleen meesturen als de kolom bestaat; anders sneuvelt
+           de hele update en kan er niets meer aan deze persoon gewijzigd
+           worden. Leeg veld = leegmaken, dus expliciet null. */
+        if(jarig) rij.geboortedatum = m.querySelector('#c_gb').value || null;
         if(!rij.naam) return CRM.toast('Vul een naam in','err');
         CRM.modal.close();
         /* Hooguit één hoofdcontact per klant. */
@@ -1361,6 +1453,58 @@ function contactModal(k, ct, na){
       };
     }});
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   VOOR HET DASHBOARD: wie is er jarig?
+
+   CRM.contactVerjaardagen(datum, dagen) → [{contact, klant, eigenaar,
+                                             wanneer, dagen, dagMaand}]
+
+   • datum   ISO 'YYYY-MM-DD'; leeg of ongeldig = vandaag.
+   • dagen   hoeveel dagen je vooruit kijkt, 0 (standaard) = alleen die dag.
+   • wanneer de verjaardag in het jáár van de vraag ('2026-08-12') — nooit
+             het geboortejaar. dagMaand is de kant-en-klare weergave ('12 aug')
+             zodat een aanroeper de ruwe datum niet hoeft aan te raken.
+   • contact bevat alléén wat je nodig hebt om te feliciteren
+             ({id, naam, functie, telefoon, email}) — bewust zónder
+             geboortedatum, zodat het geboortejaar deze module niet verlaat.
+
+   Let op: bij een 29-februari-kind in een gewoon jaar is `wanneer` de 28e
+   (dán zet je de taak) terwijl `dagMaand` '29 feb' blijft — dat is zijn
+   verjaardag, en zo staat het ook op de klantkaart.
+
+   Gesorteerd op datum, daarbinnen op naam. Bestaat de kolom nog niet in de
+   database, dan heeft geen enkele rij een geboortedatum en komt er netjes
+   een lege lijst uit — de aanroeper hoeft daar niets voor te doen. */
+CRM.contactVerjaardagen = function(datum, dagen){
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(String(datum||'')) ? String(datum) : CRM.todayISO();
+  const venster = Math.max(0, Math.min(366, Math.floor(Number(dagen)) || 0));
+  const jarigen = (CRM.state.contacten || []).filter(c => mmdd(c.geboortedatum));
+  const uit = [];
+  if(!jarigen.length) return uit;
+  const [jr, mnd, dg] = start.split('-').map(Number);
+  for(let i = 0; i <= venster; i++){
+    const d = new Date(jr, mnd - 1, dg + i);
+    const iso = isoVan(d), md = iso.slice(5);
+    const opDag = jarigen.filter(c => {
+      const g = mmdd(c.geboortedatum);
+      /* 29 februari: in een gewoon jaar vieren we hem op de 28e, anders zou
+         die persoon drie jaar op vier van de lijst vallen. */
+      return g === md || (g === '02-29' && md === '02-28' && !schrikkeljaar(d.getFullYear()));
+    }).sort((a,b) => String(a.naam).localeCompare(String(b.naam),'nl'));
+    for(const c of opDag){
+      const kl = CRM.klant(c.klant);
+      uit.push({
+        contact: {id:c.id, naam:c.naam || '', functie:c.functie || '',
+                  telefoon:c.telefoon || '', email:c.email || ''},
+        klant: c.klant || '',
+        eigenaar: (kl && kl.eigenaar) || '',
+        wanneer: iso, dagen: i, dagMaand: dagMaand(c.geboortedatum)
+      });
+    }
+  }
+  return uit;
+};
 
 /* ─── Signalen — alleen tonen wat echt speelt ─────────────────── */
 function signalenHtml(k, c, lc){
