@@ -148,22 +148,24 @@ Deno.serve(async (req) => {
   // geen sleutel). Geen wervingssignaal, wel gegarandeerd EINDBEDRIJVEN: fabrieken,
   // magazijnen en distributiecentra. Regio = ISO3166-2 (NL-ZH, NL-NH, NL-UT, NL-NB …).
   if (body.osm) {
-    const regio = String(body.regio ?? "NL-ZH");
+    const regio = String(body.regio ?? "Zuid-Holland");   // provincienaam (admin_level 4)
     const max = Math.min(Number(body.max ?? 60), 150);
-    const ql = `[out:json][timeout:60];
-area["ISO3166-2"="${regio}"]->.a;
+    const ql = `[out:json][timeout:90];
+area["name"="${regio}"]["admin_level"="4"]->.a;
 (
   nwr["man_made"="works"]["name"](area.a);
-  nwr["building"="warehouse"]["name"](area.a);
-  nwr["building"="industrial"]["name"](area.a);
-  nwr["industrial"]["name"](area.a);
   nwr["office"="logistics"]["name"](area.a);
+  nwr["building"="warehouse"]["name"]["website"](area.a);
+  nwr["building"="industrial"]["name"]["website"](area.a);
+  nwr["industrial"]["name"]["operator"](area.a);
 );
 out center tags 2500;`;
     let elements: Record<string, unknown>[] = [];
     try {
       const r = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST", headers: { "Content-Type": "text/plain" }, body: ql,
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(ql),
       });
       if (!r.ok) return new Response(JSON.stringify({ error: "overpass status " + r.status }), { status: 502 });
       const j = await r.json();
@@ -179,7 +181,9 @@ out center tags 2500;`;
     for (const rr of radarNu ?? []) bekend2.add(norm(String(rr.bedrijf ?? "")));
 
     // Namen die een terrein/gebied beschrijven i.p.v. een bedrijf.
-    const gebiedRe = /industrieterrein|bedrijventerrein|bedrijvenpark|industriepark|industriegebied|\bhaven\b|\bterrein\b|\bzone\b|logistiek park|business park/i;
+    // Terrein-/gebiedsnamen én generieke gebouwen (historische loodsen, gemalen,
+    // trafo's, musea) i.p.v. echte bedrijven.
+    const gebiedRe = /industrieterrein|bedrijventerrein|bedrijvenpark|industriepark|industriegebied|\bhaven\b|\bterrein\b|\bzone\b|logistiek park|business park|\bloods\b|pakhuis|\bmagazijn\b|schuur|kruit|visafslag|remise|\bsilo\b|opslag|^dc ?\d|gemaal|rioolwater|waterzuiver|\btrafo\b|substation|umformer|\bmolen\b|museum|\bkerk\b/i;
     const vandaag2 = new Date().toISOString().slice(0, 10);
     const gezien = new Set<string>();
     let nieuw = 0, overgeslagen = 0;
