@@ -154,7 +154,8 @@ CRM.drawer = {
     CRM.drawer._focusTerug = document.activeElement;
     cancelAnimationFrame(CRM.drawer._frame);
     CRM.drawer._frame = requestAnimationFrame(()=>{
-      CRM.drawer._frame = null; scrim.classList.add('on'); dr.classList.add('on'); focusIn(dr);
+      CRM.drawer._frame = null; scrim.classList.add('on'); dr.classList.add('on');
+      dr.inert = false; focusIn(dr);
     });
     CRM.$$('[data-close]', dr).forEach(b => b.onclick = () => CRM.drawer.close());
     if(opts.onOpen) opts.onOpen(dr);
@@ -165,7 +166,11 @@ CRM.drawer = {
     cancelAnimationFrame(CRM.drawer._frame); CRM.drawer._frame = null;
     const scrim = document.getElementById('scrim'), dr = document.getElementById('drawer');
     if(scrim) scrim.classList.remove('on');
-    if(dr) dr.classList.remove('on');
+    /* Zie de toelichting bij modal.close(): een gesloten paneel dat nog in de
+       tabvolgorde staat is gevaarlijker dan een zichtbaar paneel. Bij de
+       drawer stonden die knoppen bovendien op x=1280 in een venster van
+       1280 breed, dus de pagina schoof er zijwaarts naartoe. */
+    if(dr){ dr.classList.remove('on'); dr.inert = true; }
     document.body.style.overflow='';
     const terug = CRM.drawer._focusTerug; CRM.drawer._focusTerug = null;
     if(terug && terug.isConnected) terug.focus({preventScroll:true});
@@ -216,6 +221,7 @@ CRM.modal = {
        achtergrond. Een venster dat je wél ziet maar niet kunt aanklikken is
        erger dan de fout die we hiermee oplossen. */
     m.style.pointerEvents = 'auto';
+    m.inert = false;
     if(opts.onOpen) opts.onOpen(m);
     return m;
   },
@@ -226,6 +232,13 @@ CRM.modal = {
     if(scrim) scrim.classList.remove('on');
     if(m){
       m.classList.remove('on');
+      /* `inert` haalt het hele venster uit de tabvolgorde én maakt elke knop
+         erin onbruikbaar. Zonder dit bleven na het sluiten dertien
+         onzichtbare knoppen focusbaar mét hun werking: wie doortabte tot
+         onderaan de pagina landde erin, en Enter op "Voorgesteld" verzette
+         een kandidaat van fase zonder dat er iets te zien was.
+         pointer-events houdt alleen de muis tegen, niet het toetsenbord. */
+      m.inert = true;
       /* Onzichtbaar is niet weg: het venster blijft na het sluiten staan met
          alleen opacity 0, en ving dan alle klikken op in een blok van 520px
          bij 90vh midden op het scherm. De knop eronder reageerde niet meer,
@@ -303,19 +316,27 @@ CRM.ui = {
 /* Bestaande tabellen van het pijplijnbord/marketingbord blijven de bron
    van waarheid. Nieuwe CRM-tabellen (crm_*) kunnen ontbreken zolang het
    schema nog niet gedraaid is — dan degraderen we netjes naar leeg. */
+/* Bijhouden wat er NIET geladen kon worden. Zonder dit slikte deze functie
+   elke fout en gaf een lege lijst terug — met als gevolg dat de app er bij
+   een wegvallende verbinding uitzag als een gloednieuw, leeg CRM: nul
+   kandidaten, nul klanten, "0 / 8 · 8 achter op schema". Dat nodigt uit om
+   alles opnieuw te gaan invoeren. Een lege lijst en een mislukte lijst zien
+   er hetzelfde uit, en dat mag niet. */
+CRM.laadfouten = [];
 async function veilig(promise, naam){
   try{
     const r = await promise;
     if(r.error){
       if(/does not exist|schema cache|relation/i.test(r.error.message||'')){ CRM.state['_mist_'+naam]=true; return []; }
-      console.warn('Laden '+naam, r.error); return [];
+      console.warn('Laden '+naam, r.error); CRM.laadfouten.push(naam); return [];
     }
     return r.data || [];
-  }catch(e){ console.warn('Laden '+naam, e); return []; }
+  }catch(e){ console.warn('Laden '+naam, e); CRM.laadfouten.push(naam); return []; }
 }
 
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
+  CRM.laadfouten = [];
   const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions, afspraken] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
@@ -342,8 +363,24 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_afspraken').select('*'), 'crm_afspraken')
   ]);
   Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, _loaded:true});
+  /* Ging het bij álles mis, dan is dit geen leeg systeem maar een kapotte
+     verbinding. Dat verschil moet op het scherm staan, niet alleen in de
+     console. `_loaded` blijft dan false zodat "Opnieuw proberen" echt
+     opnieuw ophaalt in plaats van de lege toestand te bevestigen. */
+  if(CRM.laadfouten.length >= 8){ CRM.state._loaded = false; CRM.laadmislukt = true; }
+  else CRM.laadmislukt = false;
   return CRM.state;
 };
+
+/* Banner boven het scherm als de gegevens niet opgehaald konden worden. */
+CRM.laadfoutHtml = () => !CRM.laadmislukt ? '' : `
+  <div class="note err" style="margin:0 0 14px">
+    <b>De gegevens konden niet worden opgehaald.</b>
+    Dit is géén leeg systeem — er is geen verbinding met de database, of je
+    sessie is verlopen. Wat je hieronder ziet is dus niet de werkelijkheid.
+    Voer niets opnieuw in.
+    <button class="lnk" id="crm_herlaad" style="margin-left:8px">Opnieuw proberen</button>
+  </div>`;
 CRM.herlaad = async () => { await CRM.load(true); CRM.render(); };
 
 /* Kandidaat-mapping — identiek aan het pijplijnbord zodat beide apps
@@ -932,6 +969,20 @@ window.addEventListener('DOMContentLoaded', () => {
       CRM.ga(hash[0], nieuwId ? {id:nieuwId} : {});
   });
   document.addEventListener('keydown', e => {
-    if(e.key==='Escape'){ if(CRM.modal._aan) CRM.modal.close(); else CRM.drawer.close(); }
+    if(e.key==='Escape'){
+      /* Sta je te typen, dan is Escape "laat dit veld los" — niet "gooi weg
+         waar ik mee bezig ben". Zonder deze uitzondering sloot Escape het
+         hele venster: een notitie van een paar regels was weg, en in de
+         belronde brak de hele ronde af. De wegwerkmodus zegt zelf tegen de
+         gebruiker dat Escape het veld verlaat; die belofte kwam niet uit,
+         omdat deze handler eerder aan de beurt is. Tweede keer Escape sluit
+         alsnog, want dan sta je nergens meer in te typen. */
+      const el = document.activeElement;
+      const typt = el && (el.tagName === 'TEXTAREA' ||
+        (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range)$/i.test(el.type)) ||
+        el.isContentEditable);
+      if(typt){ el.blur(); return; }
+      if(CRM.modal._aan) CRM.modal.close(); else CRM.drawer.close();
+    }
   });
 });

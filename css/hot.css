@@ -191,7 +191,12 @@
 .hot-funtekst span{display:inline-flex;align-items:center;gap:5px}
 .hot-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;display:inline-block}
 .hot-afspraak{font-size:12px;color:var(--txt-2)}
-.hot-acties{margin-left:auto;display:flex;gap:2px;flex:0 0 auto;flex-wrap:wrap}
+/* `flex:0 0 auto` liet deze knoppenrij niet krimpen onder zijn eigen
+   max-content-breedte (365px), terwijl er in de kaart maar 303px is. De
+   eigen flex-wrap sloeg daardoor nooit aan en de pagina schoof 29px opzij
+   op een telefoon — de knop 'Niet meer hot' viel buiten beeld. */
+.hot-acties{margin-left:auto;display:flex;gap:2px;flex:0 1 auto;flex-wrap:wrap;
+  min-width:0;max-width:100%}
 
 /* ── Kandidaatrijen (uitklap én detailpagina) ───────────────── */
 .hot-uitklap{border-top:1px solid var(--line);margin-top:14px;padding:12px 0 2px 64px}

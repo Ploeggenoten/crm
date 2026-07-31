@@ -516,8 +516,17 @@ function klantRegel(k, vrijdag, tot){
     laatst: laatsteKlantContact(k, acts),
     /* Aan het werk = wie er nú staat. Getekend-maar-nog-niet-gestart apart:
        daar gaat het gesprek over een startdatum, niet over hoe het gaat. */
-    werkt: mensen.filter(c => CRM.faseIs(c.fase, 'Gestart') && !c.gestoptOp),
-    start: mensen.filter(c => CRM.faseIs(c.fase, 'Contract getekend') && !c.gestoptOp),
+    /* "Aan het werk" betekent: is al begonnen. De fase alleen is niet genoeg —
+       iemand kan op Gestart staan met een startdatum die nog moet komen, en
+       dan zei dit venster tegen de AM "3 aan het werk" terwijl datzelfde
+       dashboard eronder "startdag — stuur een appje · za 8 aug" toonde. Bel
+       je de klant met die lijst, dan hebben ze er nog geen één gezien. */
+    werkt: mensen.filter(c => CRM.faseIs(c.fase, 'Gestart') && !c.gestoptOp
+      && (!c.start || String(c.start).slice(0,10) <= CRM.todayISO())),
+    /* Getekend, of gestart-maar-nog-niet-begonnen: allebei "komt eraan". */
+    start: mensen.filter(c => !c.gestoptOp && (
+      CRM.faseIs(c.fase, 'Contract getekend') ||
+      (CRM.faseIs(c.fase, 'Gestart') && c.start && String(c.start).slice(0,10) > CRM.todayISO()))),
     vacs:  CRM.vacaturesVan(k.naam).filter(v => (v.status || 'Open') === 'Open'),
     contact: hoofdContact(k)
   };

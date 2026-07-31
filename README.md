@@ -33,8 +33,20 @@ Twee grenzen, onafhankelijk van elkaar:
    verschijnt niet eens in de zijbalk; bedragen elders worden vervangen door
    aantallen.
 
-Bouw je iets nieuws met fee, omzet of marge erin: altijd achter
-`if(CRM.canSeeMoney())`.
+Sinds 31 juli 2026 zijn er **twee** poorten, en het verschil is een bewuste
+keuze van Tjeerd: "fee mag zichtbaar zijn voor iedereen, omzet per klant ook
+prima. Alleen winst etc en cashflow en allemaal andere cijfers zijn voor
+finance bij mij."
+
+- `CRM.magOpbrengstZien()` — de fee per plaatsing en de omzet per klant.
+  Iedereen die is ingelogd. Zonder dat cijfer stuurt een accountmanager op
+  aantallen in plaats van op opbrengst.
+- `CRM.canSeeMoney()` — winst, marge, cashflow, banksaldo, gefactureerde
+  omzet en alles uit `fin_*`. Alleen de eigenaar.
+
+Lezen open, schrijven dicht: het team ziet de fee, maar alleen de eigenaar kan
+een fee-afspraak wijzigen. Een percentage per klant is een
+onderhandelingsresultaat, geen veld dat je even bijwerkt.
 
 ## Eerste installatie
 
