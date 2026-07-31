@@ -102,6 +102,35 @@
 .kd-cvrij .sub{grid-column:1;grid-row:2}
 .kd-cvrij .meta{grid-column:2;grid-row:1/3;align-self:center}
 
+/* ─── Certificaten met geldigheidsdatum ───────────────────────────
+   Geen pillenrij meer: er hoort een datum en een status bij, en dat past
+   niet in een chip zonder onleesbaar te worden. Zelfde rijopmaak als de
+   werkervaring erboven, zodat het blok één geheel blijft. */
+.kd-certs{display:flex;flex-direction:column;gap:2px;margin-top:8px}
+.kd-cert{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;
+  padding:8px 0;border-bottom:1px solid #eef0e4}
+.kd-cert:last-child{border-bottom:none}
+.kd-cert b{font-size:13px;flex:1 1 auto;min-width:0}
+.kd-cert .num{font-size:12.5px;color:var(--txt-2)}
+.kd-cert .btn{margin-left:auto}
+.kd-cert.verlopen b{color:var(--red)}
+.kd-cert.verlopen .num{text-decoration:line-through}
+
+/* ─── Nazorg: check-ins dag 3 · 14 · 30 ───────────────────────── */
+.kd-nazorg{display:flex;flex-direction:column;gap:2px}
+.kd-nz{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;
+  padding:8px 0;border-bottom:1px solid #eef0e4;font-size:13px}
+.kd-nz:last-child{border-bottom:none}
+.kd-nz-d{font-weight:600;color:var(--txt-2);flex:0 0 62px}
+.kd-nz-dat{color:var(--txt-2);flex:0 0 96px}
+.kd-nz .btn{margin-left:auto}
+.kd-nz-ok{color:var(--green);font-weight:600;font-size:12.5px}
+.kd-nz-open{color:var(--amber);font-weight:600;font-size:12.5px}
+.kd-nz.af .kd-nz-d,.kd-nz.af .kd-nz-dat{color:var(--muted);font-weight:500}
+
+/* Reisafstand: de waarschuwing hoort achter de afstand, niet eronder. */
+.kd-reisver{margin-left:4px;vertical-align:1px}
+
 /* ─── Kansen ──────────────────────────────────────────────────── */
 .kd-kans{border:1px solid var(--line);border-radius:var(--r-s);padding:13px 15px;margin-bottom:10px;background:var(--card-2)}
 .kd-kans:last-child{margin-bottom:0}

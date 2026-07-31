@@ -133,6 +133,51 @@ function kansen(c){
     .sort((a,b) => b.score - a.score).slice(0,5);
 }
 
+/* ─── Reisafstand tot de werkplek ─────────────────────────────────
+   "Reistijd/afstand" en "Reistijd/vervoer" zijn vaste uitvalcategorieën
+   (CRM.AFVAL_CATS en CRM.STOP_CATS in js/data.js). Dan wil je die afstand
+   niet pas lezen in de uitvalreden, maar op de kaart zien vóór de plaatsing.
+
+   Welke werkplek: de locatie van de gekoppelde vacature, en anders die van
+   de klant. In productie is vacatures.locatie bij álle vacatures leeg, dus
+   de terugval op de klant is de normale route — niet de uitzondering.
+   Levert geen van beide een plaats op die in CRM.PLAATSEN staat, dan tonen
+   we niets. Een gegokte afstand is erger dan geen afstand. */
+function werkplek(c){
+  const v = c.vacatureId ? CRM.state.vacs.find(x => String(x.id) === String(c.vacatureId)) : null;
+  const uitVac = String((v && v.locatie) || '').trim();
+  if(uitVac) return {plaats:uitVac, via:'vacature'};
+  const k = c.klant ? CRM.klant(c.klant) : null;
+  /* Zelfde terugval als de klantkaart gebruikt (js/klanten.js): het veld
+     `locatie`, en anders de vestigingsplaats uit de SWO-gegevens. */
+  const uitKlant = String((k && (k.locatie || k.plaats)) || '').trim();
+  return uitKlant ? {plaats:uitKlant, via:'klant'} : null;
+}
+
+/* Hooguit één zachte waarschuwing, en de grens is niet zelfbedacht: hij komt
+   uit CRM.matchScore in js/data.js. Die weegt reisafstand in banden en laat
+   hem boven 45 km hélemaal wegvallen — verder dan dat telt de afstand in dit
+   systeem al nergens meer mee. Zonder eigen auto knelt het eerder; daar houden
+   we de band eronder aan (30 km), de laatste die daar noemenswaardig scoort.
+   Dus geen nieuwe norm — dezelfde die de matching al hanteert. */
+const REIS_VER = 45, REIS_VER_ZONDER_AUTO = 30;
+function reisafstandRij(c){
+  const w = werkplek(c);
+  if(!String(c.woonplaats || '').trim() || !w) return '';
+  const km = CRM.afstandKm(c.woonplaats, w.plaats);
+  if(km == null) return '';
+  const zonderAuto = !!c.vervoer && c.vervoer !== 'auto';
+  const ver = km >= (zonderAuto ? REIS_VER_ZONDER_AUTO : REIS_VER);
+  const waarde = km === 0
+    ? `zelfde plaats — ${h(w.plaats)}`
+    : `± <span class="num">${km}</span> km naar ${h(w.plaats)}`;
+  return `<div class="kd-veld"><span class="label">Reisafstand</span>
+    <span>${waarde}
+      <span class="meta">${w.via === 'vacature' ? 'werkplek uit de vacature' : 'vestiging van de klant'}</span>${ver ? `
+      <span class="chip amber kd-reisver" title="Reistijd is een van de vaste uitvalredenen — bespreek het vóór de plaatsing">${
+        zonderAuto ? 'ver zonder eigen auto' : 'flinke reisafstand'}</span>` : ''}</span></div>`;
+}
+
 /* ─── Laatst gesproken ────────────────────────────────────────── */
 function laatstGesproken(c){
   const alle = CRM.activiteitenVoor('kandidaat', c.id).map(a => a.op)
@@ -577,6 +622,11 @@ function kaart(mount, acties, id){
         <div class="stack">
           ${kansenHtml(c)}
           ${trajectHtml(c)}
+          <!-- Nazorg staat pal onder Traject: het is de voortzetting daarvan
+               ná de start, en het verschijnt alleen bij een gestarte kandidaat.
+               Nazorg en Uitval sluiten elkaar uit (Gestart tegenover
+               Afgevallen/Gestopt), dus de kolom wordt er niet langer van. -->
+          ${nazorgHtml(c)}
           ${uitvalHtml(c)}
           ${contractHtml(c)}
           ${factuurklaarHtml(c)}
@@ -632,6 +682,11 @@ function kaart(mount, acties, id){
   };
   const cvKnop = mount.querySelector('#c_cvlees');
   if(cvKnop) cvKnop.onclick = () => cvModal(c);
+  const certKnop = mount.querySelector('#c_certnieuw');
+  if(certKnop) certKnop.onclick = () => certModal(c, -1);
+  mount.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => certModal(c, Number(b.dataset.cert)));
+  /* Nazorg-check-in vastleggen — via dezelfde activiteiten-route als de rest. */
+  mount.querySelectorAll('[data-nazorg]').forEach(b => b.onclick = () => nazorgVastleggen(c, Number(b.dataset.nazorg)));
 
   /* Traject-acties — de logica woont in js/recruitment.js, inclusief álle
      poortwachters. Deze kaart roept alleen aan. */
@@ -803,10 +858,14 @@ function gegevensHtml(c){
       <span class="meta">klik een waarde om te wijzigen</span></div>
     <div class="card-b"><div class="kd-velden">${VELDEN.map(f => {
       const w = toonWaarde(f, lees(c, f.k));
-      return `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
+      const rij = `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
         <span><span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span>${
           w && uitCv.includes(f.k) ? ' <span class="chip green kd-cvchip" title="Automatisch overgenomen uit het CV">uit CV</span>' : ''
         }</span></div>`;
+      /* De reisafstand staat pal onder vervoer en woonplaats, want pas samen
+         zeggen die drie iets: 40 km met een auto is een ander verhaal dan
+         40 km zonder. Bewust géén eigen kaart — de kandidatenkaart is vol. */
+      return rij + (f.k === 'vervoer' ? reisafstandRij(c) : '');
     }).join('')}</div></div></div>`;
 }
 
@@ -920,19 +979,134 @@ function meterBij(c){
                     : '<div class="meta">Alles ingevuld — netjes.</div>'}`;
 }
 
+/* ─── Certificaten met geldigheidsdatum ───────────────────────────
+   Een klant wil weten of die VCA of dat heftruckcertificaat nóg geldig is.
+   Tot nu toe was cv.certificaten een lijst losse teksten.
+
+   OPSLAG — bewust géén objecten in cv.certificaten. js/cv.js (het
+   kandidaatprofiel dat naar de klant gaat) en js/recruitment.js zetten elk
+   element rechtstreeks door String(); een object zou daar als
+   "[object Object]" op het vel van de klant belanden, en die bestanden zijn
+   niet van deze module. Daarom blijft cv.certificaten een lijst strings —
+   precies de oude vorm, dus elke bestaande lezer werkt door — en staat de
+   datum ernaast in cv.certGeldig: { sleutel: 'JJJJ-MM-DD' }, ook in het
+   bestaande cv-jsonb. Bij het LEZEN accepteren we allebei de vormen (string
+   én {naam, geldigTot}), zodat het blijft werken als een andere module ooit
+   tóch objecten wegschrijft; bij het opslaan normaliseren we terug.
+   De sleutel is de naam in kleine letters: twee identieke certificaatnamen
+   op één kaart delen dus één datum — die kwamen we nergens tegen. */
+const certSleutel = s => String(s == null ? '' : s).trim().toLowerCase();
+const isDatum = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s == null ? '' : s));
+function certLijst(c){
+  const cv = c.cv || {};
+  const map = (cv.certGeldig && typeof cv.certGeldig === 'object') ? cv.certGeldig : {};
+  return (Array.isArray(cv.certificaten) ? cv.certificaten : []).map(x => {
+    const obj = x && typeof x === 'object';
+    const naam = String((obj ? (x.naam || x.certificaat || x.titel) : x) || '').trim();
+    const eigen = obj ? (x.geldigTot || x.geldig_tot || '') : '';
+    return {naam, geldigTot: String(eigen || map[certSleutel(naam)] || '').trim()};
+  }).filter(r => r.naam);
+}
+/* Verlopen = de datum ligt achter ons. "Binnenkort" = binnen twee
+   kalendermaanden (niet "62 dagen": een certificaat loopt op een datum af,
+   niet na een aantal dagen). Geen datum ⇒ geen status: niet ingevuld is
+   niet hetzelfde als ongeldig. */
+function certStatus(iso){
+  if(!isDatum(iso)) return null;
+  if(iso < CRM.todayISO()) return {k:'verlopen', lbl:'verlopen', chip:'red'};
+  const grens = new Date(); grens.setMonth(grens.getMonth() + 2);
+  if(iso <= grens.toLocaleDateString('sv-SE')) return {k:'bijna', lbl:'verloopt binnenkort', chip:'amber'};
+  return {k:'geldig', lbl:'', chip:''};
+}
+function certRij(r, i){
+  const st = certStatus(r.geldigTot);
+  const datum = !r.geldigTot ? '<span class="meta">geen geldigheidsdatum</span>'
+    : isDatum(r.geldigTot) ? `<span class="num">geldig t/m ${h(CRM.fmtDate(r.geldigTot))}</span>`
+    : `<span class="num">${h(r.geldigTot)}</span>`;
+  return `<div class="kd-cert${st ? ' ' + st.k : ''}">
+    <b>${h(r.naam)}</b>
+    ${datum}
+    ${st && st.chip ? `<span class="chip ${st.chip}">${h(st.lbl)}</span>` : ''}
+    <button type="button" class="btn sub sm" data-cert="${i}">${r.geldigTot ? 'Wijzigen' : 'Datum erbij'}</button>
+  </div>`;
+}
+
+function certModal(c, index){
+  const rijen = certLijst(c);
+  const r = index >= 0 ? rijen[index] : {naam:'', geldigTot:''};
+  if(!r) return;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${index >= 0 ? 'Certificaat' : 'Certificaat toevoegen'}</div>
+      <p class="sub" style="margin:6px 0 0">De geldigheidsdatum is optioneel — laat hem leeg als je hem niet weet.
+      Niet ingevuld is niet hetzelfde als verlopen.</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="ct_naam">Certificaat</label>
+        <input type="text" id="ct_naam" value="${h(r.naam)}" placeholder="VCA Basis"></div>
+      <div class="f-row" style="margin-bottom:0"><label for="ct_tot">Geldig tot</label>
+        <input type="date" id="ct_tot" value="${h(isDatum(r.geldigTot) ? r.geldigTot : '')}"></div>
+    </div>
+    <div class="modal-f">
+      ${index >= 0 ? '<button class="btn ghost" id="ct_weg">Verwijderen</button><span class="spacer"></span>' : ''}
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ct_ok">Opslaan</button>
+    </div>`, {onOpen(m){
+      const naamEl = m.querySelector('#ct_naam'), totEl = m.querySelector('#ct_tot');
+      setTimeout(() => (index >= 0 ? totEl : naamEl).focus(), 60);
+      m.querySelector('#ct_ok').onclick = async () => {
+        const naam = naamEl.value.trim();
+        if(!naam) return CRM.toast('Vul een naam in','err');
+        CRM.modal.close();
+        await certBewaar(c, index, naam, totEl.value);
+      };
+      const weg = m.querySelector('#ct_weg');
+      if(weg) weg.onclick = async () => {
+        /* CRM.bevestig hergebruikt hetzelfde modaalvenster, dus die vraag
+           overschrijft dit formulier. Zeg je nee, dan zetten we het terug —
+           anders sta je na "Annuleren" ineens weer op de kale kaart. */
+        const ok = await CRM.bevestig('Certificaat verwijderen?', r.naam + ' verdwijnt van deze kaart.');
+        if(!ok) return certModal(c, index);
+        await certBewaar(c, index, '', '');
+      };
+    }});
+}
+
+async function certBewaar(c, index, naam, tot){
+  const rijen = certLijst(c);
+  const geldig = isDatum(tot) ? tot : '';
+  if(index >= 0){
+    if(!naam) rijen.splice(index, 1); else rijen[index] = {naam, geldigTot:geldig};
+  }else rijen.push({naam, geldigTot:geldig});
+
+  const cv = Object.assign({}, c.cv || {});
+  cv.certificaten = rijen.map(r => r.naam);          // blijft een lijst strings
+  const map = {};
+  rijen.forEach(r => { if(r.geldigTot) map[certSleutel(r.naam)] = r.geldigTot; });
+  if(Object.keys(map).length) cv.certGeldig = map; else delete cv.certGeldig;
+  c.cv = cv;
+  await bewaarKandidaat(c);
+  await CRM.logActiviteit('kandidaat', c.id, 'systeem', index >= 0 && !naam
+    ? 'Certificaat verwijderd'
+    : 'Certificaat vastgelegd: ' + naam + (geldig ? ' (geldig t/m ' + CRM.fmtDate(geldig) + ')' : ' — geen geldigheidsdatum'));
+  CRM.render();
+}
+
 /* ─── CV & ervaring ───────────────────────────────────────────── */
 function cvHtml(c){
   const cv = c.cv || {};
   const werk = Array.isArray(cv.werkgevers) ? cv.werkgevers : [];
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   const skills = Array.isArray(cv.skills) ? cv.skills : [];
-  const certs  = Array.isArray(cv.certificaten) ? cv.certificaten : [];
+  const certs  = certLijst(c);
   const leeg = !werk.length && !opl.length && !skills.length && !certs.length && !cv.ervaringJaren && !cv.url;
   return `<div class="card">
     <div class="card-h"><div class="h2">CV &amp; ervaring</div>
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
       <span class="spacer"></span>
       ${veiligeUrl(cv.url)?`<a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}
+      <!-- Toevoegen zit in de kop en niet bij het lijstje zelf: bij een kaart
+           zónder certificaten is er geen lijstje, en dan moet je er alsnog
+           eentje kwijt kunnen. -->
+      <button class="btn ghost sm" id="c_certnieuw">Certificaat toevoegen</button>
       <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
     <div class="card-b">${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Lees een CV in (PDF of tekst) — lege velden worden aangevuld en afwijkingen worden rood gemarkeerd.') : `
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
@@ -949,7 +1123,7 @@ function cvHtml(c){
           <span class="meta num">${h(o.jaar||o.periode||'')}</span>
         </div>`).join('')}</div>`:''}
       ${certs.length?`<div class="label" style="margin-top:16px">Certificaten</div>
-        <div class="row tight" style="margin-top:8px">${certs.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
+        <div class="kd-certs">${certs.map((r,i) => certRij(r,i)).join('')}</div>`:''}
       ${skills.length?`<div class="label" style="margin-top:16px">Vaardigheden</div>
         <div class="row tight" style="margin-top:8px">${skills.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
       ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="label" style="margin-top:16px">Talen</div>
@@ -1423,6 +1597,97 @@ function trajectHtml(c){
     </div></div>`;
 }
 
+/* ─── Nazorg: check-ins op dag 3, 14 en 30 ────────────────────────
+   Exact hetzelfde ritme en dezelfde peildatum als het pijplijnbord
+   (js/pijplijn.js, de chip in de Gestart-kolom) en de nazorgkolom in
+   Performance (js/performance.js): geteld vanaf de STARTDATUM, alleen bij
+   fase Gestart, alleen zolang de plaatsing loopt (geen gestoptOp) en alleen
+   als die startdatum al geweest is. Zo zegt de kaart nooit iets anders dan
+   het bord. Iemand die nog in gesprek zit, ziet dit blok dus niet.
+   LET OP: js/dashboard.js rekent op één punt anders — zie het rapport. */
+const NAZORG_DAGEN = [3,14,30];
+const NAZORG_CONTACT = ['bel','gesprek','whatsapp','mail'];
+/* Datum + n dagen, in dezelfde lokale notatie als CRM.todayISO(). */
+const plusDagen = (iso, n) => {
+  const d = new Date(iso); if(isNaN(d)) return '';
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('sv-SE');
+};
+/* Hoort deze activiteit bij een check-in, en zo ja bij welke dag? De
+   markering staat in `extra`; de tekstcontrole vangt rijen op die vóór dit
+   veld zijn weggeschreven. 0 = geen check-in. */
+const nazorgMerk = a => {
+  const n = Number(a && a.extra && a.extra.nazorg);
+  if(n) return n;
+  const m = /^nazorg dag (\d+)\b/i.exec(String((a && a.tekst) || ''));
+  return m ? Number(m[1]) : 0;
+};
+
+function nazorgStatus(c){
+  if(!CRM.faseIs(c.fase, 'Gestart') || !c.start || c.gestoptOp) return null;
+  const dag = CRM.dagenGeleden(c.start);
+  if(dag == null || dag < 0) return null;      // startdatum ligt nog voor ons
+  const acts = CRM.activiteitenVoor('kandidaat', c.id);
+  const rijen = NAZORG_DAGEN.map((n, i) => {
+    const datum = plusDagen(c.start, n);
+    /* Venster van dit check-inmoment: vanaf de dag zelf tot het volgende
+       moment (en na dag 30 nog twee weken). */
+    const eind = plusDagen(c.start, NAZORG_DAGEN[i+1] != null ? NAZORG_DAGEN[i+1] : n + 14);
+    /* "Gedaan" leiden we af uit de activiteiten. Twee bronnen: een check-in
+       die hier is vastgelegd, en anders écht contact binnen het venster —
+       plaatsingen van vóór deze knop hebben die markering niet, maar het
+       telefoontje staat er wel.
+       Een activiteit die al ÉÉN check-in is, telt nooit als het contact van
+       een andere: leg je dag 3 achteraf vast op dag 20, dan valt dat gesprek
+       toevallig in het venster van dag 14 en zou die zichzelf anders ook
+       afvinken. Gezien tijdens het testen — één gesprek is één check-in. */
+    const vast = acts.find(a => nazorgMerk(a) === n);
+    const contact = vast ? null : acts.find(a => !nazorgMerk(a) && NAZORG_CONTACT.includes(a.soort)
+      && String(a.op || '').slice(0,10) >= datum && String(a.op || '').slice(0,10) < eind);
+    const gedaan = !!(vast || contact);
+    return {n, datum, vast: vast || null, contact: contact || null, gedaan, open: dag >= n && !gedaan};
+  });
+  return {dag, rijen, volgende: rijen.find(r => !r.gedaan) || null, klaar: rijen.every(r => r.gedaan)};
+}
+
+function nazorgHtml(c){
+  const s = nazorgStatus(c);
+  if(!s) return '';
+  const kop = s.klaar ? '<span class="chip green">ritme afgerond</span>'
+    : s.volgende.open ? '<span class="chip amber">check-in open</span>'
+    : `<span class="chip">volgende op dag <span class="num">${s.volgende.n}</span></span>`;
+  const soortLbl = a => String((CRM.ACT_SOORTEN[a.soort] || {}).lbl || a.soort).toLowerCase();
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Nazorg</div>${kop}
+      <span class="spacer"></span>
+      <span class="meta">dag <span class="num">${s.dag}</span> na de start</span></div>
+    <div class="card-b">
+      <div class="kd-nazorg">${s.rijen.map(r => {
+        const status = r.vast
+          ? `<span class="kd-nz-ok">✓ vastgelegd ${h(CRM.fmtDateShort(r.vast.op))}</span>`
+          : r.contact
+            ? `<span class="kd-nz-ok">✓ ${h(soortLbl(r.contact))} op ${h(CRM.fmtDateShort(r.contact.op))}</span>`
+            : r.open ? '<span class="kd-nz-open">nog niet gedaan</span>'
+                     : `<span class="meta">${h(CRM.geleden(r.datum))}</span>`;
+        return `<div class="kd-nz${r.gedaan ? ' af' : r.open ? ' open' : ''}">
+          <span class="kd-nz-d">Dag <span class="num">${r.n}</span></span>
+          <span class="num kd-nz-dat">${h(CRM.fmtDay(r.datum))}</span>
+          ${status}
+          ${r.open ? `<button type="button" class="btn ghost sm" data-nazorg="${r.n}">Vastleggen</button>` : ''}
+        </div>`;
+      }).join('')}</div>
+      <p class="meta" style="margin:12px 0 0">Bellen op dag 3, 14 en 30 — hetzelfde ritme als op het bord en in Mijn dag.</p>
+    </div></div>`;
+}
+
+/* Vastleggen loopt via dezelfde activiteiten-route als de knop "Gebeld"
+   bovenaan de kaart (logVia); deze module schrijft maar op één plek in de
+   tijdlijn. De markering in `extra` maakt de check-in later terugvindbaar. */
+async function nazorgVastleggen(c, n){
+  await logVia(c, 'bel', 'Hoe gaat het op de werkvloer? Leg vast wat je hoort — ook als alles goed gaat.',
+    {titel:'Nazorg — check-in dag ' + n, prefix:'Nazorg dag ' + n + ' — ', extra:{nazorg:n}});
+}
+
 /* ─── Contract, plaatsing en salaris (uit de bewerk-drawer) ─────
    Salaris van de kandidaat is een arbeidsvoorwaarde en mag het team
    zien (zelfde afweging als bij Kandidaatgegevens). De fee is dat
@@ -1489,11 +1754,15 @@ function tabActiviteiten(el, c){
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logVia(c, b.dataset.log, 'Wat leg je vast?'));
 }
 
-async function logVia(c, soort, hint){
-  const tekst = await CRM.vraag((CRM.ACT_SOORTEN[soort]||{}).lbl || 'Activiteit',
+/* opts is optioneel: een eigen venstertitel, een vaste aanhef vóór de tekst
+   en extra's die met de activiteit meegaan (bv. de nazorg-check-in). Zonder
+   opts gedraagt dit zich precies zoals eerst. */
+async function logVia(c, soort, hint, opts){
+  const o = opts || {};
+  const tekst = await CRM.vraag(o.titel || (CRM.ACT_SOORTEN[soort]||{}).lbl || 'Activiteit',
     {multiline:true, hint, knop:'Vastleggen'});
   if(!tekst) return;
-  await CRM.logActiviteit('kandidaat', c.id, soort, tekst);
+  await CRM.logActiviteit('kandidaat', c.id, soort, (o.prefix || '') + tekst, o.extra || {});
   CRM.verwerkTags(tekst, 'kandidaat', c.id);       // @collega → melding
   CRM.toast('Vastgelegd','ok');
   CRM.render();
