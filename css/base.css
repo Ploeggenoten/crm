@@ -254,10 +254,17 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .kpi.accent{border-left:2px solid var(--olive)}
 
 /* ─── Chips / badges ─────────────────────────────────────────── */
+/* font-family staat er sinds jul 2026 expliciet bij. Reden: een filterchip
+   die je kunt aan- en uitzetten ("Mijn klanten", de statusfilters van de
+   Leadradar) hoort een <button> te zijn en geen <span> — alleen dan kom je
+   er met Tab bij en leest een schermlezer de aan/uit-stand voor. Een
+   <button> erft font-family niet van de pagina, dus zonder deze regel viel
+   zo'n chip terug op het lettertype van de browser en stond hij scheef
+   tussen de andere chips. Vorm en kleur veranderen niet. */
 .chip{
   display:inline-flex;align-items:center;gap:5px;background:var(--card-2);
   border:1px solid var(--line-2);border-radius:999px;padding:2px 10px;
-  font-size:12px;font-weight:500;color:var(--txt-2);white-space:nowrap;
+  font-family:var(--body);font-size:12px;font-weight:500;color:var(--txt-2);white-space:nowrap;
 }
 .chip.green{background:var(--green-bg);border-color:var(--green-line);color:#1e6b3f}
 .chip.red{background:var(--red-bg);border-color:var(--red-line);color:#a4301f}
@@ -392,7 +399,11 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 
 /* ─── Lege staat / laden ─────────────────────────────────────── */
 .empty{text-align:center;padding:46px 20px;color:var(--muted)}
-.empty .ico{font-size:30px;opacity:.5;display:block;margin-bottom:10px}
+/* Kleiner en lichter dan voorheen (30px / .5). De gestippelde cirkel die
+   core meestuurt (◌) las op die maat als een laadspinner: je bleef wachten
+   op inhoud die niet komt, precies in het scherm dat zegt dat er niets ís.
+   Op 21px en .3 is het versiering bij de tekst eronder, geen belofte. */
+.empty .ico{font-size:21px;line-height:1;opacity:.3;display:block;margin-bottom:10px}
 .empty b{display:block;color:var(--txt-2);font-size:14.5px;font-weight:600;margin-bottom:5px}
 .empty p{margin:0 auto;max-width:380px;font-size:13px;line-height:1.55}
 .empty .btn{margin-top:16px}

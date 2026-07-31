@@ -906,8 +906,24 @@ CRM.registerModule('dashboard', {
     /* Paginakop: teamtarget → Performance, Vernieuwen. */
     const tc = document.getElementById('dash_team');
     if(tc) tc.onclick = () => CRM.ga('performance');
+    /* Vernieuwen haalt alle tabellen opnieuw op — op een matige verbinding
+       duurt dat seconden. Zonder terugkoppeling leek het scherm bevroren en
+       drukten mensen nog een paar keer, wat de aanroep gewoon herhaalde.
+       Nu vertelt de knop dat hij bezig is en kan hij intussen niet nog eens.
+       Ook de mail wordt losgelaten, anders vernieuwt alles behalve dat blok. */
     const ver = document.getElementById('dash_ver');
-    if(ver) ver.onclick = () => CRM.herlaad();
+    if(ver) ver.onclick = async () => {
+      if(ver.disabled) return;
+      ver.disabled = true; ver.textContent = 'Bezig…';
+      _mail = null; _mailFoutOp = 0;
+      try{ await CRM.herlaad(); }
+      catch(e){
+        CRM.fout('Vernieuwen mislukt', e);
+        ver.disabled = false; ver.textContent = 'Vernieuwen';
+      }
+      /* Bij succes tekent CRM.herlaad() het dashboard opnieuw en is deze
+         knop al vervangen door een verse — herstellen hoeft dan niet. */
+    };
 
     /* + Taak: het gedeelde taakvenster. */
     const nieuw = document.getElementById('tl2_nieuw');

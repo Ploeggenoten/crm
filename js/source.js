@@ -262,7 +262,8 @@ CRM.kaartRender = async function(container, opts){
       <div class="card pad src-top">
         <div class="row">
           ${lens === 'kandidaten'
-            ? `<button class="btn ghost sm" id="src_filknop">Filters</button>`
+            ? `<button class="btn ghost sm" id="src_filknop" aria-expanded="${filtersOpen}" aria-controls="src_fil">${
+                filtersOpen ? 'Filters verbergen' : 'Filters tonen'}</button>`
             : `<span class="sub">Alle klanten op de kaart — kleur is branche, grootte is ${geld?'omzet':'aantal plaatsingen'}.</span>`}
           ${geld ? `<div class="seg" id="src_periode">
               <button data-p="jaar" class="on">Dit jaar</button><button data-p="alles">Alles</button>
@@ -529,14 +530,28 @@ CRM.kaartRender = async function(container, opts){
     $('#src_pd').onclick = () => { $('#src_paneel').innerHTML = ''; };
     container.querySelectorAll('[data-mkand]').forEach(a =>
       a.onclick = e => { e.preventDefault(); CRM.ga('kandidaten',{id:a.dataset.mkand}); });
-    if(window.innerWidth <= 700) $('#src_paneel').scrollIntoView({behavior:'smooth', block:'nearest'});
+    /* Altijd naar het paneel scrollen, niet alleen op mobiel. Het paneel
+       staat ónder de kaart en de legenda, dus op een laptop viel het net
+       buiten beeld: je klikte op een klant-pin en er leek niets te gebeuren.
+       block:'nearest' schuift alleen zover als nodig — staat het al in
+       beeld, dan blijft het scherm gewoon staan.
+       Bewust zónder behavior:'smooth': dat werd in de praktijk niet altijd
+       uitgevoerd en dan gebeurde er alsnog niets. Zo verplaatst het scherm
+       zich gegarandeerd, en volgt het de scroll-behavior van de pagina. */
+    $('#src_paneel').scrollIntoView({block:'nearest'});
   };
 
   /* ─── Events ──────────────────────────────────────────────── */
   const filknop = $('#src_filknop');
+  /* De knop heette in beide standen "Filters", dus je zag er niet aan af of
+     hij het paneel opent of sluit — en op mobiel staat het paneel dicht,
+     precies waar dat het meest uitmaakt. Nu zegt het opschrift wat de klik
+     gaat doen en meldt aria-expanded hetzelfde aan een schermlezer. */
   if(filknop) filknop.onclick = () => {
     filtersOpen = !filtersOpen;
     $('#src_fil').style.display = filtersOpen ? '' : 'none';
+    filknop.textContent = filtersOpen ? 'Filters verbergen' : 'Filters tonen';
+    filknop.setAttribute('aria-expanded', String(filtersOpen));
     setTimeout(() => { try{ map.invalidateSize(); }catch(e){} }, 60);
   };
   container.querySelectorAll('[data-sf]').forEach(el => {

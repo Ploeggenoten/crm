@@ -1,8 +1,13 @@
 /* MODULE: Instellingen — targets, team, export/import, systeem. */
 .in-wrap{max-width:860px}
-.in-target{display:flex;align-items:center;gap:14px}
+.in-target{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.in-target > label{font-size:13px;font-weight:600;color:var(--txt)}
 .in-target input{width:90px;text-align:right;font-variant-numeric:tabular-nums}
-.in-tinp{width:76px;text-align:right}
+/* MOET `input.in-tinp` zijn, niet `.in-tinp`: base.css zet width:100% via
+   `input[type=number]` en dat is een specifiekere selector dan één klasse.
+   Zonder de element-naam erbij werd elk maandtarget-veld 240px breed en
+   domineerde de invoerkolom de hele tabel. */
+input.in-tinp{width:76px;text-align:right}
 tr.in-nu td{background:var(--card-2)}
 .in-sys{display:flex;flex-direction:column}
 .in-sysrij{display:flex;justify-content:space-between;align-items:center;gap:12px;
@@ -61,6 +66,9 @@ tr.in-nu td{background:var(--card-2)}
   .in-wrap{max-width:none;column-count:2;column-gap:22px}
   .in-wrap > .card{margin-top:0 !important;margin-bottom:20px;break-inside:avoid}
 }
-@media (min-width:1900px){
-  .in-wrap{column-count:3}
-}
+/* Bewust GÉÉN derde kolom op het teamscherm. Met drie kolommen bleef er per
+   kolom ±550px over, en dan past de tabel "Team en rollen" niet meer: die
+   heeft vier kolommen waarvan twee keuzelijsten. Het gevolg was dat je op
+   een gróter scherm de kolom Rol alleen nog kon bereiken door binnen de
+   kaart horizontaal te scrollen. Twee kolommen vullen het scherm ook, en
+   dan blijft alles gewoon leesbaar. */

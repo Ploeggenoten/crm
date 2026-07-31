@@ -53,30 +53,62 @@ function maandLijst(){
 const MND = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const maandLabel = mk => { const [j,m] = mk.split('-'); const n = MND[+m-1]||mk; return n.charAt(0).toUpperCase()+n.slice(1)+' '+j; };
 
+const standaardTarget = () => {
+  const d = targetRij('__default__') || targetRij('__default');
+  return d ? d.aantal : 8;
+};
+
+function targetRegelHtml(mk, mkNu){
+  const t = targetRij(mk);
+  const eff = t ? t.aantal : standaardTarget();
+  const pm = mk <= mkNu ? CRM.plaatsingenMaand(mk) : null;
+  return `<tr class="${mk===mkNu?'in-nu':''}" data-mk="${h(mk)}">
+    <td>${h(maandLabel(mk))}${mk===mkNu?' <span class="chip green">nu</span>':''}
+      <span class="meta in-std"${t?' hidden':''}>(standaard)</span></td>
+    <td class="n"><input type="number" min="0" data-target="${h(mk)}" value="${h(eff)}" class="in-tinp num"
+      aria-label="Target ${h(maandLabel(mk))}"></td>
+    <td class="n num">${pm ? pm.netto : '—'}</td>
+    <td class="n num in-vers">${pm ? CRM.plusMin(pm.netto - eff) : '—'}</td>
+  </tr>`;
+}
+
+/* Alleen de cellen bijwerken die kunnen veranderen — NIET het hele scherm
+   opnieuw tekenen. Dat deed het eerder wel, en dan verloor je na elke
+   target die je aanpaste je plek in het formulier: je tabt naar de volgende
+   maand, de tabel wordt weggegooid en je focus staat opeens op <body>.
+   Zo blijft het invoerveld waar je in staat gewoon bestaan. */
+function werkTargetsBij(mount){
+  const std = standaardTarget(), mkNu = CRM.todayISO().slice(0,7);
+  CRM.$$('tr[data-mk]', mount).forEach(tr => {
+    const mk = tr.dataset.mk;
+    const eigen = targetRij(mk);
+    const eff = eigen ? eigen.aantal : std;
+    const inp = tr.querySelector('[data-target]');
+    if(inp && document.activeElement !== inp) inp.value = eff;
+    const mark = tr.querySelector('.in-std');
+    if(mark) mark.hidden = !!eigen;
+    const vers = tr.querySelector('.in-vers');
+    if(vers){
+      const pm = mk <= mkNu ? CRM.plaatsingenMaand(mk) : null;
+      vers.innerHTML = pm ? CRM.plusMin(pm.netto - eff) : '—';
+    }
+  });
+}
+
 function sectieTargets(){
-  const dflt = targetRij('__default__') || targetRij('__default');
   const mkNu = CRM.todayISO().slice(0,7);
+  /* Bewust géén .label hier: dat is micro-caps met letterspatiëring, prima
+     voor één woord maar slecht leesbaar voor een hele zin. */
   return `<div class="card"><div class="card-h"><div class="h2">Maandtargets</div>
       <div class="spacer"></div><span class="meta">netto plaatsingen per maand</span></div>
     <div class="card-b">
       <div class="in-target">
-        <span class="label">Standaard (elke maand zonder eigen target)</span>
-        <input type="number" min="0" data-target="__default__" value="${dflt ? h(dflt.aantal) : 8}">
+        <label for="in_std">Standaard <span class="meta">— geldt voor elke maand zonder eigen target</span></label>
+        <input type="number" min="0" id="in_std" data-target="__default__" value="${h(standaardTarget())}">
       </div>
       <div class="tblwrap" style="margin-top:12px"><table class="tbl">
         <thead><tr><th>Maand</th><th class="n">Target</th><th class="n">Netto behaald</th><th class="n">Verschil</th></tr></thead>
-        <tbody>${maandLijst().map(mk => {
-          const t = targetRij(mk);
-          const eff = t ? t.aantal : (dflt ? dflt.aantal : 8);
-          const voorbij = mk <= mkNu;
-          const pm = voorbij ? CRM.plaatsingenMaand(mk) : null;
-          return `<tr class="${mk===mkNu?'in-nu':''}">
-            <td>${h(maandLabel(mk))}${mk===mkNu?' <span class="chip green">nu</span>':''}${t?'':' <span class="meta">(standaard)</span>'}</td>
-            <td class="n"><input type="number" min="0" data-target="${h(mk)}" value="${h(eff)}" class="in-tinp num"></td>
-            <td class="n num">${pm ? pm.netto : '—'}</td>
-            <td class="n num">${pm ? CRM.plusMin(pm.netto - eff) : '—'}</td>
-          </tr>`;
-        }).join('')}</tbody>
+        <tbody>${maandLijst().map(mk => targetRegelHtml(mk, mkNu)).join('')}</tbody>
       </table></div>
       <p class="meta" style="margin:10px 2px 0">Netto = getekend − gestopt in die maand, dezelfde definitie als op het bord en in Recruitment.</p>
     </div></div>`;
@@ -91,9 +123,28 @@ const heeftMail = p => !!String(p && p.email || '').trim();
    niet de RFC naspelen. */
 const mailOk = s => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(s||'').trim());
 
+/* Zonder e-mailadres kan het CRM een Teams-bericht nergens heen sturen.
+   Dat gebeurt stilletjes — de melding in het CRM komt er wél — dus het
+   moet hier hardop staan, met de namen erbij.
+   Apart van sectieTeam() zodat we na het invullen van één adres alléén dit
+   blokje kunnen bijwerken. Eerder tekende de hele pagina opnieuw en sprong
+   je focus uit de rij e-mailvelden die je aan het aflopen was. */
+function teamWaarschuwingHtml(){
+  const zonder = (CRM.state.profiles||[]).filter(p => !heeftMail(p))
+    .slice().sort((a,b)=>String(a.naam||'').localeCompare(String(b.naam||'')));
+  if(!zonder.length) return '';
+  const namen = zonder.map(p => `<b>${h(p.naam||'een collega zonder naam')}</b>`);
+  const opsom = namen.length === 1 ? namen[0]
+              : namen.slice(0,-1).join(', ') + ' en ' + namen[namen.length-1];
+  return `<div class="note warn" style="margin-top:14px">
+    <b>Van ${opsom} kennen we het werk-e-mailadres nog niet.</b>
+    Wijs je zo iemand een taak toe of noem je hem met @naam, dan komt de melding wél in het CRM,
+    maar het bericht in Teams blijft uit — en daar kijkt het team de hele dag.
+    Vul het adres hierboven in en het is meteen opgelost.</div>`;
+}
+
 function sectieTeam(){
   const profielen = (CRM.state.profiles||[]).slice().sort((a,b)=>String(a.naam||'').localeCompare(String(b.naam||'')));
-  const zonder = profielen.filter(p => !heeftMail(p));
   const rij = p => {
     const bekend = ROLLEN.some(([k]) => k === p.rol);
     return `<tr>
@@ -109,12 +160,6 @@ function sectieTeam(){
         ${ROLLEN.map(([k,l])=>`<option value="${k}" ${p.rol===k?'selected':''}>${l}</option>`).join('')}
       </select></td></tr>`;
   };
-  /* Zonder e-mailadres kan het CRM een Teams-bericht nergens heen sturen.
-     Dat gebeurt stilletjes — de melding in het CRM komt er wél — dus het
-     moet hier hardop staan, met de namen erbij. */
-  const namen = zonder.map(p => `<b>${h(p.naam||'een collega zonder naam')}</b>`);
-  const opsom = namen.length === 1 ? namen[0]
-              : namen.slice(0,-1).join(', ') + ' en ' + namen[namen.length-1];
   return `<div class="card" style="margin-top:20px"><div class="card-h"><div class="h2">Team en rollen</div>
       <div class="spacer"></div><span class="meta">e-mailadres is nodig voor Teams-meldingen</span></div>
     <div class="card-b">
@@ -122,11 +167,7 @@ function sectieTeam(){
         <thead><tr><th>Gebruiker</th><th>Werk-e-mail</th><th class="n">Functie</th><th class="n">Rol</th></tr></thead>
         <tbody>${profielen.map(rij).join('')}</tbody></table></div>`
       : CRM.ui.leeg('Geen gebruikers gevonden','Profielen verschijnen na de eerste login.')}
-      ${zonder.length ? `<div class="note warn" style="margin-top:14px">
-        <b>Van ${opsom} kennen we het werk-e-mailadres nog niet.</b>
-        Wijs je zo iemand een taak toe of noem je hem met @naam, dan komt de melding wél in het CRM,
-        maar het bericht in Teams blijft uit — en daar kijkt het team de hele dag.
-        Vul het adres hierboven in en het is meteen opgelost.</div>` : ''}
+      <div id="in_teamwaarsch">${teamWaarschuwingHtml()}</div>
       <div class="note info" style="margin-top:14px"><b>Nieuwe collega uitnodigen:</b> Supabase-dashboard →
         Authentication → Users → <i>Invite user</i> met het @ploeggenoten.nl-adres. Na de eerste login verschijnt
         het profiel hier vanzelf — zet dan de rol en het e-mailadres goed. Beheerders mogen rollen wijzigen;
@@ -417,8 +458,13 @@ async function importJson(file, statusEl){
     statusEl.innerHTML = '<div class="note err">Onbekend formaat — verwacht een export van het bord of van dit CRM (met cands en vacs).</div>';
     return;
   }
+  /* Deze knop gooit tabellen leeg. De vraag moet dus niet alleen zeggen wát
+     er gebeurt maar ook dat het niet terug te draaien is, en wat je vooraf
+     doet om er wél mee terug te kunnen. */
   const ja = await CRM.bevestig('Bord-data vervangen?',
-    `Dit vervangt kandidaten (${d.cands.length}), klanten, vacatures, O&O-sessies en targets in de database. Leads en overige CRM-data blijven staan.`);
+    `Dit WIST de huidige kandidaten, klanten, vacatures, O&O-sessies en targets en zet er ${d.cands.length} kandidaten uit dit bestand voor in de plaats. `
+    + 'Dat is niet ongedaan te maken — download eerst een export als je terug wilt kunnen. '
+    + 'Leads en overige CRM-data blijven staan.');
   if(!ja) return;
   statusEl.innerHTML = '<div class="note info">Bezig met importeren…</div>';
   const candRows = d.cands.map(c => CRM.candToRow(Object.assign({since:CRM.todayISO()}, c)));
@@ -527,7 +573,7 @@ CRM.registerModule('instellingen', {
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
-      CRM.render();                                  // verschil-kolom meteen bijwerken
+      werkTargetsBij(mount);                         // alleen de cellen, focus blijft staan
     });
     /* Bij elke keuzelijst: eerst in het geheugen, en bij een mislukte
        opslag terug naar de oude waarde. Anders staat er op het scherm een
@@ -584,7 +630,11 @@ CRM.registerModule('instellingen', {
       CRM.toast(adres
         ? `Teams-meldingen voor ${p.naam||'deze collega'} gaan nu naar ${adres}`
         : `${p.naam||'Deze collega'} krijgt nu geen Teams-meldingen meer`, 'ok');
-      CRM.render();                                  // waarschuwingsblok bijwerken
+      /* Alleen de markering en het waarschuwingsblok bijwerken; een volledige
+         hertekening zou je uit de rij e-mailvelden gooien. */
+      inp.classList.toggle('leeg', !adres);
+      const waarsch = mount.querySelector('#in_teamwaarsch');
+      if(waarsch) waarsch.innerHTML = teamWaarschuwingHtml();
     });
     /* ─── Microsoft-koppeling ───────────────────────────────── */
     const msAan = mount.querySelector('#in_msaan');

@@ -300,8 +300,11 @@ function overzicht(mount, acties){
             <option value="vacatures"${F.sort==='vacatures'?' selected':''}>Meeste open vacatures</option>
             <option value="traject"${F.sort==='traject'?' selected':''}>Meeste lopende kandidaten</option>
           </select>
-          <span class="chip btn-like${F.mijn?' on':''}" id="kl_mijn">Mijn relaties</span>
-          <span class="chip btn-like${F.actief?' on':''}" id="kl_act">Alleen klanten (actief)</span>
+          <!-- <button>, geen <span>: dit zijn filters die je aan- en uitzet,
+               dus ze horen in de tabvolgorde te staan en aria-pressed hoort
+               de stand te vertellen. -->
+          <button type="button" class="chip btn-like${F.mijn?' on':''}" id="kl_mijn" aria-pressed="${F.mijn}">Mijn relaties</button>
+          <button type="button" class="chip btn-like${F.actief?' on':''}" id="kl_act" aria-pressed="${F.actief}">Alleen klanten (actief)</button>
           <span class="spacer"></span>
           <span class="meta num" id="kl_telling"></span>
         </div>
@@ -315,8 +318,20 @@ function overzicht(mount, acties){
   mount.querySelector('#kl_eig').onchange  = e => { zet('eigenaar', e.target.value); lijst(mount); };
   mount.querySelector('#kl_br').onchange   = e => { zet('branche',  e.target.value); lijst(mount); };
   mount.querySelector('#kl_sort').onchange = e => { zet('sort',     e.target.value); lijst(mount); };
-  mount.querySelector('#kl_mijn').onclick  = e => { zet('mijn',   !F.mijn);   e.target.classList.toggle('on', F.mijn);   lijst(mount); };
-  mount.querySelector('#kl_act').onclick   = e => { zet('actief', !F.actief); e.target.classList.toggle('on', F.actief); lijst(mount); };
+  /* currentTarget, niet target: bij een <button> kan de klik op een tekstknoop
+     of een span binnenin landen en dan zette de oude code de klasse op het
+     verkeerde element (chip bleef "uit" staan terwijl het filter aan was). */
+  const knopFilter = (sel, sleutel) => {
+    const b = mount.querySelector(sel);
+    b.onclick = () => {
+      zet(sleutel, !F[sleutel]);
+      b.classList.toggle('on', F[sleutel]);
+      b.setAttribute('aria-pressed', String(F[sleutel]));
+      lijst(mount);
+    };
+  };
+  knopFilter('#kl_mijn','mijn');
+  knopFilter('#kl_act','actief');
   lijst(mount);
 }
 
@@ -1389,7 +1404,12 @@ function tabsHtml(k, c){
   return [
     ['vacatures','Vacatures', c.vs.length],
     ['kandidaten','Kandidaten', c.cs.length],
-    ['activiteiten','Activiteiten & notities', 0],
+    /* Deze tab was de enige zonder teller (stond hard op 0). Daardoor moest
+       je hem openklikken om te zien of er íets was vastgelegd, terwijl het
+       detailpaneel in Sales die teller wél laat zien. */
+    ['activiteiten','Activiteiten & notities',
+      acts.length + (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+        .reduce((n,ct) => n + CRM.activiteitenVoor('contact', ct.id).length, 0)],
     ['evaluaties','Evaluaties', evals.length],
     ['documenten','Documenten', docs.length]
   ].map(([kk,lbl,n]) => `<button class="tab${tabActief===kk?' on':''}" data-t="${kk}">${h(lbl)}${n?`<span class="cnt num">${n}</span>`:''}</button>`).join('');
@@ -1566,13 +1586,15 @@ function tabActiviteiten(el, k){
 /* Activiteit of notitie vastleggen. @collega in de tekst geeft die
    collega automatisch een melding (CRM.verwerkTags). */
 async function logVia(k, soort, hint){
-  const tekst = await CRM.vraag((CRM.ACT_SOORTEN[soort]||{}).lbl || 'Activiteit',
-    {multiline:true, hint, knop:'Vastleggen'});
+  const lbl = (CRM.ACT_SOORTEN[soort]||{}).lbl || 'Activiteit';
+  const tekst = await CRM.vraag(lbl, {multiline:true, hint, knop:'Vastleggen'});
   if(!tekst) return;
   await CRM.logActiviteit('klant', k.naam, soort, tekst);
   CRM.verwerkTags(tekst, 'klant', k.naam);
   if(soort !== 'notitie') await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
-  else CRM.toast('Vastgelegd','ok');
+  /* Ná bewaarKlant: die meldt "Opgeslagen", dezelfde tekst als bij het
+     bewaren van de klantgegevens. Zeg liever wát er is vastgelegd. */
+  CRM.toast(`${lbl} vastgelegd bij ${k.naam}`, 'ok');
   CRM.render();
 }
 

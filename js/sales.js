@@ -162,7 +162,11 @@ async function legVast(naam, soort){
   await CRM.logActiviteit('klant', naam, soort, tekst);
   CRM.verwerkTags(tekst, 'klant', naam);
   if(soort!=='notitie') await bewaarKlant(naam, {laatst_contact: CRM.todayISO()});
-  else CRM.toast('Vastgelegd','ok');
+  /* Ná bewaarKlant, want die roept zelf "Opgeslagen" — en dat is precies
+     dezelfde melding als bij het bewaren van de kerngegevens. Je zag dus
+     niet of je telefoontje was vastgelegd of dat er iets anders gebeurde.
+     Nu staat er wát er is vastgelegd en bij wie. */
+  CRM.toast(`${s.lbl} vastgelegd bij ${naam}`, 'ok');
   const dr = CRM.drawer.el();
   if(dr && dr.classList.contains('on')) tekenDrawer(dr, naam);
 }
@@ -753,9 +757,12 @@ function radarHTML(){
   </div>`);
 
   const telStatus = s => radar.filter(r=>(r.status||'nieuw')===s).length;
+  /* <button>, geen <span>: dit is een filter dat je aan- en uitzet, dus je
+     moet er met Tab bij kunnen en aria-pressed moet de stand vertellen. */
   const chips = [['nieuw','Nieuw'],['toegevoegd','Toegevoegd'],['genegeerd','Genegeerd'],['alles','Alles']]
-    .map(([k,l])=>`<span class="chip btn-like${rFilter===k?' on':''}" data-rstatus="${k}">${l}${
-      k==='alles'?'':` <span class="num">${telStatus(k)}</span>`}</span>`).join('');
+    .map(([k,l])=>`<button type="button" class="chip btn-like${rFilter===k?' on':''}" data-rstatus="${k}"
+      aria-pressed="${rFilter===k}">${l}${
+      k==='alles'?'':` <span class="num">${telStatus(k)}</span>`}</button>`).join('');
   const bronnen = [...new Set(radar.map(r=>r.bron).filter(Boolean))].sort();
   delen.push(`<div class="row r-bar">
     ${chips}
@@ -997,7 +1004,7 @@ function tekenActies(){
       <option value="">Alle eigenaren</option>
       ${eigenaren().map(e=>`<option value="${h(e)}"${eigFilter===e?' selected':''}>${h(e)}</option>`).join('')}
     </select>
-    <span class="chip btn-like${mijn?' on':''}" id="s_mijn">Mijn klanten</span>
+    <button type="button" class="chip btn-like${mijn?' on':''}" id="s_mijn" aria-pressed="${mijn}">Mijn klanten</button>
     <div class="seg" id="s_seg"${tab==='kansen'?' style="display:none"':''}>
       <button data-w="bord" class="${weergave==='bord'?'on':''}">Bord</button>
       <button data-w="lijst" class="${weergave==='lijst'?'on':''}">Lijst</button>
@@ -1026,8 +1033,12 @@ function tekenInhoud(){
       <div class="row tight s-acts">${tab==='radar'
         ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>
            <button class="btn" data-rzoek${rZoeken?' disabled':''}>${rZoeken?'Bezig met zoeken…':'↻ Nu zoeken'}</button>`
-        : `<button class="btn ghost" data-radar>Leadradar</button>
-           <button class="btn" data-nieuwekans>+ Nieuwe kans</button>`}
+        /* Hier stond ook nog een knop "Leadradar", vlak naast de tab die
+           precies hetzelfde doet en er precies hetzelfde heet. Twee keer
+           dezelfde weg naast elkaar laat je aarzelen of ze wel hetzelfde
+           doen, en hij trok aandacht weg van de enige echte actie op dit
+           scherm. De tab blijft; de knop is weg. */
+        : `<button class="btn" data-nieuwekans>+ Nieuwe kans</button>`}
       </div>
     </div>`;
 
