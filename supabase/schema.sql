@@ -34,6 +34,12 @@ alter table clients add column if not exists sinds       date;
 alter table clients add column if not exists laatst_contact date;
 alter table clients add column if not exists note        text default '';
 alter table clients add column if not exists fase_sinds  date;
+-- Vestigingsgegevens: staan in elke samenwerkingsovereenkomst op de
+-- partijkaart. Zonder deze velden typt de AM ze per contract opnieuw in.
+alter table clients add column if not exists adres       text default '';
+alter table clients add column if not exists postcode    text default '';
+alter table clients add column if not exists plaats      text default '';
+alter table clients add column if not exists kvk         text default '';
 
 -- Profielfoto per gebruiker (zichtbaar voor het team).
 alter table profiles add column if not exists foto_url   text default '';
@@ -223,13 +229,65 @@ create table if not exists crm_contacten (
 );
 create index if not exists crm_contacten_klant on crm_contacten(klant);
 
+-- ─── 7b. Opgemaakte stukken (SWO, plan van aanpak, kandidaatprofiel) ──
+-- Alleen de INGEVULDE VELDEN worden bewaard, niet de opmaak — die zit in de
+-- app. Zo blijft een stuk altijd opnieuw te openen en aan te passen, en gaat
+-- een huisstijlwijziging vanzelf mee in alle oude stukken.
+create table if not exists crm_stukken (
+  id          text primary key,
+  soort       text not null,                   -- swo | pva | profiel
+  klant       text default '',
+  kandidaat_id text default '',
+  titel       text default '',
+  velden      jsonb default '{}'::jsonb,       -- alle ingevulde waarden
+  versie      int  default 1,
+  status      text default 'concept',          -- concept | verstuurd | getekend
+  door        text default '',
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+create index if not exists crm_stukken_klant on crm_stukken(klant);
+create index if not exists crm_stukken_soort on crm_stukken(soort, updated_at desc);
+
+-- ─── 7c. Commerciële afspraken per klant (de basis onder facturatie) ──
+-- Wat er in de samenwerkingsovereenkomst is afgesproken, maar dan als
+-- gegevens in plaats van als lopende tekst in een Word-bestand. Hiermee kan
+-- het systeem de fee zelf uitrekenen zodra een contract getekend wordt, in
+-- plaats van dat iemand het document erbij pakt en met de hand rekent.
+--
+-- De grondslag volgt de overeenkomst: 12x bruto maandsalaris, vakantiegeld,
+-- een VASTE dertiende maand of eindejaarsuitkering, en VASTE ploegen- of
+-- functietoeslagen. Variabele bonussen, overwerk en onkosten tellen niet mee.
+create table if not exists crm_afspraken (
+  id             text primary key,
+  klant          text not null,
+  soort          text default 'ws',              -- ws | detachering | uitzenden
+  fee_regels     jsonb default '[]'::jsonb,      -- [{functiegroep, pct}]
+  fee_standaard  numeric,                        -- % als geen functiegroep matcht
+  grondslag      jsonb default '{}'::jsonb,      -- {maanden, vt_pct, eju, toeslag, overig}
+  betaaltermijn  int  default 30,                -- dagen na factuurdatum
+  factuurmoment  text default 'contract',        -- contract | start
+  garantie_mnd   int  default 2,                 -- proeftijd vervangingsregeling
+  garantie_soort text default 'vervanging',      -- vervanging | restitutie | geen
+  exclusiviteit_wkn int,
+  ingang         date,
+  einde          date,
+  stuk_id        text default '',                -- de SWO in crm_stukken
+  actief         boolean default true,
+  notitie        text default '',
+  door           text default '',
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create index if not exists crm_afspraken_klant on crm_afspraken(klant, actief);
+
 -- ─── 8. RLS: team mag alles in crm_* lezen/schrijven ──────────
 -- (Financiële cijfers zitten in fin_*-tabellen; die houden hun eigen,
 --  striktere policies waardoor alleen Tjeerd erbij kan.)
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten','crm_meldingen','crm_leadradar']
+  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen','crm_contacten','crm_meldingen','crm_leadradar','crm_stukken']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists team_all on %I', t);
@@ -237,11 +295,26 @@ begin
   end loop;
 end $$;
 
+-- ─── 8b. crm_afspraken: alleen Tjeerd ─────────────────────────
+-- Deze tabel bevat fee-percentages. Die horen bij het geld, niet bij de rest
+-- van het CRM, dus hij valt bewust BUITEN de team-policy hierboven en krijgt
+-- dezelfde harde afscherming als de fin_*-tabellen in het financebord.
+-- Afschermen in de interface is niet genoeg: zonder deze policy staan de
+-- percentages gewoon in het geheugen van elke browser die inlogt.
+do $$
+begin
+  execute 'alter table crm_afspraken enable row level security';
+  execute 'drop policy if exists afspraken_owner_only on crm_afspraken';
+  execute 'create policy afspraken_owner_only on crm_afspraken for all to authenticated
+           using (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')
+           with check (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')';
+end $$;
+
 -- ─── 9. Realtime ──────────────────────────────────────────────
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_kansen','crm_meldingen']
+  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_kansen','crm_meldingen','crm_stukken']
   loop
     begin execute format('alter publication supabase_realtime add table %I', t);
     exception when duplicate_object then null; end;

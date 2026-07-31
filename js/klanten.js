@@ -17,6 +17,9 @@ const P = {
 const F = {
   zoek:     P.get('zoek',''),
   weergave: P.get('weergave','kaarten'),
+  /* fase stond hier niet bij: het filter werd wél weggeschreven maar bij
+     een herlaad nooit teruggezet, terwijl de andere filters dat wel doen. */
+  fase:     P.get('fase',''),
   eigenaar: P.get('eigenaar',''),
   branche:  P.get('branche',''),
   mijn:     P.get('mijn',false),
@@ -65,30 +68,101 @@ function zorgContacten(){
   });
 }
 
+/* ─── Rekenmotor js/fee.js ────────────────────────────────────────
+   Staat als scripttag in index.html en is er dan gewoon. Dit is het
+   vangnet voor het geval die regel sneuvelt: zonder de motor blijft
+   het afsprakenblok anders stilzwijgend weg en snapt niemand waarom.
+   De motor is puur rekenwerk zonder afhankelijkheden, dus de volgorde
+   van laden maakt niet uit. */
+function zorgFee(){
+  if(CRM.fee || document.getElementById('js_fee_motor')) return;
+  const s = document.createElement('script');
+  s.id = 'js_fee_motor'; s.src = 'js/fee.js';
+  s.onload = () => { if(CRM.view === 'klanten') CRM.render(); };
+  s.onerror = () => console.warn('js/fee.js kon niet geladen worden');
+  document.head.appendChild(s);
+}
+
+/* ─── Commerciële afspraken (crm_afspraken) ───────────────────────
+   PRIVACY — hier ligt de grens. Deze tabel bevat fee-percentages en
+   is in Supabase afgeschermd tot Tjeerd (policy afspraken_owner_only,
+   net als de fin_*-tabellen). Zonder CRM.canSeeMoney() vragen we hem
+   dus niet eens op: een mislukte query die een lege lijst oplevert is
+   verwarrender dan helemaal niets tonen. */
+let _afsprGeladen = false, _afsprTabelMist = false;
+const TABEL_WEG = e => /does not exist|schema cache|relation/i.test(e && e.message || '');
+function zorgAfspraken(){
+  if(!Array.isArray(CRM.state.afspraken)) CRM.state.afspraken = [];
+  if(!CRM.canSeeMoney() || _afsprGeladen) return;
+  _afsprGeladen = true;
+  /* In demo bestaat de tabel nog niet — dan lokaal, zodat opslaan en
+     teruglezen wél te testen is. */
+  if(CRM.demo){ CRM.state.afspraken = P.get('afspraken', []); return; }
+  CRM.sb.from('crm_afspraken').select('*').then(r => {
+    if(r.error){
+      if(TABEL_WEG(r.error)) _afsprTabelMist = true;
+      else console.warn('crm_afspraken laden', r.error);
+      return;
+    }
+    CRM.state.afspraken = r.data || [];
+    if(CRM.view === 'klanten') CRM.render();
+  });
+}
+
+/* ─── Index: één keer per render, niet één keer per klant ─────────
+   cijfers() en laatsteContact() draaien voor élke rij in het overzicht
+   (222 relaties in productie). Zonder index betekende dat 222 × alle
+   kandidaten omzetten (349) en 222 × alle activiteiten (2000) door-
+   lopen — bij elke toetsaanslag in het zoekveld opnieuw. Nu bouwen we
+   drie mappen op klantnaam en is een rij een simpele lookup. */
+let _idx = null, _idxStempel = '';
+const stempel = () => [CRM.state.cands.length, CRM.state.vacs.length,
+  CRM.state.activiteiten.length, CRM.state.clients.length].join('/');
+function verversIndex(){ _idx = null; }
+function index(){
+  const s = stempel();
+  if(_idx && _idxStempel === s) return _idx;
+  const bij = (map, sleutel, waarde) => {
+    const l = map.get(sleutel); if(l) l.push(waarde); else map.set(sleutel, [waarde]);
+  };
+  const kand = new Map(), vac = new Map(), act = new Map(), actKand = new Map();
+  CRM.kandidaten().forEach(c => bij(kand, c.klant, c));
+  (CRM.state.vacs||[]).forEach(v => bij(vac, v.klant, v));
+  (CRM.state.activiteiten||[]).forEach(a => {
+    if(a.entiteit === 'klant')         bij(act,     String(a.ref), a);
+    else if(a.entiteit === 'kandidaat') bij(actKand, String(a.ref), a);
+  });
+  _idx = {kand, vac, act, actKand}; _idxStempel = s;
+  return _idx;
+}
+const LEEG = [];
+
 /* Laatste contactmoment: nieuwste van clients.laatst_contact en de activiteiten. */
 function laatsteContact(k){
-  const acts = CRM.activiteitenVoor('klant', k.naam).map(a=>a.op).filter(Boolean).sort();
-  const uitAct = acts.length ? acts[acts.length-1] : null;
-  const uitK   = k.laatst_contact || null;
+  let uitAct = null;
+  for(const a of (index().act.get(k.naam) || LEEG))
+    if(a.op && (!uitAct || a.op > uitAct)) uitAct = a.op;
+  const uitK = k.laatst_contact || null;
   if(!uitAct) return uitK;
   if(!uitK)   return uitAct;
   return new Date(uitAct) > new Date(uitK) ? uitAct : uitK;
 }
 
-const wasVoorgesteld = c => (c.historie||[]).some(x => x.fase === 'Voorgesteld')
-  || (CRM.faseIdx(c.fase) >= 1 && CRM.faseIdx(c.fase) <= 10);
-
 /* Kerncijfers van één klant — de kaart toont er nog maar een paar,
-   de rest leeft in Performance › Per klant. */
+   de rest leeft in Performance › Per klant.
+   Let op: 'lopend' vereist een ÉCHTE fase. Kandidaten uit de oude
+   ATS-import hebben fase '' en zitten in geen enkel traject; zonder
+   die check tellen ze allemaal mee als "in traject" (zelfde valkuil
+   als CRM.isActiefLopend in js/data.js beschrijft). */
 function cijfers(naam){
-  const cs = CRM.kandidaten().filter(c => c.klant === naam);
-  const vs = CRM.vacaturesVan(naam);
+  const i = index();
+  const cs = i.kand.get(naam) || LEEG;
+  const vs = i.vac.get(naam)  || LEEG;
   const open   = vs.filter(v => (v.status||'Open') === 'Open');
-  const lopend = cs.filter(c => !CRM.DONE.includes(c.fase));
+  const lopend = cs.filter(c => !!c.fase && !CRM.DONE.includes(c.fase));
   const nu     = cs.filter(c => CRM.PLACED.includes(c.fase));
   const ooit   = cs.filter(c => CRM.PLACED.includes(c.fase) || c.fase === 'Gestopt' || c.geplaatstOp);
-  const vg     = cs.filter(wasVoorgesteld);
-  return {cs, vs, open, lopend, nu, ooit, vg};
+  return {cs, vs, open, lopend, nu, ooit};
 }
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
@@ -123,6 +197,7 @@ async function bewaarRij(tabel, veld, rij, bestaat){
   const lijst = CRM.state[veld];
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
   if(i >= 0) Object.assign(lijst[i], rij); else lijst.unshift(rij);
+  verversIndex();
   if(!CRM.demo){
     if(bestaat){
       const {error} = await CRM.sb.from(tabel).update(rij).eq('id', rij.id);
@@ -139,10 +214,39 @@ async function bewaarRij(tabel, veld, rij, bestaat){
 }
 async function verwijderRij(tabel, veld, id){
   CRM.state[veld] = CRM.state[veld].filter(r => String(r.id) !== String(id));
+  verversIndex();
   if(!CRM.demo){
     const {error} = await CRM.sb.from(tabel).delete().eq('id', id);
     if(error) return CRM.fout('Verwijderen mislukt', error);
   }
+  CRM.toast('Verwijderd','ok');
+}
+
+/* Afspraken apart: eigen tabel, eigen afscherming, en in demo geen
+   database maar localStorage (de tabel bestaat daar niet). */
+async function bewaarAfspraak(rij, bestaat){
+  if(!CRM.canSeeMoney()) return;
+  const lijst = CRM.state.afspraken || (CRM.state.afspraken = []);
+  const i = lijst.findIndex(r => String(r.id) === String(rij.id));
+  if(i >= 0) Object.assign(lijst[i], rij); else lijst.unshift(rij);
+  if(CRM.demo){ P.set('afspraken', lijst); CRM.toast('Opgeslagen','ok'); return; }
+  const nu = new Date().toISOString();
+  const q = bestaat
+    ? CRM.sb.from('crm_afspraken').update(Object.assign({}, rij, {updated_at:nu})).eq('id', rij.id)
+    : CRM.sb.from('crm_afspraken').insert(rij);
+  const {error} = await q;
+  if(error){
+    if(TABEL_WEG(error)) return CRM.toast('Tabel crm_afspraken bestaat nog niet — draai eerst supabase/schema.sql','err');
+    return CRM.fout('Opslaan mislukt', error);
+  }
+  CRM.toast('Opgeslagen','ok');
+}
+async function verwijderAfspraak(id){
+  if(!CRM.canSeeMoney()) return;
+  CRM.state.afspraken = (CRM.state.afspraken || []).filter(r => String(r.id) !== String(id));
+  if(CRM.demo){ P.set('afspraken', CRM.state.afspraken); CRM.toast('Verwijderd','ok'); return; }
+  const {error} = await CRM.sb.from('crm_afspraken').delete().eq('id', id);
+  if(error) return CRM.fout('Verwijderen mislukt', error);
   CRM.toast('Verwijderd','ok');
 }
 
@@ -228,11 +332,17 @@ function gefilterd(){
     if(F.actief   && !actieveNamen.has(k.naam)) return false;
     if(q && ![k.naam,k.locatie,k.branche,k.eigenaar,k.fase].join(' ').toLowerCase().includes(q)) return false;
     return true;
-  }).map(k => ({k, c:cijfers(k.naam), lc:laatsteContact(k)}));
+  }).map(k => {
+    const lc = laatsteContact(k);
+    /* Dagen hier één keer uitrekenen: de sortering vergeleek anders per
+       paar vier keer een datum en dat is bij 222 relaties zonde. */
+    const d = CRM.dagenGeleden(lc);
+    return {k, c:cijfers(k.naam), lc, d: d == null ? 9999 : d};
+  });
 
   const srt = {
     naam:      (a,b) => a.k.naam.localeCompare(b.k.naam,'nl'),
-    contact:   (a,b) => ((CRM.dagenGeleden(b.lc) == null ? 9999 : CRM.dagenGeleden(b.lc)) - (CRM.dagenGeleden(a.lc) == null ? 9999 : CRM.dagenGeleden(a.lc))),
+    contact:   (a,b) => b.d - a.d || a.k.naam.localeCompare(b.k.naam,'nl'),
     vacatures: (a,b) => b.c.open.length - a.c.open.length || a.k.naam.localeCompare(b.k.naam,'nl'),
     traject:   (a,b) => b.c.lopend.length - a.c.lopend.length || a.k.naam.localeCompare(b.k.naam,'nl')
   }[F.sort];
@@ -322,9 +432,15 @@ function kaart(mount, acties, naam){
 
   acties.innerHTML = `
     <button class="btn ghost sm" id="k_terug">← Overzicht</button>
-    <button class="btn ghost sm" id="k_bewerk">Gegevens bewerken</button>`;
+    <button class="btn ghost sm" id="k_bewerk">Gegevens bewerken</button>
+    ${CRM.pva ? '<button class="btn ghost sm" id="k_pva">Plan van aanpak</button>' : ''}
+    ${CRM.swo ? '<button class="btn ghost sm" id="k_swo">Samenwerkingsovereenkomst</button>' : ''}`;
   acties.querySelector('#k_terug').onclick  = () => CRM.ga('klanten');
   acties.querySelector('#k_bewerk').onclick = () => klantModal(k);
+  /* Documentgeneratoren (js/pva.js, js/swo.js). Ze openen als paneel over de
+     kaart heen, dus je blijft in de context van deze klant. */
+  acties.querySelector('#k_pva')?.addEventListener('click', () => CRM.pva.open({klant:k.naam}));
+  acties.querySelector('#k_swo')?.addEventListener('click', () => CRM.swo.open({klant:k.naam}));
 
   mount.innerHTML = `
     <div class="stack">
@@ -332,6 +448,7 @@ function kaart(mount, acties, naam){
       <div class="kl-dossier">
         <aside class="kl-rail">
           ${gegevensHtml(k)}
+          ${afspraakBlokHtml()}
           ${contactBlokHtml()}
           ${afsprakenBlokHtml()}
           ${takenBlokHtml()}
@@ -431,6 +548,9 @@ function kaart(mount, acties, naam){
   ctZoek.oninput = () => { contactZoek = ctZoek.value; contactLijst(ctLijst, k); };
   mount.querySelector('#ct_nieuw').onclick = () => contactModal(k, null);
   contactLijst(ctLijst, k);
+
+  /* Rail: commerciële afspraken (alleen achter CRM.canSeeMoney) */
+  railAfspraak(mount, k);
 
   /* Rail: komende afspraken (alleen met gekoppelde Outlook) */
   railAfspraken(mount, k);
@@ -554,6 +674,345 @@ function gegevensHtml(k){
     </div></div>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   RAIL: COMMERCIËLE AFSPRAKEN
+   De brug tussen de samenwerkingsovereenkomst en de facturatie: hier
+   staat wat er commercieel is afgesproken, zodat het systeem na een
+   getekend contract zelf kan rekenen in plaats van iemand met het
+   Word-document erbij.
+
+   PRIVACY: dit hele blok — en élke euro en élk percentage erin —
+   staat achter CRM.canSeeMoney(). Zonder rechten wordt de kaart niet
+   getekend, niets opgehaald en niets berekend. Wat een AM wél moet
+   zien (welke velden hij nog moet invullen) komt uit
+   CRM.fee.watMist(), en dat is bewust bedrag- en percentageloos.
+   ═══════════════════════════════════════════════════════════════ */
+const feeAan = () => CRM.canSeeMoney() && !!CRM.fee;
+
+function afspraakBlokHtml(){
+  if(!feeAan()) return '';
+  return `<div class="card kl-railkaart kl-r-af" id="af_kaart">
+    <div class="card-h"><div class="h2">Commerciële afspraken</div><span class="spacer"></span>
+      <button class="btn sub sm" id="af_beheer">Beheren</button></div>
+    <div class="card-b" id="af_body"></div></div>`;
+}
+
+/* Alle afspraken van deze klant, nieuwste ingangsdatum eerst. */
+function afsprakenVan(naam){
+  if(!feeAan()) return [];
+  const n = String(naam||'').trim().toLowerCase();
+  return (CRM.state.afspraken || [])
+    .filter(a => String(a.klant||'').trim().toLowerCase() === n)
+    .slice().sort((x,y) => String(y.ingang||y.created_at||'').localeCompare(String(x.ingang||x.created_at||'')));
+}
+const soortLbl = k => (CRM.fee.SOORTEN.find(s => s.k === k) || {lbl:k||'—'}).lbl;
+const garantieLbl = k => (CRM.fee.GARANTIESOORTEN.find(s => s.k === k) || {lbl:k||'—'}).lbl;
+const factuurLbl = k => (CRM.fee.FACTUURMOMENTEN.find(s => s.k === k) || {lbl:k||'—'}).lbl;
+/* "23%" of "20 – 25%" — één regel die het tariefbeeld samenvat. */
+function feeBereik(a){
+  const p = a.fee_regels.map(r => r.pct).filter(x => x != null);
+  if(a.fee_standaard != null) p.push(a.fee_standaard);
+  if(!p.length) return '';
+  const min = Math.min(...p), max = Math.max(...p);
+  return min === max ? CRM.pct(min, min % 1 ? 1 : 0)
+    : CRM.pct(min, min % 1 ? 1 : 0) + ' – ' + CRM.pct(max, max % 1 ? 1 : 0);
+}
+function looptijdTekst(a){
+  if(!a.ingang && !a.einde) return 'Zonder einddatum';
+  if(a.ingang && a.einde) return CRM.fmtDate(a.ingang) + ' – ' + CRM.fmtDate(a.einde);
+  return a.ingang ? 'Vanaf ' + CRM.fmtDate(a.ingang) : 'Tot ' + CRM.fmtDate(a.einde);
+}
+
+function railAfspraak(mount, k){
+  if(!feeAan()) return;
+  const body = mount.querySelector('#af_body'); if(!body) return;
+  const beheer = mount.querySelector('#af_beheer');
+  if(beheer) beheer.onclick = () => afspraakDrawer(k);
+
+  const alle = afsprakenVan(k.naam);
+  const huidig = CRM.fee.voorKlant(k.naam);
+  if(!huidig){
+    body.innerHTML = (_afsprTabelMist
+        ? '<div class="note warn kl-af-note">De tabel <code>crm_afspraken</code> bestaat nog niet — draai eerst supabase/schema.sql.</div>'
+        : '<p class="meta kl-af-leeg">Nog niets vastgelegd. Zonder afspraak kan het systeem na een getekend contract niet zelf rekenen.</p>')
+      + `<button class="btn ghost sm kl-railknop" id="af_nieuw">+ Afspraak vastleggen</button>`;
+    const nw = body.querySelector('#af_nieuw');
+    if(nw) nw.onclick = () => afspraakDrawer(k, null, true);
+    return;
+  }
+
+  const a = CRM.fee.normaliseer(huidig);
+  const rij = (lbl, val) => `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
+    <span class="kl-gg-val trunc">${val || '<span class="meta">—</span>'}</span></div>`;
+  const bereik = feeBereik(a);
+  const verlopen = !CRM.fee.geldigOp(huidig, CRM.todayISO()) || !a.actief;
+  const ouder = alle.length - 1;
+
+  body.innerHTML = `
+    ${verlopen ? '<div class="note warn kl-af-note">Deze afspraak loopt vandaag niet — leg de nieuwe voorwaarden vast.</div>' : ''}
+    <div class="kl-gg">
+      ${rij('Dienstverlening', h(soortLbl(a.soort)))}
+      ${rij('Fee', bereik ? `<span class="num">${h(bereik)}</span>` : '')}
+      ${rij('Functiegroepen', a.fee_regels.length ? `<span class="num">${a.fee_regels.length}</span>` : '<span class="meta">alleen standaard</span>')}
+      ${rij('Factuurmoment', h(factuurLbl(a.factuurmoment)))}
+      ${rij('Betaaltermijn', `<span class="num">${a.betaaltermijn}</span> dagen`)}
+      ${rij('Garantie', a.garantie_soort === 'geen' ? h(garantieLbl(a.garantie_soort))
+          : `<span class="num">${a.garantie_mnd}</span> mnd · ${h(garantieLbl(a.garantie_soort))}`)}
+      ${rij('Exclusiviteit', a.exclusiviteit_wkn != null ? `<span class="num">${a.exclusiviteit_wkn}</span> wkn` : '')}
+      ${rij('Looptijd', h(looptijdTekst(a)))}
+    </div>
+    ${ouder > 0 ? `<p class="meta kl-af-ouder">${ouder} eerdere afspraak${ouder===1?'':'en'} in het archief</p>` : ''}`;
+}
+
+/* ─── Beheerpaneel: formulier + voorbeeldberekening + historie ──── */
+function afspraakDrawer(k, id, nieuw){
+  if(!feeAan()) return;
+  const alle = afsprakenVan(k.naam);
+  const huidig = id ? alle.find(a => String(a.id) === String(id))
+                    : (nieuw ? null : (CRM.fee.voorKlant(k.naam) || alle[0] || null));
+  const bestaat = !!huidig;
+  /* Op een kopie werken: annuleren mag niets veranderd hebben. */
+  const a = huidig ? JSON.parse(JSON.stringify(huidig)) : CRM.fee.leegAfspraak(k.naam);
+  a.klant = k.naam;
+  if(!Array.isArray(a.fee_regels)) a.fee_regels = [];
+  if(!a.grondslag || typeof a.grondslag !== 'object') a.grondslag = {};
+  const g = a.grondslag;
+  const nr = v => v == null || v === '' ? '' : h(String(v));
+
+  const opt = (lijst, gekozen) => lijst.map(s =>
+    `<option value="${h(s.k)}"${s.k === gekozen ? ' selected' : ''}>${h(s.lbl)}</option>`).join('');
+
+  CRM.drawer.open(`
+    <div class="drawer-h">
+      <div style="min-width:0;flex:1">
+        <div class="h2" style="font-size:17px">Commerciële afspraken</div>
+        <div class="meta" style="margin-top:3px">${h(k.naam)}${bestaat ? '' : ' · nieuwe afspraak'}</div>
+      </div>
+      <button class="btn ghost sm x" data-close>Sluiten</button>
+    </div>
+    <div class="drawer-b">
+      <p class="sub kl-af-intro">Wat hier staat, gebruikt het systeem om na een getekend contract
+        zelf de fee te berekenen. De grondslag volgt de tekst van de samenwerkingsovereenkomst.</p>
+
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Dienstverlening en looptijd</div></div>
+        <div class="card-b"><div class="f-grid">
+          <div class="f-row"><label for="af_soort">Soort dienstverlening</label>
+            <select id="af_soort">${opt(CRM.fee.SOORTEN, a.soort || 'ws')}</select></div>
+          <div class="f-row"><label for="af_ingang">Ingangsdatum</label>
+            <input type="date" id="af_ingang" value="${nr(String(a.ingang||'').slice(0,10))}"></div>
+          <div class="f-row"><label for="af_einde">Einddatum <span class="meta">(leeg = doorlopend)</span></label>
+            <input type="date" id="af_einde" value="${nr(String(a.einde||'').slice(0,10))}"></div>
+          <div class="f-row"><label for="af_excl">Exclusiviteit (weken)</label>
+            <input type="number" id="af_excl" min="0" step="1" value="${nr(a.exclusiviteit_wkn)}"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="af_actief"${a.actief === false ? '' : ' checked'}> Deze afspraak is actief</label>
+        </div></div>
+
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Fee per functiegroep</div><span class="spacer"></span>
+          <button class="btn sub sm" id="af_regel_add">+ Regel</button></div>
+        <div class="card-b">
+          <div id="af_regels" class="kl-af-regels"></div>
+          <div class="f-row kl-af-std"><label for="af_std">Standaardpercentage <span class="meta">(als geen functiegroep past)</span></label>
+            <input type="number" id="af_std" min="0" max="100" step="0.1" value="${nr(a.fee_standaard)}"></div>
+        </div></div>
+
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Grondslag</div></div>
+        <div class="card-b">
+          <p class="meta kl-af-uitleg">Volgens de overeenkomst: twaalf maal het bruto maandsalaris, vakantiegeld,
+            een vaste dertiende maand of eindejaarsuitkering en vaste ploegen- of functietoeslagen.
+            Variabele bonussen, overwerk en onkostenvergoedingen tellen niet mee.</p>
+          <div class="f-grid">
+            <div class="f-row"><label for="af_mnd">Aantal maandsalarissen</label>
+              <input type="number" id="af_mnd" min="1" max="24" step="1" value="${nr(g.maanden != null ? g.maanden : 12)}"></div>
+            <div class="f-row"><label for="af_vt">Vakantiegeld (%) <span class="meta">(leeg = volg de kandidaat)</span></label>
+              <input type="number" id="af_vt" min="0" max="100" step="0.01" value="${nr(g.vt_pct != null ? g.vt_pct : 8)}"></div>
+          </div>
+          <label class="check"><input type="checkbox" id="af_g_tos"${g.toeslag === false ? '' : ' checked'}> Vaste ploegen- of functietoeslagen tellen mee</label>
+          <label class="check"><input type="checkbox" id="af_g_eju"${g.eju === false ? '' : ' checked'}> Vaste dertiende maand of eindejaarsuitkering telt mee</label>
+          <label class="check"><input type="checkbox" id="af_g_ovg"${g.overig === false ? '' : ' checked'}> Overige vaste, structurele toeslagen tellen mee</label>
+        </div></div>
+
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Facturatie en garantie</div></div>
+        <div class="card-b"><div class="f-grid">
+          <div class="f-row"><label for="af_fm">Factuurmoment</label>
+            <select id="af_fm">${opt(CRM.fee.FACTUURMOMENTEN, a.factuurmoment || 'contract')}</select></div>
+          <div class="f-row"><label for="af_bt">Betaaltermijn (dagen)</label>
+            <input type="number" id="af_bt" min="0" max="180" step="1" value="${nr(a.betaaltermijn != null ? a.betaaltermijn : 30)}"></div>
+          <div class="f-row"><label for="af_gs">Garantieregeling</label>
+            <select id="af_gs">${opt(CRM.fee.GARANTIESOORTEN, a.garantie_soort || 'vervanging')}</select></div>
+          <div class="f-row"><label for="af_gm">Garantieduur (maanden)</label>
+            <input type="number" id="af_gm" min="0" max="24" step="1" value="${nr(a.garantie_mnd != null ? a.garantie_mnd : 2)}"></div>
+        </div>
+        <div class="f-row"><label for="af_note">Notitie <span class="meta">(afwijkingen, wie akkoord gaf)</span></label>
+          <textarea id="af_note" rows="2">${h(a.notitie||'')}</textarea></div>
+        </div></div>
+
+      <div class="card kl-af-sec kl-af-vb"><div class="card-h"><div class="h2">Voorbeeldberekening</div></div>
+        <div class="card-b">
+          <p class="meta kl-af-uitleg">Vul een maandloon in en zie meteen wat de grondslag en de fee worden —
+            zo merk je een verkeerd ingevulde afspraak nu, niet bij de eerste plaatsing.</p>
+          <div class="f-grid kl-af-vbin">
+            <div class="f-row"><label for="vb_loon">Bruto maandsalaris</label>
+              <input type="number" id="vb_loon" min="0" step="50" value="2960"></div>
+            <div class="f-row"><label for="vb_functie">Functie</label>
+              <input type="text" id="vb_functie" value="${h((a.fee_regels[0] && (a.fee_regels[0].functiegroep||'')) || '')}" placeholder="Bijv. Procesoperator"></div>
+            <div class="f-row"><label for="vb_tos">Ploegentoeslag (%)</label>
+              <input type="number" id="vb_tos" min="0" max="100" step="0.5" value="15"></div>
+            <div class="f-row"><label for="vb_eju">Dertiende maand (%)</label>
+              <input type="number" id="vb_eju" min="0" max="100" step="0.01" value="8.33"></div>
+          </div>
+          <div id="vb_uit"></div>
+        </div></div>
+
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Eerdere afspraken</div></div>
+        <div class="card-b" id="af_hist"></div></div>
+    </div>
+    <div class="drawer-f">
+      ${bestaat ? '<button class="btn sub" id="af_weg">Verwijderen</button>' : ''}
+      <span class="spacer"></span>
+      <button class="btn ghost" data-close>Annuleren</button>
+      <button class="btn" id="af_ok">Opslaan</button>
+    </div>`, {onOpen(dr){
+
+      /* ── Fee-regels: rijen toevoegen en verwijderen ───────────── */
+      const regelsEl = dr.querySelector('#af_regels');
+      const tekenRegels = () => {
+        regelsEl.innerHTML = a.fee_regels.length ? a.fee_regels.map((r,i) => `
+          <div class="kl-af-regel">
+            <input type="text" data-rf="${i}" value="${h(r.functiegroep || r.functie || '')}" placeholder="Functiegroep, bijv. Operator (verlading en proces)">
+            <input type="number" data-rp="${i}" min="0" max="100" step="0.1" value="${nr(r.pct)}" placeholder="%">
+            <button class="btn sub sm" data-rweg="${i}" title="Regel verwijderen" aria-label="Regel verwijderen">×</button>
+          </div>`).join('')
+          : '<p class="meta kl-af-leeg">Nog geen functiegroepen — dan geldt het standaardpercentage voor alles.</p>';
+        regelsEl.querySelectorAll('[data-rf]').forEach(inp => inp.oninput = () => {
+          a.fee_regels[+inp.dataset.rf].functiegroep = inp.value; traag();
+        });
+        regelsEl.querySelectorAll('[data-rp]').forEach(inp => inp.oninput = () => {
+          a.fee_regels[+inp.dataset.rp].pct = inp.value === '' ? null : Number(inp.value); traag();
+        });
+        regelsEl.querySelectorAll('[data-rweg]').forEach(b => b.onclick = () => {
+          a.fee_regels.splice(+b.dataset.rweg, 1); tekenRegels(); voorbeeld();
+        });
+      };
+      dr.querySelector('#af_regel_add').onclick = () => {
+        a.fee_regels.push({functiegroep:'', pct:a.fee_standaard != null ? a.fee_standaard : 23});
+        tekenRegels(); voorbeeld();
+      };
+
+      /* ── Formulier terug in het object ────────────────────────── */
+      const v = sel => dr.querySelector(sel);
+      const num = sel => { const x = v(sel).value; return x === '' ? null : Number(x); };
+      function lees(){
+        a.soort = v('#af_soort').value;
+        a.ingang = v('#af_ingang').value || null;
+        a.einde  = v('#af_einde').value || null;
+        a.exclusiviteit_wkn = num('#af_excl');
+        a.actief = v('#af_actief').checked;
+        a.fee_standaard = num('#af_std');
+        a.grondslag = {
+          maanden: num('#af_mnd') || 12,
+          vt_pct:  num('#af_vt'),
+          toeslag: v('#af_g_tos').checked,
+          eju:     v('#af_g_eju').checked,
+          overig:  v('#af_g_ovg').checked
+        };
+        a.factuurmoment  = v('#af_fm').value;
+        a.betaaltermijn  = num('#af_bt') != null ? num('#af_bt') : 30;
+        a.garantie_soort = v('#af_gs').value;
+        a.garantie_mnd   = num('#af_gm') != null ? num('#af_gm') : 0;
+        a.notitie        = v('#af_note').value.trim();
+        a.fee_regels     = a.fee_regels
+          .map(r => ({functiegroep:String(r.functiegroep || r.functie || '').trim(), pct:r.pct == null || r.pct === '' ? null : Number(r.pct)}));
+      }
+
+      /* ── Voorbeeldberekening ──────────────────────────────────── */
+      function voorbeeld(){
+        lees();
+        const vandaag = CRM.todayISO();
+        const proef = {
+          naam:'Voorbeeld', klant:k.naam, functie:v('#vb_functie').value.trim(),
+          maandloon: num('#vb_loon'), toeslagPct: num('#vb_tos'),
+          vtPct: null, ejuPct: num('#vb_eju'), overigPct: 0,
+          geplaatstOp: vandaag, start: vandaag
+        };
+        const r = CRM.fee.bereken(proef, a);
+        const uit = dr.querySelector('#vb_uit');
+        if(!r.grondslag.compleet){
+          uit.innerHTML = '<p class="meta kl-af-leeg">Vul een bruto maandsalaris in om de berekening te zien.</p>';
+          return;
+        }
+        const regels = r.grondslag.opbouw.map(o => `<tr><td>${h(o.label)}${
+            o.pct ? ` <span class="meta num">${h(CRM.pct(o.pct, o.pct % 1 ? 2 : 0))}</span>` : ''}</td>
+          <td class="num n">${h(CRM.euro(o.bedrag))}</td></tr>`).join('');
+        const buiten = r.grondslag.buiten.map(b =>
+          `<tr class="kl-af-buiten"><td>${h(b.label)} <span class="meta">${h(b.reden)}</span></td><td class="num n">—</td></tr>`).join('');
+        uit.innerHTML = `
+          <div class="tblwrap"><table class="tbl kl-af-tbl">
+            <tbody>${regels}${buiten}</tbody>
+            <tfoot>
+              <tr class="kl-af-tot"><td>Grondslag (bruto jaarsalaris)</td><td class="num n">${h(CRM.euro(r.grondslag.jaarSalaris))}</td></tr>
+              <tr class="kl-af-fee"><td>Fee${r.pct != null ? ` <span class="num">${h(CRM.pct(r.pct, r.pct % 1 ? 1 : 0))}</span>` : ''}</td>
+                <td class="num n">${r.fee != null ? h(CRM.euro(r.fee)) : '—'}</td></tr>
+            </tfoot>
+          </table></div>
+          <p class="meta kl-af-waarom">${h(r.uitleg)}</p>
+          <p class="meta kl-af-waarom">Factuur ${h(String(factuurLbl(r.factuurmoment)).toLowerCase())} · betaaltermijn
+            <span class="num">${r.betaaltermijn}</span> dagen${r.vervaldatum ? ' · vervalt ' + h(CRM.fmtDate(r.vervaldatum)) : ''}${
+            r.garantieTot ? ' · garantie tot ' + h(CRM.fmtDate(r.garantieTot)) : ''}</p>
+          ${r.waarschuwingen.map(w => `<div class="note warn kl-af-note">${h(w)}</div>`).join('')}`;
+      }
+      const traag = CRM.debounce(voorbeeld, 220);
+
+      dr.querySelectorAll('.drawer-b input, .drawer-b select, .drawer-b textarea')
+        .forEach(el => { el.oninput = traag; el.onchange = voorbeeld; });
+
+      /* ── Historie ─────────────────────────────────────────────── */
+      const hist = dr.querySelector('#af_hist');
+      const andere = alle.filter(x => String(x.id) !== String(a.id));
+      hist.innerHTML = andere.length ? `<div class="kl-af-hist">${andere.map(x => {
+        const n = CRM.fee.normaliseer(x);
+        const loopt = n.actief && CRM.fee.geldigOp(x, CRM.todayISO());
+        const bereik = feeBereik(n);
+        return `<div class="kl-af-hrij">
+          <div style="min-width:0">
+            <b class="trunc">${h(soortLbl(n.soort))}${bereik ? ' · ' : ''}<span class="num">${h(bereik)}</span></b>
+            <div class="meta num">${h(looptijdTekst(n))}${n.door ? ' · ' + h(n.door) : ''}</div>
+          </div>
+          <span class="spacer"></span>
+          ${loopt ? '<span class="chip green">Loopt</span>' : '<span class="chip">Afgelopen</span>'}
+          <button class="btn sub sm" data-open="${h(String(x.id))}">Openen</button>
+        </div>`;
+      }).join('')}</div>` : '<p class="meta kl-af-leeg">Dit is de eerste vastgelegde afspraak met deze klant.</p>';
+      hist.querySelectorAll('[data-open]').forEach(b => b.onclick = () => afspraakDrawer(k, b.dataset.open));
+
+      /* ── Opslaan / verwijderen ────────────────────────────────── */
+      dr.querySelector('#af_ok').onclick = async () => {
+        lees();
+        a.fee_regels = a.fee_regels.filter(r => r.functiegroep || r.pct != null);
+        if(a.fee_standaard == null && !a.fee_regels.some(r => r.pct != null))
+          return CRM.toast('Vul minstens één percentage in','err');
+        if(a.ingang && a.einde && a.einde < a.ingang)
+          return CRM.toast('De einddatum ligt vóór de ingangsdatum','err');
+        if(!a.door) a.door = CRM.me();
+        CRM.drawer.close();
+        await bewaarAfspraak(Object.assign({}, a), bestaat);
+        CRM.logActiviteit('klant', k.naam, 'systeem',
+          bestaat ? 'Commerciële afspraak bijgewerkt' : 'Commerciële afspraak vastgelegd');
+        CRM.render();
+      };
+      const weg = dr.querySelector('#af_weg');
+      if(weg) weg.onclick = async () => {
+        if(!await CRM.bevestig('Afspraak verwijderen?', 'De vastgelegde voorwaarden voor ' + k.naam + ' verdwijnen.')) return;
+        CRM.drawer.close();
+        await verwijderAfspraak(a.id);
+        CRM.render();
+      };
+
+      tekenRegels();
+      voorbeeld();
+    }});
+}
+
 /* ─── Rail: contactpersonen — altijd in beeld naast de tabs ────── */
 function contactBlokHtml(){
   return `<div class="card kl-railkaart kl-r-ct">
@@ -671,6 +1130,11 @@ function contactLijst(el, k){
   const alle = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
     .sort((a,b) => (b.hoofd?1:0) - (a.hoofd?1:0) || String(a.naam).localeCompare(String(b.naam),'nl'));
   const rij = q ? alle.filter(x => (String(x.naam)+' '+String(x.functie||'')).toLowerCase().includes(q)) : alle;
+
+  /* Zoekveld alleen tonen als er iets te zoeken valt — bij nul of twee
+     contactpersonen is het een dood bedieningselement in een smalle rail. */
+  const zoekBox = document.querySelector('.kl-r-ct .kl-ctzoek');
+  if(zoekBox) zoekBox.hidden = alle.length < 4 && !q;
 
   if(!alle.length){
     el.innerHTML = CRM.ui.leeg('Nog geen contactpersonen','Leg vast met wie je bij deze klant schakelt.');
@@ -890,10 +1354,14 @@ function signalenHtml(k, c, lc){
   if(d == null)   s.push('Er is nog nooit contact vastgelegd bij deze klant.');
   else if(d > 30) s.push(`Al <b class="num">${d}</b> dagen geen contact — tijd voor een belletje.`);
 
-  c.open.forEach(v => {
-    const dg = CRM.dagenGeleden(v.aangemaakt);
-    if(dg != null && dg > 30) s.push(`Vacature <b>${h(v.functie)}</b> staat <b class="num">${dg}</b> dagen open.`);
-  });
+  /* Oude vacatures samen in één regel: een klant met acht stilstaande
+     vacatures kreeg anders acht losse bullets en dan leest niemand het. */
+  const oud = c.open.map(v => ({v, dg: CRM.dagenGeleden(v.aangemaakt)}))
+    .filter(x => x.dg != null && x.dg > 30).sort((a,b) => b.dg - a.dg);
+  if(oud.length === 1)
+    s.push(`Vacature <b>${h(oud[0].v.functie)}</b> staat <b class="num">${oud[0].dg}</b> dagen open.`);
+  else if(oud.length > 1)
+    s.push(`<b class="num">${oud.length}</b> vacatures staan langer dan 30 dagen open — langste: <b>${h(oud[0].v.functie)}</b> (<b class="num">${oud[0].dg}</b> dagen).`);
 
   const garantie = c.cs.filter(x => {
     if(x.fase !== 'Gestopt' || !x.gestoptOp || !x.geplaatstOp) return false;
@@ -972,9 +1440,10 @@ function tabVacatures(el, k, c){
 function vacatureHtml(v, k){
   const dg = CRM.dagenGeleden(v.aangemaakt);
   const open = (v.status||'Open') === 'Open';
-  const kandidaten = CRM.kandidaten().filter(c => c.klant === k.naam &&
-    (String(c.vacatureId||'') === String(v.id) || (!c.vacatureId && c.functie === v.functie)));
-  const lopend = kandidaten.filter(c => !CRM.DONE.includes(c.fase));
+  const kandidaten = (index().kand.get(k.naam) || LEEG).filter(c =>
+    String(c.vacatureId||'') === String(v.id) || (!c.vacatureId && c.functie === v.functie));
+  /* Ook hier: fase '' = geïmporteerd, niet in traject. */
+  const lopend = kandidaten.filter(c => !!c.fase && !CRM.DONE.includes(c.fase));
   const sal = (v.sal_min || v.sal_max)
     ? `<span class="chip num">${CRM.euro(v.sal_min)} – ${CRM.euro(v.sal_max)}</span>` : '';
   return `<details class="kl-vac"${open?' open':''}>
@@ -997,9 +1466,11 @@ function vacatureHtml(v, k){
 }
 
 function laatsteKandContact(c){
-  const alle = CRM.activiteitenVoor('kandidaat', c.id).map(a=>a.op)
-    .concat((c.notities||[]).map(n=>n.op)).filter(Boolean).sort();
-  return alle.length ? alle[alle.length-1] : (c.since || null);
+  let nieuwste = null;
+  const kijk = op => { if(op && (!nieuwste || op > nieuwste)) nieuwste = op; };
+  (index().actKand.get(String(c.id)) || LEEG).forEach(a => kijk(a.op));
+  (c.notities || LEEG).forEach(n => kijk(n.op));
+  return nieuwste || c.since || null;
 }
 function kandRegel(c){
   const lc = laatsteKandContact(c);
@@ -1007,7 +1478,11 @@ function kandRegel(c){
   return `<a class="kl-kand" data-kand="${h(String(c.id))}" href="#kandidaten/${encodeURIComponent(c.id)}">
     <div class="kl-kand-wie"><b class="trunc">${h(c.naam)}</b>
       <div class="meta trunc">${h(c.functie||'—')}${c.woonplaats?' · '+h(c.woonplaats):''}</div></div>
-    <span class="chip"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>
+    ${c.fase
+      ? `<span class="chip"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>`
+      /* Geïmporteerde kandidaten hebben geen fase; een lege chip met alleen
+         een stip zegt niets — benoem het gewoon. */
+      : '<span class="chip">zonder fase</span>'}
     ${c.rec?`<span class="meta kl-rec">${h(c.rec)}</span>`:''}
     <span class="meta num kl-when${d!=null&&d>=14?' let':''}">${h(CRM.geleden(lc)||'—')}</span>
   </a>`;
@@ -1438,12 +1913,24 @@ async function opvolgtaak(k, d, datum){
 CRM.klantInplannen = (klant, opts) => planModal(klant, opts || {});
 
 /* ─── Klantgegevens bewerken ──────────────────────────────────── */
+/* De vestigingskolommen (adres/postcode/plaats/kvk) komen pas in de database
+   nadat supabase/schema.sql opnieuw is gedraaid. Zolang ze er niet zijn,
+   mogen we ze ook niet meesturen bij het opslaan — dan faalt de hele update
+   en kan er niets meer aan een klant gewijzigd worden. `select *` levert de
+   kolom als sleutel op zodra hij bestaat, dus daar kunnen we op afgaan. */
+const heeftVestigingVelden = () => {
+  const rij = (CRM.state.clients || []).find(Boolean);
+  return !!rij && 'adres' in rij;
+};
+
 function klantModal(k){
+  const vest = heeftVestigingVelden();
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Klantgegevens</div></div>
     <div class="modal-b">
       <div class="f-grid">
         <div class="f-row"><label>Fase</label><select id="g_fase">
+          <option value=""${!k.fase?' selected':''}>Zonder fase</option>
           ${CRM.SALES_FASES.map(f=>`<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
         <div class="f-row"><label>Eigenaar (AM)</label><input type="text" id="g_eig" value="${h(k.eigenaar||'')}"></div>
         <div class="f-row"><label>Team</label><input type="text" id="g_team" value="${h(k.team||'')}" placeholder="Bijv. Tjeerd of Tjerk"></div>
@@ -1454,21 +1941,47 @@ function klantModal(k){
         <div class="f-row"><label>Website</label><input type="url" id="g_web" value="${h(k.website||'')}"></div>
         <div class="f-row"><label>Laatste contact</label><input type="date" id="g_lc" value="${h(k.laatst_contact||'')}"></div>
       </div>
+      <!-- Vestigingsgegevens: staan op de partijkaart van elke samenwerkings-
+           overeenkomst. Eén keer hier invullen scheelt ze per contract
+           opnieuw intypen. -->
+      ${vest ? `
+      <div class="label" style="margin-top:18px">Vestigingsgegevens</div>
+      <p class="sub" style="margin:2px 0 10px">Worden overgenomen in de samenwerkingsovereenkomst.</p>
+      <div class="f-grid">
+        <div class="f-row"><label>Adres</label><input type="text" id="g_adres" value="${h(k.adres||'')}" placeholder="Straat en huisnummer"></div>
+        <div class="f-row"><label>Postcode</label><input type="text" id="g_pc" value="${h(k.postcode||'')}" placeholder="1234 AB"></div>
+        <div class="f-row"><label>Plaats</label><input type="text" id="g_pl" value="${h(k.plaats||'')}"></div>
+        <div class="f-row"><label>KvK-nummer</label><input type="text" id="g_kvk" value="${h(k.kvk||'')}" inputmode="numeric"></div>
+      </div>` : ''}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="g_ok">Opslaan</button></div>`, {onOpen(m){
     m.querySelector('#g_ok').onclick = async () => {
+      const oudeFase = k.fase || '';
+      const nieuweFase = m.querySelector('#g_fase').value;
       const w = {
-        fase:m.querySelector('#g_fase').value, eigenaar:m.querySelector('#g_eig').value.trim(),
+        fase:nieuweFase, eigenaar:m.querySelector('#g_eig').value.trim(),
         branche:m.querySelector('#g_br').value.trim(), locatie:m.querySelector('#g_loc').value.trim(),
         telefoon:m.querySelector('#g_tel').value.trim(), email:m.querySelector('#g_mail').value.trim(),
         website:m.querySelector('#g_web').value.trim(), laatst_contact:m.querySelector('#g_lc').value || null
       };
+      if(vest) Object.assign(w, {
+        adres:m.querySelector('#g_adres').value.trim(), postcode:m.querySelector('#g_pc').value.trim(),
+        plaats:m.querySelector('#g_pl').value.trim(), kvk:m.querySelector('#g_kvk').value.trim()
+      });
+      /* Fase wisselen hier moet hetzelfde doen als op het bord en in de
+         zijrail: de teller "dagen in fase" opnieuw laten lopen en de wissel
+         vastleggen. Anders klopt de doorlooptijd niet meer en staat er
+         nergens wie de fase heeft veranderd. */
+      const faseGewisseld = nieuweFase !== oudeFase;
+      if(faseGewisseld) w.fase_sinds = CRM.todayISO();
       /* Team los opslaan: de kolom kan ontbreken zolang de aanvulling-SQL
          niet gedraaid is — dan mag de rest van de wijziging niet sneuvelen. */
       const team = m.querySelector('#g_team').value.trim();
       CRM.modal.close();
       await bewaarKlant(k.naam, w);
+      if(faseGewisseld)
+        CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oudeFase||'—'} → ${nieuweFase||'—'}`);
       if(team !== (k.team||'')) await bewaarTeam(k, team);
       CRM.render();
     };
@@ -1828,11 +2341,22 @@ CRM.registerModule('klanten', {
   title:'Relaties', icon:'▣', onderschrift:'Van lead tot klant — relatiekaarten en accountbeheer',
   render(mount, acties, params){
     zorgContacten();
+    zorgFee();               // rekenmotor js/fee.js
+    zorgAfspraken();         // alleen als deze gebruiker geld mag zien
+    verversIndex();          // data kan buiten deze module gewijzigd zijn
     if(params && params.id) kaart(mount, acties, String(params.id));
     else overzicht(mount, acties);
   }
 });
 })();
+
+/* VERZOEK AAN CORE — crm_afspraken in CRM.load():
+   deze module haalt `crm_afspraken` zelf op (zorgAfspraken()) omdat de
+   tabel bewust buiten de team-policy valt: alleen Tjeerd mag hem lezen.
+   Zodra core een geld-tak in CRM.load() krijgt (naast de fin_*-tabellen
+   van het financebord) hoort hij daar thuis — mét dezelfde harde
+   voorwaarde `CRM.canSeeMoney()` vóór de query, niet erna. Voor een
+   teamlid mag de query niet eens vertrekken. */
 
 /* VERZOEK AAN CORE:
    1. `crm_contacten` wordt inmiddels wél door CRM.load() opgehaald — de

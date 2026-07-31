@@ -57,7 +57,8 @@
 /* ── Mini-funnel + afspraak + acties ────────────────────────── */
 .hot-onder{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px;padding-left:64px}
 .hot-funnel{display:flex;flex-direction:column;gap:6px;min-width:0}
-.hot-segbar{display:flex;height:6px;border-radius:99px;overflow:hidden;max-width:340px;gap:2px}
+/* width:100% + een max-width uit de module: nooit breder dan de kaart. */
+.hot-segbar{display:flex;height:6px;border-radius:99px;overflow:hidden;width:100%;max-width:340px;gap:2px}
 .hot-segbar i{display:block;height:100%;border-radius:99px;min-width:8px}
 .hot-funtekst{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--txt-2)}
 .hot-funtekst .leeg{color:var(--muted)}
@@ -72,7 +73,7 @@
   display:flex;align-items:center;gap:10px;padding:7px 10px;margin:0 -10px;
   border-radius:var(--r-s);cursor:pointer;
 }
-.hk-row:hover{background:#f7f9f1}
+.hk-row:hover{background:var(--card-2)}
 .hk-row b{font-size:13px;font-weight:600;color:var(--ink)}
 .hk-row .chip{font-size:11px;padding:1px 8px}
 .hk-row .hk-actie{font-size:12px;color:var(--muted);margin-left:auto;text-align:right}
@@ -87,7 +88,7 @@
   border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;cursor:pointer;
   transition:border-color .12s,background .12s;
 }
-.hm-item:hover{border-color:var(--olive-l);background:#f7f9f1}
+.hm-item:hover{border-color:var(--olive-l);background:var(--card-2)}
 .hm-item b{font-size:13.5px}
 .hm-item .hk-ga{color:var(--muted)}
 .hi-preview{

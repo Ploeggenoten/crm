@@ -61,7 +61,8 @@
 .pf-funnel{display:flex;flex-direction:column;gap:7px}
 .pf-fr{display:flex;align-items:center;gap:12px}
 .pf-fl{flex:0 0 158px;font-size:12.5px;color:var(--txt-2)}
-.pf-fb{flex:1;min-width:0;position:relative;height:22px;background:#e8ecdf;border-radius:4px;display:flex;align-items:center}
+/* Baanachtergrond uit het design-system (--well-2), geen eigen hex. */
+.pf-fb{flex:1;min-width:0;position:relative;height:22px;background:var(--well-2);border-radius:4px;display:flex;align-items:center}
 /* Eén accent: elke fase heeft al zijn eigen regel met naam en percentage, dus
    elf verschillende fasekleuren maakten hier alleen een regenboog van. */
 .pf-fb > i{display:block;height:100%;border-radius:4px;background:var(--olive-l);min-width:2px}
@@ -94,13 +95,18 @@
   .pf-area > i{width:9px}
   .pf-kiezer .seg button{padding:5px 8px;font-size:11.5px}
 }
+/* Op een telefoon staat pf-doelkop onder elkaar; 40px tussenruimte maakte
+   van het Doel-blok dan een halve schermlengte lucht. */
+@media (max-width:560px){
+  .pf-doelkop{gap:22px}
+}
 
 /* ═══ Naamlijsten (getekend / gestopt / nazorg) — verhuisd uit Recruitment ═══ */
 .pf-namen{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:16px}
 .pf-namenkol{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
 .pf-namenkol .label{margin-bottom:8px}
 .pf-naam{display:flex;align-items:baseline;justify-content:space-between;gap:10px;width:100%;
-  background:none;border:none;border-bottom:1px solid #f0f2e8;padding:7px 2px;cursor:pointer;
+  background:none;border:none;border-bottom:1px solid var(--line);padding:7px 2px;cursor:pointer;
   font-family:var(--body);font-size:13px;font-weight:600;color:var(--txt);text-align:left}
 .pf-naam:last-child{border-bottom:none}
 .pf-naam:hover{color:var(--olive)}

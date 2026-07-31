@@ -94,11 +94,13 @@ function formModal(titel, velden, knop='Opslaan'){
 async function zetFase(naam, nieuw){
   const k = CRM.klant(naam);
   if(!k || faseVan(k)===nieuw) return;
-  const oud = faseVan(k);
+  const oud = faseVan(k), oudSinds = k.fase_sinds;
   k.fase = nieuw; k.fase_sinds = CRM.todayISO();
   if(!CRM.demo){
     const {error} = await CRM.sb.from('clients').update({fase:nieuw, fase_sinds:k.fase_sinds}).eq('naam', naam);
-    if(error){ k.fase = oud; teken(); return CRM.fout('Fase opslaan mislukt', error); }
+    /* Ook fase_sinds terugdraaien — anders staat er na een mislukte
+       wissel "0 dagen" in de oude fase en lijkt het traject vers. */
+    if(error){ k.fase = oud; k.fase_sinds = oudSinds; teken(); return CRM.fout('Fase opslaan mislukt', error); }
   }
   CRM.logActiviteit('klant', naam, 'fase', `Fase gewijzigd: ${oud} → ${nieuw}`);
   CRM.toast(`${naam} → ${nieuw}`, 'ok');
@@ -174,8 +176,12 @@ function kpiHTML(alle){
   const klant  = alle.filter(k=>faseVan(k)==='Afgerond');
   const conv   = alle.length ? Math.round(klant.length / alle.length * 100) : 0;
 
-  /* Doorlooptijd = hoe lang de lopende trajecten al in hun huidige fase staan. */
-  const dagen = actief.map(k=>CRM.dagenGeleden(k.fase_sinds)).filter(n=>n!=null);
+  /* Doorlooptijd hoort bij de tegel waar hij onder staat: hoe lang de
+     ingeplande gesprekken al in díe fase staan. Eerder werd hier het
+     gemiddelde over álle actieve trajecten getoond — inclusief de bak
+     geïmporteerde leads — onder het label "gesprekken ingepland".
+     Negatieve waarden (fase_sinds in de toekomst) tellen niet mee. */
+  const dagen = gespr.map(k=>CRM.dagenGeleden(k.fase_sinds)).filter(n=>n!=null && n>=0);
   const gem = dagen.length ? Math.round(dagen.reduce((a,b)=>a+b,0)/dagen.length) : null;
   /* 'Stil' telt niet in de fase Lead — anders domineert de bak geïmporteerde
      leads dit signaal en zie je echte stilvallers niet meer. */
@@ -890,7 +896,13 @@ async function radarZoeken(){
     const uit = await resp.json().catch(()=>({}));
     if(resp.status===404 || resp.status===503)
       throw Object.assign(new Error('nog niet gedeployed'), {setup:true});
-    if(!resp.ok) throw new Error(uit.error || ('de zoekfunctie gaf status ' + resp.status));
+    /* uit.error kan een string of een object zijn — nooit rechtstreeks in
+       een melding plakken, anders leest de gebruiker "[object Object]". */
+    if(!resp.ok){
+      const reden = typeof uit.error === 'string' ? uit.error
+                  : (uit.error && uit.error.message) || uit.message || '';
+      throw new Error(reden || ('de zoekfunctie gaf status ' + resp.status));
+    }
     await laadRadar(true);
     CRM.toast(`Zoeken klaar: ${uit.nieuw??0} nieuw, ${uit.bijgewerkt??0} bijgewerkt`, 'ok');
   }catch(e){
@@ -1119,17 +1131,10 @@ CRM.registerModule('sales', {
 
 /* ═══════════════════════════════════════════════════════════════
    VERZOEK AAN CORE
-   0. BELANGRIJK — bug in css/base.css: `.scrim` heeft geen
-      `pointer-events:none` zolang hij niet `.on` is. Zodra één module
-      een modaal of drawer heeft geopend en weer gesloten, blijft er een
-      onzichtbaar vlak over het hele scherm liggen en is de app niet
-      meer klikbaar. Gevonden bij het testen van sales (een gesloten
-      "Nieuwe lead"-modaal van recruitment blokkeerde het hele bord).
-      Graag in base.css zetten:
-          .scrim{pointer-events:none}
-          .scrim.on{pointer-events:auto}
-      Zolang dat niet gebeurd is staat dezelfde regel als noodverband
-      bovenin css/sales.css — die mag weg zodra base.css klopt.
+   0. [OPGELOST] De gesloten `.scrim` ving alle muiskliks op waardoor de
+      app na één modaal onklikbaar werd. css/base.css zet nu zelf
+      `pointer-events:none` op `.scrim` en `auto` op `.scrim.on`; het
+      noodverband in css/sales.css is daarmee verwijderd.
    1. `crm_contacten` wordt niet door `CRM.load()` opgehaald en
       `CRM.state.contacten` staat niet in de begintoestand. In demo
       vult demo.js het wel. Graag toevoegen aan CRM.load() en aan

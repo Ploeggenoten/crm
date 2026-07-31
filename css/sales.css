@@ -3,11 +3,9 @@
    Sales draait op volleBreedte:true — de pagina heeft dus geen padding en
    de module regelt zijn eigen marges. */
 
-/* TIJDELIJKE REPARATIE — hoort in base.css thuis, zie VERZOEK AAN CORE in
-   js/sales.js. Een gesloten scrim (modal/drawer) blijft nu over het scherm
-   liggen met opacity:0 maar vangt wél alle muiskliks, waardoor de hele app
-   na één modal onklikbaar wordt. Deze regel zet dat recht. */
-.scrim:not(.on){pointer-events:none}
+/* (De tijdelijke .scrim-reparatie is weg: css/base.css zet nu zelf
+   `pointer-events:none` op een gesloten scrim. Zie ook de VERZOEK AAN
+   CORE-notitie onderaan js/sales.js, punt 0 — die is daarmee afgehandeld.) */
 
 /* Blok met eigen padding (het bord brengt zijn eigen padding mee). */
 .s-wrap{padding:20px 26px 0}
@@ -45,7 +43,7 @@
 
 /* Rij in het detailpaneel (contactpersoon, document, kans, vacature). */
 .s-ct{
-  display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid #eef0e4;
+  display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line);
 }
 .s-ct:last-child{border-bottom:none}
 .s-ct b{font-size:13.5px;font-weight:600;display:block}
@@ -56,7 +54,7 @@
 /* Takenlijst in het detailpaneel. */
 .s-taakrij{
   display:flex;align-items:center;gap:10px;padding:9px 2px;
-  border-bottom:1px solid #eef0e4;font-size:13.5px;cursor:pointer;
+  border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;
 }
 .s-taakrij:last-child{border-bottom:none}
 .s-taakrij.af{color:var(--muted);text-decoration:line-through}

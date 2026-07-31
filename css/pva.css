@@ -1,0 +1,141 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLAN VAN AANPAK-GENERATOR — het venster (velden links, voorbeeld
+   rechts) en de printstand.
+
+   LET OP: de opmaak van het VEL zelf staat niet hier maar in
+   js/pva.js (VELCSS, geschaald onder .pvadoc). Dat is bewust: het
+   voorbeeld in de app en de HTML die je downloadt gebruiken exact
+   dezelfde regels, dus ze kunnen nooit uiteenlopen. Hieronder staat
+   alleen de interface eromheen, met tokens uit base.css.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Venster ─────────────────────────────────────────────────── */
+.pvag{position:fixed;inset:0;z-index:45}
+.pvag-scrim{position:absolute;inset:0;background:rgba(25,35,20,.42);backdrop-filter:blur(2px)}
+.pvag-paneel{
+  position:absolute;inset:24px;margin:auto;max-width:1320px;max-height:calc(100vh - 48px);
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r-l);
+  box-shadow:var(--sh-3);display:flex;flex-direction:column;overflow:hidden;
+}
+.pvag-kop{
+  background:var(--card);border-bottom:1px solid var(--line);
+  padding:14px 20px;display:flex;align-items:flex-start;gap:10px;flex:0 0 auto;
+}
+.pvag-kop > div:first-child{flex:1;min-width:0}
+.pvag-kop #pvag_x{font-size:15px;line-height:1}
+.pvag-body{flex:1;display:flex;min-height:0}
+.pvag-voet{
+  border-top:1px solid var(--line);background:var(--card);
+  padding:12px 20px;display:flex;gap:10px;align-items:center;flex:0 0 auto;flex-wrap:wrap;
+}
+.pvag-status{width:auto;min-width:118px;padding:7px 28px 7px 12px;font-size:12.5px}
+/* .btn zet display:inline-flex; dat wint van het hidden-attribuut. */
+.pvag-voet [hidden]{display:none!important}
+.pvag-voet .meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ─── Velden links ────────────────────────────────────────────── */
+.pvag-zij{
+  flex:0 0 372px;width:372px;border-right:1px solid var(--line);
+  padding:14px;overflow-y:auto;background:var(--well);
+}
+.pvag-blok{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  margin-bottom:10px;overflow:hidden;
+}
+.pvag-blok > summary{
+  display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;
+  padding:11px 12px;font-size:13px;background:var(--card);
+}
+.pvag-blok > summary::-webkit-details-marker{display:none}
+.pvag-blok > summary::after{
+  content:'▾';margin-left:auto;color:var(--muted);font-size:11px;transition:transform .14s;
+}
+.pvag-blok[open] > summary::after{transform:rotate(180deg)}
+.pvag-blok[open] > summary{border-bottom:1px solid var(--line)}
+.pvag-blok > summary b{font-weight:600;color:var(--ink)}
+.pvag-blok.afwijkend{border-color:var(--amber-line)}
+.pvag-blok.afwijkend > summary{background:var(--amber-bg)}
+.pvag-blok .chip.sm{font-size:10.5px;padding:1px 8px}
+.pvag-blok.uit{opacity:.55}
+.pvag-blok.uit > summary b{text-decoration:line-through}
+.pvag-herstel{margin-left:2px;font-size:11.5px}
+.pvag-binnen{padding:12px 12px 4px}
+.pvag-binnen .f-row{margin-bottom:10px}
+.pvag-binnen textarea{min-height:60px;font-size:12.5px;line-height:1.45}
+.pvag-binnen input[type=text]{font-size:12.5px}
+.pvag-binnen .note{margin:2px 0 12px}
+
+/* Schakelaar in de kop van een blok */
+.pvag-aan{display:inline-flex;align-items:center;flex:none}
+.pvag-aan.leeg{width:14px}
+.pvag-aan input{width:14px;height:14px;margin:0;cursor:pointer}
+.pvag-aan span{display:none}
+
+/* Rijen die je kunt toevoegen, verwijderen en herschikken */
+.pvag-rijen{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.pvag-rij{
+  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);
+  padding:8px 10px 2px;
+}
+.pvag-rij.uit{opacity:.5}
+.pvag-rij-k{display:flex;align-items:center;gap:2px;margin-bottom:6px}
+.pvag-rij-k .label{font-size:10px}
+.pvag-rij-k .check{padding:0;font-size:12px}
+.pvag-rij-k .btn.sm{padding:2px 7px;font-size:11px}
+.pvag-rij .f-row:last-child{margin-bottom:8px}
+.pvag-duo{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
+
+/* Eerdere plannen (in een modaal) */
+.pvag-eerder{display:flex;flex-direction:column;gap:8px}
+.pvag-eerder-rij{
+  text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r-s);
+  padding:10px 12px;cursor:pointer;font:inherit;color:inherit;display:flex;flex-direction:column;gap:2px;
+}
+.pvag-eerder-rij:hover{border-color:var(--olive-l);background:var(--card-2)}
+.pvag-eerder-rij b{font-size:13px;font-weight:600}
+
+/* ─── Voorbeeld rechts ────────────────────────────────────────── */
+.pvag-preview{
+  flex:1;min-width:0;overflow:auto;padding:20px;
+  background:var(--well-2);display:flex;justify-content:center;align-items:flex-start;
+}
+.pvag-schaal{transform-origin:top left;flex:0 0 auto}
+.pvag-vel{width:920px;border:1px solid var(--line);overflow:hidden;border-radius:var(--r-s)}
+
+/* ─── Printstand ──────────────────────────────────────────────────
+   Aan een klasse gehangen in plaats van @media print, zodat de
+   printweergave ook op het scherm te controleren is. js/pva.js zet de
+   klasse rond window.print() en op 'beforeprint', en haalt hem er
+   direct weer af. */
+body:has(.pvag.pvag-print) > *:not(.pvag){display:none!important}
+body:has(.pvag.pvag-print){overflow:visible!important;background:#fff}
+.pvag.pvag-print{position:static;inset:auto}
+.pvag.pvag-print .pvag-scrim,
+.pvag.pvag-print .pvag-kop,
+.pvag.pvag-print .pvag-zij,
+.pvag.pvag-print .pvag-voet{display:none!important}
+.pvag.pvag-print .pvag-paneel{
+  position:static;inset:auto;max-width:none;max-height:none;margin:0;display:block;
+  background:#fff;border:0;border-radius:0;box-shadow:none;overflow:visible;
+}
+.pvag.pvag-print .pvag-body{display:block;min-height:0}
+.pvag.pvag-print .pvag-preview{display:block;overflow:visible;padding:0;background:#fff}
+.pvag.pvag-print .pvag-schaal{transform:none!important;width:auto!important;height:auto!important}
+.pvag.pvag-print .pvag-vel{
+  width:auto;border:0;border-radius:0;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+
+/* ─── Smal scherm: velden boven, voorbeeld eronder ────────────── */
+@media (max-width:900px){
+  .pvag-paneel{inset:0;max-height:100vh;border-radius:0;border:0}
+  .pvag-body{flex-direction:column;overflow:hidden}
+  .pvag-zij{flex:0 0 auto;width:auto;border-right:0;border-bottom:1px solid var(--line);
+    max-height:46vh;overflow-y:auto}
+  .pvag-preview{flex:1;min-height:200px;padding:12px;overflow:auto;justify-content:flex-start}
+  .pvag-kop{padding:10px 12px;flex-wrap:wrap}
+  .pvag-voet{padding:10px 12px}
+  .pvag-voet .btn{flex:1 0 auto;justify-content:center}
+  .pvag-voet .meta{flex:1 0 100%}
+  .pvag-status{flex:1 0 auto}
+}

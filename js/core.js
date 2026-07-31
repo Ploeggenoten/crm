@@ -258,7 +258,12 @@ CRM.rowToCand = r => ({
   id:r.id, naam:r.naam, klant:r.klant, functie:r.functie, type:r.type||'', fase:r.fase,
   datum:r.datum||'', tijd:r.tijd||'', start:r.start||'', since:r.since||'', bron:r.bron||'',
   geplaatstOp:r.geplaatst_op||'', gestoptOp:r.gestopt_op||'', garantieMnd:r.garantie_mnd||0,
-  maandloon:r.maandloon||null, toeslagPct:r.toeslag_pct||null, reden:r.reden||'',
+  /* Nul is een ingevulde waarde, geen lege. Met `||null` was een kandidaat
+     zónder ploegentoeslag niet te onderscheiden van eentje waarbij het veld
+     nog leeg is, en bleef de feeberekening eeuwig om die toeslag vragen.
+     Zelfde vorm als vt_pct/eju_pct twee regels verderop. */
+  maandloon:r.maandloon==null?null:Number(r.maandloon),
+  toeslagPct:r.toeslag_pct==null?null:Number(r.toeslag_pct), reden:r.reden||'',
   volgendeActie:r.volgende_actie||'', actieDatum:r.actie_datum||'', noShows:r.no_shows||0,
   notities:Array.isArray(r.notities)?r.notities:[], historie:Array.isArray(r.historie)?r.historie:[],
   afvalType:r.afval_type||'', afvalCat:r.afval_categorie||'', stopDoor:r.stop_door||'',
@@ -276,7 +281,10 @@ CRM.candToRow = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
   datum:c.datum||'', tijd:c.tijd||'', start:c.start||'', since:c.since||CRM.todayISO(), bron:c.bron||'',
   geplaatst_op:c.geplaatstOp||'', gestopt_op:c.gestoptOp||'', garantie_mnd:c.garantieMnd||0,
-  maandloon:c.maandloon||null, toeslag_pct:c.toeslagPct||null, reden:c.reden||'',
+  /* Zelfde reden als bij het lezen: een ingevulde 0 moet een 0 blijven,
+     anders wist opslaan stilletjes "geen ploegentoeslag" weer uit. */
+  maandloon:c.maandloon==null||c.maandloon===''?null:Number(c.maandloon),
+  toeslag_pct:c.toeslagPct==null||c.toeslagPct===''?null:Number(c.toeslagPct), reden:c.reden||'',
   volgende_actie:c.volgendeActie||null, actie_datum:c.actieDatum||null, no_shows:c.noShows||0,
   notities:c.notities||[], historie:c.historie||[],
   afval_type:c.afvalType||'', afval_categorie:c.afvalCat||'', stop_door:c.stopDoor||'',

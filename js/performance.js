@@ -28,6 +28,15 @@ function bereik(){
   }
 }
 const inP = (x,p) => { const s = kort(x); return !!s && s>=p.van && s<=p.tot; };
+/* Bereik als tekst. CRM.fmtDateShort laat het jaartal weg — prima voor
+   "1 jul — 31 jul", maar bij een eigen bereik in een ander jaar stond er
+   dan "1 jan — 31 jan" zonder dat je zag wélk jaar. Jaartal erbij zodra
+   de periode niet volledig in het huidige jaar valt. */
+function bereikLbl(p){
+  const nu = CRM.todayISO().slice(0,4);
+  const f = (p.van.slice(0,4) === nu && p.tot.slice(0,4) === nu) ? CRM.fmtDateShort : CRM.fmtDate;
+  return f(p.van) + ' — ' + f(p.tot);
+}
 
 /* ─── Kleine rekenhulpjes ────────────────────────────────────── */
 function dagenTussen(a,b){
@@ -99,13 +108,18 @@ function duurzaam(c){
    levert -1 op: zo'n kandidaat heeft geen trechterpositie en is ook niet
    "verloren" — hij is er simpelweg nooit ingegaan. */
 const FUNNEL = CRM.PHASES.filter(p => !['Afgevallen','Gestopt'].includes(p.k));
+/* Index BINNEN de trechter. Bewust niet CRM.faseIdx(): die telt Afgevallen en
+   Gestopt mee, wat alleen goed gaat zolang die twee toevallig achteraan in
+   CRM.PHASES staan. Zodra iemand de fases herschikt klopte de trechter niet
+   meer — met fIdx is de volgorde van CRM.PHASES niet langer een aanname. */
+const fIdx = k => FUNNEL.findIndex(f => f.k === k);
 function verste(c){
   const idxs = [];
-  (c.historie||[]).forEach(x => { const i = CRM.faseIdx(x.fase); if(i>=0 && i<FUNNEL.length) idxs.push(i); });
-  const cur = CRM.faseIdx(c.fase);
-  if(cur>=0 && cur<FUNNEL.length) idxs.push(cur);
-  if(c.fase==='Gestopt') idxs.push(CRM.faseIdx('Gestart'));
-  if(kort(c.geplaatstOp)) idxs.push(CRM.faseIdx('Contract getekend'));
+  (c.historie||[]).forEach(x => { const i = fIdx(x.fase); if(i>=0) idxs.push(i); });
+  const cur = fIdx(c.fase);
+  if(cur>=0) idxs.push(cur);
+  if(c.fase==='Gestopt') idxs.push(fIdx('Gestart'));
+  if(kort(c.geplaatstOp)) idxs.push(fIdx('Contract getekend'));
   return idxs.length ? Math.max.apply(null, idxs) : -1;
 }
 /* Staat deze kandidaat nú in de pijplijn? Alleen echte, lopende fases —
@@ -147,7 +161,7 @@ function blokPlaatsingen(p, D){
 
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Plaatsingen</span>
-      <span class="meta">${h(p.lbl)} · ${h(CRM.fmtDateShort(p.van))} — ${h(CRM.fmtDateShort(p.tot))}</span></div>
+      <span class="meta">${h(p.lbl)} · ${h(bereikLbl(p))}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Getekend', `<span class="num">${D.getekend.length}</span>`,
         `<span class="meta num">${ws} W&amp;S · ${flex} Flex</span>${sGet?`<div class="pf-spark">${sGet}</div>`:''}`, 'accent')}
@@ -157,7 +171,8 @@ function blokPlaatsingen(p, D){
         `<span class="meta num">${duur.length} van ${D.cohort.length} nog aan het werk of voorbij de garantie</span>`)}
       ${CRM.ui.kpi('Tijd tot stop', gemStop!=null ? `<span class="num">${gemStop}</span><span class="pf-eh"> dagen</span>` : '<span class="meta">—</span>',
         gemStop!=null ? `<span class="meta num">gemiddeld, over ${tijdTotStop.length} gestopte plaatsingen</span>`
-                      : '<span class="meta">niemand uit deze lichting is gestopt</span>')}
+          : D.cohort.length ? '<span class="meta">niemand uit deze lichting is gestopt</span>'
+                            : '<span class="meta">geen plaatsingen in deze periode</span>')}
     </div>
     <p class="pf-uitleg meta">Netto volgt exact de definitie van het bord: getekend in de periode min gestopt in de periode.
       Duurzaamheid kijkt naar de lichting die in deze periode tekende — met een garantie van ${GARANTIE_STD} maanden als er niets is ingevuld.</p>
@@ -169,9 +184,11 @@ function blokPlaatsingen(p, D){
    Recruitment-signaalstrook (wens Tjeerd: dat was daar te chaotisch);
    de dagelijkse nazorg-acties staan óók in Mijn dag op het dashboard. */
 function namenEnNazorg(D){
-  const naar = c => `CRM.ga('kandidaten',{id:'${h(c.id)}'})`;
+  /* Id via data-attribuut, niet via een inline onclick met een JS-string:
+     een &#39; in het attribuut wordt door de browser eerst tot ' gedecodeerd
+     en breekt dán uit de string — h() beschermt daar níét tegen. */
   const rij = (c, extra, klasse='') =>
-    `<button class="pf-naam ${klasse}" onclick="${naar(c)}">${h(c.naam)}<em class="num">${h(extra)}</em></button>`;
+    `<button class="pf-naam ${klasse}" data-pfkand="${h(String(c.id))}">${h(c.naam)}<em class="num">${h(extra)}</em></button>`;
   const get = D.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
   const stp = D.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
   const nz = CRM.kandidaten()
@@ -313,9 +330,9 @@ function blokTrechter(p, D){
   const verstes = cohort.map(verste);
   const tel = FUNNEL.map((f,i) => ({fase:f.k, kleur:f.c, n:verstes.filter(v => v>=i).length}));
   const start = tel[0].n || 1;
-  const plaatsingen = tel[CRM.faseIdx('Contract getekend')].n;
-  const voorgesteld = tel[CRM.faseIdx('Voorgesteld')].n;
-  const offers      = tel[CRM.faseIdx('Offer')].n;
+  const plaatsingen = tel[fIdx('Contract getekend')].n;
+  const voorgesteld = tel[fIdx('Voorgesteld')].n;
+  const offers      = tel[fIdx('Offer')].n;
 
   return `<section class="pf-sec">
     <div class="pf-kop"><span class="label">Conversietrechter</span>
@@ -409,7 +426,7 @@ function blokKlanten(fin){
     const ooit   = mijn.filter(c => CRM.PLACED.includes(c.fase) || c.fase==='Gestopt' || c.geplaatstOp);
     const nu     = mijn.filter(c => CRM.PLACED.includes(c.fase));
     const duurT  = ooit.length, duurN = ooit.filter(duurzaam).length;
-    const voorgesteld = mijn.filter(c => verste(c) >= CRM.faseIdx('Voorgesteld')).length;
+    const voorgesteld = mijn.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
     const klantWees = mijn.filter(c => c.fase==='Afgevallen' && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
     const looptijden = ooit.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n=>n!=null && n>=0 && n<400);
     const omzet = geld ? fin.placements.filter(pl => CRM.zelfdeKlant(pl.klant, naam))
@@ -562,11 +579,16 @@ async function finLezen(){
       CRM.sb.from('fin_settings').select('key,value')
     ]);
     const settings = s.error ? {} : Object.fromEntries((s.data||[]).map(r=>[r.key, r.value]));
-    if(p.error && i.error) return (_fin = {ok:false, settings});
+    /* Onderscheid bewaren tussen "er staat niets" en "ik kon het niet lezen":
+       zonder dat verschil meldde het Doel-blok bij een RLS- of netwerkfout
+       doodleuk "er staat nog geen omzetdoel" — en dat is een leugen die je
+       een nieuw doel laat intypen over een bestaand doel heen. */
+    const fout = s.error || ((p.error && i.error) ? (p.error || i.error) : null);
+    if(p.error && i.error) return (_fin = {ok:false, settings, fout});
     const placements = p.error ? [] : (p.data||[]);
     const termijnen  = i.error ? [] : (i.data||[]);
-    return (_fin = {ok:!!(placements.length || termijnen.length), placements, termijnen, settings});
-  }catch(e){ return (_fin = {ok:false, settings:{}}); }
+    return (_fin = {ok:!!(placements.length || termijnen.length), placements, termijnen, settings, fout});
+  }catch(e){ return (_fin = {ok:false, settings:{}, fout:e}); }
 }
 
 /* ═══ 0. DOEL — omzetdoel uit het financebord + benodigd tempo ═══
@@ -579,9 +601,9 @@ const posNum = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : nul
 function conversies(){
   const cs = CRM.kandidaten().filter(c => (c.type||'W&S') !== 'Flex');
   const klaar = cs.filter(c => CRM.DONE.includes(c.fase) || c.geplaatstOp);
-  const vg = klaar.filter(c => verste(c) >= CRM.faseIdx('Voorgesteld')).length;
-  const gs = klaar.filter(c => verste(c) >= CRM.faseIdx('Eerste gesprek')).length;
-  const pl = klaar.filter(c => verste(c) >= CRM.faseIdx('Contract getekend') || c.geplaatstOp).length;
+  const vg = klaar.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
+  const gs = klaar.filter(c => verste(c) >= fIdx('Eerste gesprek')).length;
+  const pl = klaar.filter(c => verste(c) >= fIdx('Contract getekend') || c.geplaatstOp).length;
   return {vg, gs, pl,
     voorPerPl:     pl ? vg/pl : null,
     gesprekPerPl:  pl ? gs/pl : null};
@@ -644,9 +666,13 @@ function blokDoel(fin){
     return `<section class="pf-sec">
       <div class="pf-kop"><span class="label">Doel</span><span class="meta">alleen voor jou</span></div>
       <div class="card"><div class="card-b">
+        ${fin.fout ? `<div class="note err" style="margin:0 0 16px">De instellingen van het financebord konden niet gelezen worden${
+            fin.fout.message ? ` — ${h(fin.fout.message)}` : ''}. Er staat dus mogelijk wél een omzetdoel;
+            controleer je verbinding of je rechten voordat je hieronder een nieuw doel instelt.</div>` : ''}
         ${doelWinst != null ? `<div class="pf-doelkop"><div><span class="label">Winstdoel dit jaar (financebord)</span>
             <div class="big num">${h(CRM.euro(doelWinst))}</div></div></div>
           <p class="pf-uitleg meta">Er staat nog geen omzetdoel in de instellingen. Stel het hieronder in — dan rekent dit blok uit welk tempo daarvoor nodig is.</p>`
+        : fin.fout ? ''
         : `<p class="sub" style="margin:0 0 12px">Er staat nog geen omzetdoel in de instellingen van het financebord. Stel het hieronder in — dan rekent dit blok uit hoeveel plaatsingen, voorstellen en gesprekken per maand daarvoor nodig zijn.</p>`}
         <div class="row tight pf-doelset">
           <input type="number" id="pf_doelbedrag" placeholder="Omzetdoel, bijv. 400000" min="0" step="1000" style="width:200px">
@@ -718,7 +744,7 @@ function blokDoel(fin){
         <div><span class="label">Omzetdoel</span><div class="big num">${h(CRM.euro(doelOmzet))}</div>
           <span class="meta">t/m ${h(dLbl)}</span></div>
         <div><span class="label">Gerealiseerd</span><div class="big num">${h(CRM.euro(omzet))}</div>
-          <span class="meta">gefactureerd sinds ${h(CRM.fmtDateShort(start))}</span>
+          <span class="meta">gefactureerd sinds ${h(start.slice(0,4) === vandaag.slice(0,4) ? CRM.fmtDateShort(start) : CRM.fmtDate(start))}</span>
           ${sOmzet?`<div class="pf-spark">${sOmzet}<span class="meta">per maand</span></div>`:''}</div>
         <div><span class="label">Nog te gaan</span><div class="big num">${h(CRM.euro(teGaan))}</div>
           <span class="meta num">${verstreken ? 'doeldatum verstreken' : mndRest.toFixed(1).replace('.',',') + ' maanden resterend'}</span></div>
@@ -810,7 +836,7 @@ function blokOmzet(p, fin){
     <div class="pf-kop"><span class="label">Omzet</span><span class="meta">alleen voor jou · ${h(p.lbl)}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Gefactureerd', `<span class="num">${h(CRM.euro(omzet))}</span>`,
-        `<span class="meta num">${gefactureerd.length} termijnen</span>`, 'accent')}
+        `<span class="meta num">${gefactureerd.length} termijn${gefactureerd.length===1?'':'en'}</span>`, 'accent')}
       ${CRM.ui.kpi('Waarvan betaald', `<span class="num">${h(CRM.euro(betaald))}</span>`, '')}
       ${CRM.ui.kpi('Getekende fee', `<span class="num">${h(CRM.euro(feeTotaal))}</span>`,
         `<span class="meta num">${getekendFee.length} plaatsingen</span>`)}
@@ -842,7 +868,12 @@ function teken(mount, acties){
 
   if(acties) acties.innerHTML = kiezerHTML(p);
 
+  /* Omgekeerd eigen bereik gaf een scherm vol nullen zonder uitleg. */
+  const omgekeerd = p.van > p.tot;
+
   mount.innerHTML = `<div class="pf">
+    ${omgekeerd ? `<div class="note warn">De begindatum (${h(CRM.fmtDate(p.van))}) ligt ná de einddatum
+      (${h(CRM.fmtDate(p.tot))}), dus er valt niets binnen deze periode. Draai de datums om.</div>` : ''}
     ${blokDoel(_fin)}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
@@ -886,6 +917,7 @@ function teken(mount, acties){
     teken(mount, acties);
   });
   CRM.$$('[data-klant]', mount).forEach(tr => tr.onclick = () => CRM.ga('klanten', {id:tr.dataset.klant}));
+  CRM.$$('[data-pfkand]', mount).forEach(b => b.onclick = () => CRM.ga('kandidaten', {id:b.dataset.pfkand}));
 
   /* Financiële data nalezen — alleen voor Tjeerd. Eén keer laden (cache),
      daarna opnieuw tekenen zodat Doel, Per klant en Omzet gevuld zijn. */

@@ -28,7 +28,7 @@
 .rc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 .rc-chips .chip{padding:4px 11px;gap:6px}
 .rc-chips .chip b{font-weight:600;color:var(--muted)}
-.rc-chips .chip.on b{color:#e6f0cf}
+.rc-chips .chip.on b{color:inherit;opacity:.85}
 .rc-chips .chip.on .dot{box-shadow:0 0 0 1px rgba(255,255,255,.5)}
 
 /* ─── Leadtabel ──────────────────────────────────────────────── */
@@ -45,8 +45,11 @@ a.rc-wa{margin-left:6px;font-size:10.5px;font-weight:600;text-transform:uppercas
 a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l)}
 .rc-stil{color:var(--amber);font-weight:600}
 
-/* Statusselect met kleurstip van de status ervoor */
-.rc-stwrap{position:relative}
+/* Statusselect met kleurstip van de status ervoor.
+   min-width is essentieel: de tabel heeft negen kolommen en kneep het veld
+   anders samen tot een stip met een pijltje — je kon de status van een
+   sollicitant dan niet meer lézen. De tabel schuift liever horizontaal. */
+.rc-stwrap{position:relative;min-width:196px}
 .rc-stwrap::before{content:'';position:absolute;left:9px;top:50%;transform:translateY(-50%);
   width:8px;height:8px;border-radius:50%;background:var(--sc,var(--muted));pointer-events:none;z-index:1}
 .rc-stwrap select{padding-left:24px;font-size:12.5px;padding-top:5px;padding-bottom:5px;
@@ -54,7 +57,7 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
 .rc-stwrap select:hover{border-color:var(--line-2)}
 
 /* ─── Sleutel/waarde-regels in drawers ───────────────────────── */
-.rc-kv{display:flex;gap:14px;align-items:baseline;padding:5px 0;border-bottom:1px solid #eef0e4}
+.rc-kv{display:flex;gap:14px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}
 .rc-kv:last-child{border-bottom:none}
 .rc-kv .label{flex:0 0 108px;margin:0}
 .rc-kv > span:last-child,.rc-kv > div:last-child{flex:1;min-width:0}
@@ -63,14 +66,16 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
 table.rc-qa{width:100%;border-collapse:collapse;font-size:13px}
 table.rc-qa th{text-align:left;font-weight:500;color:var(--muted);padding:6px 14px 6px 0;
   width:34%;vertical-align:top;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12.5px}
-table.rc-qa td{padding:6px 0;border-bottom:1px solid #eef0e4}
+table.rc-qa td{padding:6px 0;border-bottom:1px solid var(--line)}
 table.rc-qa tr:last-child td{border-bottom:none}
 
 /* ─── Doorschietformulier ────────────────────────────────────── */
 .rc-vol{background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);padding:10px 12px}
 .rc-vol .label{margin:0 0 6px}
 .f-row.rc-mist > label{color:var(--amber)}
-.f-row.rc-mist input,.f-row.rc-mist select{border-color:var(--amber-line);background:#fffdf7}
+/* Ontbrekend veld: alleen label + rand in signaalkleur. Een eigen tint als
+   achtergrond hoorde niet in het contract thuis en voegde niets toe. */
+.f-row.rc-mist input,.f-row.rc-mist select{border-color:var(--amber-line)}
 .rc-req{font-family:var(--body);font-size:10.5px;font-weight:600;text-transform:uppercase;
   letter-spacing:.06em;color:var(--amber);margin-left:5px}
 
@@ -128,7 +133,7 @@ table.rc-qa tr:last-child td{border-bottom:none}
 .rc-cijfer.on{background:var(--olive);border-color:var(--olive);color:#fff}
 
 /* ─── O&O-modaal: ledenlijst ─────────────────────────────────── */
-.rc-oolid{border-bottom:1px solid #eef0e4;padding:6px 0}
+.rc-oolid{border-bottom:1px solid var(--line);padding:6px 0}
 .rc-oolid:last-child{border-bottom:none}
 
 /* ─── Mobiel ─────────────────────────────────────────────────── */

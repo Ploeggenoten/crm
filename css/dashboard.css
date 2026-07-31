@@ -30,19 +30,9 @@
 .team-chip .tc-van{color:var(--muted);font-weight:500}
 .team-chip .bar.tc-bar{width:56px;flex:0 0 56px;height:4px}
 
-/* ─── Cockpitregel (alleen eigenaar) ─────────────────────────── */
-.cockpit{
-  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
-  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:10px 18px;
-}
-.cockpit.klik{cursor:pointer;transition:border-color .12s}
-.cockpit.klik:hover{border-color:var(--olive-l)}
-.cockpit .ck-seg{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap}
-.cockpit .ck-seg b{font-size:14px}
-.cockpit .bar.ck-bar{width:64px;height:4px;align-self:center}
-.cockpit .ck-sep{width:1px;height:16px;background:var(--line);align-self:center}
-.cockpit.stil{background:var(--well)}
+/* De stijl voor de oude "cockpitregel" (omzet, omzetdoel, banksaldo) is
+   weg. Geld hoort niet op het dashboard — zie de toelichting in
+   js/dashboard.js. Zet hier dus geen .cockpit-stijl terug. */
 
 /* ─── Hoofdindeling: tijdlijn + smalle rechterkolom ──────────── */
 .dash2-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:18px;align-items:start}
@@ -103,6 +93,12 @@
 .tl2-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .tl2-t b{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl2-s{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Subregel met een knop erin (Outlook-afspraak met Teams-link): de tekst
+   kapt af, de link niet — anders viel "Teams" op smal weg achter een lange
+   locatienaam en kon je vanaf je telefoon de call niet openen. */
+.tl2-s.metlink{display:flex;align-items:baseline;gap:8px;overflow:visible}
+.tl2-s.metlink .tl2-sub-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl2-s .tl2-teams{flex:0 0 auto;white-space:nowrap;font-weight:600}
 .tl2-w{font-size:12px;color:var(--txt-2);white-space:nowrap;flex:0 0 auto}
 /* Oranje alléén voor urgentie (over datum, deadline vandaag). */
 .tl2-item.urgent .tl2-w,.tl2-w.oranje{color:var(--amber);font-weight:600}
@@ -156,8 +152,6 @@
 .zij-maand{display:flex;align-items:baseline;gap:6px;margin-bottom:10px}
 .zij-maand .big{font-size:28px}
 .zij-van{font-size:15px;color:var(--muted);font-weight:500}
-.zij-sig .card-b b{font-size:13.5px}
-.zij-sig .sub{margin-top:3px}
 
 /* ─── Meldingen ("Voor jou") — collegiaal, geen alarm ────────── */
 .meld-card{border-left:2px solid var(--olive)}
@@ -253,7 +247,6 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
   .bar.tl2-vgbar{display:none}
   .tl2-tijd{width:38px;flex:0 0 38px}
   .tl2-nulijn{left:-50px}
-  .cockpit{gap:12px}
   .team-chip .bar.tc-bar{display:none}
   /* Weekweergave: dagkop smaller, verder exact dezelfde lijst. */
   .tl2-dag{gap:10px}

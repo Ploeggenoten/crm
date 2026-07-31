@@ -14,7 +14,7 @@
 /* ─── Adviesregels van de waakhond ───────────────────────────── */
 .mkt-advies{
   display:flex;align-items:flex-start;gap:11px;
-  padding:12px 24px;border-bottom:1px solid #eef0e4;
+  padding:12px 24px;border-bottom:1px solid var(--line);
 }
 .mkt-advies:last-child{border-bottom:none}
 .mkt-advies > .dot{margin-top:6px}
@@ -63,9 +63,76 @@ table.tbl tbody tr.clickable.mkt-r1:hover{background:var(--well)}
 }
 .mkt-pijl span{font-size:11px;color:var(--muted);white-space:nowrap}
 
+/* ─── Kanaalkleur ────────────────────────────────────────────── */
+/* De kleur zelf komt uit mkt_kanalen en wordt inline gezet — dat is data,
+   geen ontwerpkeuze. Alleen de vorm staat hier. */
+.mkt-kdot{
+  display:inline-block;width:7px;height:7px;border-radius:50%;
+  margin-right:6px;vertical-align:middle;flex:0 0 auto;
+}
+/* Kleurkiezer en weekdoel in de kanalentabel: zo klein dat ze de regel niet
+   uit elkaar duwen, met dezelfde rand als de andere invoervelden. */
+.mkt-kleur{
+  width:30px;height:28px;padding:2px;flex:0 0 auto;
+  border:1px solid var(--line-2);border-radius:var(--r-s);background:var(--card);cursor:pointer;
+}
+.mkt-doel{width:64px;text-align:right;padding:5px 8px;font-variant-numeric:tabular-nums}
+
+/* ─── Marketingtaken ─────────────────────────────────────────── */
+.mkt-taak-g{margin-bottom:14px}
+.mkt-taak-g:last-child{margin-bottom:0}
+.mkt-taak-g > .label{display:block;margin-bottom:5px}
+.mkt-taak{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:7px 0;border-bottom:1px solid var(--line);
+}
+.mkt-taak:last-child{border-bottom:none}
+.mkt-taak > input[type=checkbox]{margin-top:3px;flex:0 0 auto}
+.mkt-taak-t{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
+.mkt-taak.af .mkt-taak-t{text-decoration:line-through;color:var(--muted)}
+.mkt-taak-x{
+  flex:0 0 auto;background:none;border:none;cursor:pointer;
+  color:var(--muted);font-size:13px;line-height:1;padding:3px 5px;border-radius:var(--r-s);
+}
+.mkt-taak-x:hover{color:var(--red);background:var(--red-bg)}
+
+/* ─── Learnings-bibliotheek ──────────────────────────────────── */
+.mkt-learn{
+  display:flex;flex-direction:column;gap:3px;
+  padding:12px 24px;border-bottom:1px solid var(--line);
+}
+.mkt-learn:last-child{border-bottom:none}
+.mkt-learn b{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.45}
+
+/* ─── Weekthema's ────────────────────────────────────────────── */
+.mkt-thema{
+  display:flex;align-items:baseline;gap:12px;
+  padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px;
+}
+.mkt-thema:last-child{border-bottom:none}
+.mkt-thema > .label{flex:0 0 88px}
+.mkt-thema-t{flex:1;min-width:0;line-height:1.45}
+.mkt-thema.nu{font-weight:600;color:var(--ink)}
+.mkt-thema > .chip{flex:0 0 auto;align-self:center}
+
+/* ─── Inspiratie- en afkijkkaarten ───────────────────────────── */
+.mkt-ideerij{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.mkt-idee{
+  display:flex;flex-direction:column;gap:5px;
+  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;
+}
+.mkt-idee b{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.4}
+.mkt-idee-h{font-size:12.5px;color:var(--txt-2);line-height:1.5}
+
 @media (max-width:900px){
   .mkt-advies{flex-wrap:wrap}
   .mkt-a-k{width:100%;padding-left:19px}
   .mkt-dagen{gap:4px}
   .mkt-daglbl span{display:none}
+  .mkt-learn{padding-left:16px;padding-right:16px}
+  /* Onder 900px is 88px voor de dagnaam te veel van de regel; dan zetten we
+     de dag boven het thema in plaats van ernaast. */
+  .mkt-thema{flex-wrap:wrap;gap:2px 12px}
+  .mkt-thema > .label{flex-basis:100%}
+  .mkt-ideerij{grid-template-columns:1fr}
 }

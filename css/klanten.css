@@ -169,6 +169,7 @@ label.kl-taak input{margin-top:3px}
   .kl-rail > .kl-r-nt{order:4}   /* notities */
   .kl-rail > .kl-r-gg{order:5}   /* gegevens */
   .kl-rail > .kl-r-tk{order:6}   /* open taken */
+  .kl-rail > .kl-r-af{order:7}   /* commerciële afspraken (alleen Tjeerd) */
   /* width:100% expliciet: anders rekken de blokken tot hun inhoud
      en krijgt de hele pagina horizontale scroll of halve kaarten. */
   .kl-werk{order:3;width:100%}
@@ -196,7 +197,7 @@ label.kl-taak input{margin-top:3px}
 }
 
 /* Rail: notities — gezamenlijk geheugen, altijd in beeld */
-.rn-item{padding:8px 0;border-bottom:1px solid #eef0e4}
+.rn-item{padding:8px 0;border-bottom:1px solid var(--line)}
 .rn-item:last-of-type{border-bottom:none}
 .rn-item .rn-tekst{font-size:12.5px;line-height:1.45;word-break:break-word}
 .rn-item .meta{margin-top:3px}
@@ -277,3 +278,50 @@ a.ob-i:hover b{text-decoration:underline}
 .ob-i b{display:block;font-size:13px;font-weight:600}
 .ob-i .meta{margin-top:2px;font-size:11.5px}
 .ob-meer{margin-top:12px}
+
+/* ═══════════════════════════════════════════════════════════════
+   COMMERCIËLE AFSPRAKEN (crm_afspraken)
+   Railkaart met de samenvatting + het beheerpaneel in de drawer.
+   Alleen zichtbaar achter CRM.canSeeMoney(); de stijl leunt bewust
+   op de bestaande .kl-gg-rijen zodat de kaart niet opnieuw ontworpen
+   hoeft te worden.
+   ═══════════════════════════════════════════════════════════════ */
+.kl-af-leeg{margin:0 0 10px;font-size:12.5px;line-height:1.5}
+.kl-af-note{margin:0 0 10px;font-size:12.5px}
+.kl-af-ouder{margin:10px 0 0;font-size:11.5px}
+
+/* Beheerpaneel in de drawer: losse secties, rustig gestapeld. */
+.kl-af-intro{margin:0 0 16px;max-width:64ch}
+.kl-af-sec{margin-bottom:14px}
+.kl-af-sec:last-child{margin-bottom:0}
+.kl-af-uitleg{margin:0 0 12px;max-width:70ch;line-height:1.55}
+
+/* Fee-regels: functiegroep · percentage · weg. Op smal onder elkaar. */
+.kl-af-regels{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.kl-af-regel{display:grid;grid-template-columns:minmax(0,1fr) 96px 34px;gap:8px;align-items:center}
+.kl-af-regel input[type=number]{text-align:right}
+.kl-af-regel .btn{padding:0;height:34px;line-height:1}
+.kl-af-std{max-width:260px;margin-bottom:0}
+
+/* Voorbeeldberekening: de invoer bovenaan, de opbouw eronder. */
+.kl-af-vbin{margin-bottom:14px}
+.kl-af-tbl td{padding:8px 12px;font-size:13px}
+.kl-af-tbl tbody tr:last-child td{border-bottom:none}
+.kl-af-buiten td{color:var(--muted);text-decoration:line-through}
+.kl-af-buiten td .meta{text-decoration:none}
+.kl-af-tot td{border-top:1px solid var(--line);font-weight:600}
+.kl-af-fee td{background:var(--card-2);font-weight:700}
+.kl-af-waarom{margin:10px 0 0;line-height:1.55}
+
+/* Historie: één regel per eerdere afspraak, met looptijd. */
+.kl-af-hist{display:flex;flex-direction:column}
+.kl-af-hrij{display:flex;align-items:center;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--line)}
+.kl-af-hrij:last-child{border-bottom:none}
+.kl-af-hrij b{display:block;font-size:13px;font-weight:600}
+.kl-af-hrij .meta{margin-top:2px;font-size:11.5px}
+
+@media (max-width:700px){
+  .kl-af-regel{grid-template-columns:minmax(0,1fr) 74px 34px;gap:6px}
+  .kl-af-std{max-width:none}
+}

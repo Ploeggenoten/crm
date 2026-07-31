@@ -6,7 +6,7 @@
 
 /* ─── Recruitment-pijplijn (identiek aan het bestaande pijplijnbord) ─── */
 CRM.PHASES = [
-  {k:'Voorselectie',c:'#9aa3b2'},{k:'Voorgesteld',c:'#5b8bbf'},{k:'O&O sessie',c:'#9575b8'},
+  {k:'Intake',c:'#9aa3b2'},{k:'Voorgesteld',c:'#5b8bbf'},{k:'O&O sessie',c:'#9575b8'},
   {k:'Eerste gesprek',c:'#5a9bd4'},{k:'Tweede gesprek',c:'#4178b0'},{k:'Meeloopdag',c:'#d9a441'},
   {k:'In de wacht',c:'#4a9d9d'},{k:'Offer',c:'#d97941'},{k:'Contract ondertekenen',c:'#6a9e3f'},
   {k:'Contract getekend',c:'#3d9968'},{k:'Gestart',c:'#3d9968'},
@@ -14,8 +14,26 @@ CRM.PHASES = [
 ];
 CRM.PLACED = ['Contract getekend','Gestart'];
 CRM.DONE   = ['Contract getekend','Gestart','Afgevallen','Gestopt'];
-CRM.faseKleur = f => (CRM.PHASES.find(p=>p.k===f)||{}).c || '#8a927c';
-CRM.faseIdx   = f => CRM.PHASES.findIndex(p=>p.k===f);
+
+/* ─── Fase-normalisatie (oude waarden blijven werken) ───────────
+   De eerste fase heette tot 30 jul 2026 'Voorselectie' en heet nu
+   'Intake' — de screeningsstap is geschrapt, je zet meteen de volledige
+   kandidatenkaart op en plant van daaruit de videocall.
+   In productie staan nog rijen op de oude waarde; de migratie
+   (supabase/migratie-intake.sql) draait pas later. Daarom loopt ELKE
+   vergelijking en ELKE weergave van een fase via deze helpers. Zo valt
+   een oude rij nergens uit beeld en staan er geen losse
+   `|| fase === 'Voorselectie'`-controles door de code.
+   Nieuwe fase-hernoemingen: alleen hier een regel bijzetten.        */
+CRM.FASE_ALIAS = {'Voorselectie':'Intake'};
+CRM.faseNorm = f => { const s = String(f==null?'':f); return CRM.FASE_ALIAS[s] || s; };
+/* Twee fases gelijk? (allebei genormaliseerd) */
+CRM.faseIs = (a, b) => CRM.faseNorm(a) === CRM.faseNorm(b);
+/* Zit deze fase in de lijst? (vervanger van `lijst.includes(c.fase)`) */
+CRM.faseIn = (f, lijst) => { const x = CRM.faseNorm(f); return (lijst||[]).some(d => CRM.faseNorm(d) === x); };
+
+CRM.faseKleur = f => (CRM.PHASES.find(p=>p.k===CRM.faseNorm(f))||{}).c || '#8a927c';
+CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=>p.k===x); };
 
 CRM.AFVAL_CATS = {
   niet_gekwalificeerd:['Taal','Ervaring/skills','Motivatie','No-show','Fysiek/gezondheid','Klant wees af','Meeloopdag niet goed','Anders'],
@@ -94,7 +112,14 @@ CRM.actieveKlanten = () => {
    netto = getekend deze maand − gestopt deze maand. */
 CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
   const cs = CRM.kandidaten();
-  const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk && CRM.PLACED.includes(c.fase));
+  /* Wie in DEZE maand tekende én weer stopte, telde dubbel negatief: hij viel
+     buiten 'getekend' (zijn fase is inmiddels Gestopt) maar wél binnen
+     'gestopt', dus netto −1 terwijl het bord en de finance-app 0 zeggen.
+     Tekenen is een gebeurtenis die heeft plaatsgevonden; een latere stop maakt
+     dat niet ongedaan. Daarom telt ook een Gestopt-kaart mee als hij in deze
+     maand geplaatst is — dan heffen de +1 en de −1 elkaar netjes op. */
+  const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk &&
+    (CRM.PLACED.includes(c.fase) || c.fase === 'Gestopt'));
   const gestopt  = cs.filter(c => c.fase==='Gestopt' && (c.gestoptOp||'').slice(0,7)===mk);
   return {getekend, gestopt, netto: getekend.length - gestopt.length};
 };
@@ -158,12 +183,25 @@ CRM.PLAATSEN = {
   'honselersdijk':[51.997,4.219], 'stellendam':[51.822,4.033], 'hulst':[51.280,4.052],
   'benthuizen':[52.071,4.528], 'moerkapelle':[52.021,4.578], 'opmeer':[52.708,4.950],
   'koudekerka/drijn':[52.121,4.598], 'warmond':[52.198,4.500], 'zaandijk':[52.463,4.809],
-  'emst':[52.311,5.959], 'zevenhoven':[52.202,4.720], 'hendrikidoambacht':[51.843,4.640],
+  'emst':[52.311,5.959], 'zevenhoven':[52.202,4.720],
+  /* Aangevuld 30 jul 2026 na het doormeten van de kaart: plaatsen die in de
+     data voorkomen maar nog geen coördinaat hadden. */
+  'teraar':[52.209,4.716],     'schijndel':[51.620,5.435],
+  'oirschot':[51.505,5.311],   'oosterhout':[51.645,4.860],
+  'rijen':[51.588,4.936],      'spakenburg':[52.257,5.362],
+  'beverwijk':[52.484,4.657],  'stolwijk':[51.965,4.766],
+  'noorden':[52.166,4.813],    'waalwijk':[51.687,5.071],
   /* Veelvoorkomende schrijfwijzen uit de oude data — beter matchen dan
      stilzwijgend van de kaart vallen. */
   'alphen':[52.129,4.655], 'haag':[52.078,4.288], 'hague':[52.078,4.288],
   'sgravennage':[52.078,4.288], 'rijswik':[52.036,4.325], 'capelle':[51.930,4.577],
-  'alphenandenrijn':[52.129,4.655], 'krimpenandenijssel':[51.917,4.593]
+  /* Schrijfwijze "Alphen a.d. Rijn": plaatsSleutel() vertaalt alléén het
+     voluit geschreven "aan de(n)" naar "a/d", dus punten-varianten komen hier
+     als 'alphenadrijn' binnen. Eerder stonden hier 'alphenandenrijn' en
+     'krimpenandenijssel' — sleutels die de functie nooit produceert. */
+  'alphenadrijn':[52.129,4.655],     'krimpenadijssel':[51.917,4.593],
+  'capelleadijssel':[51.930,4.577],  'nieuwerkerkadijssel':[51.975,4.615],
+  'koudekerkadrijn':[52.121,4.598]
 };
 CRM.plaatsSleutel = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
   .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');

@@ -1,15 +1,95 @@
 /* Extra stijl voor de module finance. Alleen deze module schrijft hier.
-   Gebruik eerst de klassen uit base.css; hier staat alleen wat echt mist. */
+   Gebruik eerst de klassen uit base.css; hier staat alleen wat echt mist.
+   Kleuren komen uitsluitend uit de tokens van base.css — geen eigen hex. */
 
-/* Weekstaafjes (flex-marge) — gewoon divs, geen grafiekbibliotheek. */
+/* ─── Weekstaafjes (flex-marge) — gewoon divs, geen grafiekbibliotheek ─── */
 .fin-bars{display:flex;align-items:flex-end;gap:6px;height:130px;padding-top:6px}
 .fin-bars .fb{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}
 .fin-bars .fb i{display:block;width:100%;max-width:34px;background:var(--olive-l);border-radius:4px 4px 0 0}
 .fin-bars .fb:last-child i{background:var(--olive)}
 .fin-bars .fb span{font-size:9.5px;color:var(--muted);white-space:nowrap;font-weight:500}
 
-/* Uitgeklapte termijnregel onder een plaatsing. */
+/* ─── Uitgeklapte termijnregel onder een plaatsing ─── */
 .fin-plsub > td{background:var(--card-2);padding:14px 16px 12px}
 .fin-termijnen{background:var(--card);border:1px solid var(--line);border-radius:var(--r-s);overflow:hidden}
 .fin-termijnen th{position:static}
 .fin-termijnen td{padding:8px 14px}
+
+/* ─── Regel met label links en bedrag rechts (potjes, risico's, GPS) ─── */
+.fin-pot{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  padding:8px 0;border-bottom:1px dashed var(--line)}
+.fin-pot:last-child{border-bottom:none}
+.fin-pot > span{font-size:13px;color:var(--txt-2);min-width:0}
+.fin-pot > b{font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+
+/* ─── CFO-briefing bovenaan Vandaag ─── */
+.fin-brief{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--olive);
+  border-radius:var(--r-l);padding:16px 20px}
+.fin-brief-h{font-weight:700;font-size:15px;color:var(--ink);margin-bottom:10px}
+.fin-brief-r{display:flex;gap:9px;align-items:flex-start;margin:6px 0;font-size:13.5px;
+  color:var(--txt-2);line-height:1.55}
+.fin-brief-r > span:first-child{flex:0 0 auto}
+
+/* ─── Advieskaarten (gevaar / kans / sterkte) ─── */
+.fin-advlijst{display:flex;flex-direction:column;gap:10px}
+.fin-adv{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;
+  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);
+  border-left:3px solid var(--line-2)}
+.fin-adv.u3{border-left-color:var(--red);background:var(--red-bg)}
+.fin-adv.u2{border-left-color:var(--amber);background:var(--amber-bg)}
+.fin-adv-i{flex:0 0 auto;font-size:15px;line-height:1.4}
+.fin-adv-b{min-width:0;flex:1}
+.fin-adv-t{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px}
+.fin-adv-t b{font-size:13.5px;color:var(--ink)}
+.fin-adv-b p{margin:0;font-size:13px;line-height:1.55;color:var(--txt-2)}
+.fin-adv-a{margin-top:6px !important;color:var(--ink) !important;font-weight:500}
+
+/* ─── Los blokje binnen een kaart (belasting, GPS, netto-calculator) ─── */
+.fin-blok{border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;background:var(--card)}
+.fin-blok.accent{border-left:3px solid var(--olive)}
+.fin-blok.amber{border-left:3px solid var(--amber)}
+.fin-blok > .label{margin-bottom:6px}
+.fin-blok > .big{font-size:24px}
+.fin-blok p{margin:6px 0 0;line-height:1.55}
+.fin-blok label.meta{display:block;font-size:12px}
+.fin-blok label.meta input{margin-top:4px}
+
+/* ─── Winst-brug: totaalregels zwaarder ─── */
+table.tbl tr.fin-sum td{border-top:1px solid var(--line-2);font-weight:700;color:var(--ink)}
+
+/* ─── Conversie-keten ─── */
+.fin-keten{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.fin-stap{flex:1 1 110px;min-width:96px;background:var(--card-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:12px 10px;cursor:pointer;font-family:var(--body);
+  display:flex;flex-direction:column;gap:3px;align-items:center;text-align:center}
+.fin-stap:hover{border-color:var(--olive-l)}
+.fin-stap.on{background:var(--card);border-color:var(--olive);box-shadow:inset 0 -2px 0 var(--olive)}
+.fin-stap-n{font-family:var(--disp);font-size:22px;line-height:1;color:var(--ink);letter-spacing:.5px}
+.fin-stap-l{font-size:11px;color:var(--txt-2);line-height:1.3}
+.fin-pijl{display:flex;align-items:center;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ─── Saldo-projectie (SVG) ─── */
+.fin-chart{overflow-x:auto}
+.fin-chart svg{width:100%;min-width:520px;height:auto;display:block}
+.fin-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
+.fin-lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--txt-2)}
+.fin-lg i{width:11px;height:3px;border-radius:2px;display:inline-block}
+
+/* De krapste week in de 13-weken tabel licht op. */
+table.tbl tr.fin-laagst td{background:var(--well)}
+
+/* ─── Mobiel: kaarten en tabellen mogen krimpen, nooit de pagina ─── */
+@media (max-width:640px){
+  .fin-keten{gap:6px}
+  .fin-stap{flex:1 1 72px;min-width:72px;padding:10px 6px}
+  .fin-stap-n{font-size:18px}
+  .fin-pijl{display:none}
+  .fin-pot{flex-wrap:wrap;gap:2px}
+  .fin-pot > b{text-align:left}
+  .fin-bars{height:100px;gap:3px}
+  .fin-bars .fb span{font-size:8.5px}
+  .fin-adv{padding:11px 12px;gap:9px}
+  .fin-brief{padding:14px 15px}
+  .fin-chart svg{min-width:460px}
+}

@@ -78,7 +78,8 @@
 
   /* Op koers? Verhouding verstreken tijd vs voortgang. */
   function opKoers(v, beh){
-    if(!v.doel_aantal || !v.doel_gezet_op || !v.deadline) return true;
+    if(!v.doel_aantal || !v.deadline) return true;
+    if(!dat(v.doel_gezet_op)) return false;   // teller nooit gestart: vraagt actie
     if(beh == null) beh = telDoel(v, gekoppeld(v));
     if(beh >= v.doel_aantal) return true;
     const rest = restDagen(v);
@@ -91,7 +92,8 @@
 
   /* Mini-funnel: lopende kandidaten per blok, in fasekleuren. */
   const FUNNEL = [
-    {lbl:'in voorselectie',    fases:['Voorselectie','Voorgesteld','O&O sessie'],              kleurFase:'Voorselectie'},
+    /* Dit blok heet naar wat het is: alles vóór het eerste gesprek. */
+    {lbl:'vóór het gesprek',   fases:['Intake','Voorgesteld','O&O sessie'],                    kleurFase:'Voorgesteld'},
     {lbl:'in gesprek',         fases:['Eerste gesprek','Tweede gesprek','Meeloopdag','In de wacht'], kleurFase:'Eerste gesprek'},
     {lbl:'richting contract',  fases:['Offer','Contract ondertekenen'],                        kleurFase:'Offer'}
   ];
@@ -160,18 +162,30 @@
       : `nog ${rest} dagen`;
 
     // Doel als zin + voortgang
+    /* Zonder doel_gezet_op weet telDoel() niet vanaf wanneer hij mag tellen en
+       geeft hij altijd 0 terug. Dat zag er precies zo uit als "nog niets
+       bereikt" — een doel dat nooit vooruit kan. Dat zeggen we nu, in plaats
+       van een nul die niets betekent. */
+    const teller = doel > 0 && !dat(v.doel_gezet_op);
+    const posities = Number(v.aantal) || 1;
+    const teHoog = doel > 0 && (v.doel_soort === 'plaatsingen') && doel > posities;
     const zin = doel ? `minimaal ${doel} ${woord(doel, v.doel_soort)} voor ${dagLang(v.deadline)}`
                      : 'nog geen doel ingesteld';
     const status = !doel ? `<span class="meta">stel een doel in via Bewerken</span>`
+      : teller ? `<span class="meta">de teller is nooit gestart — open Bewerken en sla het doel opnieuw op</span>`
       : gehaald ? `<span class="doel-ok">doel gehaald ✓</span>`
-      : `<span class="num">${beh}</span> van <span class="num">${doel}</span> · nog ${doel-beh} te gaan`;
-    const pct = doel ? Math.min(100, beh/doel*100) : 0;
+      : `<span class="num">${beh}</span> van <span class="num">${doel}</span> · nog ${doel-beh} te gaan${
+          teHoog ? ` <span class="chip amber" title="Er ${posities===1?'is':'zijn'} maar ${posities} ${posities===1?'positie':'posities'} op deze vacature — meer plaatsingen kunnen niet.">meer dan ${posities} ${posities===1?'positie':'posities'}</span>` : ''}`;
+    const pct = (doel && !teller) ? Math.min(100, beh/doel*100) : 0;
 
     // Mini-funnel
-    const blok = FUNNEL.map(f => ({...f, n: lopend.filter(c => f.fases.includes(c.fase)).length,
+    const blok = FUNNEL.map(f => ({...f, n: lopend.filter(c => CRM.faseIn(c.fase, f.fases)).length,
                                    c: CRM.faseKleur(f.kleurFase)}));
     const totaal = blok.reduce((s,b)=>s+b.n, 0);
-    const segbar = totaal ? `<div class="hot-segbar" style="width:${Math.min(340, totaal*34)}px">${blok.filter(b=>b.n).map(b =>
+    /* Breedte als max-width, niet als vaste width: op een smal scherm paste de
+       balk anders niet in de kaart en kreeg de héle pagina een horizontale
+       schuifbalk. */
+    const segbar = totaal ? `<div class="hot-segbar" style="max-width:${Math.min(340, totaal*34)}px">${blok.filter(b=>b.n).map(b =>
         `<i style="flex:${b.n};background:${b.c}" title="${b.n} ${h(b.lbl)}"></i>`).join('')}</div>` : '';
     const funTekst = totaal
       ? blok.map(b => `<span class="${b.n?'':'leeg'}"><i class="hot-dot" style="background:${b.c}"></i>${b.n} ${h(b.lbl)}</span>`).join('')
@@ -199,7 +213,7 @@
         rij.map(c => `<div class="hk-row${EIND.includes(c.fase)||!heeftFase(c)?' af':''}" data-cand="${h(c.id)}">
           <i class="hot-dot" style="background:${heeftFase(c)?CRM.faseKleur(c.fase):'var(--line-2)'}"></i>
           <b>${h(c.naam)}</b>
-          <span class="chip">${heeftFase(c) ? h(c.fase) : 'geen fase'}</span>
+          <span class="chip">${heeftFase(c) ? h(CRM.faseNorm(c.fase)) : 'geen fase'}</span>
           <span class="hk-actie">${h(c.volgendeActie
               ? c.volgendeActie + (c.actieDatum ? ' · ' + CRM.fmtDateShort(c.actieDatum) : '')
               : (c.datum && dat(c.datum) >= vandaag && !EIND.includes(c.fase) ? 'afspraak ' + CRM.fmtDay(c.datum) + (c.tijd?' '+c.tijd:'') : ''))}</span>
@@ -372,7 +386,8 @@
       <div class="modal-b">
         <div class="f-grid">
           <div class="f-row"><label>Deadline</label>
-            <input type="date" id="hi_deadline" value="${h(dat(v.deadline)||'')}" min="${CRM.todayISO()}"></div>
+            <input type="date" id="hi_deadline" value="${h(dat(v.deadline)||'')}"
+              min="${h(dat(v.deadline) && dat(v.deadline) < CRM.todayISO() ? dat(v.deadline) : CRM.todayISO())}"></div>
           <div class="f-row"><label>Doel — aantal</label>
             <input type="number" id="hi_aantal" min="1" max="99" value="${h(v.doel_aantal||2)}"></div>
           <div class="f-row"><label>Doel — soort</label>
@@ -383,6 +398,7 @@
             </select></div>
         </div>
         <div class="hi-preview" id="hi_preview"></div>
+        <div id="hi_waarschuwing"></div>
         ${!nieuw ? `<div class="hint" style="margin-top:8px">Wijzig je het doel, dan telt de voortgang opnieuw vanaf vandaag.</div>` : ''}
       </div>
       <div class="modal-f">
@@ -390,26 +406,42 @@
         <button class="btn" id="hi_save">${nieuw ? 'Hot maken' : 'Opslaan'}</button>
       </div>`, {onOpen(m){
         const iDl = m.querySelector('#hi_deadline'), iN = m.querySelector('#hi_aantal'),
-              iS = m.querySelector('#hi_soort'), prev = m.querySelector('#hi_preview');
+              iS = m.querySelector('#hi_soort'), prev = m.querySelector('#hi_preview'),
+              waar = m.querySelector('#hi_waarschuwing');
+        const posities = Number(v.aantal) || 1;
         const teken = () => {
           const n = Math.max(1, parseInt(iN.value,10)||0);
           prev.innerHTML = iDl.value
             ? `minimaal ${n} ${h(woord(n, iS.value))} voor ${h(dagLang(iDl.value))}`
             : `<span class="meta">kies een deadline om de doelzin te zien</span>`;
+          /* Twee doelen die je nooit kunt halen, vóórdat je ze vastlegt:
+             een deadline die al voorbij is, en meer plaatsingen dan posities. */
+          const meldingen = [];
+          if(iDl.value && iDl.value < CRM.todayISO())
+            meldingen.push('Deze deadline ligt in het verleden — de kaart komt meteen op "deadline gemist" te staan.');
+          if(iS.value === 'plaatsingen' && n > posities)
+            meldingen.push(`Deze vacature heeft ${posities} ${posities===1?'positie':'posities'}; ${n} plaatsingen kunnen dus niet gehaald worden.`);
+          waar.innerHTML = meldingen.length
+            ? `<div class="note warn" style="margin-top:8px">${meldingen.map(h).join('<br>')}</div>` : '';
         };
         [iDl,iN,iS].forEach(el => { el.oninput = teken; el.onchange = teken; });
         teken();
         m.querySelector('#hi_save').onclick = async () => {
           const deadline = iDl.value, aantal = Math.max(1, parseInt(iN.value,10)||0);
-          if(!deadline){ iDl.focus(); return; }
+          if(!deadline){
+            waar.innerHTML = `<div class="note err" style="margin-top:8px">Kies eerst een deadline — zonder deadline is er geen druk om op te sturen.</div>`;
+            iDl.focus(); return;
+          }
           const patch = {deadline, doel_aantal:aantal, doel_soort:iS.value};
           if(nieuw){
             patch.hot = true;
             patch.hot_prio = hotVacs().length + 1;                 // achteraan
-            patch.doel_gezet_op = CRM.todayISO();
-          }else if(aantal !== oudAantal || iS.value !== oudSoort){
-            patch.doel_gezet_op = CRM.todayISO();                  // doel gewijzigd → opnieuw tellen
           }
+          /* doel_gezet_op is het nulpunt van de teller. Bij een nieuw doel, een
+             gewijzigd doel én bij een kaart waar hij ontbreekt (oude data) zetten
+             we hem — anders blijft de voortgang eeuwig op 0 staan. */
+          if(nieuw || !dat(v.doel_gezet_op) || aantal !== oudAantal || iS.value !== oudSoort)
+            patch.doel_gezet_op = CRM.todayISO();
           if(!await bewaarVac(v, patch)) return;
           CRM.modal.close();
           CRM.toast(nieuw ? `${v.klant} – ${v.functie} is nu hot` : 'Bijgewerkt', 'ok');

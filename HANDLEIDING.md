@@ -135,8 +135,8 @@ klant is afgesproken — en je collega ook niet.
 
 ## Recruitment
 
-**Waarvoor.** Alles vóór het bord: de inbox met inkomende sollicitanten, de
-voorselectie (videocalls en intakes) en de uitval.
+**Waarvoor.** Alles vóór het bord: de inbox met inkomende sollicitanten en de
+uitval. De videocalls en intakes doe je op het bord zelf, in de kolom Intake.
 
 **Wat het je oplevert.** Geen sollicitant die stilletjes doodbloedt, en achteraf
 altijd te herleiden waaróm iemand afviel.
@@ -148,8 +148,9 @@ altijd te herleiden waaróm iemand afviel.
   **→ Doorschieten naar pijplijn**.
 - **+ Sollicitant** rechtsboven om er zelf één toe te voegen (handmatig invullen
   of een CV inlezen). **⬇ Importeren** om een lijst in één keer in te lezen.
-- Tab **Voorselectie**: per kandidaat **Intake** (het video-intakeformulier),
-  **→ Voorstellen**, **Bewerken** of **Afmelden**.
+- Het losse tabblad **Voorselectie** bestaat niet meer. Wat je daar deed, doe je
+  nu op de kandidatenkaart vanaf de kolom **Intake** op het pijplijnbord:
+  videocall inplannen, intakeformulier invullen, **→ Voorstellen** of afmelden.
 - Tab **Uitval**: uitvalgegevens **Bijwerken**, een kaart **Corrigeren**,
   iemand als recyclebaar markeren en **Opnieuw aanbieden**, of bij een stop
   binnen de garantie een **+ Vervanger** aanmaken.
@@ -170,9 +171,10 @@ altijd te herleiden waaróm iemand afviel.
   je niet bellen, dus daar komt het systeem niet omheen. E-mail, woonplaats,
   functie en bron zijn niet verplicht maar tellen wel mee in de
   volledigheidsmeter.
-- **Voorselectie is de videocall-lijst.** Een nieuwe kandidaat of een wissel naar
-  Voorselectie kan alleen mét een datum voor de videocall. Geen datum, geen
-  Voorselectie.
+- **Intake is de videocall-fase.** Een nieuwe kandidaat of een wissel naar
+  Intake kan alleen mét een datum voor de videocall. Geen datum, geen Intake.
+  Die fase heette tot 30 juli 2026 *Voorselectie*; kandidaten die nog op de oude
+  waarde staan verschijnen gewoon in de Intake-kolom.
 - Bij **→ Voorstellen** zonder ingevulde intake krijg je eerst de vraag "Toch
   voorstellen aan de klant?" — je mag doorzetten, maar niet per ongeluk.
 - Het uitvalformulier vraagt altijd om een reden. Bij *Afgevallen* kies je tussen
@@ -181,7 +183,7 @@ altijd te herleiden waaróm iemand afviel.
   categorie, en vul je de stopdatum en de plaatsingsdatum in. Vul je de
   plaatsingsdatum niet in, dan telt die stop níét mee bij "gestopt deze maand" —
   het systeem waarschuwt je daarvoor.
-- **Heraanbieden maakt altijd een nieuwe kaart** in Voorselectie. De oude kaart
+- **Heraanbieden maakt altijd een nieuwe kaart** in Intake. De oude kaart
   blijft precies staan zoals hij was: die uitkomst blijft meetellen in alle
   cijfers en in de finance-app. Een oude stop wordt dus nooit weggepoetst — ook
   niet als de kandidaat later alsnog succesvol start.
@@ -192,8 +194,12 @@ altijd te herleiden waaróm iemand afviel.
 
 ## Pijplijn
 
-**Waarvoor.** Het ATS-bord, van Voorgesteld tot Gestart. Voorselectie en uitval
-leven bewust in Recruitment, zodat dit bord alleen lopende trajecten toont.
+**Waarvoor.** Het ATS-bord, van Intake tot Gestart. De uitval leeft bewust in
+Recruitment, zodat dit bord alleen lopende trajecten toont.
+
+Klik je op een kaart, dan opent de **volledige kandidatenkaart** — niet meer het
+smalle bewerkpaneel van het oude pijplijnbord. De knop **← Terug naar het bord**
+zet je terug op dezelfde plek, met dezelfde filters.
 
 **Wat het je oplevert.** In één scherm zie je waar het vastloopt, wie er deze
 week start, en hoe je ervoor staat tegenover het maandtarget.
@@ -216,7 +222,7 @@ Bij het verplaatsen naar een fase vraagt het systeem wat het nodig heeft:
 
 | Naar deze fase | Wat je moet invullen |
 |---|---|
-| Voorselectie | Datum van de videocall |
+| Intake | Datum van de videocall |
 | O&O sessie, Eerste gesprek, Tweede gesprek, Meeloopdag | Datum (en tijd) van de afspraak |
 | In de wacht | Verwachte startdatum — de forecast rekent ermee |
 | Contract ondertekenen, Contract getekend, Gestart | Bruto maandloon |
@@ -404,6 +410,72 @@ welke bron wél leads maar geen plaatsingen levert.
 - *Per klant* en de trend van twaalf maanden staan los van je periodekeuze.
 - Je kunt hier niets stukmaken: op het omzetdoel van Tjeerd na is alles
   alleen-lezen.
+
+---
+
+## Documenten opmaken
+
+**Waarvoor.** De drie stukken die naar buiten gaan: het kandidaatprofiel, het
+plan van aanpak en de samenwerkingsovereenkomst. Ze worden in het CRM opgemaakt
+in plaats van in Word.
+
+**Wat het je oplevert.** Eén huisstijl die overal hetzelfde is, en documenten die
+je later kunt heropenen en aanpassen in plaats van een nieuw bestand met een
+hoger versienummer.
+
+**Hoe het werkt.** Links vul je de velden in, rechts loopt het document mee. Je
+drukt af of slaat op als PDF via de printdialoog van je browser. Het plan van
+aanpak kun je ook als los HTML-bestand downloaden of de HTML kopiëren — dat opent
+overal, met de logo's ingesloten.
+
+| Document | Waar | Wat er wordt voorgevuld |
+|---|---|---|
+| Kandidaatprofiel | Kandidatenkaart → **Kandidaatprofiel** | Naam, functie, woonplaats, CV, beschikbaarheid, intake-samenvatting |
+| Plan van aanpak | Klantenkaart → **Plan van aanpak** | Sector uit de branche, functielijst uit de openstaande vacatures |
+| Samenwerkingsovereenkomst | Klantenkaart → **Samenwerkingsovereenkomst** | Bedrijfsnaam, adres, KvK en contactpersoon |
+
+**Waar je op moet letten**
+
+- **Er wordt alleen bewaard wat je hebt ingevuld, niet de opmaak.** Passen we
+  later de huisstijl of een standaardtekst aan, dan gaan alle bestaande stukken
+  vanzelf mee — behalve waar je bewust iets anders hebt afgesproken.
+- **Het kandidaatprofiel toont standaard alleen de voornaam** en geen
+  contactgegevens: de klant loopt via ons. Wil je de volledige naam of juist een
+  naamloos profiel met referentienummer, dan schakel je dat bovenaan om.
+- **De taken per functie** typ je één keer per kandidaat in. Ze worden bewaard,
+  dus de tweede keer staan ze er al.
+- **In het plan van aanpak beginnen cijfers en retentie leeg.** Een leeg veld
+  verschijnt niet in het document. Zo kan er nooit per ongeluk een verzonnen
+  percentage naar een klant.
+- **In de overeenkomst kun je elk artikel uitzetten of herschrijven.** Wat
+  afwijkt van de standaard wordt gemarkeerd, en de nummering plus de
+  kruisverwijzingen in de tekst schuiven vanzelf mee. Dat is precies wat er in
+  Word altijd misgaat.
+
+---
+
+## Klaar voor facturatie
+
+Op elke kandidatenkaart met een klant staat het blok **Klaar voor facturatie**.
+Het toont wat er nog ontbreekt voordat de fee berekend kan worden: de
+salariscomponenten, de startdatum, de datum waarop het contract getekend is, en
+of er een commerciële afspraak met die klant is vastgelegd. Klik op een regel en
+je springt naar het veld.
+
+De berekening volgt de samenwerkingsovereenkomst: twaalf maal het bruto
+maandsalaris, plus vakantiegeld, plus een vaste dertiende maand of
+eindejaarsuitkering, plus vaste ploegen- en functietoeslagen. Variabele bonussen,
+overwerk en onkosten tellen niet mee.
+
+**Waar je op moet letten**
+
+- Vul een component in als **0** als hij er niet is. Leeg betekent "weet ik nog
+  niet" en houdt het lijstje open; 0 betekent "die is er niet" en sluit het af.
+- De percentages per functiegroep en de uitkomst van de berekening zijn alleen
+  voor Tjeerd zichtbaar. Het lijstje met wat er nog ontbreekt is voor iedereen —
+  dat zijn veldnamen, geen bedragen.
+- De commerciële afspraken zelf leg je vast op de klantenkaart, onder
+  **Commerciële afspraken**.
 
 ---
 

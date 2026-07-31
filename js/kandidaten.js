@@ -4,10 +4,20 @@
    status, radius, ploegen, taal, vervoer) + de kandidatenkaart:
    het complete profiel, ster-beoordeling, CV-verrijking met
    conflictmarkering en de Source-tab (kaart, zie js/source.js).
+
+   Sinds 30 jul 2026 is dit ook wat een klik op een bordkaart opent
+   (wens Tjeerd) — niet meer het smalle bewerkpaneel van het oude
+   pijplijnbord. De blokken "Traject" en "Contract & salaris" hieronder
+   zijn daarvoor van die drawer hierheen verhuisd. De poortwachters bij
+   een fasewissel blijven in js/recruitment.js wonen; deze kaart roept
+   ze aan via CRM.kandidaatFasePicker/-Uitval/-NoShow/-Intake, zodat de
+   regels maar op één plek bestaan.
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
 const h = CRM.h;
+/* Gedeelde flows uit recruitment.js (laadt vóór dit bestand). */
+const D = () => CRM._rcDeel || {};
 
 /* ─── Filters onthouden (één sleutel: crm_kand_filters) ───────── */
 const FKEY = 'crm_kand_filters';
@@ -62,7 +72,7 @@ async function zetGolden(id, aan){
 }
 const goldenSter = klasse => `<span class="kd-goldster ${klasse||''}" title="Golden candidate">★</span>`;
 const faseChip = (fase, extra='') => fase
-  ? `<span class="chip ${extra}"><i class="dot" style="background:${CRM.faseKleur(fase)}"></i>${h(fase)}</span>` : '';
+  ? `<span class="chip ${extra}"><i class="dot" style="background:${CRM.faseKleur(fase)}"></i>${h(CRM.faseNorm(fase))}</span>` : '';
 const telLink = t => 'tel:' + String(t||'').replace(/[^0-9+]/g,'');
 const waLink  = t => { let n = String(t||'').replace(/[^0-9]/g,''); if(n.startsWith('06')) n = '31'+n.slice(1); if(n.startsWith('00')) n = n.slice(2); return 'https://wa.me/'+n; };
 /* Alleen echte weblinks openen — een `javascript:`-URL in een CV-veld mag
@@ -144,7 +154,7 @@ function stilteChip(c){
   const s = stilte(c);
   if(s.d == null) return `<span class="chip ${s.kleur}">Nog nooit gesproken</span>`;
   if(s.d === 0)   return '<span class="chip green">Vandaag gesproken</span>';
-  return `<span class="chip ${s.kleur}"><span class="num">${s.d}</span> dagen niet gesproken</span>`;
+  return `<span class="chip ${s.kleur}"><span class="num">${s.d}</span> ${s.d === 1 ? 'dag' : 'dagen'} niet gesproken</span>`;
 }
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
@@ -333,7 +343,9 @@ function gefilterd(){
     if(F.functie && !String(c.functie||'').toLowerCase().includes(F.functie.trim().toLowerCase())) return false;
     if(F.rec   && c.rec   !== F.rec)   return false;
     if(F.klant && c.klant !== F.klant) return false;
-    if(F.fase  && c.fase  !== F.fase)  return false;
+    /* faseIs: een kandidaat die nog op de oude waarde 'Voorselectie' staat
+       hoort gewoon bij het filter Intake (zie CRM.faseNorm in data.js). */
+    if(F.fase  && !CRM.faseIs(c.fase, F.fase)) return false;
     if(F.mijn  && !CRM.isVanMij(c))    return false;
     if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon,c.talen].join(' ').toLowerCase().includes(q)) return false;
     /* Radius als laatste: onbekende woonplaats valt er eerlijk buiten,
@@ -460,8 +472,44 @@ const SITUATIE_VELDEN = [
   {k:'rec',              lbl:'Eigenaar',         t:'text'},
   {k:'bron',             lbl:'Bron',             t:'select', opts:['', 'Import oud ATS', ...CRM.LEAD_BRONNEN]}
 ];
-/* Eén lijst voor het opzoeken bij inline bewerken (beide blokken). */
-const ALLE_VELDEN = VELDEN.concat(SITUATIE_VELDEN);
+/* ─── Traject en contract (verhuisd uit de bewerk-drawer) ─────────
+   Dit zijn de velden waar het bord op draait: afspraak, actie, start,
+   garantie, vervanging en de salariscomponenten. Ze stonden in het
+   smalle bewerkpaneel; nu staan ze hier, in dezelfde inline-stijl als
+   de rest van de kaart. De fase zelf zit er bewust NIET bij — die
+   wissel je met de knop "Fase wijzigen…", zodat de poortwachters uit
+   recruitment.js altijd langskomen.                                 */
+const gestopten = huidigeId => CRM.kandidaten()
+  .filter(x => x.fase === 'Gestopt' && String(x.id) !== String(huidigeId))
+  .map(x => ({v:String(x.id), l:`${x.naam} (${x.klant||'—'})`}));
+const naamVan = id => {
+  const k = id ? CRM.kandidaat(id) : null;
+  return k ? k.naam + (k.klant ? ' ('+k.klant+')' : '') : (id ? String(id) : '');
+};
+const TRAJECT_VELDEN = [
+  {k:'type',         lbl:'Type',            t:'select', opts:['','W&S','Flex']},
+  {k:'datum',        lbl:'Afspraakdatum',   t:'date',   toon:v => CRM.fmtDate(v)},
+  {k:'tijd',         lbl:'Tijd',            t:'time'},
+  {k:'volgendeActie',lbl:'Volgende actie',  t:'text'},
+  {k:'actieDatum',   lbl:'Actiedatum',      t:'date',   toon:v => CRM.fmtDate(v)}
+];
+const CONTRACT_VELDEN = [
+  {k:'start',        lbl:'Startdatum',      t:'date',   toon:v => CRM.fmtDate(v)},
+  {k:'garantieMnd',  lbl:'Garantie',        t:'number', toon:v => v ? v + (v==1?' maand':' maanden') : ''},
+  {k:'vervangt',     lbl:'Vervangt',        t:'select', opts:c => [{v:'',l:'—'}].concat(gestopten(c.id)), toon:naamVan},
+  {k:'geplaatstOp',  lbl:'Geplaatst op',    t:'date',   toon:v => CRM.fmtDate(v), alleenBijPlaatsing:true},
+  {k:'gestoptOp',    lbl:'Gestopt op',      t:'date',   toon:v => CRM.fmtDate(v), alleenBijPlaatsing:true}
+];
+const SALARIS_VELDEN = [
+  {k:'maandloon',    lbl:'Bruto maandloon', t:'number', toon:v => v ? CRM.euro(v) : ''},
+  {k:'toeslagPct',   lbl:'Ploegentoeslag',  t:'number', toon:v => v ? CRM.pct(v) : ''},
+  {k:'vtPct',        lbl:'Vakantietoeslag', t:'number', toon:v => v ? CRM.pct(v) : '', hint:'leeg = 8%'},
+  {k:'ejuPct',       lbl:'Eindejaarsuitkering', t:'number', toon:v => v ? CRM.pct(v) : ''},
+  {k:'overigPct',    lbl:'Overig',          t:'number', toon:v => v ? CRM.pct(v) : ''}
+];
+
+/* Eén lijst voor het opzoeken bij inline bewerken (alle blokken). */
+const ALLE_VELDEN = VELDEN.concat(SITUATIE_VELDEN, TRAJECT_VELDEN, CONTRACT_VELDEN, SALARIS_VELDEN);
 function lees(c, pad){
   if(pad.indexOf('cv.') === 0) return (c.cv || {})[pad.slice(3)];
   return c[pad];
@@ -493,14 +541,23 @@ function kaart(mount, acties, id){
      eerste stap is na binnenkomst. De knop heet nu wat hij doet, staat als
      enige gevulde knop rechts (primaire vervolgstap) en het venster kan
      nog steeds een gewone afspraak maken: Teams-vinkje uit. */
+  /* Kwam je hier vanaf het pijplijnbord, dan is "terug" het bord — met
+     dezelfde filters én dezelfde scrollpositie (zie js/pijplijn.js). */
+  const vanBord = typeof CRM.pijplijnTerug === 'function' && CRM.pijplijnTerug(c.id);
   acties.innerHTML = `
-    <button class="btn ghost sm" id="c_terug">← Overzicht</button>
+    <button class="btn ghost sm" id="c_terug">${vanBord?'← Terug naar het bord':'← Overzicht'}</button>
     <button class="btn ghost sm" id="c_bel">Gebeld</button>
     <button class="btn ghost sm" id="c_app">Geappt</button>
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
     <button class="btn ghost sm" id="c_taak">Taak</button>
+    <button class="btn ghost sm" id="c_profiel">Kandidaatprofiel</button>
     <button class="btn sm" id="c_video">Videocall inplannen</button>`;
-  acties.querySelector('#c_terug').onclick   = () => CRM.ga('kandidaten');
+  acties.querySelector('#c_terug').onclick   = () => CRM.ga(vanBord ? 'pijplijn' : 'kandidaten');
+  /* Kandidaatprofiel in huisstijl (js/cv.js): het vel dat naar de klant gaat.
+     De vacature gaat mee zodat "voorgesteld voor" en de reisafstand kloppen. */
+  acties.querySelector('#c_profiel').onclick = () => CRM.cvGen.open(c, {
+    vacature: c.vacatureId || null, klant: c.klant || ''
+  });
   acties.querySelector('#c_video').onclick   = () => videocallModal(c);
   acties.querySelector('#c_bel').onclick     = () => logVia(c,'bel','Wat is er besproken?');
   acties.querySelector('#c_app').onclick     = () => logVia(c,'whatsapp','Wat heb je gestuurd?');
@@ -520,6 +577,8 @@ function kaart(mount, acties, id){
         <div class="stack">
           ${kansenHtml(c)}
           ${trajectHtml(c)}
+          ${contractHtml(c)}
+          ${factuurklaarHtml(c)}
           ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
           ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
         </div>
@@ -533,6 +592,15 @@ function kaart(mount, acties, id){
   bindVelden(mount, c);
   bindSterren(mount, c);
   bindMist(mount, c);
+  /* "Klaar voor facturatie": springen naar het ontbrekende veld. Sommige
+     velden staan alleen op de kaart in bepaalde fases (geplaatstOp verschijnt
+     pas bij een plaatsing). Bestaat het veld hier niet, dan wordt de knop
+     gewone tekst — een knop die nergens heen gaat is erger dan geen knop. */
+  CRM.$$('[data-mistveld]', mount).forEach(b => {
+    const doel = mount.querySelector('.kd-w[data-veld="' + CSS.escape(b.dataset.mistveld) + '"]');
+    if(doel) b.onclick = () => springNaarVeld(b.dataset.mistveld, c);
+    else b.replaceWith(Object.assign(document.createElement('span'), {textContent:b.textContent}));
+  });
 
   /* Mail: pas ophalen nu de kaart daadwerkelijk openstaat — in de
      lijstweergave wordt er nooit mail opgevraagd. */
@@ -559,6 +627,16 @@ function kaart(mount, acties, id){
   };
   const cvKnop = mount.querySelector('#c_cvlees');
   if(cvKnop) cvKnop.onclick = () => cvModal(c);
+
+  /* Traject-acties — de logica woont in js/recruitment.js, inclusief álle
+     poortwachters. Deze kaart roept alleen aan. */
+  const klik = (sel, fn) => { const b = mount.querySelector(sel); if(b) b.onclick = fn; };
+  klik('#c_fase',   () => CRM.kandidaatFasePicker && CRM.kandidaatFasePicker(c.id));
+  klik('#c_intake', () => CRM.kandidaatIntake && CRM.kandidaatIntake(c.id));
+  klik('#c_noshow', () => CRM.kandidaatNoShow && CRM.kandidaatNoShow(c.id));
+  klik('#c_uitval', () => CRM.kandidaatUitval && CRM.kandidaatUitval(c.id));
+  klik('#c_intake2',() => CRM.kandidaatIntake && CRM.kandidaatIntake(c.id));
+  klik('#c_snel',   () => CRM.kandidaatBewerk && CRM.kandidaatBewerk(c.id));
   mount.querySelectorAll('#c_tabs .tab').forEach(b => b.onclick = () => {
     tabActief = b.dataset.t;
     mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === tabActief));
@@ -610,6 +688,60 @@ function bindSterren(mount, c){
   });
 }
 
+/* ─── "Wat mist nog" ──────────────────────────────────────────────
+   Een net doorgeschoten sollicitant heeft bijna niets ingevuld. In
+   plaats van een lijstje in de meter (lezen, zoeken, klikken) staan de
+   drie belangrijkste gaten bovenaan als knoppen die het veld openen.
+   Geen nieuwe verplichte velden: dit is exact CRM.volledigheid —
+   de vijf verplichte velden plus e-mail en CV, die daar meetellen. */
+/* Naam staat vooraan: er passen er maar drie op de strip, en een kandidaat
+   zonder naam is het gat dat je als eerste dicht wilt hebben (de kop zegt
+   dan letterlijk "Naam nog niet ingevuld"). Daarna telefoon en e-mail:
+   daarmee bereik je hem. */
+const MIST_VOLGORDE = ['naam','telefoon','email','functie','woonplaats','bron'];
+function gaten(c){
+  const v = CRM.volledigheid(c);
+  if(v.pct >= 100) return [];
+  const mist = new Set(v.mist.map(m => m.k));
+  const uit = [];
+  MIST_VOLGORDE.forEach(k => {
+    if(k === 'email'){
+      if(!String(c.email||'').trim()) uit.push({k:'email', lbl:'E-mailadres'});
+      return;
+    }
+    if(!mist.has(k)) return;
+    const f = ALLE_VELDEN.find(x => x.k === k);
+    uit.push({k, lbl:(f ? f.lbl : k)});
+  });
+  if(!c.cv) uit.push({k:'__cv', lbl:'CV inlezen'});
+  return uit.slice(0,3);
+}
+function mistHtml(c){
+  const g = gaten(c);
+  return `<div class="card-f kd-mist" id="kd_mist"${g.length?'':' hidden'}>${g.length ? `
+    <span class="label">Wat mist nog</span>
+    ${g.map(x => `<button type="button" class="chip btn-like kd-mistchip" data-mist="${h(x.k)}"
+      title="Meteen invullen">${h(x.lbl)}</button>`).join('')}
+    <span class="spacer"></span>
+    <span class="meta">klik om het meteen in te vullen</span>` : ''}</div>`;
+}
+function bindMist(root, c){
+  (root || document).querySelectorAll('[data-mist]').forEach(b => b.onclick = () => {
+    if(b.dataset.mist === '__cv') return cvModal(c);
+    springNaarVeld(b.dataset.mist, c);
+  });
+}
+/* Naar een veld springen en het meteen in bewerkmodus zetten. */
+function springNaarVeld(k, c){
+  const span = document.querySelector('.kd-w[data-veld="' + CSS.escape(k) + '"]');
+  if(!span) return;
+  span.scrollIntoView({behavior:'smooth', block:'center'});
+  span.classList.add('kd-wijs');
+  setTimeout(() => span.classList.remove('kd-wijs'), 1500);
+  /* Even wachten: anders opent het invoerveld terwijl de pagina nog rolt. */
+  setTimeout(() => { if(span.isConnected) bewerkVeld(span, c || CRM.kandidaat(kandOpen)); }, 280);
+}
+
 function kopHtml(c){
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
@@ -618,7 +750,7 @@ function kopHtml(c){
   const gold = isGolden(c.id);
   return `<div class="card"><div class="card-b kd-hero">
     <div style="min-width:0;flex:1">
-      <div class="h1" style="font-size:24px">${h(c.naam)}${gold?' '+goldenSter('lg'):''}</div>
+      <div class="h1" style="font-size:24px">${c.naam ? h(c.naam) : '<span class="kd-geennaam">Naam nog niet ingevuld</span>'}${gold?' '+goldenSter('lg'):''}</div>
       ${sterrenHtml(c)}
       <div class="sub" style="margin-top:3px">
         ${h(c.functie||'Functie nog niet ingevuld')}
@@ -655,7 +787,7 @@ function kopHtml(c){
         ? `<div class="meta">Nog invullen: ${v.mist.map(m=>h(m.lbl.toLowerCase())).join(', ')}</div>`
         : '<div class="meta">Alles ingevuld — netjes.</div>'}
     </div>
-  </div></div>`;
+  </div>${mistHtml(c)}</div>`;
 }
 
 /* ─── Kandidaatgegevens (inline bewerkbaar) ───────────────────── */
@@ -701,9 +833,15 @@ function bewerkVeld(span, c){
   const veld = ALLE_VELDEN.find(f => f.k === span.dataset.veld);
   const ruw  = lees(c, veld.k);
   const start = veld.lijst ? (Array.isArray(ruw) ? ruw.join(', ') : (ruw||'')) : (ruw == null ? '' : String(ruw));
+  /* opts mag een lijst zijn óf een functie (dynamisch, bv. de gestopte
+     kandidaten voor "Vervangt"), en een optie mag {v,l} zijn als de
+     opgeslagen waarde iets anders is dan wat je leest (id ↔ naam). */
+  const opts = typeof veld.opts === 'function' ? veld.opts(c) : (veld.opts || []);
   const el = veld.t === 'select'
     ? Object.assign(document.createElement('select'), {innerHTML:
-        veld.opts.map(o => `<option value="${h(o)}"${String(start)===o?' selected':''}>${h(o||'—')}</option>`).join('')})
+        opts.map(o => { const v = (o && typeof o === 'object') ? o.v : o;
+                        const l = (o && typeof o === 'object') ? o.l : (o || '—');
+          return `<option value="${h(v)}"${String(start)===String(v)?' selected':''}>${h(l)}</option>`; }).join('')})
     : Object.assign(document.createElement('input'), {type:veld.t, value:start});
   el.className = 'kd-inp';
   span.replaceWith(el);
@@ -739,6 +877,7 @@ function bewerkVeld(span, c){
         s.classList.toggle('leeg', !w);
       });
       meterBij(c);
+      salarisBij(c);
     }
   };
   el.onblur = () => sluit(true);
@@ -749,8 +888,22 @@ function bewerkVeld(span, c){
   if(veld.t === 'select') el.onchange = () => sluit(true);
 }
 
-/* Volledigheidsmeter bijwerken zonder het hele scherm te hertekenen. */
+/* Totaal-jaarsalaris live bijwerken na het wijzigen van een looncomponent. */
+function salarisBij(c){
+  const el = document.querySelector('#kd_totsal');
+  if(el) el.innerHTML = totaalRegel(c);
+}
+
+/* Volledigheidsmeter én de "Wat mist nog"-regel bijwerken zonder het
+   hele scherm te hertekenen. */
 function meterBij(c){
+  const mist = document.querySelector('#kd_mist');
+  if(mist){
+    const nieuw = document.createElement('div');
+    nieuw.innerHTML = mistHtml(c);
+    mist.replaceWith(nieuw.firstElementChild);
+    bindMist(document, c);
+  }
   const wrap = document.querySelector('.kd-meter');
   if(!wrap) return;
   const v = CRM.volledigheid(c);
@@ -1049,15 +1202,20 @@ function cvModal(c){
 /* ─── Intake ──────────────────────────────────────────────────── */
 function intakeHtml(c){
   const i = c.intake;
-  if(!i) return `<div class="card"><div class="card-h"><div class="h2">Intake</div></div>
-    <div class="card-b">${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in bij het eerste gesprek — dat voorkomt verrassingen later.')}</div></div>`;
+  /* Het intakeformulier zelf staat in js/recruitment.js (CRM.kandidaatIntake);
+     vroeger kon je er alleen vanaf het bord bij. */
+  const knop = `<button class="btn ghost sm" id="c_intake2">${i?'Intake bijwerken':'Intake invullen'}</button>`;
+  if(!i) return `<div class="card"><div class="card-h"><div class="h2">Intake</div>
+      <span class="spacer"></span>${knop}</div>
+    <div class="card-b">${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall — dat voorkomt verrassingen later.')}</div></div>`;
   const cijfer = Number(i.cijfer || i.commitment || 0);
   const rest = Object.keys(i).filter(k => !['cijfer','commitment','drijfveer','drijfveren','risico','risicos','op','door'].includes(k));
   return `<div class="card">
     <div class="card-h"><div class="h2">Intake</div>
       ${cijfer?`<span class="chip${cijfer<7?' amber':' green'}">Commitment <span class="num">${cijfer}</span>/10</span>`:''}
       <span class="spacer"></span>
-      <span class="meta num">${h(i.op?CRM.fmtDate(i.op):'')}${i.door?' · '+h(i.door):''}</span></div>
+      <span class="meta num">${h(i.op?CRM.fmtDate(i.op):'')}${i.door?' · '+h(i.door):''}</span>
+      ${knop}</div>
     <div class="card-b">
       ${cijfer && cijfer < 7 ? '<div class="note warn" style="margin-bottom:14px">Commitmentcijfer onder de 7 — bespreek de twijfel vóór je voorstelt.</div>' : ''}
       <div class="kd-velden">
@@ -1065,6 +1223,55 @@ function intakeHtml(c){
         ${(i.risico||i.risicos)?`<div class="kd-veld"><span class="label">Risico's</span><span>${h(i.risico||i.risicos)}</span></div>`:''}
         ${rest.map(k=>`<div class="kd-veld"><span class="label">${h(k)}</span><span>${h(typeof i[k]==='object'?JSON.stringify(i[k]):i[k])}</span></div>`).join('')}
       </div>
+    </div></div>`;
+}
+
+/* ─── Klaar voor facturatie ───────────────────────────────────────
+   Wat er nog ontbreekt voordat de fee uitgerekend kan worden. Het lijstje
+   is voor IEDEREEN: de AM moet weten wat hij moet invullen, en dat zijn
+   veldnamen, geen bedragen. De uitkomst van de berekening is dat wél, dus
+   die staat achter CRM.canSeeMoney(). Zie js/fee.js. */
+function factuurklaarHtml(c){
+  if(!CRM.fee || !c.klant) return '';           // zonder klant valt er niets te factureren
+  let mist = [], b = null;
+  try{
+    const afspraak = CRM.fee.voorKlant(c.klant, c.geplaatstOp || null);
+    mist = CRM.fee.watMist(c, afspraak) || [];
+    if(CRM.canSeeMoney()) b = CRM.fee.bereken(c, afspraak);
+  }catch(e){ console.warn('feeberekening', e); return ''; }
+
+  const klaar = !mist.length;
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Klaar voor facturatie</div>
+      <span class="spacer"></span>
+      <span class="chip${klaar?' green':' amber'}">${klaar ? 'compleet' : mist.length + ' nog invullen'}</span></div>
+    <div class="card-b">
+      ${klaar
+        ? '<p class="sub" style="margin:0 0 10px">Alle gegevens staan erin. Zodra het contract getekend is, kan er gefactureerd worden.</p>'
+        : `<p class="sub" style="margin:0 0 10px">Dit moet er nog in voordat de fee berekend kan worden:</p>
+           <ul class="kd-mistlijst">${mist.map(m => {
+             const veld = String(m.veld||''), waar = String(m.waar||'');
+             /* Alleen een knop als het veld ook echt op deze kaart staat —
+                anders stuur je iemand naar niets. Staat het elders, dan is
+                de vindplaats de nuttige informatie. */
+             const hier = ALLE_VELDEN.some(v => v.k === veld);
+             return `<li>${hier
+               ? `<button type="button" data-mistveld="${h(veld)}">${h(String(m.label||veld))}</button>`
+               : `<span>${h(String(m.label||veld))}</span>`}${
+               waar ? `<span class="meta">${h(waar)}</span>` : ''}</li>`;
+           }).join('')}</ul>`}
+      ${b && b.fee != null ? `
+        <div class="kd-velden" style="margin-top:14px">
+          <div class="kd-veld"><span class="label">Grondslag</span><span class="num">${h(CRM.euro(b.grondslag?.jaarSalaris))}</span></div>
+          <div class="kd-veld"><span class="label">Percentage</span><span class="num">${h(String(b.pct ?? '—'))}%${
+            b.functiegroep ? ' <span class="meta">' + h(String(b.functiegroep)) + '</span>' : ''}</span></div>
+          <div class="kd-veld"><span class="label">Fee</span><span class="num"><b>${h(CRM.euro(b.fee))}</b></span></div>
+          ${b.factuurdatum?`<div class="kd-veld"><span class="label">Factureren</span><span>${h(CRM.fmtDate(b.factuurdatum))}${
+            b.vervaldatum?' · vervalt '+h(CRM.fmtDate(b.vervaldatum)):''}</span></div>`:''}
+          ${b.garantieTot?`<div class="kd-veld"><span class="label">Garantie tot</span><span>${h(CRM.fmtDate(b.garantieTot))}</span></div>`:''}
+        </div>
+        ${(b.waarschuwingen||[]).length ? `<div class="note warn" style="margin-top:12px">${
+          b.waarschuwingen.map(w=>h(String(w))).join('<br>')}</div>` : ''}` : ''}
     </div></div>`;
 }
 
@@ -1113,25 +1320,92 @@ async function voorstellen(c, v){
 }
 
 /* ─── Traject in het kort ─────────────────────────────────────── */
+/* De Teams-link van de laatst ingeplande call. Hij is opgeslagen als
+   notitie (en oudere afspraken staan als activiteit) — we vissen hem
+   daaruit op zodat hij klikbaar bij de afspraak staat. */
+/* Een notitie is gebruikersinvoer: stop bij een aanhalingsteken of punthaak,
+   zodat er nooit iets anders dan een schone Teams-url in de href belandt. */
+const TEAMS_RE = /https:\/\/teams\.microsoft\.com\/[^\s"'<>]+/i;
+function teamsLink(c){
+  const rijen = (c.notities||[]).concat(CRM.activiteitenVoor('kandidaat', c.id))
+    .filter(x => x && TEAMS_RE.test(String(x.tekst||'')))
+    .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+  const m = rijen.length ? String(rijen[0].tekst).match(TEAMS_RE) : null;
+  return m ? m[0] : '';
+}
+
+/* Eén regel in een velden-blok: label + inline bewerkbare waarde. */
+function veldRij(c, f){
+  const w = toonWaarde(f, lees(c, f.k));
+  return `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
+    <span><span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span>${
+      f.hint?` <span class="meta">${h(f.hint)}</span>`:''}</span></div>`;
+}
+
+/* Toont de kandidaat een lopend traject? Bij fase '' (import uit het oude
+   ATS, of een golden candidate) heeft contract- en salarisinvoer geen zin
+   en houden we de kaart rustig. */
+const inTraject = c => !!c.fase;
+
 function trajectHtml(c){
   const idx = CRM.faseIdx(c.fase);
+  const teams = teamsLink(c);
   const stappen = CRM.PHASES.slice(0,11);
+  const uitval = ['Afgevallen','Gestopt'].includes(c.fase);
+  const kanIntake = CRM.faseIn(c.fase, ['Intake','Voorgesteld']);
   return `<div class="card">
     <div class="card-h"><div class="h2">Traject</div>
       ${c.klant?`<span class="spacer"></span><a class="btn ghost sm" href="#klanten/${encodeURIComponent(c.klant)}" data-klant="${h(c.klant)}">Naar klantkaart</a>`:''}</div>
     <div class="card-b">
       <div class="kd-velden">
-        <div class="kd-veld"><span class="label">Huidige fase</span><span>${h(c.fase)} <span class="meta num">sinds ${h(CRM.fmtDate(c.since)||'—')}</span></span></div>
-        ${c.volgendeActie?`<div class="kd-veld"><span class="label">Volgende actie</span><span>${h(c.volgendeActie)} <span class="meta num">${h(CRM.fmtDate(c.actieDatum)||'')}</span></span></div>`:''}
-        ${c.datum?`<div class="kd-veld"><span class="label">Afspraak</span><span class="num">${h(CRM.fmtDay(c.datum))}${c.tijd?' · '+h(c.tijd):''}</span></div>`:''}
-        ${c.start?`<div class="kd-veld"><span class="label">Startdatum</span><span class="num">${h(CRM.fmtDate(c.start))}</span></div>`:''}
+        <div class="kd-veld"><span class="label">Huidige fase</span><span>${h(CRM.faseNorm(c.fase)||'—')} <span class="meta num">sinds ${h(CRM.fmtDate(c.since)||'—')}</span></span></div>
+        ${TRAJECT_VELDEN.map(f => veldRij(c, f)).join('')}
+        ${teams?`<div class="kd-veld"><span class="label">Videocall</span><span>
+          <a class="btn sub sm kd-teamsl" href="${h(teams)}" target="_blank" rel="noopener">Teams-link</a></span></div>`:''}
         ${c.afvalCat?`<div class="kd-veld"><span class="label">Reden afval</span><span>${h(c.afvalCat)}</span></div>`:''}
         ${c.stopCat?`<div class="kd-veld"><span class="label">Reden stop</span><span>${h(c.stopCat)}${c.stopDoor?' ('+h(c.stopDoor)+')':''}</span></div>`:''}
       </div>
       <div class="kd-stappen">${stappen.map((p,i) =>
         `<i class="${i<=idx&&idx>=0?'on':''}" style="${i<=idx&&idx>=0?'background:'+p.c:''}" title="${h(p.k)}"></i>`).join('')}</div>
-      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(c.fase||'Nog niet in de pijplijn')}</div>
+      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(CRM.faseNorm(c.fase)||'Nog niet in de pijplijn')}</div>
+    </div>
+    <!-- Verhuisd uit de bewerk-drawer van het bord: fasewissel mét
+         poortwachters, video-intake, no-show en afmelden. -->
+    <div class="card-f row tight" style="flex-wrap:wrap;row-gap:8px">
+      <button class="btn ghost sm" id="c_fase">Fase wijzigen…</button>
+      ${kanIntake?`<button class="btn ghost sm" id="c_intake">Video-intake</button>`:''}
+      ${inTraject(c)&&!uitval?`<button class="btn ghost sm" id="c_noshow" title="Afspraak wissen en de no-show tellen">No-show</button>`:''}
+      ${inTraject(c)?`<button class="btn ghost sm" id="c_uitval">${uitval?'Uitvalgegevens bijwerken':'Afmelden'}</button>`:''}
+      <span class="spacer"></span>
+      <button class="btn sub sm" id="c_snel" title="Alle trajectvelden in één paneel, met één keer opslaan">Snel bewerken</button>
     </div></div>`;
+}
+
+/* ─── Contract, plaatsing en salaris (uit de bewerk-drawer) ─────
+   Salaris van de kandidaat is een arbeidsvoorwaarde en mag het team
+   zien (zelfde afweging als bij Kandidaatgegevens). De fee is dat
+   níet — daarom staat die verwijzing achter canSeeMoney(). */
+function contractHtml(c){
+  if(!inTraject(c)) return '';
+  const toonDatums = CRM.PLACED.includes(c.fase) || ['Afgevallen','Gestopt'].includes(c.fase)
+    || !!c.geplaatstOp || !!c.gestoptOp;
+  const velden = CONTRACT_VELDEN.filter(f => !f.alleenBijPlaatsing || toonDatums);
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Contract &amp; salaris</div>
+      <span class="meta">klik een waarde om te wijzigen</span></div>
+    <div class="card-b">
+      <div class="kd-velden">${velden.map(f => veldRij(c, f)).join('')}</div>
+      <div class="label" style="margin:16px 0 4px">Salaris</div>
+      <div class="kd-velden">${SALARIS_VELDEN.map(f => veldRij(c, f)).join('')}</div>
+      <div class="kd-totsal" id="kd_totsal">${totaalRegel(c)}</div>
+    </div></div>`;
+}
+function totaalRegel(c){
+  const bereken = D().totaalJaarSalaris;
+  if(!bereken || !c.maandloon) return '<span class="meta">Vul het bruto maandloon in voor het totaal-jaarsalaris.</span>';
+  const tot = bereken(c.maandloon, c.toeslagPct||0, c.vtPct==null?'':c.vtPct, c.ejuPct||0, c.overigPct||0);
+  return `Totaal jaarsalaris ≈ <b class="num">${CRM.euro(Math.round(tot))}</b>
+    <span class="meta">incl. toeslagen${CRM.canSeeMoney() ? ' — basis voor de fee in de finance-app' : ''}</span>`;
 }
 
 /* ─── Tabs onderaan ───────────────────────────────────────────── */
@@ -1211,50 +1485,86 @@ async function nieuweTaak(c){
   if(rij){ tabActief = 'taken'; CRM.render(); }
 }
 
-/* ─── Inplannen in Outlook (of deeplink als de koppeling nog uit staat) ── */
-function planModal(c){
-  const titel = c.fase==='Voorselectie'
-    ? `Videointake — ${c.naam}`
-    : `Gesprek — ${c.naam}${c.klant?' @ '+c.klant:''}`;
+/* ═══════════════════════════════════════════════════════════════
+   VIDEOCALL INPLANNEN
+   De eerste echte stap na binnenkomst: vanuit jouw gekoppelde agenda
+   een Teams-call bij de kandidaat. Teams staat daarom standaard aan;
+   uitvinken maakt er een gewone afspraak van. Zonder koppeling valt
+   het terug op de Outlook-deeplink — precies zoals eerder.
+   ═══════════════════════════════════════════════════════════════ */
+function videocallModal(c){
+  if(!(CRM.outlook && CRM.outlook.maakAfspraak)) return CRM.toast('Agenda-koppeling niet geladen','err');
+  const naam = String(c.naam||'').trim();
+  const titel = String(c.functie||'').trim()
+    ? `Videocall — ${naam || 'kandidaat'} · ${String(c.functie).trim()}`
+    : `Videocall intake — ${naam || 'kandidaat'}`;
+  const gekoppeld = agendaGekoppeld();
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Inplannen</div>
-      <p class="sub" style="margin:6px 0 0">${h(c.naam)}</p></div>
+    <div class="modal-h"><div class="h2">Videocall inplannen</div>
+      <p class="sub" style="margin:6px 0 0">${h(naam || 'Deze kandidaat')} — de call komt in jouw agenda en de
+        kandidaat krijgt de uitnodiging met de Teams-link.</p></div>
     <div class="modal-b">
-      <div class="f-row"><label>Onderwerp</label><input type="text" id="pl_titel" value="${h(titel)}"></div>
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="vc_titel" value="${h(titel)}"></div>
       <div class="f-grid">
-        <div class="f-row"><label>Datum</label><input type="date" id="pl_datum" value="${h(String(c.datum||'').slice(0,10)||CRM.todayISO())}"></div>
-        <div class="f-row"><label>Tijd</label><input type="time" id="pl_tijd" value="${h(c.tijd||'10:00')}"></div>
-        <div class="f-row"><label>Duur</label><select id="pl_duur">
-          <option value="30">30 minuten</option>
-          <option value="45" selected>45 minuten</option>
-          <option value="60">60 minuten</option></select></div>
+        <div class="f-row"><label>Datum</label>
+          <input type="date" id="vc_datum" value="${h(String(c.datum||'').slice(0,10)||CRM.todayISO())}"></div>
+        <div class="f-row"><label>Tijd</label>
+          <input type="time" id="vc_tijd" value="${h(c.tijd||'10:00')}"></div>
+        <div class="f-row"><label>Duur</label><select id="vc_duur">
+          <option value="20">20 minuten</option>
+          <option value="30" selected>30 minuten</option>
+          <option value="45">45 minuten</option></select></div>
       </div>
-      <label class="check"><input type="checkbox" id="pl_teams"> Teams-videocall</label>
-      <div class="f-row" style="margin-top:10px"><label>Notitie</label>
-        <textarea id="pl_body" placeholder="Voor in de uitnodiging…"></textarea></div>
+      <label class="check kd-vcteams"><input type="checkbox" id="vc_teams" checked> Teams-videocall aanmaken</label>
+      <div class="f-row" style="margin-top:12px"><label>Kandidaat ontvangt de uitnodiging op</label>
+        <input type="email" id="vc_email" placeholder="naam@voorbeeld.nl" value="${h(c.email||'')}"></div>
+      ${c.email ? '' : `<div class="note warn kd-vcgeenmail">
+        <span>Geen e-mailadres — vul het eerst in op de kaart, dan krijgt de kandidaat de uitnodiging.
+          Zonder adres kun je gewoon inplannen: de afspraak staat dan alleen in je eigen agenda.</span>
+        <button type="button" class="btn ghost sm" id="vc_naarmail">Naar het e-mailveld</button></div>`}
+      <div class="f-row" style="margin-top:12px"><label>Notitie voor in de uitnodiging</label>
+        <textarea id="vc_body" placeholder="Bijvoorbeeld: korte kennismaking — we bespreken je ervaring, wensen en beschikbaarheid."></textarea></div>
+      ${gekoppeld ? '' : `<p class="meta kd-vchint">Je agenda is nog niet gekoppeld. Outlook opent straks met alles
+        vooringevuld — zet daar zelf de Teams-vergadering aan en klik op Opslaan. Koppel je Microsoft-account in
+        Instellingen, dan zet het CRM de videocall er direct in.</p>`}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="pl_ok">Inplannen</button></div>`, {onOpen(m){
-    m.querySelector('#pl_ok').onclick = async () => {
+      <button class="btn" id="vc_ok">Videocall inplannen</button></div>`, {onOpen(m){
+    const naarMail = m.querySelector('#vc_naarmail');
+    if(naarMail) naarMail.onclick = () => { CRM.modal.close(); springNaarVeld('email', c); };
+
+    m.querySelector('#vc_ok').onclick = async () => {
+      const teams = m.querySelector('#vc_teams').checked;
+      const email = m.querySelector('#vc_email').value.trim();
       const d = {
-        titel:m.querySelector('#pl_titel').value.trim(),
-        datum:m.querySelector('#pl_datum').value, tijd:m.querySelector('#pl_tijd').value || '10:00',
-        duurMin:Number(m.querySelector('#pl_duur').value)||45,
-        teams:m.querySelector('#pl_teams').checked,
-        body:m.querySelector('#pl_body').value.trim(),
-        deelnemers:[c.email].filter(Boolean)
+        titel:   m.querySelector('#vc_titel').value.trim(),
+        datum:   m.querySelector('#vc_datum').value,
+        tijd:    m.querySelector('#vc_tijd').value || '10:00',
+        duurMin: Number(m.querySelector('#vc_duur').value) || 30,
+        teams,
+        locatie: teams ? 'Microsoft Teams' : '',
+        body:    m.querySelector('#vc_body').value.trim(),
+        deelnemers: [email].filter(Boolean)
       };
       if(!d.titel) return CRM.toast('Vul een onderwerp in','err');
       if(!d.datum) return CRM.toast('Kies een datum','err');
       CRM.modal.close();
       try{
-        const r = await CRM.outlook.maakAfspraak(d);
-        CRM.toast(r.via==='graph' ? 'In je agenda gezet' : 'Outlook geopend — klik daar op Opslaan','ok');
+        const r = (await CRM.outlook.maakAfspraak(d)) || {};
+        /* (a) datum/tijd op de kaart, zodat bord, pijplijn en dashboard
+           de afspraak tonen. (c) een Teams-link bewaren we als notitie —
+           die staat bij de kandidaat en niet alleen in een toast. */
+        const bij = Object.assign({}, c, {datum:d.datum, tijd:d.tijd});
+        if(r.online) bij.notities = [{op:new Date().toISOString(), door:CRM.me(),
+          tekst:'Teams-link: ' + r.online}].concat(c.notities||[]);
+        await bewaarKandidaat(bij);
         await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
-          `Afspraak ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
-        if(r.online) await CRM.logActiviteit('kandidaat', c.id, 'notitie', 'Teams-link: ' + r.online);
-        /* Datum/tijd ook op de kaart, zodat bord en dashboard het tonen. */
-        await bewaarKandidaat(Object.assign({}, c, {datum:d.datum, tijd:d.tijd}));
+          `Videocall ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
+        CRM.toast(r.via === 'graph'
+          ? (r.online ? 'Videocall staat in je agenda — Teams-link toegevoegd'
+                      : (d.deelnemers.length ? 'Afspraak staat in je agenda — uitnodiging verstuurd'
+                                             : 'Afspraak staat in je agenda'))
+          : 'Outlook geopend — controleer en klik daar op Opslaan', 'ok');
         CRM.render();
       }catch(e){ CRM.fout('Inplannen mislukt', e); }
     };

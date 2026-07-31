@@ -25,8 +25,19 @@ expliciet besluit van Tjeerd.
 - [x] Maandtarget bewerkbaar (targets-tabel, __default__) — Instellingen: tabel per maand + standaardregel; default wordt naar __default__ ÉN __default geschreven (bord leest de tweede)
 - [x] ⚠ instroom laag-signaal (<3 in vroege fases) — amberen chip in de signaalstrook
 
-## Kandidaten-instroom (Voorselectie)
-- [x] Kandidaten-tab = fase Voorselectie buiten het bord (pijplijn start bij Voorgesteld) — eigen tab "Voorselectie", bordkolommen beginnen bij Voorgesteld
+## Kandidaten-instroom (Voorselectie → Intake)
+
+> **BEWUSTE AFWIJKING VAN HET BORD — besluit Tjeerd, 30 juli 2026.**
+> De fase **Voorselectie bestaat niet meer**; de eerste pijplijnfase heet
+> **Intake** en staat wél gewoon als eerste kolom op het bord. Reden: als een
+> sollicitant interessant is, heeft een aparte screeningsstap geen waarde. Je
+> zet meteen de volledige kandidatenkaart op en plant van daaruit de videocall
+> via Teams. Het losse tabblad is daarmee overbodig geworden.
+> Lees hieronder overal "Intake" waar "Voorselectie" staat. De migratie van
+> bestaande rijen staat in `supabase/migratie-intake.sql`; tot die gedraaid is
+> leest de code de oude waarde als synoniem, zodat niemand uit beeld valt.
+
+- [x] ~~Kandidaten-tab = fase Voorselectie buiten het bord~~ — VERVALLEN: Intake is de eerste bordkolom, geen apart tabblad meer
 - [x] Poortwachter: call-datum verplicht bij nieuw/wissel naar Voorselectie — nieuweKandidaatModal + faseWissel + drawer-opslaan eisen call-datum
 - [x] Video-intakeformulier volledig (blokken A-F + samenvatting; opslag intake jsonb met op/door) — veldnamen identiek aan het bord (situatie/trajecten/jaZegt/…/nietLager/tien/drijfveer/risicos/klaar) + extra veld samenvatting (bestond al in het CRM, blijft gevuld)
 - [x] Intake-chip met cijfer op kaart (amber <7); teller zonder-intake — chip op kaart + KPI "Intake nog te doen" in de tab

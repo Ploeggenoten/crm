@@ -33,6 +33,30 @@
 .kd-meter b{font-size:14px;color:var(--ink);min-width:38px;text-align:right}
 .kd-kolommen{align-items:start}
 
+/* Kandidaat zonder naam (net doorgeschoten sollicitant): geen leeg gat
+   in de titel, maar dezelfde "invullen…"-toon als de velden eronder. */
+.kd-geennaam{font-family:var(--body);font-weight:500;font-size:18px;letter-spacing:0;
+  text-transform:none;color:var(--muted);font-style:italic}
+
+/* ─── "Wat mist nog" — strip onder de kop ─────────────────────── */
+.kd-mist{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.kd-mist > .label{margin:0}
+.kd-mist[hidden]{display:none}
+.kd-mistchip{cursor:pointer;font-family:var(--body);font-weight:600;font-size:12px;
+  line-height:1.6;padding:3px 11px;border-style:dashed;color:var(--txt-2)}
+.kd-mistchip:hover{border-style:solid;border-color:var(--olive-l);color:var(--olive);background:#fff}
+/* Kort oplichten waar je heen springt — anders zoek je het veld alsnog. */
+.kd-wijs{background:var(--card-2);border-color:var(--olive-l) !important;
+  box-shadow:0 0 0 3px rgba(111,160,60,.15)}
+
+/* ─── Videocall-venster ───────────────────────────────────────── */
+.kd-vcteams{margin-top:12px;font-weight:600}
+.kd-vcgeenmail{margin-top:10px}
+.kd-vcgeenmail > span{display:block}
+.kd-vcgeenmail .btn{margin-top:9px}
+.kd-vchint{margin:14px 0 0;line-height:1.5}
+.kd-teamsl{margin-left:6px;vertical-align:1px}
+
 /* ─── Veldenlijst (inline bewerkbaar) ─────────────────────────── */
 .kd-velden{display:flex;flex-direction:column;gap:1px}
 .kd-veld{display:grid;grid-template-columns:150px 1fr;align-items:baseline;gap:12px;
@@ -133,3 +157,30 @@ label.kd-taak input{margin-top:3px}
    onderaan css/klanten.css staat (samen met CRM.mailUI). Hier alleen
    de plaatsing: het blok volgt de andere kaarten in de kolom. */
 .kd-kolommen .ml-kaart{margin-top:0}
+
+/* ─── Traject & contract (verhuisd uit de bewerk-drawer van het bord)
+   Zelfde regel als op het bord: het totaal-jaarsalaris onder de
+   looncomponenten, rustig en zonder eigen kleur. */
+.kd-totsal{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;
+  font-size:13px;color:var(--txt-2)}
+.kd-totsal b{font-size:15px;color:var(--ink)}
+.kd-totsal .meta{margin-left:6px}
+/* Knoppenrij onder het Traject-blok: op smalle schermen valt de spacer weg,
+   zodat de knoppen netjes onder elkaar wrappen in plaats van uit te rekken. */
+@media(max-width:520px){ .card-f .spacer{display:none} }
+
+/* ─── Klaar voor facturatie ───────────────────────────────────────
+   Lijstje van wat er nog ontbreekt voordat de fee berekend kan worden.
+   Bewust een lijst en geen chips: de labels zijn hele zinnen ("Vaste
+   dertiende maand of eindejaarsuitkering"), en die passen niet in een pil
+   zonder dat het een onleesbare brij wordt. */
+.kd-mistlijst{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.kd-mistlijst li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;
+  padding:7px 0;border-bottom:1px solid var(--line)}
+.kd-mistlijst li:last-child{border-bottom:0}
+.kd-mistlijst button{background:none;border:0;padding:0;font:inherit;font-weight:600;
+  color:var(--oranje);cursor:pointer;text-align:left;border-bottom:1px solid transparent}
+.kd-mistlijst button:hover{border-bottom-color:currentColor}
+.kd-mistlijst button:focus-visible{outline:2px solid var(--olive);outline-offset:2px;border-radius:2px}
+.kd-mistlijst span:first-child{font-weight:600;color:var(--txt-2)}
+.kd-mistlijst .meta{flex:1;min-width:0}

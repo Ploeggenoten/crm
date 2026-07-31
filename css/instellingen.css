@@ -6,9 +6,15 @@
 tr.in-nu td{background:var(--card-2)}
 .in-sys{display:flex;flex-direction:column}
 .in-sysrij{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:7px 0;border-bottom:1px solid #eef0e4;font-size:13px}
+  padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
 .in-sysrij:last-child{border-bottom:none}
 .in-sysrij .meta{margin-left:6px}
+
+/* Werk-e-mail per teamlid. Een leeg veld is geen fout maar wel een gemis:
+   zonder adres komt de Teams-melding nergens aan. Daarom een rustige
+   markering in plaats van een rood alarm. */
+.in-mail{min-width:210px}
+.in-mail.leeg{border-color:var(--amber-line);background:var(--amber-bg)}
 
 /* Microsoft-koppeling: status, wat er aanstaat, Teams-schakelaar. */
 .in-msstatus{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
@@ -26,7 +32,14 @@ tr.in-nu td{background:var(--card-2)}
 .in-mswat{display:flex;flex-direction:column;gap:1px;min-width:0}
 .in-mswat b{font-size:13px;font-weight:600}
 .in-mswat .meta{font-size:11.5px}
-.in-mscheck{margin:10px 0 0}
+/* Het gevolg staat er pas als het onderdeel het niet doet — anders is het
+   zes keer een waarschuwing bij iets dat prima werkt. */
+.in-msgevolg{display:none}
+.in-msrij.uit .in-msgevolg{display:block;color:var(--amber);margin-top:2px}
+.in-msuitslag{margin-top:14px}
+.in-msknoppen{margin-top:10px}
+.in-mswaarschuwing{color:var(--amber)}
+.in-mswaarschuwing:empty{display:none}
 .in-msschakel{display:flex;align-items:flex-start;gap:10px;margin-top:16px;
   padding-top:14px;border-top:1px solid var(--line);cursor:pointer}
 .in-msschakel input{margin-top:2px;flex:none}

@@ -54,15 +54,21 @@ het uitklaplijstje van diezelfde rij. Kies je *Intake gepland*, dan opent meteen
 een venster om datum en tijd vast te leggen. Klik op de naam voor de details en
 de knop **→ Doorschieten naar pijplijn**.
 
-**3. Voorselectie leegwerken.** **Recruitment** → tab **Voorselectie**. Dit is de
-videocall-lijst. Per regel: **Intake** (het gespreksformulier) en daarna
-**→ Voorstellen** om de kandidaat op het bord te zetten. Zonder ingevulde intake
-krijg je eerst een bevestigingsvraag.
+**3. De kolom Intake leegwerken.** **Pijplijn** → eerste kolom **Intake**. Daar
+staat iedereen die net binnen is. Klik op de kaart, plan met **Videocall
+inplannen** een Teams-gesprek, vul daarna de **Intake** in, en zet hem met
+**→ Voorstellen** door zodra hij bij een klant past.
+
+> De aparte stap "Voorselectie" bestaat niet meer. Als een sollicitant
+> interessant is, krijgt hij meteen een volledige kandidatenkaart — dat scheelt
+> een tussenstap waar mensen bleven liggen.
 
 **4. Pijplijn bijwerken.** **Pijplijn**. Sleep een kaart naar de volgende
 kolom, of gebruik de knop **Verplaatsen naar fase…** op de kaart (handig op je
-telefoon). Klik op een kaart om alles te bewerken. Valt iemand af of stopt
-iemand? Sleep naar de strook **Uitval** rechts — dan krijg je het redenformulier.
+telefoon). Klik op een kaart en je krijgt de **volledige kandidatenkaart**, met
+een knop **← Terug naar het bord** die je op dezelfde plek terugzet. Valt iemand
+af of stopt iemand? Sleep naar de strook **Uitval** rechts — dan krijg je het
+redenformulier.
 
 **5. Vastleggen wat je besproken hebt.** **Relaties** → klik de klant → klik de
 contactpersoon → **Gespreksverslag**. Noem je `@Tjerk` of `@Rajesh` in de tekst,
@@ -71,6 +77,36 @@ dan krijgt diegene automatisch een melding. Een afspraak plannen doe je met
 
 Kijk daarnaast een keer per dag bij **Hot vacatures**: daar staan de vacatures
 met een deadline en een doel, op volgorde van druk.
+
+## 5. Documenten opmaken
+
+Drie stukken maak je voortaan in het CRM zelf. Je vult links de velden in, rechts
+zie je het document meelopen, en je drukt af of slaat op als PDF.
+
+- **Kandidaatprofiel** — kandidatenkaart → knop **Kandidaatprofiel**. Het vel in
+  onze huisstijl dat je met een voorstel meestuurt. Standaard alleen de voornaam,
+  geen contactgegevens; die staat je klant via ons te woord. De taken per functie
+  typ je één keer in, daarna staan ze er de volgende keer al.
+- **Plan van aanpak** — klantenkaart → knop **Plan van aanpak**. Sector, pijnpunten
+  en functielijst worden voorgevuld. Cijfers en retentie beginnen bewust leeg:
+  een leeg veld verschijnt niet, dus er kan nooit een verzonnen percentage in.
+- **Samenwerkingsovereenkomst** — klantenkaart → knop **Samenwerkings-
+  overeenkomst**. Elk artikel is aan of uit te zetten en de tekst is aan te
+  passen; je ziet gemarkeerd wat afwijkt van de standaard. Nummering en
+  kruisverwijzingen lopen vanzelf mee.
+
+Van elk stuk worden alleen de ingevulde velden bewaard, niet de opmaak. Passen we
+later de huisstijl aan, dan gaan alle bestaande stukken vanzelf mee.
+
+## 6. Facturatie voorbereiden
+
+Op elke kandidatenkaart staat **Klaar voor facturatie**: het lijstje van wat er
+nog ontbreekt voordat de fee berekend kan worden. Klik op een regel en je springt
+naar het veld. Is het lijstje leeg, dan kan er gefactureerd worden zodra het
+contract getekend is.
+
+Vul die velden dus echt in — daar hangt de hele berekening aan. Wat de fee
+uiteindelijk wordt, ziet alleen Tjeerd.
 
 ## Handig om te weten
 

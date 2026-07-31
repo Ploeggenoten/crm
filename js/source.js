@@ -43,8 +43,102 @@ let S = (() => {
 })();
 function zetS(k,v){ S[k]=v; try{ localStorage.setItem(SKEY, JSON.stringify(S)); }catch(e){} }
 
-/* ─── Hulpjes ─────────────────────────────────────────────────── */
-const coord = plaats => CRM.PLAATSEN[CRM.plaatsSleutel(plaats)] || null;
+/* ─── Plaatsnamen: resolver met veilige varianten ───────────────
+   CRM.PLAATSEN (data.js) is de bron van waarheid, maar de echte data
+   schrijft plaatsen net anders op: "Katwijk aan Zee", "The Hague",
+   "Capelle a.d. IJssel", "Leidschenveen", "Hellvoetsluis". Zulke rijen
+   vielen meteen van de kaart én uit elk radiusfilter.
+   Deze laag probeert eerst een paar varianten van DEZELFDE plaats.
+   Nooit gokken op een buurgemeente: liever geen punt dan een fout punt.
+   Wat hier via een alias binnenkomt hoort eigenlijk in CRM.PLAATSEN —
+   zie het verzoek aan data.js onderaan dit bestand. */
+const PL_ALIAS = {
+  /* Engelse en verminkte schrijfwijzen */
+  thehague:'denhaag', hague:'denhaag', sgravennage:'sgravenhage',
+  hellvoetsluis:'hellevoetsluis', denbosch:'shertogenbosch', shertogenbos:'shertogenbosch',
+  /* Wijken en deelgemeenten: dezelfde gemeente, andere naam */
+  leidschenveen:'denhaag', ypenburg:'denhaag', scheveningen:'denhaag',
+  loosduinen:'denhaag', wateringseveld:'denhaag',
+  /* "a.d." schrijft plaatsSleutel niet om naar "a/d" */
+  krimpenadijssel:'krimpena/dijssel', capelleadijssel:'capellea/dijssel',
+  nieuwerkerkadijssel:'nieuwerkerka/dijssel', alphenadrijn:'alphena/drijn',
+  koudekerkadrijn:'koudekerka/drijn'
+};
+
+/* Varianten van precies naar ruimer. Elke stap moet dezelfde plaats
+   blijven aanwijzen — daarom geen fuzzy matching. */
+function* plaatsVarianten(ruw){
+  yield ruw;
+  const basis = ruw.toLowerCase()
+    .replace(/\(.*?\)/g, ' ')                    /* "(ZH)", "(gem. Westland)" */
+    .replace(/^\s*\d{4}\s*[a-z]{0,2}\b/, '')     /* postcode ervoor */
+    .replace(/^\s*gem(eente)?\.?\s+/, '')
+    .replace(/\s+/g, ' ').trim();
+  if(basis && basis !== ruw.toLowerCase()) yield basis;
+  const zonderZee = basis.replace(/\s+a(an)?\s*\/?\s*(de[nr]?\s+)?zee$/, '');
+  if(zonderZee && zonderZee !== basis) yield zonderZee;               /* Katwijk aan Zee → Katwijk */
+  const eerste = basis.split(/\s*[,;]\s*|\s+\/\s+|\s+-\s+/)[0].trim();
+  if(eerste && eerste !== basis) yield eerste;                        /* "Rotterdam / Schiedam" */
+}
+
+/* {sleutel, coord} of null. Gecached: dit loopt bij elke hertekening
+   over honderden rijen. */
+const _plaatsCache = new Map();
+function plaatsPunt(naam){
+  const ruw = String(naam||'').trim();
+  if(!ruw) return null;
+  if(_plaatsCache.has(ruw)) return _plaatsCache.get(ruw);
+  let uit = null;
+  for(const v of plaatsVarianten(ruw)){
+    let s = CRM.plaatsSleutel(v);
+    if(!s) continue;
+    if(!CRM.PLAATSEN[s] && PL_ALIAS[s]) s = PL_ALIAS[s];
+    if(CRM.PLAATSEN[s]){ uit = {sleutel:s, coord:CRM.PLAATSEN[s]}; break; }
+  }
+  _plaatsCache.set(ruw, uit);
+  return uit;
+}
+
+/* Afstand met dezelfde resolver als de kaart. CRM.afstandKm kent de
+   aliassen hierboven niet; zonder deze functie stond een klant wél op
+   de kaart maar viel hij buiten elk radiusfilter — precies de
+   verwarring die we hier oplossen. */
+function afstandKm(a, b){
+  const pa = plaatsPunt(a), pb = plaatsPunt(b);
+  if(!pa || !pb) return null;
+  const R = 6371, rad = d => d*Math.PI/180;
+  const dLat = rad(pb.coord[0]-pa.coord[0]), dLon = rad(pb.coord[1]-pa.coord[1]);
+  const x = Math.sin(dLat/2)**2 + Math.cos(rad(pa.coord[0]))*Math.cos(rad(pb.coord[0]))*Math.sin(dLon/2)**2;
+  return Math.round(2*R*Math.asin(Math.sqrt(x)));
+}
+
+/* Groepeer een lijst op plaats. Levert de groepen mét coördinaat, plus
+   apart wie er géén plaats heeft en wie een plaats heeft die we niet
+   kennen — die twee zijn een ander soort probleem en horen dus niet op
+   één hoop. */
+function groepeerOpPlaats(lijst, veld){
+  const op = new Map(), zonder = [], onbekend = [];
+  lijst.forEach(x => {
+    const ruw = String(x[veld]||'').trim();
+    if(!ruw){ zonder.push(x); return; }
+    const p = plaatsPunt(ruw);
+    if(!p){ onbekend.push({obj:x, locatie:ruw}); return; }
+    let g = op.get(p.sleutel);
+    if(!g) op.set(p.sleutel, g = {coord:p.coord, leden:[]});
+    g.leden.push(x);
+  });
+  return {op:Array.from(op.values()), zonder, onbekend};
+}
+
+/* Onbekende plaatsen tellen, ongeacht hoofdletters of streepjes. */
+function telOnbekend(rijen){
+  const t = {};
+  rijen.forEach(r => {
+    const s = CRM.plaatsSleutel(r.locatie);
+    (t[s] = t[s] || {naam:r.locatie, n:0}).n++;
+  });
+  return Object.values(t).sort((a,b) => b.n - a.n);
+}
 
 /* Meerdere punten in dezelfde plaats: klein, deterministisch uitwaaieren
    zodat stippen elkaar niet exact bedekken (± 0,5–1,5 km). */
@@ -250,25 +344,22 @@ CRM.kaartRender = async function(container, opts){
        "veld leeg" van "plaats staat niet in CRM.PLAATSEN" en tonen beide.
        Vroeger werden alle namen in één regel achter elkaar geplakt — met
        200+ klanten werd dat een muur van tekst. */
-    const buiten = {geenLocatie:[], onbekend:[]};
-    const noteerBuiten = k => {
-      const loc = String(k.locatie||'').trim();
-      (loc ? buiten.onbekend : buiten.geenLocatie).push({naam:k.naam, locatie:loc});
-    };
+    let buiten = {zonder:[], onbekend:[]};
     const tekenBuiten = () => {
       const el = $('#src_missend'); if(!el) return;
-      const n = buiten.geenLocatie.length + buiten.onbekend.length;
+      const n = buiten.zonder.length + buiten.onbekend.length;
       if(!n){ el.innerHTML = ''; return; }
-      const perPlaats = {};
-      buiten.onbekend.forEach(k => { (perPlaats[k.locatie] = perPlaats[k.locatie]||[]).push(k.naam); });
-      const plaatsen = Object.entries(perPlaats).sort((a,b) => b[1].length - a[1].length);
-      const zl = buiten.geenLocatie;
+      const plaatsen = telOnbekend(buiten.onbekend);
+      const namenVan = p => buiten.onbekend
+        .filter(x => CRM.plaatsSleutel(x.locatie) === CRM.plaatsSleutel(p.naam))
+        .map(x => x.obj.naam).join(', ');
+      const zl = buiten.zonder;
       el.innerHTML = `<details class="src-buiten">
         <summary>${n} klant${n===1?'':'en'} niet op de kaart${
           zl.length ? ` · ${zl.length} zonder locatie` : ''}${
           buiten.onbekend.length ? ` · ${buiten.onbekend.length} met een plaats die het systeem niet kent` : ''}</summary>
-        ${plaatsen.length ? `<div class="src-buitenlijst">${plaatsen.map(([p, namen]) =>
-            `<span class="chip" title="${h(namen.join(', '))}">${h(p)} <b class="num">${namen.length}</b></span>`).join('')}</div>
+        ${plaatsen.length ? `<div class="src-buitenlijst">${plaatsen.map(p =>
+            `<span class="chip" title="${h(namenVan(p))}">${h(p.naam)} <b class="num">${p.n}</b></span>`).join('')}</div>
           <p class="meta">Deze plaatsnamen staan niet in de afstandentabel — daardoor vallen ze ook buiten elk
             radiusfilter. Geef ze door zodat ze toegevoegd kunnen worden.</p>` : ''}
         ${zl.length ? `<p class="meta">Zonder locatie: ${h(zl.slice(0,25).map(k => k.naam).join(', '))}${
@@ -281,67 +372,50 @@ CRM.kaartRender = async function(container, opts){
       const kands = bronKandidaten();
 
       /* Kandidaten: kleine stippen op woonplaats. */
-      const perPlek = {};
-      kands.forEach(c => { const k = CRM.plaatsSleutel(c.woonplaats); (perPlek[k] = perPlek[k]||[]).push(c); });
-      let geenWoonplaats = 0, onbekendeWoonplaats = 0;
-      const onbekendeNamen = {};
-      Object.keys(perPlek).forEach(plek => {
-        const basis = CRM.PLAATSEN[plek];
-        if(!basis){
-          const groep = perPlek[plek];
-          if(!plek) geenWoonplaats += groep.length;
-          else {
-            onbekendeWoonplaats += groep.length;
-            const toon = String(groep[0].woonplaats||'').trim();
-            onbekendeNamen[toon] = (onbekendeNamen[toon]||0) + groep.length;
-          }
-          return;
-        }
-        perPlek[plek].forEach((c, i) => {
-          const p = spreid(basis, i, perPlek[plek].length, 0.014);
-          punten.push(p);
-          L.circleMarker(p, {radius:4.5, color:K.blue, weight:1, fillColor:K.blue, fillOpacity:.55})
-            .bindPopup(`<div class="src-pop"><b>${h(c.naam)}</b>${sterHtml(c.ster)}
-              <div class="src-pop-sub">${h(c.functie||'—')} · ${h(c.woonplaats||'—')}</div>
-              <a href="#kandidaten/${encodeURIComponent(c.id)}" data-kand="${h(String(c.id))}">Open kandidatenkaart →</a></div>`)
-            .addTo(laag);
-        });
-      });
+      const kg = groepeerOpPlaats(kands, 'woonplaats');
+      kg.op.forEach(g => g.leden.forEach((c, i) => {
+        const p = spreid(g.coord, i, g.leden.length, 0.014);
+        punten.push(p);
+        L.circleMarker(p, {radius:4.5, color:K.blue, weight:1, fillColor:K.blue, fillOpacity:.55})
+          .bindPopup(`<div class="src-pop"><b>${h(c.naam)}</b>${sterHtml(c.ster)}
+            <div class="src-pop-sub">${h(c.functie||'—')} · ${h(c.woonplaats||'—')}</div>
+            <a href="#kandidaten/${encodeURIComponent(c.id)}" data-kand="${h(String(c.id))}">Open kandidatenkaart →</a></div>`)
+          .addTo(laag);
+      }));
 
       /* Actieve klanten: grotere olijfgroene pinnen. */
-      const perKPlek = {};
-      klanten.forEach(k => { const s = CRM.plaatsSleutel(k.locatie); (perKPlek[s] = perKPlek[s]||[]).push(k); });
-      Object.keys(perKPlek).forEach(plek => {
-        const basis = CRM.PLAATSEN[plek];
-        if(!basis){ perKPlek[plek].forEach(k => noteerBuiten(k)); return; }
-        perKPlek[plek].forEach((k, i) => {
-          const p = spreid(basis, i, perKPlek[plek].length, 0.02);
-          punten.push(p);
-          const vacs = CRM.vacaturesVan(k.naam).filter(v => !v.status || v.status === 'Open');
-          L.circleMarker(p, {radius:9, color:K.olive, weight:2, fillColor:K.olive, fillOpacity:.85})
-            .bindTooltip(k.naam, {direction:'top', offset:[0,-6]})
-            .on('click', () => klantPaneel(k, vacs, kands))
-            .addTo(laag);
-        });
-      });
+      const kl = groepeerOpPlaats(klanten, 'locatie');
+      buiten = {zonder:kl.zonder, onbekend:kl.onbekend};
+      kl.op.forEach(g => g.leden.forEach((k, i) => {
+        const p = spreid(g.coord, i, g.leden.length, 0.02);
+        punten.push(p);
+        const vacs = CRM.vacaturesVan(k.naam).filter(v => !v.status || v.status === 'Open');
+        L.circleMarker(p, {radius:9, color:K.olive, weight:2, fillColor:K.olive, fillOpacity:.85})
+          /* Leaflet zet een tooltip-string als innerHTML — dus escapen,
+             anders is een klantnaam met <> een XSS-gaatje. */
+          .bindTooltip(h(k.naam), {direction:'top', offset:[0,-6]})
+          .on('click', () => klantPaneel(k, vacs, kands))
+          .addTo(laag);
+      }));
 
+      const geenWoonplaats = kg.zonder.length, onbekendeWoonplaats = kg.onbekend.length;
       const opKaart = kands.length - geenWoonplaats - onbekendeWoonplaats;
       $('#src_telling').textContent =
         klanten.length + ' actieve klanten · ' + kands.length + ' kandidaten door de filters'
         + ' · ' + opKaart + ' op de kaart'
         + (geenWoonplaats ? ' · ' + geenWoonplaats + ' zonder woonplaats' : '')
         + (onbekendeWoonplaats ? ' · ' + onbekendeWoonplaats + ' zonder herkende plaats' : '');
-      const topOnbekend = Object.entries(onbekendeNamen).sort((a,b) => b[1]-a[1]).slice(0,12);
+      const alleOnbekend = telOnbekend(kg.onbekend), topOnbekend = alleOnbekend.slice(0,12);
       $('#src_legenda').innerHTML = `<div class="src-legenda">
         <span class="src-leg"><i class="src-dot" style="background:${K.olive}"></i>actieve klant</span>
         <span class="src-leg"><i class="src-dot sm" style="background:${K.blue}"></i>kandidaat</span>
         <span class="meta">klik op een klant-pin voor passende kandidaten binnen 30 km</span>
       </div>` + (topOnbekend.length ? `<details class="src-buiten">
         <summary>${onbekendeWoonplaats} ${onbekendeWoonplaats===1?'kandidaat':'kandidaten'} met een plaats die het systeem niet kent</summary>
-        <div class="src-buitenlijst">${topOnbekend.map(([p,n]) =>
-          `<span class="chip">${h(p)} <b class="num">${n}</b></span>`).join('')}
-          ${Object.keys(onbekendeNamen).length > topOnbekend.length
-            ? `<span class="meta">+ ${Object.keys(onbekendeNamen).length - topOnbekend.length} andere plaatsnamen</span>` : ''}</div>
+        <div class="src-buitenlijst">${topOnbekend.map(p =>
+          `<span class="chip">${h(p.naam)} <b class="num">${p.n}</b></span>`).join('')}
+          ${alleOnbekend.length > topOnbekend.length
+            ? `<span class="meta">+ ${alleOnbekend.length - topOnbekend.length} andere plaatsnamen</span>` : ''}</div>
         <p class="meta">Deze plaatsen staan niet in de afstandentabel, dus ze vallen ook buiten elk radiusfilter.
           Geef ze door zodat ze toegevoegd kunnen worden.</p>
       </details>` : '');
@@ -365,30 +439,30 @@ CRM.kaartRender = async function(container, opts){
       klanten.forEach(k => { waarde[k.naam] = telOmzet ? telOmzet(k.naam) : telPlaatsingen(k.naam); });
       const max = Math.max(1, ...Object.values(waarde));
 
-      const perPlek = {};
-      klanten.forEach(k => { const s = CRM.plaatsSleutel(k.locatie); (perPlek[s] = perPlek[s]||[]).push(k); });
-      Object.keys(perPlek).forEach(plek => {
-        const basis = CRM.PLAATSEN[plek];
-        if(!basis){ perPlek[plek].forEach(k => noteerBuiten(k)); return; }
-        perPlek[plek].forEach((k, i) => {
-          const p = spreid(basis, i, perPlek[plek].length, 0.02);
-          punten.push(p);
-          const w = waarde[k.naam] || 0;
-          const r = 5 + Math.sqrt(w / max) * 11;
-          const n = telPlaatsingen(k.naam);
-          L.circleMarker(p, {radius:r, color:kleurVan(k.branche), weight:2, fillColor:kleurVan(k.branche), fillOpacity:.6})
-            .bindPopup(`<div class="src-pop">
-              <b><a href="#klanten/${encodeURIComponent(k.naam)}" data-klantkaart="${h(k.naam)}">${h(k.naam)}</a></b>
-              <div class="src-pop-sub">${h(k.branche||'—')} · ${h(k.locatie||'—')} · ${h(k.fase||'')}</div>
-              <div class="src-pop-sub"><span class="num">${n}</span> plaatsing${n===1?'':'en'}${
-                telOmzet ? ' · omzet ' + (periode==='jaar'?'dit jaar':'totaal') + ': <b class="num">' + CRM.euro(telOmzet(k.naam)) + '</b>' : ''}</div>
-            </div>`)
-            .addTo(laag);
-        });
-      });
+      const kl = groepeerOpPlaats(klanten, 'locatie');
+      buiten = {zonder:kl.zonder, onbekend:kl.onbekend};
+      kl.op.forEach(g => g.leden.forEach((k, i) => {
+        const p = spreid(g.coord, i, g.leden.length, 0.02);
+        punten.push(p);
+        const w = waarde[k.naam] || 0;
+        const r = 5 + Math.sqrt(w / max) * 11;
+        const n = telPlaatsingen(k.naam);
+        L.circleMarker(p, {radius:r, color:kleurVan(k.branche), weight:2, fillColor:kleurVan(k.branche), fillOpacity:.6})
+          .bindPopup(`<div class="src-pop">
+            <b><a href="#klanten/${encodeURIComponent(k.naam)}" data-klantkaart="${h(k.naam)}">${h(k.naam)}</a></b>
+            <div class="src-pop-sub">${h(k.branche||'—')} · ${h(k.locatie||'—')} · ${h(k.fase||'')}</div>
+            <div class="src-pop-sub"><span class="num">${n}</span> plaatsing${n===1?'':'en'}${
+              telOmzet ? ' · omzet ' + (periode==='jaar'?'dit jaar':'totaal') + ': <b class="num">' + h(CRM.euro(telOmzet(k.naam))) + '</b>' : ''}</div>
+          </div>`)
+          .addTo(laag);
+      }));
 
-      const buitenTotaal = buiten.geenLocatie.length + buiten.onbekend.length;
+      const buitenTotaal = buiten.zonder.length + buiten.onbekend.length;
+      /* Eerlijk zijn over de noemer: "121 van 211" met daarachter waaróm de
+         rest ontbreekt, in plaats van alleen de klanten die wél passen. */
       $('#src_telling').textContent = (klanten.length - buitenTotaal) + ' van ' + klanten.length + ' klanten op de kaart'
+        + (buiten.zonder.length ? ' · ' + buiten.zonder.length + ' zonder locatie' : '')
+        + (buiten.onbekend.length ? ' · ' + buiten.onbekend.length + ' zonder herkende plaats' : '')
         + (geld && omzet && omzet.demo ? ' · demo-omzet (afgeleid van testdata)' : '')
         + (geld && omzet && omzet.fout ? ' · omzet niet beschikbaar' : '');
       const legendaBranches = branches.slice(0, PAL.length);
@@ -412,16 +486,18 @@ CRM.kaartRender = async function(container, opts){
     /* Onbekende woonplaats valt eerlijk buiten de radius (nooit gokken),
        maar we zeggen er wél bij hoeveel kandidaten dat waren — anders lijkt
        het alsof er simpelweg niemand in de buurt woont. */
-    const plaatsBekend = c => !!CRM.PLAATSEN[CRM.plaatsSleutel(c.woonplaats)];
-    const klantBekend = !!CRM.PLAATSEN[CRM.plaatsSleutel(k.locatie)];
-    const nietTeMeten = klantBekend ? kands.filter(c => !plaatsBekend(c)).length : kands.length;
+    /* Zelfde resolver als de kaart (afstandKm hierboven), niet CRM.afstandKm:
+       anders staat een klant in "Katwijk aan Zee" wél op de kaart maar zegt
+       dit paneel dat er niemand in de buurt woont. */
+    const klantBekend = !!plaatsPunt(k.locatie);
+    const nietTeMeten = klantBekend ? kands.filter(c => !plaatsPunt(c.woonplaats)).length : kands.length;
     const dichtbij = kands
-      .filter(c => CRM.binnenRadius(c, k.locatie, 30))
       .map(c => ({c,
-        km: CRM.afstandKm(c.woonplaats, k.locatie),
+        km: afstandKm(c.woonplaats, k.locatie),
         score: vacs.length ? Math.max(...vacs.map(v => CRM.matchScore(c, v))) : 0
       }))
-      .sort((a,b) => b.score - a.score || (a.km??99) - (b.km??99))
+      .filter(m => m.km != null && m.km <= 30)
+      .sort((a,b) => b.score - a.score || a.km - b.km)
       .slice(0, 6);
 
     $('#src_paneel').innerHTML = `<div class="card">
@@ -483,29 +559,34 @@ CRM.kaartRender = async function(container, opts){
 /* ─── Eigen zijbalk-module: Sourcing ──────────────────────────
    Op verzoek van Tjeerd een eigen navigatie-item onder Kandidaten
    (niet langer een tab binnen de Kandidaten-module).             */
-/* VERZOEK AAN CORE (data.js): CRM.isActiefLopend() geeft `true` voor een
-   kandidaat met fase '' — leeg staat immers niet in CRM.DONE. Sinds de import
-   van het oude ATS zijn dat 235 rijen, die daardoor als "actief lopend" gelden
-   terwijl ze in geen enkele pijplijn staan. Hier in bronKandidaten() vangen we
-   dat af met een extra `c.fase &&`, maar js/kandidaten.js (regel ~313) heeft
-   precies dezelfde aanroep. Netter is één regel in data.js:
-     CRM.isActiefLopend = c => !!c.fase && (!CRM.DONE.includes(c.fase) || …)   */
+/* (Het eerdere verzoek over CRM.isActiefLopend is verwerkt: data.js eist nu
+   zelf een echte fase. De extra `c.fase &&` in bronKandidaten() blijft als
+   goedkope vangnetregel staan.)                                              */
 
-/* VERZOEK AAN CORE (data.js): CRM.PLAATSEN mist plaatsen die wél in de echte
-   data staan. 61 unieke namen op 84 rijen (kandidaten + klanten); die vallen nu
-   buiten elk radiusfilter en van de kaart. Meest voorkomend:
-   Hellevoetsluis(3), Soest(3), Aalsmeer(2), Bergschenhoek(2), Leiderdorp(2),
-   Drunen(2), 's-Gravenzande(2), Ter Aar(2), Katwijk aan Zee(2),
-   Hazerswoude-Dorp(2), Maasvlakte Rotterdam(2), Mijdrecht(2), Leimuiden(2),
-   Oudheusden, Nieuwe Wetering, Oss, Berkel-Enschot, Maarssen, Abbenbroek,
-   Leerdam, Zandvoort, Poeldijk, Rozenburg, Voorhout, Vierpolders, Oostzaan,
-   Gouderak, Hoek van Holland, Nieuwerbrug, Hoogvliet, Alblasserdam, Pernis,
-   Dongen, Nieuwe-Tonge, Moerdijk, Halsteren, Drachten, Oudenhoorn, Werkendam,
-   Zoeterwoude, Steenbergen, Honselersdijk, Stellendam, Hulst, Benthuizen,
-   Moerkapelle, Opmeer, Koudekerk aan den Rijn, Warmond, Zaandijk, Emst.
-   Daarnaast staan er verminkte/afgekorte invoeren in de data die géén nieuwe
-   coördinaat verdienen maar een opschoning van de rijen zelf: 'Alphen'(5) en
-   'Haag'(5), plus 'Hague', 'S-Gravennage', 'Rijswik' en 'Capelle'.            */
+/* VERZOEK AAN CORE (data.js) — stand 30 jul 2026, gemeten tegen de echte
+   importdata (supabase/import-oud-crm.sql: 211 organisaties, 298 kandidaten)
+   mét de aliaslaag hierboven. Van de klanten staan er 123 op de kaart; de rest
+   ontbreekt niet door slechte matching maar doordat 87 klanten helemaal géén
+   locatie hebben ingevuld — dat is een datataak, geen codetaak.
+   Nog écht ontbrekend in CRM.PLAATSEN (met coördinaat, klaar om te plakken):
+     'teraar':[52.209,4.716],      'schijndel':[51.620,5.435],
+     'oirschot':[51.505,5.311],    'oosterhout':[51.645,4.860],
+     'rijen':[51.588,4.936],       'spakenburg':[52.257,5.362],
+     'beverwijk':[52.484,4.657],   'stolwijk':[51.965,4.766],
+     'noorden':[52.166,4.813],     'waalwijk':[51.687,5.071]
+   Verder nog twee opmerkingen bij data.js:
+   1. 'hendrikidoambacht' staat er twee keer in (regel ~132 en ~161) — de
+      tweede overschrijft de eerste met dezelfde waarde, dus onschadelijk,
+      maar het hoort er één keer te staan.
+   2. 'alphenandenrijn' en 'krimpenandenijssel' worden nooit geraakt:
+      CRM.plaatsSleutel maakt daar 'alphena/drijn' resp. 'krimpena/dijssel'
+      van. Dode sleutels.
+   De aliassen in PL_ALIAS hierboven (The Hague, Leidschenveen, Hellvoetsluis,
+   "a.d."-schrijfwijzen, "… aan Zee") vangen varianten van plaatsen die al ín
+   CRM.PLAATSEN staan; die horen niet als losse coördinaat toegevoegd te
+   worden. Let op: CRM.afstandKm en CRM.matchScore kennen die aliassen niet,
+   dus zolang dit een aliaslaag is scoort zo'n kandidaat elders in de app
+   iets lager op afstand.                                                     */
 
 CRM.registerModule('source', {
   title:'Sourcing', icon:'◎', onderschrift:'Kaart: actieve klanten en passende kandidaten',

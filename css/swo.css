@@ -1,0 +1,415 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMENWERKINGSOVEREENKOMST — generator (instellingen links,
+   A4-voorbeeld rechts) en het documentvel zelf, dat is wat geprint
+   wordt.
+
+   Het VENSTER gebruikt uitsluitend tokens uit css/base.css.
+   Het DOCUMENTVEL heeft een eigen, zakelijker groen dan de app: de
+   getekende overeenkomst met Bunge (referentie-PDF, 12 pagina's)
+   gebruikt een gedempt blad-groen #4d7c5f voor sectiekoppen en
+   accenten, niet het felle huisstijl-olijf #3d6400 van de app. Zou
+   je hier --olive pakken, dan wijkt het document zichtbaar af van
+   wat de klant al getekend heeft. Vandaar deze eigen variabelen —
+   ze worden NERGENS buiten .swo-vel gebruikt.
+   Waarden zijn uitgemeten uit de referentie-PDF (pixelmonsters).
+   ═══════════════════════════════════════════════════════════════ */
+
+.swo-vel{
+  --swo-groen:#4d7c5f;     /* sectiekoppen, labels, cursieve accenten */
+  --swo-groen-l:#94b09f;   /* haarlijn onder een sectiekop           */
+  --swo-ink:#1a1a1a;       /* uitspraken, tabelkop, donkere voetbalk */
+  --swo-txt:#262626;       /* lopende tekst                          */
+  --swo-lijn:#e9ece9;      /* randen van kaarten                     */
+  --swo-lijn-2:#efefef;    /* haarlijn boven de paginavoet           */
+  --swo-vlak:#eef4ec;      /* citaatblok / kaderblok                 */
+  --swo-vlak-2:#f1f7e9;    /* om-en-om rij in de tarieventabel       */
+  --swo-grijs:#9aa09a;     /* paginavoet, invulstreepjes             */
+  /* --lime (#c8f135) komt uit base.css en is in dit document exact
+     dezelfde kleur als in de referentie. */
+}
+
+/* ═══ VENSTER ═══════════════════════════════════════════════════ */
+.swog{position:fixed;inset:0;z-index:45}
+.swog-scrim{position:absolute;inset:0;background:rgba(25,35,20,.42);backdrop-filter:blur(2px)}
+.swog-paneel{
+  position:absolute;inset:24px;margin:auto;max-width:1320px;max-height:calc(100vh - 48px);
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r-l);
+  box-shadow:var(--sh-3);display:flex;flex-direction:column;overflow:hidden;
+}
+.swog-kop{
+  background:var(--card);border-bottom:1px solid var(--line);
+  padding:14px 20px;display:flex;align-items:flex-start;gap:12px;flex:0 0 auto;
+}
+.swog-kop > div:first-child{flex:1;min-width:0}
+.swog-kop #swo_x{font-size:15px;line-height:1}
+.swog-body{flex:1;display:flex;min-height:0}
+.swog-voet{
+  border-top:1px solid var(--line);background:var(--card);
+  padding:12px 20px;display:flex;gap:10px;align-items:center;flex:0 0 auto;flex-wrap:wrap;
+}
+
+/* ─── Instellingen links ──────────────────────────────────────── */
+.swog-zij{
+  flex:0 0 344px;width:344px;border-right:1px solid var(--line);
+  padding:16px;overflow-y:auto;background:var(--well);
+}
+.swog-blok{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  margin-bottom:12px;overflow:hidden;
+}
+.swog-blok:last-child{margin-bottom:0}
+.swog-blok > summary{
+  list-style:none;cursor:pointer;padding:11px 14px;display:flex;align-items:center;gap:9px;
+  font-size:13px;font-weight:600;color:var(--ink);
+}
+.swog-blok > summary::-webkit-details-marker{display:none}
+.swog-blok > summary::before{
+  content:'▸';font-size:10px;color:var(--muted);transition:transform .12s;flex:0 0 auto;
+}
+.swog-blok[open] > summary::before{transform:rotate(90deg)}
+.swog-blok > summary:hover{background:var(--card-2)}
+.swog-blok > summary .swog-tel{margin-left:auto;font-size:11px;color:var(--muted);font-weight:500}
+.swog-inh{padding:4px 14px 14px;border-top:1px solid var(--line)}
+.swog-inh .f-row{margin-bottom:11px}
+.swog-inh .f-row:last-child{margin-bottom:0}
+.swog-inh .f-row > label{font-size:11.5px}
+.swog-inh input,.swog-inh select,.swog-inh textarea{font-size:13px}
+
+/* Schakelaar (omslag aan/uit) */
+.swog-schuif{display:flex;align-items:flex-start;gap:11px;cursor:pointer;padding:12px 14px}
+.swog-schuif input{position:absolute;opacity:0;width:0;height:0}
+.swog-schuif-b{
+  flex:0 0 38px;width:38px;height:22px;border-radius:999px;margin-top:1px;
+  background:var(--card-2);border:1px solid var(--line-2);position:relative;transition:background .14s,border-color .14s;
+}
+.swog-schuif-b::after{
+  content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;border:1px solid var(--line-2);transition:transform .14s;
+}
+.swog-schuif input:checked + .swog-schuif-b{background:var(--olive);border-color:var(--olive)}
+.swog-schuif input:checked + .swog-schuif-b::after{transform:translateX(16px);border-color:var(--olive)}
+.swog-schuif input:focus-visible + .swog-schuif-b{outline:2px solid var(--olive-l);outline-offset:2px}
+.swog-schuif-t{flex:1;min-width:0;font-size:13px;line-height:1.4}
+.swog-schuif-t b{display:block;font-weight:600}
+
+/* Rijen die je kunt toevoegen/verwijderen (tarieven, ondertekenaars) */
+.swog-rij{display:flex;gap:6px;align-items:center;margin-bottom:7px}
+.swog-rij input{flex:1;min-width:0}
+.swog-rij input.kort{flex:0 0 68px;width:68px;text-align:right}
+.swog-weg{
+  flex:0 0 auto;border:1px solid var(--line-2);background:var(--card);color:var(--muted);
+  border-radius:var(--r-s);width:28px;height:30px;cursor:pointer;font-size:13px;line-height:1;font-family:var(--body);
+}
+.swog-weg:hover{border-color:var(--oranje);color:var(--oranje)}
+.swog-erbij{margin-top:2px}
+
+/* Artikelenlijst */
+.swog-art{border-top:1px solid var(--line);padding:9px 0}
+.swog-art:first-child{border-top:none}
+.swog-art-k{display:flex;align-items:flex-start;gap:9px}
+.swog-art-k input[type=checkbox]{margin-top:3px;flex:0 0 auto}
+.swog-art-t{flex:1;min-width:0;font-size:12.5px;line-height:1.35}
+.swog-art-t .swog-nr{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:5px}
+.swog-art-t.uit{color:var(--muted);text-decoration:line-through}
+.swog-art-b{display:flex;gap:4px;flex:0 0 auto}
+.swog-art-b .btn{padding:3px 9px;font-size:11.5px}
+.swog-art .chip{margin-top:5px;font-size:10.5px;padding:1px 8px}
+.swog-bewerk{margin-top:9px}
+.swog-bewerk textarea{
+  width:100%;min-height:190px;font-size:12px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.swog-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px}
+.swog-hint code{background:var(--card-2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+/* Eerder gemaakte stukken */
+.swog-stuk{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:none;border-top:1px solid var(--line);padding:9px 0;font-family:var(--body);font-size:12.5px;color:var(--txt);
+}
+.swog-stuk:first-child{border-top:none}
+.swog-stuk:hover{color:var(--olive)}
+.swog-stuk .meta{margin-left:auto;flex:0 0 auto}
+
+/* ─── Voorbeeld rechts ────────────────────────────────────────── */
+.swog-preview{
+  flex:1;min-width:0;overflow:auto;padding:24px;position:relative;
+  background:var(--well-2);display:flex;justify-content:center;align-items:flex-start;
+}
+.swog-schaal{transform-origin:top left;flex:0 0 auto}
+.swog-bladen{display:flex;flex-direction:column;gap:16px}
+/* Meetvel: zelfde maten, buiten beeld en buiten de schaling — zo meten
+   we de echte layout-hoogtes en klopt de paginaverdeling. */
+.swog-meet{position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none}
+
+/* ═══ HET DOCUMENTVEL (A4) ══════════════════════════════════════ */
+.swo-vel{
+  width:210mm;height:297mm;background:#fff;border:1px solid var(--line);
+  color:var(--swo-txt);font-family:var(--body);
+  font-size:10pt;line-height:1.72;
+  display:flex;flex-direction:column;overflow:hidden;
+  padding:13mm 18mm 8mm;
+}
+
+/* ─── Paginakop: woordmerk links, documenttitel rechts, lime lijn ─ */
+.swo-kop{
+  flex:0 0 auto;display:flex;align-items:flex-end;gap:16px;
+  padding-bottom:3mm;border-bottom:1.4pt solid var(--lime);
+}
+.swo-kop img{height:3.4mm;width:auto;display:block}   /* ≈34mm breed, als in de referentie */
+.swo-kop-r{margin-left:auto;font-size:8.5pt;font-weight:700;color:var(--swo-groen);text-align:right;line-height:1.2}
+
+.swo-inhoud{flex:1;min-height:0;padding-top:9mm}
+
+/* ─── Paginavoet: bedrijfsgegevens links, paginanummer rechts ──── */
+.swo-voet{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;
+  border-top:1px solid var(--swo-lijn-2);padding-top:3.5mm;margin-top:3mm;
+  font-size:8pt;color:var(--swo-grijs);
+}
+.swo-voet-r{margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* Slotpagina: donkere balk over de volle breedte, lime lijn erboven. */
+.swo-vel.slot{padding-bottom:0}
+.swo-vel.slot .swo-voet{
+  border-top:0;margin:3mm -18mm 0;padding:2.6mm 18mm;
+  background:var(--swo-ink);color:#fff;font-size:8.5pt;font-weight:500;
+  border-top:1.6mm solid var(--lime);
+}
+.swo-vel.slot .swo-voet-r{color:var(--lime);font-weight:700}
+
+/* ─── Atomen (paginavulling) ──────────────────────────────────── */
+.swo-atoom{display:flow-root;break-inside:avoid;page-break-inside:avoid}
+
+/* ─── Koppen ──────────────────────────────────────────────────── */
+.swo-sectie{
+  font-size:14pt;font-weight:700;color:var(--swo-groen);line-height:1.25;
+  margin:0 0 4mm;padding-bottom:2mm;border-bottom:1px solid var(--swo-groen-l);
+}
+.swo-hoofdstuk{margin:0 0 5mm}
+.swo-hoofdstuk .swo-hl{
+  display:block;font-size:9pt;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--swo-groen);margin-bottom:3.5mm;
+}
+.swo-hoofdstuk .swo-ht{font-size:30pt;font-weight:400;line-height:1.12;color:var(--swo-ink);letter-spacing:-.01em}
+.swo-sub{
+  font-size:13pt;font-weight:700;color:var(--swo-groen);line-height:1.3;
+  margin:1mm 0 3mm;padding-bottom:1.6mm;border-bottom:1px solid var(--swo-groen-l);
+}
+.swo-sub2{font-size:11pt;font-weight:700;color:var(--swo-ink);margin:1mm 0 1.5mm;line-height:1.35}
+.swo-label{
+  font-size:9pt;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--swo-groen);margin:1mm 0 3mm;
+}
+.swo-art{font-size:11pt;font-weight:700;color:var(--swo-ink);margin:1.5mm 0 1.5mm;line-height:1.35}
+
+/* ─── Lopende tekst ───────────────────────────────────────────── */
+.swo-p{margin:0 0 3.2mm}
+/* Sub-bepalingen (a)…(f) springen in, net als in de getekende versie. */
+.swo-p.swo-in{padding-left:6mm}
+.swo-lijst{margin:0 0 3.2mm;padding:0;list-style:none}
+.swo-lijst li{position:relative;padding-left:7mm;margin-bottom:1.4mm}
+.swo-lijst li::before{
+  content:'•';position:absolute;left:2.5mm;top:0;color:var(--swo-groen-l);font-size:11pt;
+}
+.swo-acc{color:var(--swo-groen);font-style:italic;font-weight:700}
+/* Strikt binnen het vel houden: een kale b/strong-regel zou de hele app raken. */
+.swo-vel b,.swo-vel strong{font-weight:700;color:var(--swo-ink)}
+.swo-leeg{
+  display:inline-block;min-width:34mm;border-bottom:1px solid var(--swo-grijs);
+  height:1em;vertical-align:-.15em;
+}
+
+/* ─── Partijkaarten ───────────────────────────────────────────── */
+.swo-partijen{display:grid;grid-template-columns:1fr 1fr;gap:6mm;margin:0 0 6mm}
+.swo-partij{border:1px solid var(--swo-lijn);border-radius:2mm;padding:5mm 6mm}
+.swo-partij-l{
+  font-size:7.5pt;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--swo-groen);margin-bottom:2.5mm;
+}
+.swo-partij-n{font-size:12pt;font-weight:700;color:var(--swo-ink);margin-bottom:3mm;line-height:1.3}
+.swo-partij-r{margin-bottom:1.8mm;line-height:1.4}
+.swo-partij-h{margin-top:3mm;font-size:9pt;color:var(--swo-grijs)}
+.swo-partij-h b{color:var(--swo-groen)}
+
+.swo-ingang{margin:0 0 3.2mm;display:flex;gap:4mm;align-items:baseline}
+.swo-ingang b{color:var(--swo-ink)}
+
+/* ─── Uitspraken tussen de artikelen ──────────────────────────── */
+.swo-uitspraak{
+  border-left:1.2mm solid var(--lime);padding:1mm 0 1mm 6mm;margin:5mm 0 6mm;
+  font-size:17pt;line-height:1.38;color:var(--swo-ink);font-weight:400;
+}
+.swo-citaat{
+  position:relative;background:var(--swo-vlak);border-left:1.2mm solid var(--lime);
+  padding:9mm 22mm 9mm 11mm;margin:5mm 0 6mm;
+  font-size:20pt;line-height:1.4;color:var(--swo-ink);font-weight:400;
+}
+.swo-citaat::after{
+  content:'”';position:absolute;top:0;right:7mm;
+  font-size:88pt;line-height:1.1;color:var(--lime);opacity:.55;font-family:Georgia,serif;
+}
+.swo-uitspraak b,.swo-citaat b{font-weight:700}
+.swo-uitspraak .swo-acc,.swo-citaat .swo-acc{font-weight:400}
+
+/* Statement met klein label erboven (pagina 2 van de referentie) */
+.swo-statement{margin:8mm 0 6mm}
+.swo-statement-l{
+  display:flex;align-items:center;gap:6mm;
+  font-size:9pt;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--swo-groen);
+  margin-bottom:5mm;
+}
+.swo-statement-l::after{content:'';flex:1;height:1.4pt;background:var(--lime)}
+.swo-statement-t{font-size:26pt;line-height:1.3;color:var(--swo-ink);font-weight:400}
+.swo-statement-t b{font-weight:700}
+.swo-statement-t .swo-acc{font-weight:400}
+
+/* ─── Pijlerkaarten ───────────────────────────────────────────── */
+.swo-pijlers{display:grid;grid-template-columns:1fr 1fr;gap:6mm;margin:0 0 5mm}
+.swo-pijler{border:1px solid var(--swo-lijn);border-radius:2mm;padding:4.5mm 5mm}
+.swo-pijler-l{
+  font-size:7.5pt;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--swo-groen);margin-bottom:1.5mm;
+}
+.swo-pijler-n{font-size:11.5pt;font-weight:700;color:var(--swo-ink);margin-bottom:1mm}
+.swo-pijler-t{font-size:9.5pt;line-height:1.5;color:var(--swo-txt)}
+
+/* ─── Kaderblok (Ontdek & Ontmoet) ────────────────────────────── */
+.swo-kader{background:var(--swo-vlak);border-radius:2mm;padding:7mm 8mm;margin:0 0 5mm}
+.swo-kader-l{
+  font-size:8.5pt;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--swo-groen);margin-bottom:2.5mm;
+}
+.swo-kader-n{font-size:17pt;font-weight:700;color:var(--swo-ink);margin-bottom:3.5mm;line-height:1.25}
+.swo-kader .swo-p:last-child{margin-bottom:0}
+
+/* ─── Genummerde stappen ──────────────────────────────────────── */
+.swo-stappen{margin:0 0 4mm}
+.swo-stap{display:flex;gap:5mm;position:relative;padding-bottom:3.5mm}
+.swo-stap:last-child{padding-bottom:0}
+.swo-stap-n{
+  flex:0 0 10.5mm;width:10.5mm;height:10.5mm;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12pt;font-weight:700;font-variant-numeric:tabular-nums;
+}
+.swo-stappen.donker .swo-stap-n{background:var(--swo-groen);color:var(--lime)}
+.swo-stappen.licht  .swo-stap-n{background:var(--lime);color:var(--swo-ink)}
+/* Verbindingslijn tussen de bolletjes */
+.swo-stap:not(:last-child)::before{
+  content:'';position:absolute;left:5.25mm;top:10.5mm;bottom:0;width:1px;background:var(--swo-groen-l);
+}
+.swo-stappen.licht .swo-stap:not(:last-child)::before{background:var(--lime)}
+.swo-stap-t{flex:1;min-width:0;padding-top:.6mm}
+/* Alleen de titel is een blok — een **vet** stukje IN de tekst mag geen
+   eigen regel krijgen, vandaar de directe-kindselector. */
+.swo-stap-t > b{display:block;font-size:11pt;color:var(--swo-ink);margin-bottom:.4mm}
+.swo-stap-t > span{display:block;line-height:1.62}
+
+/* ─── Tarieventabel ───────────────────────────────────────────── */
+.swo-tabel{width:100%;border-collapse:collapse;margin:0 0 4mm;font-size:10.5pt}
+.swo-tabel th{
+  background:var(--swo-ink);color:var(--lime);text-align:left;font-weight:700;
+  padding:3mm 5mm;font-size:10.5pt;
+}
+.swo-tabel th:last-child{text-align:right;width:32mm}
+.swo-tabel td{padding:2.6mm 5mm;font-weight:700;color:var(--swo-ink)}
+.swo-tabel td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.swo-tabel tbody tr:nth-child(even){background:var(--swo-vlak-2)}
+
+/* ─── Ondertekening ───────────────────────────────────────────── */
+/* De lime scheidingslijn loopt in de referentie vrijwel de hele pagina
+   door, niet alleen langs de tekst — vandaar de minimumhoogte. */
+.swo-tekenen{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:4mm;min-height:150mm}
+.swo-tekenen > div{padding-right:9mm}
+.swo-tekenen > div + div{padding-left:9mm;padding-right:0;border-left:1.2mm solid var(--lime)}
+.swo-teken-l{
+  font-size:8.5pt;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--swo-groen);margin-bottom:2.5mm;
+}
+.swo-teken-n{font-size:12pt;font-weight:700;color:var(--swo-ink);margin-bottom:5mm}
+.swo-teken{margin-bottom:9mm}
+.swo-teken-v{display:flex;gap:2mm;align-items:baseline;margin-bottom:2.5mm;color:var(--swo-grijs)}
+.swo-teken-v b{color:var(--swo-ink);font-weight:400}
+.swo-teken-v i{flex:1;border-bottom:1px solid var(--swo-grijs);font-style:normal;min-height:1em}
+.swo-teken-s{border-bottom:1px solid var(--swo-ink);height:9mm;margin-bottom:1.5mm}
+.swo-teken-c{font-size:9pt;color:var(--swo-grijs)}
+
+/* ─── Omslag ──────────────────────────────────────────────────────
+   De originele omslag is een foto met mascotte; dat beeldbestand
+   hebben wij niet als asset. Deze omslag is in dezelfde geest
+   opgebouwd uit wat er wél is: het lime woordmerk op een diep
+   donkergroen vlak met de merkclaim eronder. */
+.swo-vel.omslag{
+  padding:0;background:radial-gradient(120% 85% at 72% 78%, #24361c 0%, #12190c 55%, #0b1007 100%);
+  border-color:#0b1007;display:block;position:relative;overflow:hidden;
+}
+.swo-omslag-in{position:absolute;inset:0;padding:24mm 20mm 22mm;display:flex;flex-direction:column}
+.swo-omslag-in img{width:148mm;max-width:100%;height:auto;display:block;margin-top:22mm}
+.swo-claim{margin-top:auto;color:#fff}
+.swo-claim-1{font-size:38pt;font-weight:800;line-height:1;letter-spacing:-.02em}
+.swo-claim-1 span{color:var(--lime)}
+.swo-claim-2{
+  font-size:12pt;font-weight:500;letter-spacing:.34em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);margin:3mm 0 5mm;
+}
+.swo-claim-3{font-size:38pt;font-weight:800;line-height:1;letter-spacing:-.02em;color:var(--lime)}
+.swo-claim-3 span{color:#fff}
+.swo-claim-4{
+  font-size:12pt;font-weight:500;letter-spacing:.34em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);margin-top:3mm;
+}
+.swo-omslag-doc{
+  margin-top:16mm;padding-top:5mm;border-top:1px solid rgba(200,241,53,.4);
+  color:rgba(255,255,255,.86);font-size:11pt;line-height:1.6;
+}
+.swo-omslag-doc b{color:var(--lime);display:block;font-size:13pt;margin-bottom:1mm}
+
+/* ═══ PRINTSTAND ════════════════════════════════════════════════
+   Net als bij de CV-generator aan een klasse gehangen in plaats van
+   aan @media print, zodat je de printweergave ook op het scherm kunt
+   controleren. js/swo.js zet .swo-print rond window.print() én op
+   'beforeprint' (voor Ctrl+P) en haalt hem er direct weer af. */
+/* @page is documentbreed — het kan niet per module worden afgebakend.
+   css/cv.css zet hier margin:12mm; dit vel heeft juist margin:0 nodig
+   (volbleed omslag, eigen paginavoet). Zou ik dat hier hard zetten, dan
+   sloop ik de printstand van de CV-generator. De marge wordt daarom
+   alleen tijdens het afdrukken van DIT vel geïnjecteerd (js/swo.js,
+   printAan/printUit). Het formaat is voor beide gelijk en mag blijven. */
+@page{size:A4}
+
+body:has(.swog.swo-print) > *:not(.swog){display:none!important}
+body:has(.swog.swo-print){overflow:visible!important;background:#fff}
+.swog.swo-print{position:static;inset:auto}
+.swog.swo-print .swog-scrim,
+.swog.swo-print .swog-kop,
+.swog.swo-print .swog-zij,
+.swog.swo-print .swog-voet,
+.swog.swo-print .swog-meet{display:none!important}
+.swog.swo-print .swog-paneel{
+  position:static;inset:auto;max-width:none;max-height:none;margin:0;display:block;
+  background:#fff;border:0;border-radius:0;box-shadow:none;overflow:visible;
+}
+.swog.swo-print .swog-body{display:block;min-height:0}
+.swog.swo-print .swog-preview{display:block;overflow:visible;padding:0;background:#fff}
+.swog.swo-print .swog-schaal{transform:none!important;width:auto!important;height:auto!important}
+.swog.swo-print .swog-bladen{display:block;gap:0}
+.swog.swo-print .swo-vel{
+  border:0;break-after:page;page-break-after:always;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+.swog.swo-print .swo-vel:last-child{break-after:auto;page-break-after:auto}
+
+/* ═══ SMAL SCHERM ══════════════════════════════════════════════
+   Tot 900px staan de instellingen boven en het vel eronder; allebei
+   houden ze een eigen scroll, zodat je op 375px nog steeds bij het
+   voorbeeld kunt (het schaalt mee met de breedte). */
+@media (max-width:900px){
+  .swog-paneel{inset:0;max-height:100vh;border-radius:0;border:0}
+  .swog-body{flex-direction:column;overflow:hidden}
+  .swog-zij{flex:0 0 auto;width:auto;border-right:0;border-bottom:1px solid var(--line);max-height:46vh;overflow-y:auto;padding:12px}
+  .swog-preview{flex:1;min-height:200px;padding:12px;overflow:auto;justify-content:flex-start}
+  .swog-bladen{gap:10px}
+  .swog-voet{padding:10px 12px}
+  .swog-voet .btn{flex:1 1 auto;justify-content:center}
+  .swog-voet #swo_stand{flex:1 0 100%;order:-1}
+  .swog-kop{padding:11px 12px}
+}

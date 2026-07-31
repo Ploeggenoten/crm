@@ -18,7 +18,7 @@
   text-transform:uppercase;color:var(--ink)}
 .rc-uitzone .num{font-size:20px;font-weight:600;color:var(--txt-2);line-height:1.1}
 /* Zelfde sleepterugkoppeling als .bcol.over in base.css. */
-.rc-uitzone.over{background:#e6ebd8;border-color:var(--olive-l);border-style:solid}
+.rc-uitzone.over{background:var(--well-2);border-color:var(--olive-l);border-style:solid}
 .rc-uitverv{padding:2px 0}
 
 .rc-leegkol{font-size:12px;color:var(--muted);text-align:center;padding:16px 8px;line-height:1.5}
@@ -27,27 +27,31 @@
 .rc-geenfase a{color:var(--olive);font-weight:600}
 .rc-rec{background:var(--card-2);border:1px solid var(--line);border-radius:5px;font-size:10px;
   font-weight:600;color:var(--txt-2);padding:2px 5px;letter-spacing:.03em;flex:0 0 auto}
-.bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid #eef0e4;padding-top:6px}
+.bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid var(--line);padding-top:6px}
 .bcard .bc-act.over{color:var(--red);font-weight:600}
 .bcard .rc-intakebtn{margin-top:8px;width:100%;justify-content:center;padding:4px 8px;font-size:11.5px}
 
 /* ─── Kaart: afspraak/start-regel + vandaag/gemist ───────────── */
 .rc-when{margin-top:7px;font-size:12px;font-weight:600;color:var(--txt-2)}
-.rc-when.vandaag{color:#1e6b3f}
-.rc-when.morgen{color:#1e6b3f}
+.rc-when.vandaag{color:var(--green)}
+.rc-when.morgen{color:var(--green)}
 .rc-when.gemist{color:var(--red)}
-.rc-when.start{color:#1e6b3f}
+.rc-when.start{color:var(--green)}
 .rc-when.verw{font-weight:500;color:var(--muted);margin-top:3px}
 /* Vandaag = groen kader (de 'groene schaduw' van het bord, in dunne-rand-stijl). */
-.bcard.vandaag{border-color:var(--green-line);background:#fbfdf9}
+.bcard.vandaag{border-color:var(--green-line);background:var(--green-bg)}
 .bcard.gemist{border-color:var(--red-line)}
 
 /* ─── Week-indeling, klantgroepen en startnotitie in kolommen ── */
 .rc-wdiv{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
   color:var(--muted);padding:6px 2px 2px;border-bottom:1px solid var(--line);margin-top:2px}
 .rc-wdiv.nu{color:var(--olive);border-bottom-color:var(--olive-l)}
-.rc-startnote{font-size:12px;font-weight:600;color:#1e6b3f;background:var(--green-bg);
+.rc-startnote{font-size:12px;font-weight:600;color:var(--green);background:var(--green-bg);
   border:1px solid var(--green-line);border-radius:var(--r-s);padding:5px 9px}
+/* Zelfde vorm, maar dan als aandachtspunt: kandidaten in Intake zonder
+   geplande videocall (kwam eerder uit het losse tabblad Voorselectie). */
+.rc-letnote{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-bg);
+  border:1px solid var(--amber-line);border-radius:var(--r-s);padding:5px 9px}
 .rc-grp{display:flex;justify-content:space-between;align-items:center;font-size:11px;
   font-weight:600;color:var(--txt-2);padding:5px 2px 2px;border-bottom:1px solid var(--line)}
 
@@ -88,7 +92,11 @@
 @media (max-width:900px){
   .rc-move{display:inline-flex}
   .rc-bordwrap{flex-direction:column}
-  .rc-bordwrap .board{padding:4px 14px 16px}
+  /* align-self:stretch overruled de align-items:flex-start van de wrapper.
+     Zonder dat werd het bord in kolomrichting zo breed als al zijn kolommen
+     samen (±3000px) en kreeg de héle pagina een horizontale schuifbalk; nu
+     schuift alleen het bord zelf, zoals op desktop. */
+  .rc-bordwrap .board{padding:4px 14px 16px;align-self:stretch;width:100%}
   .rc-uit{flex:1 1 auto;width:auto;padding:0 14px 24px;flex-direction:row}
   .rc-uit .label{display:none}
   .rc-uitzone{flex:1}

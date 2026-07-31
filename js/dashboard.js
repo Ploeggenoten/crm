@@ -17,6 +17,13 @@ const kort   = s => String(s||'').slice(0,10);
 const actief = c => !!c.fase && !['Afgevallen','Gestopt'].includes(c.fase);
 const VANDAAG = () => CRM.todayISO();
 const dISO = t => new Date(t).toLocaleDateString('sv-SE');
+/* Alleen echte weblinks in een href zetten. Een Teams-link uit Graph of uit
+   een notitie is gebruikersinvoer: `javascript:…` mag nooit in een href komen. */
+const veiligeUrl = u => { const s = String(u||'').trim(); return /^https?:\/\//i.test(s) ? s : ''; };
+/* De Outlook-koppeling is optioneel: ontbreekt outlook.js of faalt hij, dan
+   moet het dashboard gewoon de CRM-items blijven tonen. */
+const olKan = () => { try{ return !!(CRM.outlook && CRM.outlook.beschikbaar && CRM.outlook.beschikbaar()); }catch(e){ return false; } };
+const olVerbonden = () => { try{ return olKan() && !!CRM.outlook.verbonden?.(); }catch(e){ return false; } };
 
 const START_UUR = 8, EIND_UUR = 18;
 
@@ -114,16 +121,43 @@ const ZINNEN = [
   'Je hoeft niet iedereen te plaatsen. Wel iemand.',
   'Rustige dag? Mooi moment om oude leads wakker te bellen.'
 ];
-const MOT_KEY = 'crm_motivatie_weg';
+/* Eén spreuk per keer dat je de app opent (wens Tjeerd). Vandaar
+   sessionStorage: die leeft precies zolang als dit tabblad, dus binnen een
+   sessie blijft de zin staan — hij springt niet bij elke hertekening — en de
+   volgende keer dat je inlogt krijg je een nieuwe. De teller in localStorage
+   loopt de lijst netjes af, zodat je niet drie keer achter elkaar dezelfde
+   zin trekt zoals bij puur toeval wel zou gebeuren. */
+const MOT_ZIN    = 'crm_mot_zin';      // sessionStorage: de zin van deze sessie
+const MOT_WEG    = 'crm_mot_weg';      // sessionStorage: weggeklikt deze sessie
+const MOT_TELLER = 'crm_mot_teller';   // localStorage: hoever we in de lijst zijn
+const MOT_WIE    = 'crm_mot_wie';      // sessionStorage: voor wie de zin is
 
 function motivatieHTML(){
-  try{ if(localStorage.getItem(MOT_KEY) === VANDAAG()) return ''; }catch(e){}
-  const nu = new Date();
-  const dag = Math.floor((nu - new Date(nu.getFullYear(),0,0)) / DAG);
-  const zin = ZINNEN[dag % ZINNEN.length];
+  let zin = '';
+  try{
+    if(sessionStorage.getItem(MOT_WEG)) return '';
+    /* Logt er in hetzelfde tabblad iemand anders in, dan hoort daar ook een
+       nieuwe zin bij — anders kijkt de een naar de spreuk van de ander. */
+    const wie = String(CRM.user?.id || CRM.me() || '');
+    if(sessionStorage.getItem(MOT_WIE) !== wie){
+      sessionStorage.removeItem(MOT_ZIN);
+      sessionStorage.setItem(MOT_WIE, wie);
+    }
+    zin = sessionStorage.getItem(MOT_ZIN) || '';
+    if(!zin){
+      const vorige = Number(localStorage.getItem(MOT_TELLER));
+      const i = ((Number.isFinite(vorige) ? vorige : -1) + 1) % ZINNEN.length;
+      localStorage.setItem(MOT_TELLER, String(i));
+      zin = ZINNEN[i];
+      sessionStorage.setItem(MOT_ZIN, zin);
+    }
+  }catch(e){
+    /* Privémodus of geblokkeerde opslag: liever een vaste zin dan geen dashboard. */
+    zin = zin || ZINNEN[0];
+  }
   return `<div class="mot" id="dash_mot">
     <span class="hand mot-zin">${h(zin)}</span>
-    <button type="button" class="mot-x" id="mot_x" title="Verbergen voor vandaag">✕</button>
+    <button type="button" class="mot-x" id="mot_x" title="Verbergen tot je opnieuw inlogt">✕</button>
   </div>`;
 }
 
@@ -294,7 +328,7 @@ function rijHTML(it){
   return `<div class="tl2-item${it.mod?' klik':''}${it.urgent&&!it.af?' urgent':''}${it.soort==='sug'?' sug':''}${it.af?' af':''}"${klik}>
     ${vinkHTML}
     <div class="tl2-t"><b>${it.soort==='sug'?'<span class="tl2-ruimte">ruimte:</span> ':''}${h(it.titel)}</b>
-      ${it.sub||it.subHtml?`<span class="tl2-s">${it.subHtml||h(it.sub)}</span>`:''}</div>
+      ${it.sub||it.subHtml?`<span class="tl2-s${it.subKlas?' '+it.subKlas:''}">${it.subHtml||h(it.sub)}</span>`:''}</div>
     ${it.tijd?`<span class="tl2-w num">${h(it.tijd)}</span>`:w?`<span class="tl2-w num${it.urgent?' oranje':''}">${h(w)}</span>`:''}
   </div>`;
 }
@@ -395,7 +429,7 @@ function weekBaanHTML(W){
 function tijdlijnKaart(P, W){
   const wk = zicht()==='week';
   const pct = P.tot ? Math.round(P.af/P.tot*100) : 0;
-  const outlookRij = (CRM.outlook.beschikbaar() && !CRM.outlook.verbonden())
+  const outlookRij = (olKan() && !olVerbonden())
     ? `<div class="tl2-olrow"><span class="meta">Je Outlook-agenda kan hier tussen de afspraken staan.</span>
        <button class="btn ghost sm" id="tl2_ol">Outlook verbinden</button></div>` : '';
 
@@ -501,69 +535,21 @@ function teamChipHTML(){
   </button>`;
 }
 
-/* ═══ COCKPITREGEL — alleen de eigenaar ══════════════════════════ */
-let _ck = null;
-async function cockpitLezen(){
-  if(_ck) return _ck;
-  if(!CRM.canSeeMoney()) return (_ck = {ok:false});
-  if(CRM.demo) return (_ck = {ok:false, demo:true});
-  try{
-    const [i,s,st] = await Promise.all([
-      CRM.sb.from('fin_installments').select('bedrag_excl,geplande_datum,factuurdatum,status'),
-      CRM.sb.from('fin_bank_saldo').select('datum,saldo'),
-      CRM.sb.from('fin_settings').select('key,value')
-    ]);
-    if(i.error && s.error && st.error) return (_ck = {ok:false});
-    const termijnen = i.error ? [] : (i.data||[]);
-    const saldi = (s.error ? [] : (s.data||[])).slice().sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));
-    const S = st.error ? {} : Object.fromEntries((st.data||[]).map(r=>[r.key, r.value]));
-    if(!termijnen.length && !saldi.length) return (_ck = {ok:false});
-
-    const vandaag = VANDAAG(), mk = vandaag.slice(0,7);
-    const bet = t => Number(t.bedrag_excl)||0;
-    const dv = t => kort(t.factuurdatum || t.geplande_datum);
-    const gefact = t => ['gefactureerd','betaald'].includes(t.status);
-    const omzetMaand = termijnen.filter(t => gefact(t) && dv(t).slice(0,7)===mk).reduce((s2,t)=>s2+bet(t),0);
-
-    /* Omzetdoel — zelfde principe als het doelblok op Performance. */
-    const posNum = v => { const n = Number(v); return isFinite(n) && n>0 ? n : null; };
-    const doelOmzet = posNum(S.doel_omzet) ?? posNum(S.doel_omzet_jaar);
-    let doel = null;
-    if(doelOmzet != null){
-      let doelDatum = String(S.doel_omzet_datum||'').slice(0,10);
-      if(doelDatum && doelDatum.length===7){ const [j,m]=doelDatum.split('-').map(Number); doelDatum = new Date(j,m,0).toLocaleDateString('sv-SE'); }
-      if(!doelDatum || isNaN(new Date(doelDatum))) doelDatum = vandaag.slice(0,4)+'-12-31';
-      const start = (posNum(S.doel_omzet)==null && !S.doel_omzet_datum)
-        ? vandaag.slice(0,4)+'-01-01'
-        : (()=>{ const d=new Date(doelDatum); d.setMonth(d.getMonth()-12); return d.toLocaleDateString('sv-SE'); })();
-      const omzet = termijnen.filter(t => gefact(t) && dv(t) >= start && dv(t) <= vandaag).reduce((s2,t)=>s2+bet(t),0);
-      doel = { pct: Math.min(100, Math.round(omzet/doelOmzet*100)) };
-    }
-    return (_ck = {ok:true, omzetMaand, saldo: saldi[0]?Number(saldi[0].saldo):null,
-                   saldoDatum: saldi[0]?.datum||'', doel});
-  }catch(e){ return (_ck = {ok:false}); }
-}
-
-function cockpitHTML(ck){
-  if(ck?.demo) return `<div class="cockpit stil"><span class="label">Jouw cockpit</span>
-    <span class="meta">financiële data is in demo-modus niet beschikbaar — log in met je eigen account voor omzetdoel, facturatie en banksaldo</span></div>`;
-  if(!ck || !ck.ok) return '';
-  const seg = [];
-  if(ck.doel) seg.push(`<span class="ck-seg"><span class="meta">Omzetdoel</span>
-    <b class="num">${ck.doel.pct}%</b><span class="bar ck-bar"><i class="${ck.doel.pct>=100?'green':''}" style="width:${ck.doel.pct}%"></i></span></span>`);
-  seg.push(`<span class="ck-seg"><span class="meta">Gefactureerd deze maand</span><b class="num">${h(CRM.euro(ck.omzetMaand))}</b></span>`);
-  if(ck.saldo != null) seg.push(`<span class="ck-seg"><span class="meta">Banksaldo</span>
-    <b class="num${ck.saldo<0?' neg':''}">${h(CRM.euro(ck.saldo))}</b>
-    ${ck.saldoDatum?`<span class="meta num">${h(CRM.fmtDateShort(ck.saldoDatum))}</span>`:''}</span>`);
-  return `<div class="cockpit klik" data-mod="finance" title="Naar Finance">
-    <span class="label">Jouw cockpit</span>${seg.join('<span class="ck-sep"></span>')}</div>`;
-}
+/* ═══ GEEN GELD OP HET DASHBOARD ═════════════════════════════════
+   Hier stond een "cockpitregel" met omzet, omzetdoel en banksaldo.
+   Weg, en bewust niet als slapende functie bewaard (wens Tjeerd):
+   "Banksaldo etc kan ik vinden bij finance. Dit hoeft niet op het
+   dashboard. Anders ziet iedereen dit." Het dashboard staat de hele
+   dag open met collega's ernaast. Zet hier dus nooit een bedrag neer
+   — ook niet in een title-attribuut of tooltip. Alle euro's staan in
+   de Finance-module, achter CRM.canSeeMoney(). */
 
 /* ═══ JE MAIL — een venster op de inbox, geen samenvatting ═══════
    Bewust géén interpretatie: alleen afzender, onderwerp en hoe lang het
    er staat. De toegevoegde waarde zit in de koppeling met het CRM —
    "dit is Rob van Koomstra" in plaats van een los mailadres. */
-let _mail = null;                       // null = nog niet gelezen
+let _mail = null;          // {lijst:[…]} — ALLEEN een geslaagde lezing
+let _mailFoutOp = 0;       // tijdstip van de laatste mislukte lezing
 
 /* Eén hulpje voor álle matching: e-mailadres → CRM-kaart.
    Hoofdletterongevoelig, spaties eraf, alleen velden die bestaan. */
@@ -612,9 +598,10 @@ function mailHTML(lijst){
   let inhoud;
   if(!lijst.length){
     inhoud = `<div class="mail-leeg meta">Niets ongelezen.</div>`;
-  }else if(!bekend.length){
-    /* Niets herkend — dan geen loze kopjes, gewoon één lijst. */
-    inhoud = lijst.map(m => mailRijHTML(m, null, false)).join('');
+  }else if(!bekend.length || !overig.length){
+    /* Alles in één groep — dan geen loze kopjes, gewoon één lijst.
+       Het koppel-label per regel vertelt al genoeg. */
+    inhoud = lijst.map(m => mailRijHTML(m, koppelVan(idx, m), false)).join('');
   }else{
     const rest = overig.map(x => mailRijHTML(x.m, null, true));
     inhoud = `<div class="mail-groep label">Van je klanten en kandidaten</div>
@@ -636,17 +623,33 @@ function mailHTML(lijst){
 }
 
 /* Ophalen. Stil: mailInbox vraagt nooit om een login en geeft null
-   terug als de koppeling er niet is. */
+   terug als de koppeling er niet is.
+   Alleen een GESLAAGDE lezing wordt onthouden. Werd het niets (429 van
+   Microsoft, koppeling even weg, Graph-hik), dan bewaren we dat niet:
+   anders bleef "Je mail" na één hik de hele sessie weg, ook na
+   Vernieuwen en na wegklikken en terugkomen. Wel een minuut rust
+   tussen twee pogingen, zodat een kapotte koppeling geen aanroep per
+   herteken oplevert. */
+const MAIL_WACHT = 60000;
 async function mailLezen(){
   if(_mail) return _mail;
-  try{ return (_mail = {lijst: await CRM.outlook.mailInbox({ongelezen:true, aantal:8, sindsUren:72})}); }
-  catch(e){ console.warn('mailInbox', e); return (_mail = {lijst:null}); }
+  if(_mailFoutOp && Date.now() - _mailFoutOp < MAIL_WACHT) return null;
+  let lijst = null;
+  try{ lijst = await CRM.outlook.mailInbox({ongelezen:true, aantal:8, sindsUren:72}); }
+  catch(e){ lijst = null; }
+  if(!Array.isArray(lijst)){ _mailFoutOp = Date.now(); return null; }
+  _mailFoutOp = 0;
+  return (_mail = {lijst});
 }
 
 function mailVullen(mount){
   const el = mount.querySelector('#dash_mail');
   if(!el || CRM.view!=='dashboard') return;
-  el.innerHTML = mailHTML(_mail ? _mail.lijst : null);
+  const html = mailHTML(_mail ? _mail.lijst : null);
+  /* Niets terug (koppeling weg of Graph-fout): geen leeg kader laten staan —
+     ook geen lege div, want die zou een gat in de kolom trekken. */
+  if(!html) return el.remove();
+  el.innerHTML = html;
   const meer = el.querySelector('#mail_meer');
   if(meer) meer.onclick = () => {
     const blok = el.querySelector('.mail-meer');
@@ -655,7 +658,7 @@ function mailVullen(mount){
   };
   const ver = el.querySelector('#mail_ver');
   if(ver) ver.onclick = async () => {
-    ver.disabled = true; _mail = null;
+    ver.disabled = true; _mail = null; _mailFoutOp = 0;
     await mailLezen();
     mailVullen(mount);
   };
@@ -804,8 +807,10 @@ function waakhondBlok(){
     </div></div></div>`;
 }
 
-/* Mailkoppeling aan? Alleen dan reserveren we de plek; anders geen leeg kader. */
-const mailAan = () => { try{ return !!CRM.outlook?.verbonden?.(); }catch(e){ return false; } };
+/* Mailkoppeling aan? Alleen dan reserveren we de plek; anders geen leeg kader.
+   Ook beschikbaar() meenemen: in demo-modus staat de koppeling uit en zou
+   mailInbox() altijd niets teruggeven. */
+const mailAan = () => olVerbonden();
 const mailPlek = () => mailAan()
   ? `<div id="dash_mail">${_mail ? '' : `<div class="dash-sec"><div class="label sec-kop">Je mail</div>
       <div class="card"><div class="card-b mail-b"><div class="meta">Laden…</div></div></div></div>`}</div>` : '';
@@ -832,7 +837,11 @@ function looptRegel(){
   const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
   const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
   const leadsWeek = (CRM.state.leads||[]).filter(l => inBereik(l.binnen_op, wk.van, wk.tot)).length;
-  const vroeg = cs.filter(c => ['Voorselectie','Voorgesteld'].includes(c.fase)).length;
+  /* faseIn i.p.v. includes: de eerste fase heet sinds 30 jul 2026 'Intake',
+     en kandidaten die nog op de oude waarde 'Voorselectie' staan moeten hier
+     gewoon meetellen — anders meldt het dashboard een lage instroom die er
+     niet is. CRM.faseIn normaliseert beide kanten. */
+  const vroeg = cs.filter(c => CRM.faseIn(c.fase, ['Intake','Voorgesteld'])).length;
   const seg = (mod, txt, kl='') => `<button type="button" class="loopt-i${kl}" data-mod="${h(mod)}">${h(txt)} →</button>`;
   return `<div class="loopt meta">
     ${seg('sales', `Sales: ${kansen} open kansen, ${traject} klanten in traject`)}
@@ -886,11 +895,11 @@ CRM.registerModule('dashboard', {
       if(el) CRM.ga(el.dataset.mod, el.dataset.id ? {id:el.dataset.id} : {});
     };
 
-    /* Motivatiezin wegklikken: voor de rest van vandaag. */
+    /* Motivatiezin wegklikken: tot je opnieuw inlogt. */
     const mx = document.getElementById('mot_x');
     if(mx) mx.onclick = e => {
       e.stopPropagation();
-      try{ localStorage.setItem(MOT_KEY, VANDAAG()); }catch(err){}
+      try{ sessionStorage.setItem(MOT_WEG, '1'); }catch(err){}
       document.getElementById('dash_mot')?.remove();
     };
 
@@ -952,19 +961,26 @@ CRM.registerModule('dashboard', {
        koppeling, dan blijven dag én week gewoon de CRM-items tonen. */
     const ob = document.getElementById('tl2_ol');
     if(ob) ob.onclick = async () => { if(await CRM.outlook.verbind()) CRM.render(); };
-    if(CRM.outlook.beschikbaar() && CRM.outlook.verbonden()){
-      const olSub = ev => 'Outlook' + (ev.locatie?' · '+h(ev.locatie):'') +
-        (ev.online?` · <a href="${h(ev.online)}" target="_blank" rel="noopener">Teams</a>`:'');
+    if(olVerbonden() && CRM.outlook.agenda){
+      /* De deelnemerslink komt uit Graph en is dus gebruikersinvoer: door de
+         veiligeUrl-poort, anders kan een `javascript:`-adres in een href staan.
+         De tekst kort houden en de knop apart zetten, zodat "Teams" niet
+         wegvalt achter een lange locatienaam (op mobiel was hij onklikbaar). */
+      const olSub = ev => {
+        const join = veiligeUrl(ev.online);
+        return `<span class="tl2-sub-t">Outlook${ev.locatie?' · '+h(ev.locatie):''}</span>` +
+          (join?`<a class="tl2-teams" href="${h(join)}" target="_blank" rel="noopener">Teams</a>`:'');
+      };
 
       if(!week){
-        CRM.outlook.agenda(1).then(items => {
+        Promise.resolve(CRM.outlook.agenda(1)).then(items => {
           if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='dag') return;
           let geplaatst = 0;
           items.forEach(ev => {
             const tijd = String(ev.start||'').slice(11,16);
             const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
             const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
-              titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev) };
+              titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev), subKlas:'metlink' };
             it.af = sessieKlaar.has(sk(it.sesKey));
             (P.uren[uur] = P.uren[uur] || []).unshift(it);
             geplaatst++; if(it.af) _vgAf++;
@@ -985,7 +1001,7 @@ CRM.registerModule('dashboard', {
         }).catch(()=>{});
       }else{
         /* agenda(7) loopt vanaf nu; alles buiten deze week valt vanzelf af. */
-        CRM.outlook.agenda(7).then(items => {
+        Promise.resolve(CRM.outlook.agenda(7)).then(items => {
           if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='week') return;
           let raak = 0;
           items.forEach(ev => {
@@ -993,7 +1009,7 @@ CRM.registerModule('dashboard', {
             if(!d) return;
             d.items.push({ soort:'outlook', geenVink:true,
               titel: ev.titel||'(zonder onderwerp)', tijd:String(ev.start||'').slice(11,16),
-              subHtml: olSub(ev) });
+              subHtml: olSub(ev), subKlas:'metlink' });
             raak++;
           });
           if(!raak) return;

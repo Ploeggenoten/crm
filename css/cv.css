@@ -1,0 +1,215 @@
+/* ═══════════════════════════════════════════════════════════════
+   CV-GENERATOR — venster (instellingen links, A4-voorbeeld rechts)
+   en het vel zelf, dat is wat geprint wordt.
+
+   Het vel volgt de VASTE Ploeggenoten-opmaak van het bestaande
+   kandidaatprofiel: crème pagina met een lichte decoratiecirkel
+   rechtsboven, voornaam in Anton, olijf/lime deelstreep, en een
+   linkerkolom van 140px met jaartallen en sectielabels.
+   Maten zijn overgenomen uit het origineel (A4 = 794px bij 96dpi).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Venster ─────────────────────────────────────────────────── */
+.cvg{position:fixed;inset:0;z-index:45}
+.cvg-scrim{position:absolute;inset:0;background:rgba(25,35,20,.42);backdrop-filter:blur(2px)}
+.cvg-paneel{
+  position:absolute;inset:24px;margin:auto;max-width:1220px;max-height:calc(100vh - 48px);
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r-l);
+  box-shadow:var(--sh-3);display:flex;flex-direction:column;overflow:hidden;
+}
+.cvg-kop{
+  background:var(--card);border-bottom:1px solid var(--line);
+  padding:14px 20px;display:flex;align-items:flex-start;gap:12px;flex:0 0 auto;
+}
+.cvg-kop > div:first-child{flex:1;min-width:0}
+.cvg-kop #cvg_x{font-size:15px;line-height:1}
+.cvg-body{flex:1;display:flex;min-height:0}
+.cvg-voet{
+  border-top:1px solid var(--line);background:var(--card);
+  padding:12px 20px;display:flex;gap:10px;align-items:center;flex:0 0 auto;flex-wrap:wrap;
+}
+
+/* Instellingen links */
+.cvg-zij{
+  flex:0 0 320px;width:320px;border-right:1px solid var(--line);
+  padding:18px;overflow-y:auto;background:var(--well);
+}
+.cvg-blok{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px;margin-bottom:14px;
+}
+.cvg-blok:last-child{margin-bottom:0}
+.cvg-blok .check{padding:5px 0}
+.cvg-blok textarea{font-size:13px}
+#cvg_schets{min-height:150px}
+.cvg-seg{display:flex;width:100%}
+.cvg-seg button{flex:1;padding:6px 4px;font-size:12px}
+.cvg-taakveld{margin-bottom:12px}
+.cvg-taakveld:last-child{margin-bottom:0}
+.cvg-taakveld label{display:block;font-size:12px;font-weight:600;color:var(--txt-2);margin-bottom:4px}
+.cvg-taakveld label .num{color:var(--olive)}
+.cvg-taakveld textarea{min-height:58px;font-size:12.5px}
+
+/* Voorbeeld rechts */
+.cvg-preview{
+  flex:1;min-width:0;overflow:auto;padding:24px;
+  background:var(--well-2);display:flex;justify-content:center;align-items:flex-start;
+}
+.cvg-schaal{transform-origin:top left;flex:0 0 auto}
+
+/* ═══════════════════════════════════════════════════════════════
+   HET VEL — vaste opmaak
+   ═══════════════════════════════════════════════════════════════ */
+.cvg-vel{
+  width:210mm;min-height:297mm;padding:12.5mm 13mm 13mm;
+  background:var(--paper);color:var(--ink);
+  font-family:var(--body);font-size:13px;line-height:1.5;
+  display:flex;flex-direction:column;position:relative;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+
+/* ── Kopzone: logo, pil, naam, ondertitel, deelstreep ─────────
+   Vol de breedte van de pagina (negatieve marges), zodat de
+   decoratiecirkel en de deelstreep tot de rand lopen. De zone
+   klipt de cirkel; het vel zelf houdt overflow zichtbaar zodat
+   printen over twee pagina's blijft werken. */
+.cvg-kopzone{
+  position:relative;overflow:hidden;
+  margin:-12.5mm -13mm 0;padding:12.5mm 13mm 0;
+}
+.cvg-deco{
+  position:absolute;top:-16mm;right:-14mm;width:80mm;height:80mm;
+  border-radius:50%;background:var(--card-2);z-index:0;
+}
+.cvg-kopzone > *:not(.cvg-deco){position:relative;z-index:1}
+
+.cvg-top{display:flex;align-items:center;gap:16px}
+.cvg-logo{height:15px;width:auto;display:block}
+.cvg-pil{
+  margin-left:auto;background:var(--lime);color:#171d08;border-radius:999px;
+  padding:6px 15px;font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;
+}
+.cvg-naam{
+  font-family:var(--disp);font-weight:400;font-size:66px;line-height:1;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--ink);margin:26px 0 0;
+}
+.cvg-naam.lang{font-size:48px}
+.cvg-ref{margin-top:6px;font-size:11px;color:var(--muted);letter-spacing:.04em}
+.cvg-onder{
+  margin-top:15px;font-size:16px;font-weight:700;color:var(--olive);letter-spacing:-.005em;
+}
+/* Deelstreep: 70% donker olijf, 30% lime, van rand tot rand. */
+.cvg-balk{display:flex;height:8px;margin:25px -13mm 0}
+.cvg-balk > i{flex:0 0 70%;background:var(--olive-d)}
+.cvg-balk > b{flex:1;background:var(--lime)}
+
+/* ── Profielschets ──────────────────────────────────────────── */
+.cvg-schets{
+  margin:42px 0 0;font-size:14px;line-height:2;color:var(--ink);
+  white-space:pre-wrap;break-inside:avoid;page-break-inside:avoid;
+}
+/* Lege staat: gewone tekstafbreking, niet de pre-wrap van de schets. */
+.cvg-stil{color:var(--muted);line-height:1.7;white-space:normal}
+
+/* ── Scheidingslijn ─────────────────────────────────────────── */
+.cvg-lijn{border:0;border-top:2px solid var(--ink);margin:18px 0 0}
+/* Na een sectie mag de lijn ruimer staan dan na de profielschets. */
+.cvg-werk + .cvg-lijn{margin-top:38px}
+
+/* ── Werkervaring ───────────────────────────────────────────── */
+.cvg-sk{
+  font-family:var(--disp);font-weight:400;font-size:21px;line-height:1;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--olive);margin:34px 0 30px;
+}
+.cvg-job{display:flex;gap:26px;margin-bottom:26px;break-inside:avoid;page-break-inside:avoid}
+.cvg-job:last-child{margin-bottom:0}
+.cvg-jaar{
+  flex:0 0 140px;text-align:right;
+  font-family:var(--disp);font-weight:400;font-size:19px;line-height:1.25;letter-spacing:.3px;
+  color:var(--olive);
+}
+.cvg-jc{flex:1;min-width:0}
+.cvg-jt{display:flex;align-items:baseline;gap:14px}
+.cvg-jt b{flex:1;min-width:0;font-size:15.5px;font-weight:700;color:var(--ink)}
+.cvg-per{flex:0 0 auto;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.cvg-jf{font-size:13px;font-weight:700;color:var(--olive);margin-top:2px}
+.cvg-taken{margin:9px 0 0;padding:0 0 0 18px;list-style:none}
+.cvg-taken li{position:relative;font-size:13px;line-height:1.75;color:var(--txt)}
+.cvg-taken li::before{
+  content:'•';position:absolute;left:-14px;color:var(--ink);font-size:13px;line-height:1.6;
+}
+
+/* ── Vaardigheden / Opleiding: label links, inhoud rechts ───── */
+.cvg-rij{display:flex;gap:26px;margin-top:32px;break-inside:avoid;page-break-inside:avoid}
+.cvg-lbl{
+  flex:0 0 140px;text-align:right;
+  font-family:var(--disp);font-weight:400;font-size:16.5px;line-height:1.2;letter-spacing:.3px;
+  text-transform:uppercase;color:var(--olive);
+}
+.cvg-rc{flex:1;min-width:0}
+
+.cvg-pillen{display:flex;flex-wrap:wrap;gap:9px;margin-top:-4px}
+.cvg-pil-o{
+  border:1.5px solid var(--olive);border-radius:999px;padding:5px 14px;
+  font-size:12.5px;font-weight:700;color:var(--olive);background:transparent;
+}
+.cvg-oplr{font-size:14px;line-height:1.45;margin-bottom:11px}
+.cvg-oplr:last-child{margin-bottom:0}
+.cvg-oplr b{font-weight:700;color:var(--ink)}
+.cvg-oplr span{color:var(--muted);font-weight:500}
+.cvg-extra{margin-top:19px}
+
+/* ── Voettekst ──────────────────────────────────────────────── */
+.cvg-bal{
+  margin-top:46px;background:var(--olive);border-radius:14px;
+  padding:15px 22px;display:flex;align-items:center;gap:16px;
+  break-inside:avoid;page-break-inside:avoid;
+}
+.cvg-bal > span:first-child{flex:1;color:var(--paper);font-size:12px;font-weight:700}
+.cvg-url{
+  background:var(--lime);color:#171d08;border-radius:999px;
+  padding:6px 16px;font-size:12.5px;font-weight:700;white-space:nowrap;
+}
+
+/* ─── Printstand ──────────────────────────────────────────────────
+   Bewust NIET in @media print maar aan een klasse gehangen, zodat de
+   printweergave ook op het scherm te controleren is. js/cv.js zet de
+   klasse rond window.print() én op 'beforeprint' (voor Ctrl+P), en
+   haalt hem er direct weer af. `:has()` zorgt dat de regels alleen
+   leven zolang het venster daadwerkelijk in printstand staat.
+   Marge 0 (het crème loopt tot de rand, net als in het origineel) wordt
+   NIET hier gezet: @page geldt documentbreed en zou dan ook het printen
+   van gewone schermen en van de andere documentgeneratoren raken.
+   js/cv.js injecteert die regel alleen zolang dit vel print. */
+
+body:has(.cvg.cvg-print) > *:not(.cvg){display:none!important}
+body:has(.cvg.cvg-print){overflow:visible!important;background:var(--paper)}
+.cvg.cvg-print{position:static;inset:auto}
+.cvg.cvg-print .cvg-scrim,
+.cvg.cvg-print .cvg-kop,
+.cvg.cvg-print .cvg-zij,
+.cvg.cvg-print .cvg-voet{display:none!important}
+.cvg.cvg-print .cvg-paneel{
+  position:static;inset:auto;max-width:none;max-height:none;margin:0;display:block;
+  background:var(--paper);border:0;border-radius:0;box-shadow:none;overflow:visible;
+}
+.cvg.cvg-print .cvg-body{display:block;min-height:0}
+.cvg.cvg-print .cvg-preview{display:block;overflow:visible;padding:0;background:var(--paper)}
+.cvg.cvg-print .cvg-schaal{transform:none!important;width:auto!important;height:auto!important}
+/* Padding blijft staan (dat is de paginamarge); alleen de vaste
+   A4-breedte en de minimumhoogte gaan eraf. Zo stopt het crème op de
+   laatste pagina waar de inhoud stopt — precies als in het origineel. */
+.cvg.cvg-print .cvg-vel{width:auto;min-height:0;border:0;border-radius:0}
+
+/* ─── Smal scherm: instellingen boven, vel eronder ────────────── */
+@media (max-width:820px){
+  .cvg-paneel{inset:0;max-height:100vh;border-radius:0;border:0}
+  /* Instellingen boven met een eigen scroll, het vel eronder — anders
+     staat het voorbeeld zo ver naar beneden dat je het niet meer ziet. */
+  .cvg-body{flex-direction:column;overflow:hidden}
+  .cvg-zij{flex:0 0 auto;width:auto;border-right:0;border-bottom:1px solid var(--line);max-height:42vh;overflow-y:auto}
+  .cvg-preview{flex:1;min-height:220px;padding:14px;overflow:auto;justify-content:flex-start}
+  .cvg-voet{padding:10px 14px}
+  .cvg-voet .btn{flex:1;justify-content:center}
+  .cvg-voet #cvg_stand{flex:1 0 100%}
+}

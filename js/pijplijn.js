@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    MODULE: PIJPLIJN — het ATS-bord als eigen menu-item
-   Kanban vanaf Voorgesteld, met uitvalstrook, week-indeling in de
+   Kanban vanaf Intake, met uitvalstrook, week-indeling in de
    kolommen, groeperen per klant, compact-weergave en de mobiele
    fase-picker. Gedrag en formules 1-op-1 het pijplijnbord
    (PARITEIT-BORD.md); verhuisd vanuit js/recruitment.js.
@@ -20,18 +20,55 @@ const D = () => CRM._rcDeel || {};
 /* ─── Filters (blijven bewaard tussen renders) ─────────────────── */
 const P = {q:'', klant:'', rec:'', vac:'', type:'', mijn:false, groep:false};
 
+/* Wegwerken van een bord is fijnmazig werk: je klikt een kaart aan, bekijkt
+   de kandidatenkaart en wilt daarna precies terug waar je was. De filters
+   zitten al in P (die overleeft een render); hier bewaren we de
+   scrollpositie van de pagina en van het bord zelf. */
+let pos = null;
+function bewaarPositie(id){
+  const board = document.getElementById('rb_board');   // dit is de horizontale scroller
+  pos = {y: window.scrollY || 0, x: board ? board.scrollLeft : 0, id: String(id||'')};
+}
+function herstelPositie(){
+  if(!pos) return;
+  const p = pos; pos = null;
+  /* Meteen én nog één keer na een tick: de kolommen staan er al, maar een
+     enkele browser rekent de breedte pas na de eerstvolgende layout uit.
+     Bewust géén requestAnimationFrame — die staat stil in een achtergrondtab. */
+  const zet = () => {
+    const board = document.getElementById('rb_board');
+    if(board) board.scrollLeft = p.x;
+    window.scrollTo(0, p.y);
+  };
+  zet(); setTimeout(zet, 0);
+}
+/* De kandidatenkaart biedt "← Terug naar het bord" aan voor precies de
+   kandidaat die vanaf het bord is aangeklikt. */
+CRM.pijplijnTerug = id => !!pos && pos.id === String(id);
+
 const UITVAL = ['Afgevallen','Gestopt'];
-/* Zoals op het bord: Voorselectie en uitval leven in Recruitment —
-   de pijplijn zelf begint bij Voorgesteld. */
-const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k) && p.k !== 'Voorselectie');
+/* Alleen de uitval leeft buiten het bord (in Recruitment). Intake is wél een
+   echte pijplijnfase — de werkvoorraad waar de videocall gepland wordt — en
+   staat daarom als eerste kolom gewoon op het bord. */
+const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k));
 const vacById   = id => (CRM.state.vacs||[]).find(v => String(v.id) === String(id));
 const vacLabel  = v => v ? (v.functie + ' · ' + v.klant) : '';
 const norm      = s => String(s||'').toLowerCase();
 const daysTo    = d => { const n = CRM.dagenGeleden(d); return n == null ? null : -n; };
 
+/* Hoe lang staat deze kaart al in de HUIDIGE fase?
+   Eerder werd blind het laatste historie-item gepakt. Dat item hoort vaak bij
+   een vórige fase (historie loopt achter, of is uit het oude ATS geïmporteerd),
+   waardoor élke kaart een veel te hoge "Xd in fase" kreeg en het rode
+   stilstand-signaal niets meer betekende. Nu: het meest recente historie-item
+   dát bij de huidige fase hoort — staat dezelfde fase er twee keer in, dan telt
+   de laatste keer. Geen passend item? Dan is `since` de waarheid. */
 function dagenInFase(c){
-  const laatste = (c.historie && c.historie.length) ? c.historie[c.historie.length-1].op : c.since;
-  const n = CRM.dagenGeleden(laatste);
+  let laatste = null;
+  (c.historie||[]).forEach(x => {
+    if(x && CRM.faseIs(x.fase, c.fase) && x.op && (!laatste || String(x.op) > String(laatste))) laatste = x.op;
+  });
+  const n = CRM.dagenGeleden(laatste || c.since);
   return n == null ? null : Math.max(0, n);
 }
 
@@ -79,7 +116,7 @@ function kandGefilterd(){
    MODULE-REGISTRATIE
    ═══════════════════════════════════════════════════════════════ */
 CRM.registerModule('pijplijn', {
-  title:'Pijplijn', icon:'▥', onderschrift:'Het bord — van Voorgesteld tot Gestart',
+  title:'Pijplijn', icon:'▥', onderschrift:'Het bord — van Intake tot Gestart',
   volleBreedte:true,
   render(mount, acties){
     if(!CRM._rcDeel || !CRM.kandidaatBewerk){
@@ -130,6 +167,7 @@ CRM.registerModule('pijplijn', {
     tekenActies(acties);
     tekenBalk();
     tekenKolommen();
+    herstelPositie();
     D().promoteerStarts().then(n => { if(n){ tekenBalk(); tekenKolommen(); } });
   }
 });
@@ -138,12 +176,16 @@ function tekenActies(acties){
   const el = acties || document.getElementById('pageacties');
   if(!el) return;
   el.innerHTML = `<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>
-                  <button class="btn ghost sm" id="pp_oo">+ O&amp;O-sessie</button>`;
+                  <button class="btn ghost sm" id="pp_oo">+ O&amp;O-sessie</button>
+                  <button class="btn sm" id="pp_kand">+ Kandidaat</button>`;
   el.querySelector('#pp_dicht').onclick = () => {
     localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
     tekenActies(); pasDichtheidToe();
   };
   el.querySelector('#pp_oo').onclick = () => D().ooModal(null);
+  /* Kwam van het vervallen tabblad Voorselectie: een kandidaat aanmaken start
+     in de eerste kolom van dit bord, dus hoort de knop hier. */
+  el.querySelector('#pp_kand').onclick = () => D().nieuweKandidaat();
 }
 
 /* ─── Netto-KPI-regel boven het bord ──────────────────────────── */
@@ -151,7 +193,7 @@ function tekenBalk(){
   const el = document.getElementById('pp_bar'); if(!el) return;
   const K = CRM.kandidaten();
   /* c.fase truthy: golden candidates zonder fase horen niet op het bord. */
-  const lopend = K.filter(c => c.fase && !CRM.DONE.includes(c.fase) && c.fase !== 'Voorselectie');
+  const lopend = K.filter(c => c.fase && !CRM.DONE.includes(c.fase));
   const gesprek = lopend.filter(c => ['O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag'].includes(c.fase)).length;
   const [ma, zo] = D().weekGrens();
   const startsWeek = K.filter(c => CRM.PLACED.includes(c.fase) && c.start &&
@@ -161,7 +203,7 @@ function tekenBalk(){
     `<div class="rc-it ${klasse}"><div class="label">${h(lbl)}</div>
        <div class="rc-v num">${waarde}</div>${extra?`<div class="meta">${extra}</div>`:''}</div>`;
   el.innerHTML =
-    it('Op het bord', lopend.length, 'vanaf Voorgesteld') +
+    it('Op het bord', lopend.length, 'vanaf Intake') +
     it('In gesprek', gesprek, 'O&amp;O t/m meeloopdag') +
     it('Starts deze week', startsWeek, 'geplande startdatums') +
     it('Netto deze maand', `${CRM.plusMin(pm.netto)}<span class="rc-van">/ ${target}</span>`,
@@ -181,7 +223,7 @@ function kaartHtml(c){
   const gemist    = dd && !placed && dt < 0;
   const over = c.actieDatum && (CRM.dagenGeleden(c.actieDatum) || 0) > 0;
   const dg = dagenInFase(c);
-  const kanIntake = ['Voorselectie','Voorgesteld'].includes(c.fase);
+  const kanIntake = CRM.faseIn(c.fase, ['Intake','Voorgesteld']);
   const chips = [];
   if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
   else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
@@ -194,7 +236,7 @@ function kaartHtml(c){
     else chips.push(`<span class="chip ${dg>=10?'red':'amber'} num" title="Dagen in deze fase">${dg}d in fase</span>`);
   }
   if(d.intakeDone(c)){ const ic = c.intake.cijfer;
-    chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+ic+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
+    chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+h(ic)+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
   }
   if(placed && c.garantieMnd > 0){ const ge = d.garantieEnd(c);
     if(ge && ge >= CRM.todayISO()) chips.push(`<span class="chip green num" title="Garantietermijn">garantie t/m ${h(CRM.fmtDateShort(ge))}</span>`);
@@ -290,7 +332,10 @@ function tekenKolommen(){
   if(!board) return;
   const d = D();
   const alle = kandGefilterd();
-  const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
+  /* Intake staat er ook in: het is de videocall-lijst, dus de weekindeling
+     laat meteen zien welke calls wanneer staan — en zet alles zónder datum
+     bij elkaar onder "Nog te plannen". */
+  const WEEKCOLS = ['Intake','Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
   const nm = c => String(c.naam||'');
   const byDate = (a,b) => {
     const x = a.datum||'', y = b.datum||'';
@@ -299,7 +344,9 @@ function tekenKolommen(){
     return x < y ? -1 : x > y ? 1 : nm(a).localeCompare(nm(b));
   };
   board.innerHTML = bordFases().map(p => {
-    let kaarten = alle.filter(c => c.fase === p.k).sort(byDate);
+    /* faseIs i.p.v. ===: kandidaten die nog op de oude waarde 'Voorselectie'
+       staan horen gewoon in de Intake-kolom (zie CRM.faseNorm in data.js). */
+    let kaarten = alle.filter(c => CRM.faseIs(c.fase, p.k)).sort(byDate);
     if(p.k === 'Contract getekend' || p.k === 'Gestart')
       kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:nm(a).localeCompare(nm(b)); });
     let binnen;
@@ -312,23 +359,40 @@ function tekenKolommen(){
       const dz = kaarten.filter(c => c.start && new Date(c.start) >= ma && new Date(c.start) < zo).length;
       binnen = `<div class="rc-startnote num">Deze week: ${dz} start${dz===1?'':'s'}</div>` + binnen;
     }
+    /* Verhuisd van het oude tabblad Voorselectie: zonder geplande call
+       vervuilt de lijst, dus dat signaal blijft bovenaan de kolom staan. */
+    if(p.k === 'Intake'){
+      const geenCall = kaarten.filter(c => !c.datum).length;
+      if(geenCall) binnen = `<div class="rc-letnote num">${geenCall}× zonder geplande videocall</div>` + binnen;
+    }
+    const leeg = p.k === 'Intake' ? 'Nieuwe sollicitanten komen hier binnen — plan de videocall erbij'
+      : p.k === 'Voorgesteld' ? 'Stel kandidaten voor vanuit Intake' : '—';
     return `<div class="bcol" data-fase="${h(p.k)}" style="--ph:${p.c}">
       <div class="bcol-h"><b>${h(p.k)}</b><span class="cnt num">${kaarten.length}</span></div>
-      <div class="bcol-b">${binnen || `<div class="rc-leegkol">${p.k==='Voorgesteld'?'Stel kandidaten voor vanuit Voorselectie (Recruitment)':'—'}</div>`}</div>
+      <div class="bcol-b">${binnen || `<div class="rc-leegkol">${h(leeg)}</div>`}</div>
     </div>`;
   }).join('');
 
-  /* Zoek of filter je op iemand die (nog) geen fase heeft — bijvoorbeeld een
-     import uit het oude ATS — dan hoort hij niet op het bord. Dat zeggen we
-     er liever bij dan dat je naar een leeg bord staart. Alleen bij een actief
-     filter: zonder filter is het bord gewoon het bord. */
+  /* Wie valt buiten het bord? Kandidaten zonder fase (import uit het oude ATS)
+     en kandidaten met een fase die niet meer bestaat, staan in géén enkele
+     kolom. Die mogen niet stilletjes blijven liggen, dus we melden ze altijd —
+     niet alleen als er toevallig een filter aanstaat. Golden candidates staan
+     bewust zonder fase geparkeerd; die tellen we apart en zonder alarm. */
+  const zonderFase = alle.filter(c => !c.fase);
+  const goldenLos  = zonderFase.filter(c => c.golden).length;
+  const losseKand  = zonderFase.length - goldenLos;
+  const onbekend   = alle.filter(c => c.fase && CRM.faseIdx(c.fase) < 0).length;
   const filterActief = !!(P.q || P.klant || P.rec || P.vac || P.type || P.mijn);
-  const buitenBord = filterActief ? alle.filter(c => !c.fase).length : 0;
+  const waar = filterActief ? 'in je selectie' : 'in het systeem';
+  const delen = [];
+  if(losseKand) delen.push(`${losseKand} ${losseKand===1?'kandidaat heeft':'kandidaten hebben'} geen fase
+    en ${losseKand===1?'staat':'staan'} dus niet op het bord`);
+  if(onbekend) delen.push(`${onbekend} ${onbekend===1?'kandidaat staat':'kandidaten staan'} op een fase die niet meer bestaat`);
+  if(goldenLos) delen.push(`${goldenLos} golden candidate${goldenLos===1?'':'s'} ${goldenLos===1?'staat':'staan'} bewust geparkeerd`);
   const hint = document.getElementById('pp_geenfase');
   if(hint){
-    hint.innerHTML = buitenBord
-      ? `<span class="meta">${buitenBord} ${buitenBord===1?'kandidaat in je selectie heeft':'kandidaten in je selectie hebben'} geen fase
-         en ${buitenBord===1?'staat':'staan'} dus niet op het bord — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
+    hint.innerHTML = delen.length
+      ? `<span class="meta">${delen.join(' · ')} ${h(waar)} — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
   }
 
   /* Smalle uitvalstrook naast het bord: cijfers + sleepdoelen. */
@@ -353,13 +417,17 @@ function tekenKolommen(){
   CRM.$$('.bcard', board).forEach(k => {
     k.ondragstart = e => { e.dataTransfer.setData('text/plain', k.dataset.id); k.classList.add('drag'); };
     k.ondragend   = () => k.classList.remove('drag');
+    /* Klik = de VOLLEDIGE kandidatenkaart (wens Tjeerd, 30 jul 2026), niet
+       meer het smalle bewerkpaneel van het oude pijplijnbord. Positie eerst
+       bewaren, zodat "← Terug naar het bord" je precies terugzet. */
     k.onclick = e => {
       if(e.target.closest('[data-intake],[data-move]')) return;
-      CRM.kandidaatBewerk(k.dataset.id);
+      bewaarPositie(k.dataset.id);
+      CRM.ga('kandidaten', {id:k.dataset.id});
     };
   });
   CRM.$$('[data-intake]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.intakeForm(b.dataset.intake); });
-  CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); fasePicker(b.dataset.move); });
+  CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); CRM.kandidaatFasePicker(b.dataset.move); });
   CRM.$$('[data-oo]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.ooModal(b.dataset.oo); });
   CRM.$$('.bcol, .rc-uitzone', board.parentElement).forEach(zone => {
     zone.ondragover  = e => { e.preventDefault(); zone.classList.add('over'); };
@@ -373,23 +441,9 @@ function tekenKolommen(){
   pasDichtheidToe();
 }
 
-/* ─── Fase-picker (mobiel: tikken in plaats van slepen) ────────── */
-function fasePicker(id){
-  const c = CRM.kandidaat(id); if(!c) return;
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">${h(c.naam)} verplaatsen</div>
-      <p class="sub" style="margin:6px 0 0">Kies de nieuwe fase.</p></div>
-    <div class="modal-b"><div class="rc-fasepick">
-      ${CRM.PHASES.map(p => `<button data-f="${h(p.k)}" class="${c.fase===p.k?'nu':''}">
-        <i class="dot" style="background:${p.c}"></i>${h(p.k)}${c.fase===p.k?'<span class="meta">huidige fase</span>':''}</button>`).join('')}
-    </div></div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
-      CRM.$$('[data-f]', m).forEach(b => b.onclick = () => {
-        CRM.modal.close();
-        if(b.dataset.f !== c.fase) CRM.kandidaatFase(c.id, b.dataset.f);
-      });
-    }});
-}
+/* De fase-picker zelf woont in recruitment.js, naast faseWissel en de
+   poortwachters — bord en kandidatenkaart gebruiken dezelfde
+   (CRM.kandidaatFasePicker). */
 
 /* VERZOEK AAN CORE: de vacatures-tabel heeft in productie voor alle 50 rijen
    een lege `locatie`. Daardoor valt bij CRM.matchScore() de reisafstand altijd
