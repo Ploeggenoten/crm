@@ -1,8 +1,8 @@
 # Outlook-koppeling activeren (eenmalig, ±5 minuten)
 
-Hiermee kan elke AM vanuit het CRM zijn eigen Outlook-agenda zien, afspraken
+Hiermee kan elke AM vanuit het CRM de eigen Outlook-agenda zien, afspraken
 inplannen (ook Teams-videocalls voor intakes) en taken in Microsoft To Do
-zetten. De koppeling is per persoon: iedereen logt één keer in met zijn eigen
+zetten. De koppeling is per persoon: iedereen logt één keer in met het eigen
 Microsoft-account en het CRM kan alleen bij de agenda van die persoon zelf.
 
 Zonder deze activatie werkt de knop "Inplannen in Outlook" ook al — die opent
@@ -42,7 +42,7 @@ const MS_CLIENT_ID = '';
 
 (of geef hem aan Claude, dan wordt hij ingebouwd en gepusht). Vanaf dat moment
 staat er in het CRM een knop "Outlook verbinden"; elke AM klikt die één keer
-aan, logt in met zijn eigen account, en klaar.
+aan, logt in met het eigen account, en klaar.
 
 ## Wat er bewust NIET gebeurt
 

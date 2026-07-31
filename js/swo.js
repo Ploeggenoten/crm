@@ -122,7 +122,7 @@ Wij zijn **specialist in productie en logistiek**. We kennen de dynamiek van dez
 ### LinkedIn-sourcing voor specialistische functies
 Gaat het om een functie die je niet via Meta vindt, dan zetten we gerichte sourcing op LinkedIn in. Zo dekken we zowel de brede instroom als de specialistische rollen.
 ### Mensen die blijven staan
-Omdat een kandidaat het werk, het tempo en de ploeg vooraf heeft gezien, weet hij precies waar hij aan begint. Dat is het verschil tussen iemand die na twee weken afhaakt en iemand die *onderdeel wordt van de ploeg*.
+Wie het werk, het tempo en de ploeg vooraf heeft gezien, weet precies waar de baan uit bestaat. Dat is het verschil tussen iemand die na twee weken afhaakt en iemand die *onderdeel wordt van de ploeg*.
 >> Wij plaatsen niet en verdwijnen.
 >> Wij **bouwen mee** aan de *ploeg*.`},
 

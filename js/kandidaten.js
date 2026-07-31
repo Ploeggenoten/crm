@@ -21,10 +21,15 @@ const D = () => CRM._rcDeel || {};
 
 /* ─── Filters onthouden (één sleutel: crm_kand_filters) ───────── */
 const FKEY = 'crm_kand_filters';
+/* status staat sinds 31 jul 2026 standaard op 'gekwalificeerd'. Dat is de
+   lijst waar een accountmanager mee begint: mensen die de hele
+   recruitmentpijplijn door zijn (intake + videocall gehad) maar nog nergens
+   zijn voorgesteld. Wie zijn filter zelf ooit heeft omgezet houdt zijn eigen
+   keuze — die staat in localStorage en wint van deze default. */
 const F_STD = {
-  zoek:'', status:'lopend', ster:0, plaats:'', km:20, ploegen:'', taal:'',
-  vervoer:'', rijbewijs:'', functie:'', rec:'', klant:'', fase:'',
-  mijn:false, sort:'gesproken'
+  zoek:'', status:'gekwalificeerd', ster:0, plaats:'', km:20, ploegen:'', taal:'',
+  vervoer:'', rijbewijs:'', functie:'', rec:'', klant:'', fase:'', gesproken:'',
+  mijn:false, sort:'gesproken', splits:'functie'
 };
 let F = (() => {
   try{ return Object.assign({}, F_STD, JSON.parse(localStorage.getItem(FKEY)||'{}')); }
@@ -178,27 +183,70 @@ function reisafstandRij(c){
         zonderAuto ? 'ver zonder eigen auto' : 'flinke reisafstand'}</span>` : ''}</span></div>`;
 }
 
-/* ─── Laatst gesproken ────────────────────────────────────────── */
-function laatstGesproken(c){
-  const alle = CRM.activiteitenVoor('kandidaat', c.id).map(a => a.op)
-    .concat((c.notities||[]).map(n => n.op)).filter(Boolean).sort();
-  return alle.length ? alle[alle.length-1] : null;
+/* ─── Laatst gesproken ──────────────────────────────────────────
+   Wat telt als contact is precies dezelfde lijst als in js/opvolging.js:
+   bellen, appen, mailen, een gesprek of een bezoek. Een notitie, een
+   fasewissel, een geüpload document of een systeemregel telt niet — dat is
+   werk aan een kaart, geen contact met een mens. Zonder die gelijkschakeling
+   zegt het dashboard "drie weken niets gehoord" terwijl dit scherm "gisteren"
+   toont, en dan gelooft niemand meer een van beide.
+
+   opvolging.js houdt die lijst nog binnenskamers; zodra hij als
+   CRM.opvolging.CONTACT naar buiten komt (zie het verzoek onderaan dit
+   bestand) pakt deze regel hem vanzelf op en verdwijnt de kopie.
+
+   Let op: "Videocall ingepland" wordt door de videocallmodal hieronder als
+   soort 'gesprek' weggeschreven en telt dus mee. Dat is bewust gelijk aan
+   opvolging.js — inplannen is óók contact geweest. */
+const CONTACT_SOORTEN = (CRM.opvolging && CRM.opvolging.CONTACT) || ['bel','gesprek','whatsapp','mail','bezoek'];
+
+/* De laatste échte contactmomenten van deze kandidaat: {op, soort} of null. */
+function laatstContact(c){
+  let uit = null;
+  CRM.activiteitenVoor('kandidaat', c.id).forEach(a => {
+    if(!a.op || !CONTACT_SOORTEN.includes(a.soort)) return;
+    if(!uit || a.op > uit.op) uit = {op:a.op, soort:a.soort};
+  });
+  return uit;
 }
-/* "X dagen niet gesproken". Nooit gesproken? Dan telt hoelang iemand al in
-   de pijplijn zit — dat is precies het risico dat we willen zien. */
+/* Twee verschillende dingen die allebei "lang niet gesproken" heten:
+     - er ís gesproken, maar lang geleden  → een belletje waard
+     - er is nog nooit gesproken           → een gat in het proces
+   Daarom geeft stilte() ze allebei apart terug. `d` is het aantal dagen
+   sinds het laatste contact (null als dat er nooit was) en `wacht` is het
+   aantal dagen dat iemand al in beeld is. `dagen` is waar de filters en de
+   sortering op rekenen: het beste antwoord op "hoe lang wachten we al?",
+   dus het contact als dat er is en anders de wachttijd. */
+/* Geanonimiseerd = iemand heeft om verwijdering van zijn gegevens gevraagd
+   en die zijn gewist (js/kandverwijder.js). De kaart blijft bestaan omdat
+   de plaatsing in de cijfers moet blijven kloppen, maar de persoon erachter
+   is er niet meer. Zo'n regel mag dus nooit als belsuggestie terugkomen. */
+const geanonimiseerd = c => !!(CRM.kandVerwijder && CRM.kandVerwijder.isGeanonimiseerd
+  && CRM.kandVerwijder.isGeanonimiseerd(c));
+
 function stilte(c){
-  const lg = laatstGesproken(c);
-  if(lg){
-    const d = CRM.dagenGeleden(lg);
-    return {d, tekst:CRM.geleden(lg), kleur: d>=14 ? 'red' : d>=7 ? 'amber' : ''};
+  /* Geen stiltemeting op een gewiste kaart: er valt niemand te bellen.
+     `dagen: null` houdt deze regel automatisch buiten elk niet-gesproken
+     filter en onderaan de bellijst. */
+  if(geanonimiseerd(c))
+    return {d:null, wacht:null, dagen:null, nooit:false, anon:true, soort:'',
+            tekst:'gegevens gewist', kleur:''};
+  const l = laatstContact(c);
+  const wacht = CRM.dagenGeleden(c.since);
+  const kleuren = n => n == null ? '' : n >= 14 ? 'red' : n >= 7 ? 'amber' : '';
+  if(l){
+    const d = CRM.dagenGeleden(l.op);
+    return {d, wacht, dagen:d, nooit:false, anon:false, soort:l.soort,
+            tekst:CRM.geleden(l.op), kleur:kleuren(d)};
   }
-  const w = CRM.dagenGeleden(c.since);
-  return {d:null, tekst:'nooit gesproken', kleur: w!=null && w>=14 ? 'red' : w!=null && w>=7 ? 'amber' : ''};
+  return {d:null, wacht, dagen:wacht, nooit:true, anon:false, soort:'',
+          tekst:'nooit gesproken', kleur:kleuren(wacht)};
 }
 function stilteChip(c){
   const s = stilte(c);
-  if(s.d == null) return `<span class="chip ${s.kleur}">Nog nooit gesproken</span>`;
-  if(s.d === 0)   return '<span class="chip green">Vandaag gesproken</span>';
+  if(s.anon)  return '';
+  if(s.nooit) return `<span class="chip ${s.kleur}">Nog nooit gesproken</span>`;
+  if(s.d === 0) return '<span class="chip green">Vandaag gesproken</span>';
   return `<span class="chip ${s.kleur}"><span class="num">${s.d}</span> ${s.d === 1 ? 'dag' : 'dagen'} niet gesproken</span>`;
 }
 
@@ -237,12 +285,61 @@ function overzicht(mount, acties){
   lijstTab(mount.querySelector('#kd_tabwrap'));
 }
 
+/* ─── Statusfilter ──────────────────────────────────────────────
+   De oude lijst was één platte rij opties die deed alsof ze elkaar
+   uitsluiten, en dat doen ze niet: geplaatst zit ín actief lopend, en
+   herbruikbare uitval zit ín beschikbaar. In plaats van opties te schrappen
+   — er wordt in de praktijk op alle vijf gefilterd — staan ze nu in drie
+   groepen, zodat je in de lijst zelf ziet dat het drie vragen zijn:
+   wie is er voorradig, wie loopt er, en wie bewaren we voor later.
+   'Gekwalificeerd' is er als eerste bij gekomen en is de nieuwe default. */
+const STATUS_OPTS = [
+  {g:'De voorraad',      k:'gekwalificeerd', lbl:'Gekwalificeerd — klaar om voor te stellen'},
+  {g:'In een traject',   k:'lopend',      lbl:'Actief lopend'},
+  {g:'In een traject',   k:'geplaatst',   lbl:'Geplaatst'},
+  {g:'Bewaard voor later', k:'beschikbaar', lbl:'Beschikbaar'},
+  {g:'Bewaard voor later', k:'recyclebaar', lbl:'Uitval — herbruikbaar'},
+  {g:'Bewaard voor later', k:'golden',    lbl:'Golden candidates ★'},
+  {g:'',                 k:'alle',        lbl:'Alles'}
+];
+const statusLbl = k => (STATUS_OPTS.find(o => o.k === k) || {}).lbl || k;
+
+/* De gekwalificeerde voorraad. CRM.klaarOmVoorTeStellen (js/data.js) doet
+   het echte werk: kaart bestaat, intake is gehad, staat nog nergens op het
+   klantbord. Hier komt er één regel bij — een kaart waarvan de gegevens op
+   verzoek gewist zijn is geen voorraad meer, hoe compleet de fase ook is. */
+const gekwalificeerd = c => CRM.klaarOmVoorTeStellen(c) && !geanonimiseerd(c);
+
+/* ─── Filter "hoe lang niet gesproken" ──────────────────────────
+   Tjeerds vraag was letterlijk "twee weken niet gesproken, etc etc", dus
+   dit is een keuzelijst en geen los vinkje. De dagen-opties tellen ook
+   kandidaten mee die nog nóóit gesproken zijn maar al net zo lang wachten —
+   voor een accountmanager is dat dezelfde bellijst. Wie alleen het gat in
+   het proces wil zien kiest de laatste optie. */
+const GESPROKEN_OPTS = [
+  {k:'',      lbl:'Maakt niet uit'},
+  {k:'7',     lbl:'Langer dan 1 week niet gesproken',  chip:'langer dan 1 week niet gesproken',  dagen:7},
+  {k:'14',    lbl:'Langer dan 2 weken niet gesproken', chip:'langer dan 2 weken niet gesproken', dagen:14},
+  {k:'28',    lbl:'Langer dan 4 weken niet gesproken', chip:'langer dan 4 weken niet gesproken', dagen:28},
+  {k:'nooit', lbl:'Nog nooit gesproken',               chip:'nog nooit gesproken'}
+];
+const gesprokenOpt = k => GESPROKEN_OPTS.find(o => o.k === String(k||'')) || GESPROKEN_OPTS[0];
+/* st = het resultaat van stilte(). Een kandidaat zonder contact én zonder
+   datum in beeld heeft geen wachttijd; die valt eerlijk buiten de
+   dagen-opties in plaats van op nul dagen te worden gezet. */
+function gesprokenMatch(st, k){
+  const o = gesprokenOpt(k);
+  if(!o.k) return true;
+  if(o.k === 'nooit') return st.nooit;
+  return st.dagen != null && st.dagen >= o.dagen;
+}
+
 /* Welke filters staan aan (voor teller, chips en wissen)? */
-const PANEEL_FILTERS = ['status','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
+const PANEEL_FILTERS = ['status','gesproken','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
 function actieveFilters(){
   const uit = [];
-  const STATUS_LBL = {lopend:'Actief lopend', beschikbaar:'Beschikbaar', geplaatst:'Geplaatst', golden:'Golden candidates', recyclebaar:'Uitval — herbruikbaar', alle:'Alles'};
-  if(F.status !== F_STD.status) uit.push({k:'status', lbl:STATUS_LBL[F.status]||F.status});
+  if(F.status !== F_STD.status) uit.push({k:'status', lbl:statusLbl(F.status)});
+  if(F.gesproken) uit.push({k:'gesproken', lbl:gesprokenOpt(F.gesproken).chip});
   if(F.ster > 0)      uit.push({k:'ster', lbl:'≥ '+'★'.repeat(F.ster)});
   if(String(F.plaats).trim()) uit.push({k:'plaats', lbl:'binnen '+F.km+' km van '+F.plaats});
   if(F.ploegen)       uit.push({k:'ploegen', lbl:F.ploegen});
@@ -266,16 +363,27 @@ function lijstTab(wrap){
   const sel = (f, opts, leeg) => `<select data-f="${f}"><option value="">${h(leeg)}</option>
     ${opts.map(o=>`<option value="${h(o)}"${F[f]===o?' selected':''}>${h(o)}</option>`).join('')}</select>`;
 
+  /* Statusfilter met groepskoppen — zie STATUS_OPTS voor het waarom. */
+  const statusSel = (() => {
+    let uit = '', groep = null;
+    STATUS_OPTS.forEach(o => {
+      if(o.g !== groep){ if(groep) uit += '</optgroup>'; groep = o.g; if(groep) uit += `<optgroup label="${h(groep)}">`; }
+      uit += `<option value="${h(o.k)}"${F.status===o.k?' selected':''}>${h(o.lbl)}</option>`;
+    });
+    return `<select data-f="status">${uit}${groep?'</optgroup>':''}</select>`;
+  })();
+
   wrap.innerHTML = `
     <div class="stack">
+      <div id="kd_voorraad"></div>
       <div class="card pad">
         <div class="row kd-fil">
           <div class="searchbox" style="flex:1;max-width:290px">
             <input type="search" id="kd_zoek" autocomplete="off" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
           </div>
           <button class="btn ghost sm${filtersOpen?' kd-filaan':''}" id="kd_filknop">Filters${nFil?` <span class="num">(${nFil})</span>`:''}</button>
-          <select id="kd_sort" style="width:auto">
-            <option value="gesproken"${F.sort==='gesproken'?' selected':''}>Langst niet gesproken</option>
+          <select id="kd_sort" style="width:auto" title="Wie eerst bellen: langst niet gesproken bovenaan, bij gelijke stilte de hoogste sterbeoordeling eerst.">
+            <option value="gesproken"${F.sort==='gesproken'?' selected':''}>Wie eerst bellen</option>
             <option value="ster"${F.sort==='ster'?' selected':''}>Hoogste sterren</option>
             <option value="naam"${F.sort==='naam'?' selected':''}>Naam</option>
             <option value="fase"${F.sort==='fase'?' selected':''}>Fase</option>
@@ -287,15 +395,12 @@ function lijstTab(wrap){
         </div>
         <div class="kd-fpaneel" id="kd_fpaneel" style="${filtersOpen?'':'display:none'}">
           <div class="kd-fgrid">
-            <div class="f-row"><label>Status</label>
-              <select data-f="status">
-                <option value="lopend"${F.status==='lopend'?' selected':''}>Actief lopend</option>
-                <option value="beschikbaar"${F.status==='beschikbaar'?' selected':''}>Beschikbaar</option>
-                <option value="geplaatst"${F.status==='geplaatst'?' selected':''}>Geplaatst</option>
-                <option value="golden"${F.status==='golden'?' selected':''}>Golden candidates ★</option>
-                <option value="recyclebaar"${F.status==='recyclebaar'?' selected':''}>Uitval — herbruikbaar</option>
-                <option value="alle"${F.status==='alle'?' selected':''}>Alles</option>
-              </select></div>
+            <div class="f-row"><label>Status</label>${statusSel}</div>
+            <div class="f-row"><label>Laatst gesproken</label>
+              <select data-f="gesproken">
+                ${GESPROKEN_OPTS.map(o=>`<option value="${h(o.k)}"${String(F.gesproken||'')===o.k?' selected':''}>${h(o.lbl)}</option>`).join('')}
+              </select>
+              <div class="hint">Tellen mee: bellen, appen, mailen, een gesprek of een bezoek.</div></div>
             <div class="f-row"><label>Minimaal sterren</label>
               <select data-f="ster">
                 <option value="0">Alle</option>
@@ -373,6 +478,7 @@ function gefilterd(){
   let zonderPlek = 0;
 
   const rijen = CRM.kandidaten().filter(c => {
+    if(F.status === 'gekwalificeerd' && !gekwalificeerd(c))  return false;
     if(F.status === 'lopend'      && !CRM.isActiefLopend(c)) return false;
     if(F.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;
     if(F.status === 'geplaatst'   && !CRM.PLACED.includes(c.fase)) return false;
@@ -392,6 +498,9 @@ function gefilterd(){
        hoort gewoon bij het filter Intake (zie CRM.faseNorm in data.js). */
     if(F.fase  && !CRM.faseIs(c.fase, F.fase)) return false;
     if(F.mijn  && !CRM.isVanMij(c))    return false;
+    /* Stilte is duurder dan de rest (activiteiten doorlopen), dus pas
+       nadat de goedkope filters hun werk hebben gedaan. */
+    if(F.gesproken && !gesprokenMatch(stilte(c), F.gesproken)) return false;
     if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon,c.talen].join(' ').toLowerCase().includes(q)) return false;
     /* Radius als laatste: onbekende woonplaats valt er eerlijk buiten,
        en de teller telt alleen kandidaten die verder wél door de filters kwamen. */
@@ -400,21 +509,176 @@ function gefilterd(){
       return false;
     }
     return true;
-  }).map(c => ({c, lg:laatstGesproken(c), st:stilte(c), v:CRM.volledigheid(c)}));
+  }).map(c => ({c, st:stilte(c), v:CRM.volledigheid(c)}));
 
+  /* Namen vergelijken zonder te struikelen over een kaart die er nog geen
+     heeft — die komt achteraan in plaats van de sortering te laten klappen. */
+  const opNaam = (a,b) => String(a.c.naam||'￿').localeCompare(String(b.c.naam||'￿'),'nl');
+
+  /* "Wie eerst bellen" is de standaard, en dat is een keuze: wie deze lijst
+     opent wil een bellijst, geen alfabet. De regel is bewust in één zin uit
+     te leggen — langst niet gesproken bovenaan, en bij gelijke stilte eerst
+     de kandidaat met de hoogste beoordeling.
+
+     Twee dingen die de oude sortering nog verkeerd deed:
+     1. Nooit-gesproken kandidaten stonden altijd bovenaan, ook als ze
+        gisteren binnenkwamen. Nu tellen ze mee met hoe lang ze al in beeld
+        zijn (st.dagen) — precies het getal dat de lijst ook toont.
+     2. Kaarten zonder meetbare stilte (geanonimiseerd, of geen datum in
+        beeld) zakten naar boven via een noodwaarde van 9999. Die horen
+        onderaan: er valt niemand te bellen. */
+  const stilteVan = r => r.st.dagen == null ? -1 : r.st.dagen;
   const srt = {
-    gesproken:    (a,b) => ((CRM.dagenGeleden(b.lg) == null ? 9999 : CRM.dagenGeleden(b.lg)) - (CRM.dagenGeleden(a.lg) == null ? 9999 : CRM.dagenGeleden(a.lg))),
-    ster:         (a,b) => (Number(b.c.ster)||0) - (Number(a.c.ster)||0) || a.c.naam.localeCompare(b.c.naam,'nl'),
-    naam:         (a,b) => a.c.naam.localeCompare(b.c.naam,'nl'),
-    fase:         (a,b) => CRM.faseIdx(a.c.fase) - CRM.faseIdx(b.c.fase) || a.c.naam.localeCompare(b.c.naam,'nl'),
+    gesproken:    (a,b) => stilteVan(b) - stilteVan(a)
+                        || (Number(b.c.ster)||0) - (Number(a.c.ster)||0) || opNaam(a,b),
+    ster:         (a,b) => (Number(b.c.ster)||0) - (Number(a.c.ster)||0) || opNaam(a,b),
+    naam:         opNaam,
+    fase:         (a,b) => CRM.faseIdx(a.c.fase) - CRM.faseIdx(b.c.fase) || opNaam(a,b),
     volledigheid: (a,b) => a.v.pct - b.v.pct
   }[F.sort];
   if(srt) rijen.sort(srt);
   return {rijen, zonderPlek, radiusAan, radiusBekend};
 }
 
+/* ═══ De gekwalificeerde voorraad, geteld en uitgesplitst ═════════
+   Het getal waar Tjeerd naar vroeg — "hoeveel potentiële kandidaten zijn
+   er nou" — plus de uitsplitsing die er iets mee laat doen.
+
+   Waarom gezochte functie als eerste uitsplitsing: een klantvraag komt
+   binnen als een functie ("ik heb er maandag drie nodig voor de inpaklijn").
+   "42 beschikbaar" beantwoordt die vraag niet, "9 heftruck" wel. Woonplaats
+   staat er als tweede naast, want in productie en logistiek is reistijd een
+   vaste uitvalreden (zie CRM.AFVAL_CATS) — een orderpicker in Groningen is
+   geen orderpicker voor Bodegraven.
+
+   Allebei gelezen uit een vastgelegd veld op de kaart, niet afgeleid: geen
+   functie ingevuld is dan ook een eigen groep en geen gok. */
+function voorraad(){
+  const alle = CRM.kandidaten().filter(gekwalificeerd);
+  const groepeer = veld => {
+    const m = new Map();
+    alle.forEach(c => {
+      const ruw = String(c[veld]||'').trim();
+      const sleutel = ruw.toLowerCase();
+      const g = m.get(sleutel) || {lbl:ruw, n:0, leeg:!ruw};
+      g.n++; m.set(sleutel, g);
+    });
+    return [...m.values()].sort((a,b) => b.n - a.n || String(a.lbl).localeCompare(String(b.lbl),'nl'));
+  };
+  const st = alle.map(stilte);
+  /* nooit2w is bewust een deelverzameling van stil2w en geen tweede,
+     losse telling. Twee getallen naast elkaar die elkaar deels overlappen
+     nodigen uit om ze op te tellen, en dan klopt de som niet meer. */
+  return {
+    n: alle.length,
+    stil2w: st.filter(s => s.dagen != null && s.dagen >= 14).length,
+    nooit2w: st.filter(s => s.nooit && s.dagen != null && s.dagen >= 14).length,
+    functie: groepeer('functie'),
+    woonplaats: groepeer('woonplaats')
+  };
+}
+
+/* Het paneel bovenaan het scherm. Staat er altijd, ook als je op iets
+   anders filtert: dit is een stand, geen zoekresultaat. Dat het los van de
+   filters telt staat er met zoveel woorden bij, anders gaan twee getallen op
+   hetzelfde scherm elkaar tegenspreken. */
+const CHIPS_MAX = 10;
+function voorraadPaneel(wrap){
+  const el = wrap.querySelector('#kd_voorraad'); if(!el) return;
+  const v = voorraad();
+  const aan = F.status === 'gekwalificeerd';
+
+  if(!v.n){
+    el.innerHTML = `<div class="card pad kd-vr">
+      <div class="label">Gekwalificeerde voorraad</div>
+      <p class="kd-vrleeg">Er staat op dit moment niemand klaar om voor te stellen. Een kandidaat
+      komt hier zodra de intake op de kaart staat en er nog geen klanttraject loopt.</p></div>`;
+    return;
+  }
+
+  const splits = F.splits === 'woonplaats' ? 'woonplaats' : 'functie';
+  const groepen = v[splits];
+  const toon = groepen.slice(0, CHIPS_MAX);
+  const rest = groepen.slice(CHIPS_MAX).reduce((s,g) => s + g.n, 0);
+  const chip = g => {
+    if(g.leeg) return `<span class="chip kd-vrchip kd-vrleegchip" title="${
+      splits === 'functie'
+        ? 'Deze kandidaten hebben geen gezochte functie op de kaart. Zolang dat leeg is vallen ze buiten elke zoekopdracht op functie.'
+        : 'Deze kandidaten hebben geen woonplaats op de kaart, dus geen reisafstand.'
+      }"><span class="num">${g.n}</span> ${splits === 'functie' ? 'geen functie ingevuld' : 'geen woonplaats'}</span>`;
+    const tip = splits === 'functie'
+      ? 'Toon de gekwalificeerde kandidaten die ' + g.lbl.toLowerCase() + ' zoeken'
+      : 'Toon de gekwalificeerde kandidaten binnen 10 km van ' + g.lbl + ' — dat kunnen er meer zijn dan de ' + g.n + ' die hier wonen';
+    return `<button type="button" class="chip btn-like kd-vrchip" data-vr="${h(g.lbl)}" title="${h(tip)}"
+      ><span class="num">${g.n}</span> ${h(g.lbl)}</button>`;
+  };
+
+  el.innerHTML = `<div class="card pad kd-vr">
+    <div class="kd-vrtop">
+      <div class="kd-vrtel">
+        <div class="label">Gekwalificeerde voorraad</div>
+        <div class="big num">${v.n}</div>
+        <div class="kd-vrsub">${v.n === 1 ? 'kandidaat' : 'kandidaten'} met een intake, nog nergens voorgesteld</div>
+        <div class="kd-vrstil">${
+          v.stil2w
+            ? `<span class="chip amber"><span class="num">${v.stil2w}</span> langer dan twee weken niet gesproken</span>`
+            : '<span class="chip green">Iedereen is de afgelopen twee weken gesproken</span>'
+        }${v.nooit2w ? `<span class="chip red">waarvan <span class="num">${v.nooit2w}</span> nog nooit gesproken</span>` : ''}</div>
+      </div>
+      <div class="kd-vrsplits">
+        <div class="row">
+          <div class="seg" id="kd_splitseg">
+            <button type="button" data-s="functie"${splits==='functie'?' class="on"':''}>Per gezochte functie</button>
+            <button type="button" data-s="woonplaats"${splits==='woonplaats'?' class="on"':''}>Per woonplaats</button>
+          </div>
+          <span class="spacer"></span>
+          ${aan ? '<span class="meta">Je kijkt nu naar deze lijst</span>'
+                : '<button class="btn ghost sm" id="kd_vrtoon">Toon deze lijst</button>'}
+        </div>
+        <div class="row tight kd-vrchips">${toon.map(chip).join('')}${
+          rest ? `<span class="meta">en <span class="num">${rest}</span> in kleinere groepen</span>` : ''}</div>
+        <p class="meta kd-vrnoot">Geteld over alle kandidaten, los van de filters hieronder — en op wat
+          is vastgelegd, niet op een schatting: een intake op de kaart en nog geen enkele stap in een
+          klanttraject. De videocall zelf staat op de lead in de recruitmentpijplijn, dus de intake is
+          hier het bewijs dat die er is geweest.</p>
+      </div>
+    </div></div>`;
+
+  el.querySelectorAll('#kd_splitseg button').forEach(b => b.onclick = () => {
+    zet('splits', b.dataset.s); voorraadPaneel(wrap);
+  });
+  const toonKnop = el.querySelector('#kd_vrtoon');
+  if(toonKnop) toonKnop.onclick = () => { zet('status','gekwalificeerd'); lijstTab(wrap); };
+  /* Een chip betekent "toon mij deze groep", niet "voeg nog een filter toe".
+     Daarom gaat de vorige chipkeuze eerst weg: anders klik je van functie
+     naar woonplaats en houd je een lege lijst over omdat de oude functie er
+     stilletjes nog onder ligt. Handmatig gezette filters (sterren, taal,
+     ploegen) blijven wél staan — die heb je zelf bewust aangezet. */
+  el.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => {
+    zet('status','gekwalificeerd');
+    zet('functie', ''); zet('plaats', '');
+    if(splits === 'functie'){ zet('functie', b.dataset.vr); }
+    else { zet('plaats', b.dataset.vr); zet('km', 10); }
+    lijstTab(wrap);
+  });
+}
+
+/* Hoe lang niet gesproken, in de lijst. Zonder dit getal is het filter een
+   black box. Nooit-gesproken krijgt bewust een andere regel dan lang-geleden:
+   het eerste is een gat in het proces, het tweede een belletje waard. */
+function stilteCel(st){
+  if(st.anon) return '<span class="sub">gegevens gewist</span>';
+  const klas = st.kleur === 'red' ? ' kd-let' : st.kleur === 'amber' ? ' kd-warn' : '';
+  if(st.nooit) return `<span class="kd-nooit${klas}">nooit gesproken</span>
+    <div class="rowsub">${st.wacht == null ? 'niet bekend hoe lang in beeld'
+      : `<span class="num">${st.wacht}</span> ${st.wacht === 1 ? 'dag' : 'dagen'} in beeld`}</div>`;
+  const soort = st.soort ? String((CRM.ACT_SOORTEN[st.soort]||{}).lbl || st.soort).toLowerCase() : '';
+  return `<span class="num${klas}">${h(st.tekst)}</span>${soort ? `<div class="rowsub">${h(soort)}</div>` : ''}`;
+}
+
 function lijst(wrap){
   const {rijen, zonderPlek, radiusAan, radiusBekend} = gefilterd();
+  voorraadPaneel(wrap);
   const lijstEl = wrap.querySelector('#kd_lijst');
   const tel  = wrap.querySelector('#kd_telling');
   const dun  = rijen.filter(r => r.v.pct < 60).length;
@@ -438,13 +702,34 @@ function lijst(wrap){
   }
 
   if(!rijen.length){
-    lijstEl.innerHTML = CRM.ui.leeg('Geen kandidaten gevonden','Pas je zoekopdracht of filters aan.');
+    /* Een lege lijst zonder reden laat je zoeken naar een fout die er niet
+       is. Noem daarom wát er samen op nul uitkomt en bied één klik om het
+       weer los te laten. */
+    /* De status staat er altijd bij, ook als hij op de standaardwaarde
+       staat. Hij beperkt de lijst net zo goed, en een lege lijst zonder
+       vermelding van de belangrijkste beperking legt niets uit. */
+    const aan = [statusLbl(F.status)]
+      .concat(actieveFilters().filter(f => f.k !== 'status').map(f => f.lbl));
+    if(String(F.zoek||'').trim()) aan.push('zoeken op "' + F.zoek.trim() + '"');
+    const leeg = !CRM.kandidaten().length;
+    lijstEl.innerHTML = leeg
+      ? CRM.ui.leeg('Nog geen kandidaten',
+          'Er staat nog geen enkele kandidaat in het systeem. Ze komen hier binnen vanuit de recruitmentpijplijn.')
+      : CRM.ui.leeg('Geen kandidaten binnen deze filters',
+          'Samen leveren deze niets op: ' + aan.join(' · ') + '.',
+          '<button class="btn ghost sm" id="kd_leegwis">Filters wissen</button>');
+    const wisKnop = lijstEl.querySelector('#kd_leegwis');
+    if(wisKnop) wisKnop.onclick = () => {
+      PANEEL_FILTERS.forEach(k => zet(k, F_STD[k]));
+      zet('km', F_STD.km); zet('zoek', ''); zet('mijn', false);
+      lijstTab(wrap);
+    };
     return;
   }
   const golden = goldenIds();
   lijstEl.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>
       <th>Kandidaat</th><th>Sterren</th><th>Klant</th><th>Fase</th><th>Woonplaats</th><th>Recruiter</th>
-      <th>Laatst gesproken</th><th>Profiel</th>
+      <th title="Alleen echt contact telt: bellen, appen, mailen, een gesprek of een bezoek. Een notitie of een fasewissel niet.">Laatst gesproken</th><th>Profiel</th>
     </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
       const km = radiusBekend ? CRM.afstandKm(c.woonplaats, F.plaats) : null;
@@ -457,7 +742,7 @@ function lijst(wrap){
         <td>${faseChip(c.fase)}</td>
         <td class="sub">${h(c.woonplaats||'—')}${km!=null?` <span class="meta num">· ${km} km</span>`:''}</td>
         <td class="sub">${h(c.rec||'—')}</td>
-        <td class="sub num${st.kleur==='red'?' kd-let':st.kleur==='amber'?' kd-warn':''}">${h(st.tekst)}</td>
+        <td class="sub kd-stilte">${stilteCel(st)}</td>
         <td><div class="kd-vol">${CRM.ui.bar(v.pct, kleur)}<span class="meta num">${v.pct}%</span></div></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
@@ -590,7 +875,7 @@ function kaart(mount, acties, id){
      dezelfde filters én dezelfde scrollpositie (zie js/pijplijn.js). */
   const vanBord = typeof CRM.pijplijnTerug === 'function' && CRM.pijplijnTerug(c.id);
   acties.innerHTML = `
-    <button class="btn ghost sm" id="c_terug">${vanBord?'← Terug naar het bord':'← Overzicht'}</button>
+    <button class="btn ghost sm" id="c_terug">${vanBord?'← Terug naar Klanttrajecten':'← Overzicht'}</button>
     <button class="btn ghost sm" id="c_bel">Gebeld</button>
     <button class="btn ghost sm" id="c_app">Geappt</button>
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
@@ -622,11 +907,13 @@ function kaart(mount, acties, id){
         <div class="stack">
           ${kansenHtml(c)}
           ${trajectHtml(c)}
-          <!-- Nazorg staat pal onder Traject: het is de voortzetting daarvan
-               ná de start, en het verschijnt alleen bij een gestarte kandidaat.
-               Nazorg en Uitval sluiten elkaar uit (Gestart tegenover
-               Afgevallen/Gestopt), dus de kolom wordt er niet langer van. -->
-          ${nazorgHtml(c)}
+          <!-- Opvolging staat pal onder Traject: het is de voortzetting
+               daarvan. Nazorg ná de start, warm houden ervóór, plus de
+               verjaardag en de felicitatiemail. Opvolging en Uitval sluiten
+               elkaar grotendeels uit (Gestart/Contract getekend tegenover
+               Afgevallen/Gestopt), dus de kolom wordt er niet langer van.
+               Het ritme zelf staat in js/opvolging.js — die ene plek. -->
+          ${CRM.opvolging ? CRM.opvolging.kaartHtml(c) : ''}
           ${uitvalHtml(c)}
           ${contractHtml(c)}
           ${factuurklaarHtml(c)}
@@ -638,6 +925,10 @@ function kaart(mount, acties, id){
         <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
         <div id="c_tabinhoud"></div>
       </div>
+      <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan de
+           kaart, want het is het einde van een dossier en geen dagelijkse
+           handeling. De regels wie wat mag wonen daar, niet hier. -->
+      ${CRM.kandVerwijder ? CRM.kandVerwijder.knopHtml(c) : ''}
     </div>`;
 
   bindVelden(mount, c);
@@ -681,12 +972,18 @@ function kaart(mount, acties, id){
     if(ok) CRM.render();
   };
   const cvKnop = mount.querySelector('#c_cvlees');
-  if(cvKnop) cvKnop.onclick = () => cvModal(c);
+  if(cvKnop) cvKnop.onclick = () => CRM.cvParse
+    ? CRM.cvParse.open({kandidaat:c, onKlaar:() => CRM.render()})
+    : cvModal(c);
+  /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
+  if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
   const certKnop = mount.querySelector('#c_certnieuw');
   if(certKnop) certKnop.onclick = () => certModal(c, -1);
   mount.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => certModal(c, Number(b.dataset.cert)));
-  /* Nazorg-check-in vastleggen — via dezelfde activiteiten-route als de rest. */
-  mount.querySelectorAll('[data-nazorg]').forEach(b => b.onclick = () => nazorgVastleggen(c, Number(b.dataset.nazorg)));
+  /* Opvolging: check-in vastleggen, ritme uitklappen, felicitatiemail openen.
+     Alle knoppen zitten in js/opvolging.js — deze kaart roept alleen aan. */
+  if(CRM.opvolging) CRM.opvolging.bindKaart(mount, c, () => CRM.render());
+  if(CRM.kandVerwijder) CRM.kandVerwijder.bindKnop(mount);
 
   /* Traject-acties — de logica woont in js/recruitment.js, inclusief álle
      poortwachters. Deze kaart roept alleen aan. */
@@ -757,7 +1054,7 @@ function bindSterren(mount, c){
 /* Naam staat vooraan: er passen er maar drie op de strip, en een kandidaat
    zonder naam is het gat dat je als eerste dicht wilt hebben (de kop zegt
    dan letterlijk "Naam nog niet ingevuld"). Daarna telefoon en e-mail:
-   daarmee bereik je hem. */
+   daarmee bereik je de kandidaat. */
 const MIST_VOLGORDE = ['naam','telefoon','email','functie','woonplaats','bron'];
 function gaten(c){
   const v = CRM.volledigheid(c);
@@ -787,7 +1084,9 @@ function mistHtml(c){
 }
 function bindMist(root, c){
   (root || document).querySelectorAll('[data-mist]').forEach(b => b.onclick = () => {
-    if(b.dataset.mist === '__cv') return cvModal(c);
+    if(b.dataset.mist === '__cv') return CRM.cvParse
+      ? CRM.cvParse.open({kandidaat:c, onKlaar:() => CRM.render()})
+      : cvModal(c);
     springNaarVeld(b.dataset.mist, c);
   });
 }
@@ -802,7 +1101,32 @@ function springNaarVeld(k, c){
   setTimeout(() => { if(span.isConnected) bewerkVeld(span, c || CRM.kandidaat(kandOpen)); }, 280);
 }
 
+/* ─── De kop van een geanonimiseerde kaart ──────────────────────
+   Op een kaart waarvan de gegevens net op verzoek gewist zijn, stonden
+   "Profiel compleet 45%", "Wat mist nog: Telefoon · E-mailadres" en "5 dagen
+   niet gesproken". Dat is het systeem dat aandringt op precies de gegevens
+   die het zojuist bewust heeft weggegooid, en het leest als een fout.
+
+   Drie keer een andere oplossing, om drie verschillende redenen:
+   - de voortgangsmeter wordt vervángen. Weglaten zou een gat in de kop
+     achterlaten en, erger, niets zeggen — terwijl er juist iets uit te
+     leggen valt. Er staat nu wat er gebeurd is.
+   - de strip "Wat mist nog" verdwijnt. Die bestaat om ergens heen te
+     klikken en iets in te vullen; er valt hier niets in te vullen. Een
+     strip die "niets mist" zegt zou bovendien niet waar zijn.
+   - de stiltechip verdwijnt (zie stilteChip). "Vijf dagen niet gesproken"
+     is een belsuggestie, en dit is de enige kandidaat die je niet belt. */
+function anonMeterHtml(){
+  return `<div class="kd-meter kd-anonmeter">
+    <div class="label">Gegevens gewist</div>
+    <p class="kd-anontekst">De persoonsgegevens van deze kandidaat zijn op verzoek verwijderd.
+      De kaart blijft bestaan zodat de plaatsing in de cijfers blijft kloppen.
+      Wat hier leeg is, hoort leeg te zijn.</p>
+  </div>`;
+}
+
 function kopHtml(c){
+  const anon = geanonimiseerd(c);
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
   const BESCH_LBL = {direct:'Direct beschikbaar', 'in overleg':'Beschikbaar in overleg', niet:'Niet beschikbaar'};
@@ -837,7 +1161,7 @@ function kopHtml(c){
               title="Zet deze kandidaat in je Outlook-adresboek, dan ziet je telefoon wie er belt">Naar Outlook</button>` : ''}
       </div>
     </div>
-    <div class="kd-meter">
+    ${anon ? anonMeterHtml() : `<div class="kd-meter">
       <div class="label">Profiel compleet</div>
       <div class="row tight" style="flex-wrap:nowrap;margin:6px 0 8px">
         <div style="flex:1">${CRM.ui.bar(v.pct, kleur==='green'?'green':kleur)}</div>
@@ -846,8 +1170,8 @@ function kopHtml(c){
       ${v.mist.length
         ? `<div class="meta">Nog invullen: ${v.mist.map(m=>h(m.lbl.toLowerCase())).join(', ')}</div>`
         : '<div class="meta">Alles ingevuld — netjes.</div>'}
-    </div>
-  </div>${mistHtml(c)}</div>`;
+    </div>`}
+  </div>${anon ? '' : mistHtml(c)}</div>`;
 }
 
 /* ─── Kandidaatgegevens (inline bewerkbaar) ───────────────────── */
@@ -961,6 +1285,10 @@ function salarisBij(c){
 /* Volledigheidsmeter én de "Wat mist nog"-regel bijwerken zonder het
    hele scherm te hertekenen. */
 function meterBij(c){
+  /* Op een geanonimiseerde kaart bestaan die twee blokken niet (zie
+     kopHtml). Ze hier alsnog terugzetten zou het gewiste profiel opnieuw
+     om gegevens laten vragen. */
+  if(geanonimiseerd(c)) return;
   const mist = document.querySelector('#kd_mist');
   if(mist){
     const nieuw = document.createElement('div');
@@ -1097,7 +1425,8 @@ function cvHtml(c){
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   const skills = Array.isArray(cv.skills) ? cv.skills : [];
   const certs  = certLijst(c);
-  const leeg = !werk.length && !opl.length && !skills.length && !certs.length && !cv.ervaringJaren && !cv.url;
+  const leeg = !werk.length && !opl.length && !skills.length && !certs.length
+            && !cv.ervaringJaren && !cv.url && !cv.bestandPad;
   return `<div class="card">
     <div class="card-h"><div class="h2">CV &amp; ervaring</div>
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
@@ -1108,7 +1437,7 @@ function cvHtml(c){
            eentje kwijt kunnen. -->
       <button class="btn ghost sm" id="c_certnieuw">Certificaat toevoegen</button>
       <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
-    <div class="card-b">${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Lees een CV in (PDF of tekst) — lege velden worden aangevuld en afwijkingen worden rood gemarkeerd.') : `
+    <div class="card-b">${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens','Lees een CV in (PDF of tekst) — lege velden worden aangevuld en afwijkingen worden rood gemarkeerd.') : `
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
       ${werk.length?`<div class="label">Werkervaring</div>
         <div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
@@ -1129,6 +1458,12 @@ function cvHtml(c){
       ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="label" style="margin-top:16px">Talen</div>
         <div class="row tight" style="margin-top:8px">${cv.talen.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
     `}</div></div>`;
+}
+
+/* Het cv-bestand zelf: pad in de afgeschermde map, geopend met een
+   tijdelijke link. Zie js/cvparse.js. */
+function cvBestandHtml(c){
+  return CRM.cvParse ? CRM.cvParse.bestandHtml(c) : '';
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1446,7 +1781,7 @@ function uitvalHtml(c){
 
 /* ─── Klaar voor facturatie ───────────────────────────────────────
    Wat er nog ontbreekt voordat de fee uitgerekend kan worden. Het lijstje
-   is voor IEDEREEN: de AM moet weten wat hij moet invullen, en dat zijn
+   is voor IEDEREEN: de AM moet weten wat er ingevuld moet worden, en dat zijn
    veldnamen, geen bedragen. De uitkomst van de berekening is dat wél, dus
    die staat achter CRM.canSeeMoney(). Zie js/fee.js. */
 function factuurklaarHtml(c){
@@ -1597,96 +1932,15 @@ function trajectHtml(c){
     </div></div>`;
 }
 
-/* ─── Nazorg: check-ins op dag 3, 14 en 30 ────────────────────────
-   Exact hetzelfde ritme en dezelfde peildatum als het pijplijnbord
-   (js/pijplijn.js, de chip in de Gestart-kolom) en de nazorgkolom in
-   Performance (js/performance.js): geteld vanaf de STARTDATUM, alleen bij
-   fase Gestart, alleen zolang de plaatsing loopt (geen gestoptOp) en alleen
-   als die startdatum al geweest is. Zo zegt de kaart nooit iets anders dan
-   het bord. Iemand die nog in gesprek zit, ziet dit blok dus niet.
-   LET OP: js/dashboard.js rekent op één punt anders — zie het rapport. */
-const NAZORG_DAGEN = [3,14,30];
-const NAZORG_CONTACT = ['bel','gesprek','whatsapp','mail'];
-/* Datum + n dagen, in dezelfde lokale notatie als CRM.todayISO(). */
-const plusDagen = (iso, n) => {
-  const d = new Date(iso); if(isNaN(d)) return '';
-  d.setDate(d.getDate() + n);
-  return d.toLocaleDateString('sv-SE');
-};
-/* Hoort deze activiteit bij een check-in, en zo ja bij welke dag? De
-   markering staat in `extra`; de tekstcontrole vangt rijen op die vóór dit
-   veld zijn weggeschreven. 0 = geen check-in. */
-const nazorgMerk = a => {
-  const n = Number(a && a.extra && a.extra.nazorg);
-  if(n) return n;
-  const m = /^nazorg dag (\d+)\b/i.exec(String((a && a.tekst) || ''));
-  return m ? Number(m[1]) : 0;
-};
-
-function nazorgStatus(c){
-  if(!CRM.faseIs(c.fase, 'Gestart') || !c.start || c.gestoptOp) return null;
-  const dag = CRM.dagenGeleden(c.start);
-  if(dag == null || dag < 0) return null;      // startdatum ligt nog voor ons
-  const acts = CRM.activiteitenVoor('kandidaat', c.id);
-  const rijen = NAZORG_DAGEN.map((n, i) => {
-    const datum = plusDagen(c.start, n);
-    /* Venster van dit check-inmoment: vanaf de dag zelf tot het volgende
-       moment (en na dag 30 nog twee weken). */
-    const eind = plusDagen(c.start, NAZORG_DAGEN[i+1] != null ? NAZORG_DAGEN[i+1] : n + 14);
-    /* "Gedaan" leiden we af uit de activiteiten. Twee bronnen: een check-in
-       die hier is vastgelegd, en anders écht contact binnen het venster —
-       plaatsingen van vóór deze knop hebben die markering niet, maar het
-       telefoontje staat er wel.
-       Een activiteit die al ÉÉN check-in is, telt nooit als het contact van
-       een andere: leg je dag 3 achteraf vast op dag 20, dan valt dat gesprek
-       toevallig in het venster van dag 14 en zou die zichzelf anders ook
-       afvinken. Gezien tijdens het testen — één gesprek is één check-in. */
-    const vast = acts.find(a => nazorgMerk(a) === n);
-    const contact = vast ? null : acts.find(a => !nazorgMerk(a) && NAZORG_CONTACT.includes(a.soort)
-      && String(a.op || '').slice(0,10) >= datum && String(a.op || '').slice(0,10) < eind);
-    const gedaan = !!(vast || contact);
-    return {n, datum, vast: vast || null, contact: contact || null, gedaan, open: dag >= n && !gedaan};
-  });
-  return {dag, rijen, volgende: rijen.find(r => !r.gedaan) || null, klaar: rijen.every(r => r.gedaan)};
-}
-
-function nazorgHtml(c){
-  const s = nazorgStatus(c);
-  if(!s) return '';
-  const kop = s.klaar ? '<span class="chip green">ritme afgerond</span>'
-    : s.volgende.open ? '<span class="chip amber">check-in open</span>'
-    : `<span class="chip">volgende op dag <span class="num">${s.volgende.n}</span></span>`;
-  const soortLbl = a => String((CRM.ACT_SOORTEN[a.soort] || {}).lbl || a.soort).toLowerCase();
-  return `<div class="card">
-    <div class="card-h"><div class="h2">Nazorg</div>${kop}
-      <span class="spacer"></span>
-      <span class="meta">dag <span class="num">${s.dag}</span> na de start</span></div>
-    <div class="card-b">
-      <div class="kd-nazorg">${s.rijen.map(r => {
-        const status = r.vast
-          ? `<span class="kd-nz-ok">✓ vastgelegd ${h(CRM.fmtDateShort(r.vast.op))}</span>`
-          : r.contact
-            ? `<span class="kd-nz-ok">✓ ${h(soortLbl(r.contact))} op ${h(CRM.fmtDateShort(r.contact.op))}</span>`
-            : r.open ? '<span class="kd-nz-open">nog niet gedaan</span>'
-                     : `<span class="meta">${h(CRM.geleden(r.datum))}</span>`;
-        return `<div class="kd-nz${r.gedaan ? ' af' : r.open ? ' open' : ''}">
-          <span class="kd-nz-d">Dag <span class="num">${r.n}</span></span>
-          <span class="num kd-nz-dat">${h(CRM.fmtDay(r.datum))}</span>
-          ${status}
-          ${r.open ? `<button type="button" class="btn ghost sm" data-nazorg="${r.n}">Vastleggen</button>` : ''}
-        </div>`;
-      }).join('')}</div>
-      <p class="meta" style="margin:12px 0 0">Bellen op dag 3, 14 en 30 — hetzelfde ritme als op het bord en in Mijn dag.</p>
-    </div></div>`;
-}
-
-/* Vastleggen loopt via dezelfde activiteiten-route als de knop "Gebeld"
-   bovenaan de kaart (logVia); deze module schrijft maar op één plek in de
-   tijdlijn. De markering in `extra` maakt de check-in later terugvindbaar. */
-async function nazorgVastleggen(c, n){
-  await logVia(c, 'bel', 'Hoe gaat het op de werkvloer? Leg vast wat je hoort — ook als alles goed gaat.',
-    {titel:'Nazorg — check-in dag ' + n, prefix:'Nazorg dag ' + n + ' — ', extra:{nazorg:n}});
-}
+/* ─── Nazorg, warm houden, verjaardag en de felicitatiemail ───────
+   Stond hier, met een eigen ritme dag 3 · 14 · 30 en een eigen
+   plusDagen(). Verhuisd naar js/opvolging.js, omdat het dashboard, het
+   bord en Performance elk hun eigen versie van datzelfde ritme
+   berekenden — en al verschillende antwoorden gaven. De kaart tekent nu
+   CRM.opvolging.kaartHtml(c) en hangt er CRM.opvolging.bindKaart() aan;
+   het vastleggen loopt daar via CRM.logActiviteit, precies zoals hier.
+   Bestaande check-ins blijven staan: opvolging.js leest de oude
+   markering `extra.nazorg` van 3/14/30 nog steeds. */
 
 /* ─── Contract, plaatsing en salaris (uit de bewerk-drawer) ─────
    Salaris van de kandidaat is een arbeidsvoorwaarde en mag het team
@@ -1941,6 +2195,14 @@ CRM.registerModule('kandidaten', {
   title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten en filters',
   render(mount, acties, params){
     if(!Array.isArray(CRM.state.taken)) CRM.state.taken = [];
+    /* Doorklik vanuit een ander scherm mag het statusfilter zetten. Klanttrajecten
+       stuurt 'klaar' ("klaar om voor te stellen"), hier heet diezelfde verzameling
+       'gekwalificeerd' — twee woorden voor hetzelfde, dus vertalen in plaats van
+       de gebruiker op het overzicht laten landen zonder filter. */
+    if(params && params.status){
+      const sleutel = params.status === 'klaar' ? 'gekwalificeerd' : String(params.status);
+      if(STATUS_SLEUTELS.includes(sleutel)) zet('status', sleutel);
+    }
     if(params && params.id) kaart(mount, acties, String(params.id));
     else overzicht(mount, acties);
   }
@@ -1952,3 +2214,39 @@ CRM.registerModule('kandidaten', {
    daardoor niets als je al op Kandidaten staat; modules moeten nu overal eigen
    click-handlers zetten die CRM.ga(...) aanroepen. Fijner: in core ook op een
    gewijzigd id binnen dezelfde module opnieuw renderen. */
+
+/* VERZOEK AAN COORDINATOR:
+
+   1. js/opvolging.js — exporteer de lijst `CONTACT` als
+      `CRM.opvolging.CONTACT` (regel 91, ['bel','gesprek','whatsapp','mail',
+      'bezoek']). Dit scherm filtert en sorteert nu op "hoe lang niet
+      gesproken" en moet daarvoor exact dezelfde definitie van contact
+      gebruiken, anders zegt het dashboard iets anders dan deze lijst.
+      Zolang die export er niet is staat er hier een kopie van vijf woorden
+      (CONTACT_SOORTEN bovenin dit bestand); die pakt de export vanzelf op
+      zodra hij bestaat en kan er dan uit. Nu zijn het twee plekken die
+      gelijk moeten blijven, en dat gaat een keer mis.
+
+   2. js/recruitment.js — de videocall is de enige stap die niet op de
+      kandidaat wordt vastgelegd. `CRM.klaarOmVoorTeStellen` leunt daarom op
+      de intake als bewijs dat er een videocall is geweest, en het paneel
+      bovenaan dit scherm legt dat met zoveel woorden uit. Beter zou zijn:
+      bij het doorschieten van een lead met status 'Videocall gehad' een
+      datum meenemen naar de kandidaat (bv. `intake.videocallOp`). Dan is
+      het geteld in plaats van beredeneerd, en kan die uitleg weg.
+
+   3. js/pijplijn.js en js/dashboard.js — de gekwalificeerde voorraad
+      (`CRM.klaarOmVoorTeStellen`, hier zichtbaar als één getal met een
+      uitsplitsing per gezochte functie) is nu alleen op dit scherm te zien.
+      Dat is precies het getal waar Tjeerd op stuurt; het hoort ook op het
+      dashboard. De telling zit in dit bestand in `voorraad()` — als jullie
+      hem elders willen, is het beter die functie naar js/data.js te tillen
+      dan hem over te schrijven. Zeg het, dan lever ik hem aan.
+
+   4. js/kandverwijder.js — `isGeanonimiseerd` herkent een gewiste kaart aan
+      de naam die met 'Gegevens gewist' begint. Dit scherm gebruikt dat om
+      zo iemand uit de voorraad, uit het niet-gesproken-filter en uit de
+      bellijst-sortering te houden. Werkt prima, maar het is een
+      tekstvergelijking op een naam die een gebruiker kan overtypen. Een
+      echte vlag op de rij (bv. `candidates.geanonimiseerd_op`) zou dat
+      dichttimmeren. */

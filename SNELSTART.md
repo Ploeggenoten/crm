@@ -56,11 +56,11 @@ de knop **→ Doorschieten naar pijplijn**.
 
 **3. De kolom Intake leegwerken.** **Pijplijn** → eerste kolom **Intake**. Daar
 staat iedereen die net binnen is. Klik op de kaart, plan met **Videocall
-inplannen** een Teams-gesprek, vul daarna de **Intake** in, en zet hem met
-**→ Voorstellen** door zodra hij bij een klant past.
+inplannen** een Teams-gesprek, vul daarna de **Intake** in, en zet de kandidaat
+met **→ Voorstellen** door zodra er een klant bij past.
 
 > De aparte stap "Voorselectie" bestaat niet meer. Als een sollicitant
-> interessant is, krijgt hij meteen een volledige kandidatenkaart — dat scheelt
+> interessant is, volgt meteen een volledige kandidatenkaart — dat scheelt
 > een tussenstap waar mensen bleven liggen.
 
 **4. Pijplijn bijwerken.** **Pijplijn**. Sleep een kaart naar de volgende

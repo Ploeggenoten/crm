@@ -33,6 +33,12 @@ alter table candidates add column if not exists foto        text default '';
 -- Alleen dag en maand worden getoond; het jaartal blijft in de database staan
 -- omdat een datumveld nu eenmaal een jaar nodig heeft, maar nergens in beeld.
 alter table candidates add column if not exists geboortedatum date;
+-- Gezet zodra een kandidaat geanonimiseerd is (persoonsgegevens gewist, de
+-- plaatsing blijft als naamloze regel staan). Bewust een eigen kolom en geen
+-- afleiding uit de naam: een naam kun je overtypen, en dan zou een kaart
+-- stilzwijgend weer opduiken in de bellijst en de nazorg van iemand die net
+-- om verwijdering heeft gevraagd.
+alter table candidates add column if not exists geanonimiseerd_op date;
 
 -- Klanten: salesfase, eigenaar (AM), contactgegevens.
 alter table clients add column if not exists fase        text default '';
@@ -59,6 +65,10 @@ alter table profiles add column if not exists foto_url   text default '';
 alter table profiles add column if not exists functie    text default '';
 -- Werk-e-mailadres: nodig om een Teams-melding bij de juiste collega te krijgen.
 alter table profiles add column if not exists email      text default '';
+-- Telefoonnummer van de accountmanager: staat onder de felicitatiemail die
+-- de kandidaat krijgt na het tekenen ("bel me gerust op ..."). Stond eerst
+-- per browser in localStorage, dus op een tweede laptop was hij weer leeg.
+alter table profiles add column if not exists telefoon   text default '';
 -- Aanmaakdatum en fasehistorie: nodig om echte doorlooptijden en conversie
 -- per cohort te kunnen tonen in plaats van een momentopname.
 alter table clients add column if not exists aangemaakt  date default current_date;
@@ -120,6 +130,20 @@ create table if not exists crm_leads (
   notities      jsonb default '[]'::jsonb,
   created_at    timestamptz default now()
 );
+-- Voor bestaande installaties: de create hierboven doet niets meer zodra de
+-- tabel bestaat, en deze kolommen zijn later toegevoegd.
+alter table crm_leads add column if not exists belpogingen int default 0;
+-- Adres uit een geparsed cv. Landde eerst in het cv-jsonb omdat er geen
+-- kolom was; als kolom is het doorzoekbaar en bruikbaar voor reisafstand.
+alter table candidates add column if not exists adres    text default '';
+alter table candidates add column if not exists postcode text default '';
+-- Wie bij de klant over deze vacature of kandidaat gaat. Zonder deze
+-- kolommen leidt de contactpersoonkaart het af uit de klantnaam, en dat
+-- staat er dan ook eerlijk bij als afleiding in plaats van als feit.
+alter table vacatures  add column if not exists contact_id text default '';
+alter table candidates add column if not exists contact_id text default '';
+alter table crm_taken  add column if not exists contact_id text default '';
+
 create index if not exists crm_leads_status  on crm_leads(status);
 create index if not exists crm_leads_eigenaar on crm_leads(eigenaar);
 create index if not exists crm_leads_binnen  on crm_leads(binnen_op desc);
@@ -189,6 +213,49 @@ create table if not exists crm_leadradar (
 );
 create unique index if not exists crm_leadradar_bedrijf on crm_leadradar(lower(bedrijf));
 create index if not exists crm_leadradar_status on crm_leadradar(status, laatst_gezien desc);
+
+-- ─── 4d. Logboek: wie is er verwijderd of geanonimiseerd ──────
+-- Bewaart DAT er iemand weg is, nooit WIE. Geen naam, geen telefoon,
+-- geen e-mail — anders bewaar je precies wat je zou wissen. Bedoeld om
+-- twee vragen te kunnen beantwoorden: waarom is deze lijst korter
+-- geworden, en zijn mijn gegevens echt verwijderd.
+create table if not exists crm_verwijderingen (
+  id         text primary key,
+  soort      text not null default 'kandidaat',
+  handeling  text not null default 'verwijderd',   -- verwijderd | geanonimiseerd
+  ref        text not null,                        -- id van de rij, geen persoonsgegeven
+  fase       text default '',
+  bron       text default '',
+  klant      text default '',
+  rec        text default '',                      -- de collega, niet de kandidaat
+  reden      text default '',
+  lead_id    text default '',
+  aantallen  jsonb default '{}'::jsonb,
+  door       text default '',
+  op         timestamptz default now(),
+  status     text default 'bezig',                 -- bezig | klaar | deels | afgebroken
+  mislukt    jsonb default '[]'::jsonb
+);
+create index if not exists crm_verw_op  on crm_verwijderingen(op desc);
+create index if not exists crm_verw_ref on crm_verwijderingen(ref);
+
+-- RLS: lezen, aanmaken en de status bijwerken mag het hele team.
+-- VERWIJDEREN mag niemand — een logboek dat je kunt leegmaken bewijst niets.
+-- Deze tabel staat daarom bewust NIET in de array-lus van blok 8: die geeft
+-- `for all`, en daarmee ook delete.
+do $$
+begin
+  execute 'alter table crm_verwijderingen enable row level security';
+  execute 'drop policy if exists verw_lezen on crm_verwijderingen';
+  execute 'create policy verw_lezen on crm_verwijderingen
+           for select to authenticated using (true)';
+  execute 'drop policy if exists verw_aanmaken on crm_verwijderingen';
+  execute 'create policy verw_aanmaken on crm_verwijderingen
+           for insert to authenticated with check (true)';
+  execute 'drop policy if exists verw_bijwerken on crm_verwijderingen';
+  execute 'create policy verw_bijwerken on crm_verwijderingen
+           for update to authenticated using (true) with check (true)';
+end $$;
 
 -- ─── 5. Documenten (bestanden bij klant/kandidaat) ────────────
 -- `url` bevat GEEN publieke url meer (zie blok 10). Twee soorten waarden:

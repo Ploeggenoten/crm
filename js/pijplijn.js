@@ -1,9 +1,21 @@
 /* ═══════════════════════════════════════════════════════════════
-   MODULE: PIJPLIJN — het ATS-bord als eigen menu-item
-   Kanban vanaf Intake, met uitvalstrook, week-indeling in de
-   kolommen, groeperen per klant, compact-weergave en de mobiele
-   fase-picker. Gedrag en formules 1-op-1 het pijplijnbord
-   (PARITEIT-BORD.md); verhuisd vanuit js/recruitment.js.
+   MODULE: KLANTTRAJECTEN — wat er loopt bij de klant
+   (bestandsnaam en modulesleutel blijven `pijplijn`; alleen de naam
+   die de gebruiker ziet is per 31 juli 2026 Klanttrajecten)
+
+   Sinds de splitsing in twee pijplijnen (zie js/data.js) begint dit
+   scherm bij 'Voorgesteld'. Alles daarvóór — binnenkomst, cv, videocall,
+   intake — is de recruitmentpijplijn en woont in js/recruitment.js.
+   Wie hier staat is compleet: kaart, cv, intake en videocall gehad.
+
+   Twee weergaven op dezelfde kandidaten en dezelfde filters:
+     BORD  — kanban met uitvalstrook, week-indeling in de kolommen,
+             groeperen per klant, compact-weergave en de mobiele
+             fase-picker. Laat zien wáár het vastloopt.
+     LIJST — dezelfde selectie als tabel, standaard gesorteerd op
+             langst in dezelfde fase. Laat zien wát het langst stilstaat.
+   Gedrag en formules 1-op-1 het pijplijnbord (PARITEIT-BORD.md);
+   verhuisd vanuit js/recruitment.js.
 
    Gedeelde logica komt uit recruitment.js (laadt vóór dit bestand):
      CRM.kandidaatBewerk(id)        — bewerk-drawer
@@ -47,10 +59,17 @@ function herstelPositie(){
 CRM.pijplijnTerug = id => !!pos && pos.id === String(id);
 
 const UITVAL = ['Afgevallen','Gestopt'];
-/* Alleen de uitval leeft buiten het bord (in Recruitment). Intake is wél een
-   echte pijplijnfase — de werkvoorraad waar de videocall gepland wordt — en
-   staat daarom als eerste kolom gewoon op het bord. */
+/* CRM.PHASES begint bij 'Voorgesteld' — Intake is er per 31 juli 2026 uit
+   gehaald en staat in CRM.VOOR_BORD. Hier hoeven we dus alleen de uitval nog
+   weg te filteren; die krijgt een eigen strook naast het bord. De eerste
+   kolom is daarmee Voorgesteld, en nergens in dit bestand mag nog van
+   'Intake is de eerste kolom' worden uitgegaan. */
 const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k));
+/* Staat deze kandidaat op het bord? Uitval hoort in de strook, niet in een
+   kolom; faseIdx < 0 betekent 'nog niet voorgesteld' (Intake, geen fase, of
+   een fase die niet meer bestaat). De lijstweergave gebruikt dezelfde regel,
+   zodat bord en lijst gegarandeerd dezelfde kandidaten tonen. */
+const opBord = c => { const f = CRM.faseNorm(c.fase); return CRM.faseIdx(f) >= 0 && !UITVAL.includes(f); };
 const vacById   = id => (CRM.state.vacs||[]).find(v => String(v.id) === String(id));
 const vacLabel  = v => v ? (v.functie + ' · ' + v.klant) : '';
 const norm      = s => String(s||'').toLowerCase();
@@ -98,6 +117,46 @@ const isDezeWeek = d => weekKey(d) === weekKey(CRM.todayISO());
 const isCompact = () => localStorage.getItem('crm_rc_compact') === '1';
 function pasDichtheidToe(){ const b = document.querySelector('.rc-bordwrap'); if(b) b.classList.toggle('compact', isCompact()); }
 
+/* De kolommen moeten tot onder aan het scherm lopen en daarbinnen scrollen —
+   niet de hele pagina laten meeschuiven. Hoe hoog ze mogen worden hangt af van
+   wat erboven staat, en dat verschilt nu per situatie (de regel "klaar om voor
+   te stellen" staat er niet altijd). Daarom meten in plaats van gokken. */
+function pasKolomHoogteToe(){
+  const board = document.getElementById('rb_board');
+  if(!board) return;
+  /* Op smal staan de kolommen ónder elkaar; dan is "tot onder aan het scherm"
+     zinloos en scrol je gewoon door de pagina. Daar geldt de vaste regel uit
+     de CSS. */
+  if(window.innerWidth <= 900){ board.style.removeProperty('--bcolmax'); return; }
+  /* +50px = de onderrand van het bord (30px padding) plus wat lucht, zodat de
+     pagina zelf niet alsnog een schuifbalk krijgt. */
+  const top = board.getBoundingClientRect().top + (window.scrollY || 0);
+  board.style.setProperty('--bcolmax', `calc(100vh - ${Math.round(top + 50)}px)`);
+}
+
+/* ─── Bord of lijst ────────────────────────────────────────────────
+   Onthouden per gebruiker in localStorage, net als de compact-stand
+   hierboven en de filters van Kandidaten (crm_kand_filters) — het is een
+   voorkeur van deze persoon op dit apparaat, geen gegeven dat in de
+   database hoort.
+
+   Het BORD is de standaard. Twee redenen: het is wat het team kent en
+   waar het dagelijkse werk gebeurt (slepen naar de volgende fase, de
+   O&O-sessies, de uitvalstrook), en het beantwoordt de vraag waar iemand
+   voor openslaat — waar loopt het vast. De lijst is een gerichte
+   tweede blik: sorteren en vergelijken over de fases heen. Wie hem
+   nodig heeft, kiest hem, en dan blijft die keuze staan. */
+const WKEY = 'crm_pp_weergave';
+const weergave    = () => { try{ return localStorage.getItem(WKEY) === 'lijst' ? 'lijst' : 'bord'; }catch(e){ return 'bord'; } };
+const zetWeergave = v => { try{ localStorage.setItem(WKEY, v); }catch(e){} };
+
+/* Sorteerstand van de lijst. Bewust NIET in localStorage: de weergavekeuze
+   is een gewoonte, de sortering is een vraag van dit moment. Standaard
+   'langst in dezelfde fase, aflopend' — anders zet de lijst alleen dezelfde
+   kaarten onder elkaar en voegt hij niets toe aan het bord. */
+const SORT_STD = {kol:'dagen', op:'af'};
+const L = {kol:SORT_STD.kol, op:SORT_STD.op};
+
 /* Hoort deze kandidaat bij deze vacature? Op vacature_id, met terugval op
    klant+functie — precies zoals js/hot.js het doet. Zonder die terugval viel
    de hele import uit het oude ATS (geen vacature_id) buiten élke keuze van het
@@ -128,16 +187,18 @@ function kandGefilterd(){
    MODULE-REGISTRATIE
    ═══════════════════════════════════════════════════════════════ */
 CRM.registerModule('pijplijn', {
-  title:'Pijplijn', icon:'▥', onderschrift:'Het bord — van Intake tot Gestart',
+  /* De sleutel blijft 'pijplijn' (index.html, navigatie, links vanuit andere
+     modules); wat de gebruiker leest is Klanttrajecten. */
+  title:'Klanttrajecten', icon:'▥', onderschrift:'Lopende trajecten bij klanten — van Voorgesteld tot Gestart',
   volleBreedte:true,
   render(mount, acties){
     if(!CRM._rcDeel || !CRM.kandidaatBewerk){
-      mount.innerHTML = `<div class="note err">De recruitment-module is niet geladen — de pijplijn kan niet zonder.</div>`;
+      mount.innerHTML = `<div class="note err">De recruitment-module is niet geladen — de klanttrajecten kunnen niet zonder.</div>`;
       return;
     }
-    /* Gedeelde flows (drawer, fasewissel, intake) vernieuwen het bord
+    /* Gedeelde flows (drawer, fasewissel, intake) vernieuwen dit scherm
        via deze haak — zie tekenBody() in recruitment.js. */
-    CRM._pijplijnVernieuw = () => { tekenBalk(); tekenKolommen(); };
+    CRM._pijplijnVernieuw = () => { tekenBalk(); tekenInhoud(); };
 
     const K = CRM.kandidaten();
     const klanten = Array.from(new Set(K.map(c=>c.klant).filter(Boolean))).sort();
@@ -162,53 +223,90 @@ CRM.registerModule('pijplijn', {
             <label class="check"><input type="checkbox" id="rb_mijn" ${P.mijn?'checked':''}> Mijn kandidaten</label>
             <label class="check"><input type="checkbox" id="rb_groep" ${P.groep?'checked':''}> Groepeer per klant</label>
           </div>
+          <div id="pp_klaar" class="pp-klaar"></div>
           <div id="pp_geenfase" class="rc-geenfase"></div>
         </div>
-        <div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div><div class="rc-uit" id="rb_uit"></div></div>
+        <div id="pp_weergave"></div>
       </div>`;
 
     const q = mount.querySelector('#rb_q');
-    q.oninput = CRM.debounce(() => { P.q = q.value; tekenKolommen(); }, 200);
-    mount.querySelector('#rb_klant').onchange = e => { P.klant = e.target.value; tekenKolommen(); };
-    mount.querySelector('#rb_rec').onchange   = e => { P.rec   = e.target.value; tekenKolommen(); };
-    mount.querySelector('#rb_type').onchange  = e => { P.type  = e.target.value.replace('&amp;','&'); tekenKolommen(); };
-    mount.querySelector('#rb_vac').onchange   = e => { P.vac   = e.target.value; tekenKolommen(); };
-    mount.querySelector('#rb_mijn').onchange  = e => { P.mijn  = e.target.checked; tekenKolommen(); };
-    mount.querySelector('#rb_groep').onchange = e => { P.groep = e.target.checked; tekenKolommen(); };
+    q.oninput = CRM.debounce(() => { P.q = q.value; tekenInhoud(); }, 200);
+    mount.querySelector('#rb_klant').onchange = e => { P.klant = e.target.value; tekenInhoud(); };
+    mount.querySelector('#rb_rec').onchange   = e => { P.rec   = e.target.value; tekenInhoud(); };
+    mount.querySelector('#rb_type').onchange  = e => { P.type  = e.target.value.replace('&amp;','&'); tekenInhoud(); };
+    mount.querySelector('#rb_vac').onchange   = e => { P.vac   = e.target.value; tekenInhoud(); };
+    mount.querySelector('#rb_mijn').onchange  = e => { P.mijn  = e.target.checked; tekenInhoud(); };
+    mount.querySelector('#rb_groep').onchange = e => { P.groep = e.target.checked; tekenInhoud(); };
 
     tekenActies(acties);
     tekenBalk();
-    tekenKolommen();
+    tekenWeergave();
     herstelPositie();
-    D().promoteerStarts().then(n => { if(n){ tekenBalk(); tekenKolommen(); } });
+    D().promoteerStarts().then(n => { if(n){ tekenBalk(); tekenInhoud(); } });
   }
 });
 
 function tekenActies(acties){
   const el = acties || document.getElementById('pageacties');
   if(!el) return;
-  el.innerHTML = `<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>
-                  <button class="btn ghost sm" id="pp_oo">+ O&amp;O-sessie</button>
-                  <button class="btn sm" id="pp_kand">+ Kandidaat</button>`;
-  el.querySelector('#pp_dicht').onclick = () => {
+  const lijst = weergave() === 'lijst';
+  /* De schakelaar staat vooraan: het is de eerste keuze die je maakt, en
+     .seg is de vorm die het design-system daarvoor heeft. De compact-knop
+     hoort alleen bij het bord — in de lijst doet hij niets. */
+  el.innerHTML = `<div class="seg" id="pp_weerg" role="group" aria-label="Weergave">
+      <button data-w="bord" class="${lijst?'':'on'}" aria-pressed="${lijst?'false':'true'}">Bord</button>
+      <button data-w="lijst" class="${lijst?'on':''}" aria-pressed="${lijst?'true':'false'}">Lijst</button>
+    </div>
+    ${lijst?'':`<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>`}
+    <button class="btn ghost sm" id="pp_oo">+ O&amp;O-sessie</button>
+    <button class="btn sm" id="pp_kand">+ Kandidaat</button>`;
+  CRM.$$('#pp_weerg button', el).forEach(b => b.onclick = () => {
+    if(weergave() === b.dataset.w) return;
+    zetWeergave(b.dataset.w);
+    tekenActies(); tekenWeergave();
+  });
+  const dicht = el.querySelector('#pp_dicht');
+  if(dicht) dicht.onclick = () => {
     localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
     tekenActies(); pasDichtheidToe();
   };
   el.querySelector('#pp_oo').onclick = () => D().ooModal(null);
-  /* Kwam van het vervallen tabblad Voorselectie: een kandidaat aanmaken start
-     in de eerste kolom van dit bord, dus hoort de knop hier. */
+  /* Let op: een nieuwe kandidaat komt in Intake terecht en dus NIET op dit
+     bord, maar in de regel "klaar om voor te stellen" onder de filters. De
+     knop staat hier omdat dit voorlopig de enige plek in het CRM is waar je er
+     handmatig een aanmaakt; zie het verzoek onderaan. */
   el.querySelector('#pp_kand').onclick = () => D().nieuweKandidaat();
 }
+
+/* Container wisselen (bord ↔ lijst). Bij alleen een filterwijziging is
+   tekenInhoud() genoeg — dan blijft de scrollpositie van het bord staan. */
+function tekenWeergave(){
+  const el = document.getElementById('pp_weergave');
+  if(!el) return;
+  el.innerHTML = weergave() === 'lijst'
+    ? `<div class="rc-pad pp-lijstwrap" id="pp_lijst"></div>`
+    : `<div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div><div class="rc-uit" id="rb_uit"></div></div>`;
+  tekenInhoud();
+}
+function tekenInhoud(){
+  if(weergave() === 'lijst') tekenLijst(); else tekenKolommen();
+  /* Ná de kolommen: deze regel staat erbóven en bepaalt dus mee hoe hoog ze
+     mogen worden. */
+  tekenBuitenBord();
+  pasKolomHoogteToe();
+}
+/* Eén listener voor de hele module; doet niets zolang er geen bord staat. */
+window.addEventListener('resize', CRM.debounce(pasKolomHoogteToe, 150));
 
 /* ─── Netto-KPI-regel boven het bord ──────────────────────────── */
 function tekenBalk(){
   const el = document.getElementById('pp_bar'); if(!el) return;
   const K = CRM.kandidaten();
-  /* "Op het bord" moet exact zijn wat je in de kolommen ziet. Golden candidates
-     zonder fase staan er niet op (c.fase truthy), en een kandidaat met een fase
-     die niet meer bestaat evenmin — die kreeg hier eerder wél een plek in het
-     getal, waardoor de KPI hoger stond dan de som van de kolomtellers. Hij valt
-     niet weg: de melding onder de filters noemt hem apart. */
+  /* "In traject" moet exact zijn wat je in de kolommen (of in de lijst) ziet.
+     Kandidaten zonder fase staan er niet op, en een kandidaat met een fase die
+     niet meer bestaat evenmin — die kreeg hier eerder wél een plek in het
+     getal, waardoor de KPI hoger stond dan de som van de kolomtellers. Ze
+     vallen niet weg: de regels onder de filters noemen ze apart. */
   const lopend = K.filter(c => c.fase && CRM.faseIdx(c.fase) >= 0 && !CRM.DONE.includes(c.fase));
   const gesprek = lopend.filter(c => ['O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag'].includes(c.fase)).length;
   const [ma, zo] = D().weekGrens();
@@ -219,7 +317,7 @@ function tekenBalk(){
     `<div class="rc-it ${klasse}"><div class="label">${h(lbl)}</div>
        <div class="rc-v num">${waarde}</div>${extra?`<div class="meta">${extra}</div>`:''}</div>`;
   el.innerHTML =
-    it('Op het bord', lopend.length, 'vanaf Intake') +
+    it('In traject', lopend.length, 'vanaf Voorgesteld') +
     it('In gesprek', gesprek, 'O&amp;O t/m meeloopdag') +
     it('Starts deze week', startsWeek, 'geplande startdatums') +
     it('Netto deze maand', `${CRM.plusMin(pm.netto)}<span class="rc-van">/ ${target}</span>`,
@@ -239,7 +337,12 @@ function kaartHtml(c){
   const gemist    = dd && !placed && dt < 0;
   const over = c.actieDatum && (CRM.dagenGeleden(c.actieDatum) || 0) > 0;
   const dg = dagenInFase(c);
-  const kanIntake = CRM.faseIn(c.fase, ['Intake','Voorgesteld']);
+  /* De intake gebeurt nu vóór dit bord, in de recruitmentpijplijn. De knop
+     bleef hier staan uit de tijd dat Intake de eerste kolom was; hij is nog
+     nuttig voor precies één geval — iemand die op Voorgesteld staat zonder dat
+     de intake ooit is vastgelegd (import, of doorgezet zonder formulier).
+     Staat de intake er wel, dan is de knop ruis. */
+  const kanIntake = CRM.faseIs(c.fase, 'Voorgesteld') && !d.intakeDone(c);
   const chips = [];
   if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
   else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
@@ -263,13 +366,13 @@ function kaartHtml(c){
   if(placed && c.garantieMnd > 0){ const ge = d.garantieEnd(c);
     if(ge && ge >= CRM.todayISO()) chips.push(`<span class="chip green num" title="Garantietermijn">garantie t/m ${h(CRM.fmtDateShort(ge))}</span>`);
   }
-  if(c.fase === 'Gestart' && c.start && !c.gestoptOp){
-    const nd = CRM.dagenGeleden(c.start);
-    if(nd != null && nd >= 0 && nd <= 32){
-      const cp = [3,14,30].find(x => x >= nd);
-      if([3,14,30].includes(nd)) chips.push(`<span class="chip red num" title="Nazorg-belritme dag 3·14·30">check-in vandaag · dag ${nd}</span>`);
-      else if(cp) chips.push(`<span class="chip num" title="Nazorg-belritme dag 3·14·30">dag ${nd} · check-in dag ${cp}</span>`);
-    }
+  /* Opvolging: het ritme stond hier hardgecodeerd als dag 3·14·30 en werd
+     op drie andere plekken nét anders herhaald. Nu één bron —
+     js/opvolging.js — die ook het warm houden vóór de start en de
+     verjaardag meeneemt. Zonder dat bestand blijft de kaart gewoon leeg. */
+  if(CRM.opvolging){
+    const oc = CRM.opvolging.chipHtml(c);
+    if(oc) chips.push(oc);
   }
   let when = '';
   if(dd){
@@ -346,10 +449,10 @@ function ooKolom(list){
     uit += list.filter(c => String(c.ooId) === String(s.id)).map(kaartHtml).join('');
   });
   /* Alles wat hierboven géén sessiekop kreeg, komt onderaan te staan. Eerder
-     was dit `!c.ooId || !ooSessie(c.ooId)`: een kandidaat wiens sessie op een
-     ándere klant staat dan het klantfilter viel dan tussen wal en schip — zijn
-     sessie werd niet getoond én hij gold niet als wees, dus hij verdween uit de
-     kolom terwijl de teller hem wél meetelde. */
+     was dit `!c.ooId || !ooSessie(c.ooId)`: een kandidaat met een sessie bij
+     een ándere klant dan het klantfilter viel dan tussen wal en schip — die
+     sessie werd niet getoond én de kaart gold niet als wees, dus die verdween
+     uit de kolom terwijl de teller er wél op stond. */
   const wees = list.filter(c => !c.ooId || !getoond.has(String(c.ooId)));
   if(wees.length) uit += `<div class="rc-wdiv">Zonder sessie</div>` + wees.map(kaartHtml).join('');
   return uit;
@@ -360,10 +463,11 @@ function tekenKolommen(){
   if(!board) return;
   const d = D();
   const alle = kandGefilterd();
-  /* Intake staat er ook in: het is de videocall-lijst, dus de weekindeling
-     laat meteen zien welke calls wanneer staan — en zet alles zónder datum
-     bij elkaar onder "Nog te plannen". */
-  const WEEKCOLS = ['Intake','Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
+  /* Kolommen met een week-indeling: alles waar een dátum aan hangt, zodat je
+     ziet welke gesprekken en starts wanneer staan — en wat er nog helemaal
+     niet gepland is, onder "Nog te plannen". 'Intake' stond hier ook in toen
+     dat nog de eerste kolom was; die fase staat niet meer op dit bord. */
+  const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
   const nm = c => String(c.naam||'');
   const byDate = (a,b) => {
     const x = a.datum||'', y = b.datum||'';
@@ -372,8 +476,9 @@ function tekenKolommen(){
     return x < y ? -1 : x > y ? 1 : nm(a).localeCompare(nm(b));
   };
   board.innerHTML = bordFases().map(p => {
-    /* faseIs i.p.v. ===: kandidaten die nog op de oude waarde 'Voorselectie'
-       staan horen gewoon in de Intake-kolom (zie CRM.faseNorm in data.js). */
+    /* faseIs i.p.v. ===: een kandidaat kan op een oude fasewaarde staan zolang
+       de migratie niet gedraaid is. CRM.faseNorm (data.js) vertaalt die naar de
+       huidige naam, zodat zo iemand toch in de goede kolom belandt. */
     let kaarten = alle.filter(c => CRM.faseIs(c.fase, p.k)).sort(byDate);
     if(p.k === 'Contract getekend' || p.k === 'Gestart')
       kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:nm(a).localeCompare(nm(b)); });
@@ -387,41 +492,23 @@ function tekenKolommen(){
       const dz = kaarten.filter(c => c.start && new Date(c.start) >= ma && new Date(c.start) < zo).length;
       binnen = `<div class="rc-startnote num">Deze week: ${dz} start${dz===1?'':'s'}</div>` + binnen;
     }
-    /* Verhuisd van het oude tabblad Voorselectie: zonder geplande call
-       vervuilt de lijst, dus dat signaal blijft bovenaan de kolom staan. */
-    if(p.k === 'Intake'){
-      const geenCall = kaarten.filter(c => !c.datum).length;
-      if(geenCall) binnen = `<div class="rc-letnote num">${geenCall}× zonder geplande videocall</div>` + binnen;
+    /* Voorgesteld is sinds de splitsing de eerste kolom. Wie hier nog geen
+       afspraak heeft staan, wacht op de klant — dat is precies het signaal
+       waar een AM op moet sturen, dus het staat bovenaan de kolom.
+       (Dezelfde vorm als de oude "zonder geplande videocall"-melding, die bij
+       de Intake-kolom hoorde en met die kolom is vertrokken.) */
+    if(p.k === 'Voorgesteld'){
+      const wacht = kaarten.filter(c => !c.datum).length;
+      if(wacht) binnen = `<div class="rc-letnote num">${wacht}× nog geen afspraak gepland</div>` + binnen;
     }
-    const leeg = p.k === 'Intake' ? 'Nieuwe sollicitanten komen hier binnen — plan de videocall erbij'
-      : p.k === 'Voorgesteld' ? 'Stel kandidaten voor vanuit Intake' : '—';
+    const leeg = p.k === 'Voorgesteld'
+      ? 'Hier komt iemand te staan zodra je die bij een klant voorstelt — vanuit de recruitmentpijplijn'
+      : '—';
     return `<div class="bcol" data-fase="${h(p.k)}" style="--ph:${p.c}">
       <div class="bcol-h"><b>${h(p.k)}</b><span class="cnt num">${kaarten.length}</span></div>
       <div class="bcol-b">${binnen || `<div class="rc-leegkol">${h(leeg)}</div>`}</div>
     </div>`;
   }).join('');
-
-  /* Wie valt buiten het bord? Kandidaten zonder fase (import uit het oude ATS)
-     en kandidaten met een fase die niet meer bestaat, staan in géén enkele
-     kolom. Die mogen niet stilletjes blijven liggen, dus we melden ze altijd —
-     niet alleen als er toevallig een filter aanstaat. Golden candidates staan
-     bewust zonder fase geparkeerd; die tellen we apart en zonder alarm. */
-  const zonderFase = alle.filter(c => !c.fase);
-  const goldenLos  = zonderFase.filter(c => c.golden).length;
-  const losseKand  = zonderFase.length - goldenLos;
-  const onbekend   = alle.filter(c => c.fase && CRM.faseIdx(c.fase) < 0).length;
-  const filterActief = !!(P.q || P.klant || P.rec || P.vac || P.type || P.mijn);
-  const waar = filterActief ? 'in je selectie' : 'in het systeem';
-  const delen = [];
-  if(losseKand) delen.push(`${losseKand} ${losseKand===1?'kandidaat heeft':'kandidaten hebben'} geen fase
-    en ${losseKand===1?'staat':'staan'} dus niet op het bord`);
-  if(onbekend) delen.push(`${onbekend} ${onbekend===1?'kandidaat staat':'kandidaten staan'} op een fase die niet meer bestaat`);
-  if(goldenLos) delen.push(`${goldenLos} golden candidate${goldenLos===1?'':'s'} ${goldenLos===1?'staat':'staan'} bewust geparkeerd`);
-  const hint = document.getElementById('pp_geenfase');
-  if(hint){
-    hint.innerHTML = delen.length
-      ? `<span class="meta">${delen.join(' · ')} ${h(waar)} — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
-  }
 
   /* Smalle uitvalstrook naast het bord: cijfers + sleepdoelen. */
   const K = CRM.kandidaten();
@@ -469,8 +556,221 @@ function tekenKolommen(){
   pasDichtheidToe();
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   WIE STAAT ER NIET OP DIT SCHERM?
+   Dit bord begint bij Voorgesteld. Alles ervóór — mensen die de intake
+   gehad hebben maar nog aan geen enkele klant zijn voorgesteld — komt
+   dus in géén kolom voor. Dat is precies de groep waar de AM iets mee
+   kan: klaarstaande mensen die alleen nog aan een vacature gekoppeld
+   moeten worden. Ze mogen daarom niet onzichtbaar worden.
+
+   Twee regels, met opzet gescheiden:
+     1. Klaar om voor te stellen — werkvoorraad, klikbaar, met aantal.
+     2. Wat er mis is met de rest — geen intake, of een fase die niet
+        meer bestaat. Rustig, in meta-tekst, want dat is opruimwerk.
+   ═══════════════════════════════════════════════════════════════ */
+function tekenBuitenBord(){
+  const klaarEl = document.getElementById('pp_klaar');
+  const hint    = document.getElementById('pp_geenfase');
+  if(!klaarEl && !hint) return;
+
+  const alle = kandGefilterd();
+  /* Buiten het bord = geen positie in CRM.PHASES. Uitval valt hier niet onder
+     (Afgevallen en Gestopt staan wél in PHASES en hebben hun eigen strook). */
+  const buiten = alle.filter(c => CRM.faseIdx(c.fase) < 0);
+  /* Een fase die niet meer bestaat is een datafout, geen werkvoorraad — die
+     eerst apart zetten, zodat zo iemand niet stilzwijgend als "klaar" wordt
+     meegeteld. */
+  const onbekendIds = new Set(buiten.filter(c => c.fase && !CRM.faseIs(c.fase, 'Intake')).map(c => String(c.id)));
+  const onbekend = onbekendIds.size;
+  const rest   = buiten.filter(c => !onbekendIds.has(String(c.id)));
+  const klaar  = rest.filter(CRM.klaarOmVoorTeStellen);
+  const golden = klaar.filter(c => c.golden).length;
+  /* Wat overblijft: een kaart zonder fase en zonder intake. Dat is de import
+     uit het oude ATS — niet klaar om voor te stellen, wel op te ruimen. */
+  const geenIntake = rest.length - klaar.length;
+
+  const filterActief = !!(P.q || P.klant || P.rec || P.vac || P.type || P.mijn);
+  const waar = filterActief ? 'in je selectie' : 'in het systeem';
+
+  if(klaarEl){
+    klaarEl.innerHTML = klaar.length ? `
+      <button class="pp-klaarknop" id="pp_klaarknop">
+        <span class="pp-klaarn num">${klaar.length}</span>
+        <span class="pp-klaart"><b>${klaar.length===1?'kandidaat is':'kandidaten zijn'} klaar om voor te stellen</b>
+          <small>Intake gehad, nog aan geen klant gekoppeld — daarom nog niet op dit bord${
+            golden ? `. Waarvan ${golden} met een gouden ster` : ''}. ${h(waar[0].toUpperCase()+waar.slice(1))}.</small></span>
+        <span class="pp-klaarga">Bekijken en filteren bij Kandidaten →</span>
+      </button>` : '';
+    const knop = klaarEl.querySelector('#pp_klaarknop');
+    /* Meegegeven filterstand, zodat Kandidaten meteen op deze groep kan
+       openen. Kent die module de sleutel (nog) niet, dan land je gewoon op
+       het kandidatenoverzicht — dat is geen doodlopende klik. */
+    if(knop) knop.onclick = () => CRM.ga('kandidaten', {status:'klaar'});
+  }
+
+  if(hint){
+    const delen = [];
+    if(geenIntake) delen.push(`${geenIntake} ${geenIntake===1?'kandidaat heeft':'kandidaten hebben'} nog geen fase en geen intake`);
+    if(onbekend)   delen.push(`${onbekend} ${onbekend===1?'kandidaat staat':'kandidaten staan'} op een fase die niet meer bestaat`);
+    hint.innerHTML = delen.length
+      ? `<span class="meta">${delen.join(' · ')} ${h(waar)} — <a href="#kandidaten">bekijk ze bij Kandidaten</a>.</span>` : '';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIJSTWEERGAVE
+   Dezelfde kandidaten en dezelfde filters als het bord, maar dan als
+   tabel. Wat het toevoegt: op het bord zie je per kolom hoe druk het is,
+   maar niet wie er over de kolommen heen het langst stilstaat — daar
+   moet je dan elke kolom voor langs. De lijst zet dat standaard bovenaan
+   en laat je verder sorteren op klant, fase, afspraak en AM.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Datum die er voor deze kandidaat toe doet: bij een plaatsing de start,
+   anders de eerstvolgende afspraak. Zelfde regel als op de kaart. */
+const eerstDatum = c => (CRM.PLACED.includes(CRM.faseNorm(c.fase)) ? c.start : c.datum) || '';
+const vacTekst   = c => { const v = vacById(c.vacatureId); return (v && v.functie) || c.functie || ''; };
+
+const LIJST_KOL = [
+  {k:'naam',  lbl:'Kandidaat',    std:'op'},
+  {k:'klant', lbl:'Klant',        std:'op'},
+  {k:'vac',   lbl:'Vacature',     std:'op'},
+  {k:'fase',  lbl:'Fase',         std:'op'},
+  {k:'dagen', lbl:'In fase',      std:'af', num:true},
+  {k:'eerst', lbl:'Eerstvolgende',std:'op'},
+  {k:'am',    lbl:'AM',           std:'op'}
+];
+/* Sorteersleutels. Lege waarden krijgen bewust een sleutel die ze achteraan
+   zet bij oplopend sorteren: een kandidaat zonder klant of zonder afspraak is
+   geen 'A', maar een gat in de gegevens. */
+const LIJST_SLEUTEL = {
+  naam:  c => String(c.naam||'').toLowerCase(),
+  klant: c => String(c.klant||'zzzz').toLowerCase(),
+  vac:   c => (vacTekst(c) || 'zzzz').toLowerCase(),
+  fase:  c => CRM.faseIdx(c.fase),
+  dagen: c => { const n = dagenInFase(c); return n == null ? -1 : n; },
+  eerst: c => eerstDatum(c) || '9999-99-99',
+  am:    c => String(c.rec||'zzzz').toLowerCase()
+};
+
+function lijstGesorteerd(){
+  const sleutel = LIJST_SLEUTEL[L.kol] || LIJST_SLEUTEL.dagen;
+  const richting = L.op === 'af' ? -1 : 1;
+  const naam = c => String(c.naam||'').toLowerCase();
+  return kandGefilterd().filter(opBord).sort((a,b) => {
+    const x = sleutel(a), y = sleutel(b);
+    if(x < y) return -1*richting;
+    if(x > y) return  1*richting;
+    return naam(a).localeCompare(naam(b), 'nl');   // altijd dezelfde volgorde bij gelijkspel
+  });
+}
+
+function lijstRij(c){
+  const dg = dagenInFase(c);
+  /* Zelfde grenzen als de chip op de kaart, zodat bord en lijst hetzelfde
+     zeggen over stilstand: vanaf 4 dagen opletten, vanaf 10 dagen actie.
+     'In de wacht' is een bewuste keuze en kleurt daarom nooit. */
+  const wacht = CRM.faseIs(c.fase, 'In de wacht');
+  const dgCls = (dg == null || wacht) ? '' : dg >= 10 ? 'pp-stil' : dg >= 4 ? 'pp-let' : '';
+  const dd = eerstDatum(c);
+  const placed = CRM.PLACED.includes(CRM.faseNorm(c.fase));
+  let eerst = `<span class="pp-mist">nog te plannen</span>`;
+  if(dd && geldigDatum(dd)){
+    const dt = daysTo(dd);
+    const cls = placed ? 'start' : dt === 0 ? 'vandaag' : dt === 1 ? 'morgen' : dt < 0 ? 'gemist' : '';
+    const wat = placed ? 'Start' : 'Afspraak';
+    const txt = (!placed && dt === 0) ? 'vandaag' : (!placed && dt === 1) ? 'morgen' : CRM.fmtDay(dd);
+    eerst = `<span class="pp-eerst ${cls}"><span class="num">${h(txt)}</span>
+      <small>${h(wat)}${(!placed && c.tijd) ? ' · ' + h(c.tijd) : ''}${(!placed && dt < 0) ? ' — gemist' : ''}</small></span>`;
+  }else if(dd){
+    eerst = `<span class="pp-mist">datum onleesbaar</span>`;
+  }
+  const leeg = t => `<span class="pp-mist">${h(t)}</span>`;
+  return `<tr class="clickable" data-id="${h(c.id)}">
+    <td><b>${h(c.naam)}</b>${c.woonplaats?`<div class="rowsub">${h(c.woonplaats)}</div>`:''}</td>
+    <td>${c.klant ? h(c.klant) : leeg('geen klant')}</td>
+    <td>${vacTekst(c) ? h(vacTekst(c)) : leeg('geen vacature')}</td>
+    <td><button class="pp-fase" data-move="${h(c.id)}" title="Naar een andere fase verplaatsen">
+      <i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(CRM.faseNorm(c.fase))}</button></td>
+    <td class="n"><span class="num ${dgCls}">${dg == null ? '—' : dg + 'd'}</span></td>
+    <td>${eerst}</td>
+    <td>${c.rec ? h(c.rec) : leeg('—')}</td>
+  </tr>`;
+}
+
+function tekenLijst(){
+  const wrap = document.getElementById('pp_lijst');
+  if(!wrap) return;
+  const d = D();
+  const rijen = lijstGesorteerd();
+
+  const pijl = k => L.kol !== k ? '' : (L.op === 'af' ? ' ↓' : ' ↑');
+  const kop = LIJST_KOL.map(k =>
+    `<th class="sortable ${k.num?'n':''}" data-sort="${k.k}"
+       aria-sort="${L.kol===k.k ? (L.op==='af'?'descending':'ascending') : 'none'}">${h(k.lbl)}${pijl(k.k)}</th>`).join('');
+
+  let body;
+  if(!rijen.length){
+    body = '';
+  }else if(P.groep){
+    /* Groeperen per klant werkt hier hetzelfde als op het bord: de sortering
+       blijft staan, er komt alleen een kop per klant tussen. */
+    const volgorde = [], groepen = {};
+    rijen.forEach(c => { const k = c.klant || '— geen klant'; if(!groepen[k]){ groepen[k] = []; volgorde.push(k); } groepen[k].push(c); });
+    body = volgorde.map(k =>
+      `<tr class="pp-grprij"><td colspan="${LIJST_KOL.length}">${h(k)} <span class="num">· ${groepen[k].length}</span></td></tr>` +
+      groepen[k].map(lijstRij).join('')).join('');
+  }else{
+    body = rijen.map(lijstRij).join('');
+  }
+
+  /* Uitleg alleen als er iets te sorteren valt — bij een lege selectie is het
+     een zin over niets. */
+  const stdSort = L.kol === SORT_STD.kol && L.op === SORT_STD.op;
+  const uitleg = !rijen.length ? ''
+    : stdSort
+    ? 'Gesorteerd op langst in dezelfde fase — bovenaan staat wat het langst stilstaat. Klik een kolomkop om anders te sorteren.'
+    : 'Klik een kolomkop om anders te sorteren.';
+
+  const K = CRM.kandidaten();
+  const nAfg = K.filter(c => c.fase === 'Afgevallen').length;
+  const nStp = K.filter(c => c.fase === 'Gestopt').length;
+
+  wrap.innerHTML = `
+    <div class="pp-lijstkop">
+      <span class="meta">${h(rijen.length)} ${rijen.length===1?'traject':'trajecten'} in beeld</span>
+      <span class="meta">${h(uitleg)}</span>
+    </div>
+    ${rijen.length ? `<div class="tblwrap"><table class="tbl pp-tbl">
+      <thead><tr>${kop}</tr></thead><tbody>${body}</tbody></table></div>`
+      : CRM.ui.leeg('Geen lopende trajecten',
+          'Met deze filters staat er niemand tussen Voorgesteld en Gestart.')}
+    <div class="pp-lijstvoet">
+      <span class="meta">Uitval: <b class="num">${nAfg}</b> afgevallen · <b class="num">${nStp}</b> gestopt</span>
+      <button class="btn ghost sm" id="pp_uitopen">Uitval openen →</button>
+    </div>`;
+
+  wrap.querySelector('#pp_uitopen').onclick = () => d.openUitval();
+  CRM.$$('th[data-sort]', wrap).forEach(th => th.onclick = () => {
+    const k = th.dataset.sort;
+    const def = (LIJST_KOL.find(x => x.k === k) || {}).std || 'op';
+    /* Zelfde kolom nog eens = omdraaien; een nieuwe kolom start in de richting
+       die voor die kolom logisch is (dagen aflopend, namen oplopend). */
+    if(L.kol === k) L.op = L.op === 'op' ? 'af' : 'op';
+    else { L.kol = k; L.op = def; }
+    tekenLijst();
+  });
+  CRM.$$('tr[data-id]', wrap).forEach(tr => tr.onclick = e => {
+    if(e.target.closest('[data-move]')) return;
+    bewaarPositie(tr.dataset.id);
+    CRM.ga('kandidaten', {id:tr.dataset.id});
+  });
+  CRM.$$('[data-move]', wrap).forEach(b => b.onclick = e => { e.stopPropagation(); CRM.kandidaatFasePicker(b.dataset.move); });
+}
+
 /* De fase-picker zelf woont in recruitment.js, naast faseWissel en de
-   poortwachters — bord en kandidatenkaart gebruiken dezelfde
+   poortwachters — bord, lijst en kandidatenkaart gebruiken dezelfde
    (CRM.kandidaatFasePicker). */
 
 /* VERZOEK AAN CORE: de vacatures-tabel heeft in productie voor alle 50 rijen
@@ -479,4 +779,31 @@ function tekenKolommen(){
    bord merkt dat niet, maar de Sourcing-kaart en de matchpercentages worden er
    minder waard van. Vacatures een locatie geven (of overnemen van de klant)
    maakt CRM.afstandKm() pas echt bruikbaar.                                   */
+
+/* VERZOEK AAN COORDINATOR (naamswijziging Pijplijn → Klanttrajecten,
+   31 juli 2026). De modulesleutel blijft 'pijplijn'; alleen de zichtbare naam
+   verandert. Wat hier niet aangepast kon worden:
+
+   1. js/kandidaten.js r.589-600 — de knop "← Terug naar het bord". Je komt nu
+      net zo goed uit de lijstweergave, dus "← Terug naar Klanttrajecten" dekt
+      het beter.
+   2. js/recruitment.js r.1752 — de modaltekst bij een nieuwe kandidaat zegt
+      "Komt in Intake: de eerste kolom op het bord". Intake is geen kolom van
+      dit bord meer; die kandidaat komt in de recruitmentpijplijn terecht.
+      Zolang dat er staat lijkt het alsof de kaart verdwijnt.
+   3. js/finance.js r.841/876/1591 — het scenario heet daar `bron:'pijplijn'`.
+      Interne sleutel, hoeft niet mee, maar de labels eromheen ("van het
+      bord") kunnen verwarrend worden nu er twee borden zijn.
+   4. De verwijzingen naar "het bord" in js/opvolging.js, js/dashboard.js en
+      js/finance.js gaan bijna allemaal over dít scherm. Ze kloppen nog, maar
+      het woord dekt sinds de splitsing twee schermen.
+
+   VERZOEK AAN KANDIDATEN: de regel "klaar om voor te stellen" hierboven
+   navigeert met CRM.ga('kandidaten', {status:'klaar'}). Bedoeling: het
+   kandidatenoverzicht opent gefilterd op CRM.klaarOmVoorTeStellen (intake
+   gehad, faseIdx === -1, niet afgevallen/gestopt). Kent die module de sleutel
+   niet, dan land je gewoon op het volledige overzicht — geen fout, wel een
+   halve klik. Let op: CRM.ga zet alleen `id` in de hash, dus zo'n filterstand
+   overleeft geen herlaad. Zou core een tweede parameter in de hash kunnen
+   meenemen, dan wordt zo'n doorklik ook deelbaar.                            */
 })();

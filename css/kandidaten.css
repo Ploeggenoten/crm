@@ -16,6 +16,37 @@
   color:var(--muted);border:1px dashed var(--line);border-radius:999px;
   vertical-align:1px;white-space:nowrap;opacity:.85}
 
+/* ─── Gekwalificeerde voorraad (paneel boven de lijst) ─────────
+   Het kerncijfer links, de uitsplitsing rechts. Eén accent op dit scherm:
+   de olijfrand langs het getal. Bewust geen kleurvlak — het is een stand,
+   geen alarm. */
+.kd-vr{border-left:2px solid var(--olive)}
+.kd-vrtop{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.kd-vrtel{flex:0 0 232px;min-width:200px}
+.kd-vrtel .big{line-height:1;margin-top:2px}
+.kd-vrsub{font-size:12.5px;color:var(--txt-2);margin-top:6px;line-height:1.45;max-width:24ch}
+.kd-vrstil{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+/* Rechterkolom mag de hele breedte pakken die overblijft — op een breed
+   scherm staan de chips dan op één regel in plaats van in een smalle kolom. */
+.kd-vrsplits{flex:1 1 360px;min-width:280px;border-left:1px solid var(--line);padding-left:24px}
+.kd-vrchips{margin-top:12px}
+.kd-vrchip{font-family:var(--body);font-weight:500}
+.kd-vrchip .num{font-weight:700;margin-right:4px}
+.kd-vrleegchip{border-style:dashed;color:var(--txt-2)}
+.kd-vrnoot{margin:12px 0 0;line-height:1.55;max-width:82ch}
+.kd-vrleeg{margin:8px 0 0;font-size:13px;color:var(--txt-2);line-height:1.55;max-width:70ch}
+@media (max-width:900px){
+  .kd-vrsplits{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:16px}
+}
+
+/* ─── Kolom "Laatst gesproken" ────────────────────────────────
+   Nooit gesproken is geen groot getal maar een ander soort regel: gedempt
+   en cursief, met eronder hoe lang die persoon al wacht. Zo zie je in één
+   oogopslag het verschil tussen een gat in het proces en een belletje. */
+.kd-stilte{min-width:132px}
+.kd-nooit{font-style:italic}
+.kd-stilte .rowsub{margin-top:2px}
+
 /* ─── Filterpaneel + chips ────────────────────────────────────── */
 .kd-filaan{border-color:var(--olive-l) !important;color:var(--olive)}
 .kd-fpaneel{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
@@ -32,6 +63,11 @@
 .kd-meter{flex:0 0 236px;min-width:200px;border-left:1px solid var(--line);padding-left:18px}
 .kd-meter b{font-size:14px;color:var(--ink);min-width:38px;text-align:right}
 .kd-kolommen{align-items:start}
+/* Waar normaal de voortgangsmeter staat, staat op een geanonimiseerde kaart
+   de uitleg. Even breed, zodat de kop niet verspringt, en zonder kleur —
+   het is geen waarschuwing maar een vastgestelde situatie. */
+.kd-anonmeter{flex:0 0 260px}
+.kd-anontekst{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--txt-2)}
 
 /* Kandidaat zonder naam (net doorgeschoten sollicitant): geen leeg gat
    in de titel, maar dezelfde "invullen…"-toon als de velden eronder. */
@@ -116,17 +152,50 @@
 .kd-cert.verlopen b{color:var(--red)}
 .kd-cert.verlopen .num{text-decoration:line-through}
 
-/* ─── Nazorg: check-ins dag 3 · 14 · 30 ───────────────────────── */
-.kd-nazorg{display:flex;flex-direction:column;gap:2px}
-.kd-nz{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;
+/* ─── Opvolging (js/opvolging.js) ──────────────────────────────────
+   Het hele contactritme van één kandidaat: nazorg tot een jaar na de
+   start, warm houden vóór de start, verjaardag, felicitatiemail.
+   Standaard staat alleen zichtbaar wat speelt; `.alles` klapt het
+   volledige ritme uit. Vandaar dat het verbergen op de LIJST zit en
+   niet op de regel: één klasse erbij en alles staat er.
+   Deze stijlen zijn niet kandidaat-specifiek maar wonen hier omdat het
+   blok op de kandidatenkaart staat; css/kandidaten.css laadt altijd. */
+.ov-kaart .bar{margin-bottom:12px}
+.ov-lijst{display:flex;flex-direction:column;gap:2px}
+.ov-r{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;
   padding:8px 0;border-bottom:1px solid #eef0e4;font-size:13px}
-.kd-nz:last-child{border-bottom:none}
-.kd-nz-d{font-weight:600;color:var(--txt-2);flex:0 0 62px}
-.kd-nz-dat{color:var(--txt-2);flex:0 0 96px}
-.kd-nz .btn{margin-left:auto}
-.kd-nz-ok{color:var(--green);font-weight:600;font-size:12.5px}
-.kd-nz-open{color:var(--amber);font-weight:600;font-size:12.5px}
-.kd-nz.af .kd-nz-d,.kd-nz.af .kd-nz-dat{color:var(--muted);font-weight:500}
+.ov-r:last-child{border-bottom:none}
+.ov-r.verborgen{display:none}
+.ov-lijst.alles .ov-r.verborgen{display:flex}
+.ov-r-k{font-weight:600;color:var(--txt-2);flex:0 0 86px}
+.ov-r-d{color:var(--txt-2);flex:0 0 116px;font-size:12.5px}
+.ov-r-t{flex:1 1 200px;min-width:0}
+.ov-r-kan{font-style:normal;color:var(--muted);font-size:12px;margin-left:7px}
+.ov-r .btn{margin-left:auto}
+.ov-ok{color:var(--green);font-weight:600;font-size:12.5px}
+.ov-open{color:var(--amber);font-weight:600;font-size:12.5px}
+.ov-gemist{color:var(--muted);font-weight:600;font-size:12.5px;text-decoration:line-through}
+.ov-r.af .ov-r-k,.ov-r.af .ov-r-d,.ov-r.af .ov-r-t{color:var(--muted);font-weight:500}
+.ov-r.open .ov-r-t{font-weight:600}
+.ov-meer{margin-top:12px}
+.ov-uit{margin:12px 0 0;max-width:66ch;line-height:1.5}
+
+/* Felicitatiemail-venster: wat er ontbreekt, en de tekst zelf. */
+.ov-gaten{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ov-gaten li{line-height:1.45}
+.ov-mailtekst{width:100%;min-height:260px;font-family:var(--body);font-size:13.5px;
+  line-height:1.55;white-space:pre-wrap}
+/* Het berichtje vóór een afspraak is een appje, geen brief: klein vlak,
+   zodat de lengte zelf al laat zien dat het kort hoort te zijn. */
+.ov-bericht{width:100%;min-height:110px;font-family:var(--body);font-size:13.5px;
+  line-height:1.55}
+
+@media(max-width:560px){
+  .ov-r-k{flex:0 0 100%}
+  .ov-r-d{flex:0 0 auto}
+  .ov-r .btn{margin-left:0}
+  .ov-mailtekst{min-height:220px}
+}
 
 /* Reisafstand: de waarschuwing hoort achter de afstand, niet eronder. */
 .kd-reisver{margin-left:4px;vertical-align:1px}

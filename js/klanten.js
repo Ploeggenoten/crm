@@ -305,6 +305,9 @@ function overzicht(mount, acties){
       <button data-w="kaart"   class="${F.weergave==='kaart'?'on':''}">Kaart</button>
     </div>`;
   acties.querySelectorAll('#kl_seg button').forEach(b => b.onclick = () => { zet('weergave', b.dataset.w); CRM.render(); });
+  /* Doorklik naar het overzicht van alle contactpersonen. Staat hier en niet
+     in het menu: het hoort bij Relaties, en de zijbalk heeft al twaalf items. */
+  if(CRM.contactKaart) CRM.contactKaart.lijstKnop(acties);
 
   /* Kaartweergave: de kaart-engine (js/source.js) tekent hier. Deze module
      bouwt zelf géén kaart — alleen de aanroep, met nette terugval. */
@@ -509,7 +512,7 @@ function kaart(mount, acties, naam){
         <aside class="kl-rail">
           ${gegevensHtml(k)}
           ${afspraakBlokHtml()}
-          ${contactBlokHtml()}
+          ${CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml()}
           ${afsprakenBlokHtml()}
           ${takenBlokHtml()}
           ${notitiesBlokHtml()}
@@ -602,12 +605,17 @@ function kaart(mount, acties, naam){
     teamEl.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); startTeam(); } };
   }
 
-  /* Rail: contactpersonen — live zoeken zonder het hele scherm te hertekenen */
-  const ctLijst = mount.querySelector('#ct_lijst');
-  const ctZoek  = mount.querySelector('#ct_zoek');
-  ctZoek.oninput = () => { contactZoek = ctZoek.value; contactLijst(ctLijst, k); };
-  mount.querySelector('#ct_nieuw').onclick = () => contactModal(k, null);
-  contactLijst(ctLijst, k);
+  /* Rail: contactpersonen. Elke regel is nu een knop naar de eigen kaart van
+     die persoon — daar staat de geschiedenis, wie er via hem is aangenomen en
+     hoe lang je hem niet gesproken hebt. Zie js/contactkaart.js. */
+  if(CRM.contactKaart) CRM.contactKaart.bindRail(mount, k.naam);
+  else {
+    const ctLijst = mount.querySelector('#ct_lijst');
+    const ctZoek  = mount.querySelector('#ct_zoek');
+    ctZoek.oninput = () => { contactZoek = ctZoek.value; contactLijst(ctLijst, k); };
+    mount.querySelector('#ct_nieuw').onclick = () => contactModal(k, null);
+    contactLijst(ctLijst, k);
+  }
 
   /* Rail: commerciële afspraken (alleen achter CRM.canSeeMoney) */
   railAfspraak(mount, k);
@@ -744,7 +752,7 @@ function gegevensHtml(k){
    PRIVACY: dit hele blok — en élke euro en élk percentage erin —
    staat achter CRM.canSeeMoney(). Zonder rechten wordt de kaart niet
    getekend, niets opgehaald en niets berekend. Wat een AM wél moet
-   zien (welke velden hij nog moet invullen) komt uit
+   zien (welke velden er nog ontbreken) komt uit
    CRM.fee.watMist(), en dat is bewust bedrag- en percentageloos.
    ═══════════════════════════════════════════════════════════════ */
 const feeAan = () => CRM.canSeeMoney() && !!CRM.fee;
@@ -1677,7 +1685,7 @@ function tabKandidaten(el, k, c){
     ${Object.keys(groepen).length ? Object.keys(groepen).map(g => `
         <div class="kl-groep"><div class="label">${h(g)} <span class="num">${groepen[g].length}</span></div>
           <div class="kl-kandlijst">${groepen[g].map(x=>kandRegel(x)).join('')}</div></div>`).join('')
-      : CRM.ui.leeg('Nog geen kandidaten','Zodra je iemand voorstelt bij deze klant verschijnt hij hier.')}`;
+      : CRM.ui.leeg('Nog geen kandidaten','Zodra je iemand voorstelt bij deze klant verschijnt die hier.')}`;
 
   el.querySelectorAll('#k_grp button').forEach(b => b.onclick = () => {
     groepeer = b.dataset.g; P.set('groepeer', groepeer); tabKandidaten(el, k, c);

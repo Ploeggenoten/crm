@@ -1,0 +1,66 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLOEGGENOTEN CRM — KANDIDAAT VERWIJDEREN EN ANONIMISEREN
+   Zo weinig mogelijk eigen stijl: knoppen, notities, kaartranden en
+   formulierrijen komen allemaal uit css/base.css. Hier staat alleen
+   wat daar niet in zit — het blok onderaan de kaart en de twee vakjes
+   in het bevestigingsvenster.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Het blok onderaan de kandidatenkaart ─────────────────────
+   Bewust onderaan en bewust rustig. Een stippellijn erboven zegt
+   "hier houdt het dagelijkse werk op"; de uitleg staat vóór de
+   knoppen, zodat je leest waar je aan begint voordat je klikt. */
+.kv-blok{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin-top:8px;padding:16px 4px 4px;
+  border-top:1px dashed var(--line);
+}
+.kv-blok .kv-uitleg{flex:1 1 260px;min-width:0;line-height:1.5}
+.kv-blok .kv-knop{flex:0 0 auto}
+
+/* Op een smal scherm onder elkaar, met de knoppen op volle breedte —
+   anders staan twee halve knoppen naast elkaar te knijpen. */
+@media (max-width:560px){
+  .kv-blok{flex-direction:column;align-items:stretch}
+  /* In een kolom slaat flex-basis op de HOOGTE. Zonder dit rekt de
+     uitleg zich uit tot 260px hoog en staan de knoppen ver weg. */
+  .kv-blok .kv-uitleg{flex:0 0 auto}
+  .kv-blok .kv-knop{width:100%;justify-content:center}
+}
+
+/* ─── Het bevestigingsvenster ─────────────────────────────────── */
+.kv-sub{margin:6px 0 0;line-height:1.5}
+
+/* De twee vakjes: wat er weggaat en wat er blijft. Twee kolommen op
+   een breed scherm is hier fout — je leest ze na elkaar, niet naast
+   elkaar. Dus altijd onder elkaar, met een duidelijk verschil in
+   kleur zodat je nooit het verkeerde lijstje leest. */
+.kv-vak{
+  border:1px solid var(--line);border-radius:var(--r-s);
+  padding:10px 14px;margin-bottom:12px;background:var(--card-2);
+}
+.kv-vak .label{display:block;margin-bottom:4px}
+.kv-p{margin:0;font-size:13px;line-height:1.55;color:var(--txt)}
+
+/* Wat weggaat krijgt de waarschuwkleur van de huisstijl (oranje),
+   in dezelfde tinten als .note.warn. Eén accent, verder niets. */
+.kv-vak.kv-weg{background:var(--amber-bg);border-color:var(--amber-line)}
+.kv-vak.kv-weg .label{color:#8a5a1a}
+.kv-vak.kv-blijft{background:var(--card-2);border-color:var(--line)}
+
+/* De geruststelling over de cijfers staat apart, niet verstopt in de
+   opsomming erboven — het is de reden dat anonimiseren bestaat. */
+.kv-cijfers{margin-top:8px;font-weight:600}
+
+.kv-demo,.kv-waarschuw{margin-bottom:14px}
+
+/* Het overtypveld. Iets ruimer dan een gewoon invoerveld: dit is de
+   handeling zelf, niet zomaar een formulierregel. */
+.kv-typ{margin-bottom:4px}
+.kv-typ input{font-size:14.5px;padding:10px 12px}
+.kv-typ .hint{min-height:16px}
+.kv-typ .hint.kv-goed{color:var(--green);font-weight:600}
+
+.kv-reden{margin-bottom:16px}
+.kv-fout{margin-top:14px}
+.kv-fout .meta{display:inline-block;margin-top:4px;line-height:1.5}

@@ -14,9 +14,24 @@ Meerdere agents bouwen tegelijk aan deze app. Deze afspraken houden het
 | Kandidaten | `js/kandidaten.js`, `css/kandidaten.css` |
 | Marketing | `js/marketing.js`, `css/marketing.css` |
 | Performance | `js/performance.js`, `css/performance.css` |
+| Finance | `js/finance.js`, `css/finance.css` |
+| Pijplijnbord | `js/pijplijn.js`, `css/pijplijn.css` |
+| Hot vacatures | `js/hot.js`, `css/hot.css` |
+| Source | `js/source.js`, `css/source.css` |
+| Instellingen | `js/instellingen.js`, `css/instellingen.css` |
+
+Daarnaast drie bestanden zonder eigen scherm. Ze horen bij niemand in het
+bijzonder en worden door meerdere modules gebruikt — wijzig ze alleen als je
+er expliciet eigenaar van bent gemaakt:
+
+| Gedeeld | Wat het is |
+|---|---|
+| `js/fee.js` (`CRM.fee`) | Leidt uit de klantafspraak en de salariscomponenten de grondslag en de fee af. Eén rekenregel, zodat Finance, de kandidatenkaart en Performance nooit een ander bedrag tonen. |
+| `js/opvolging.js` (`CRM.opvolging`) | Wanneer er contact hoort te zijn: nazorg tot een jaar, warm houden vóór de startdatum, verjaardagen, felicitatiemail en de herinnering vóór een afspraak. Dashboard, bord, kaart en Performance lezen hier allemaal uit. Uitbreiden kan zonder dit bestand aan te raken, via `CRM.opvolging.registreerBron(fn)`. |
+| `js/cv.js`, `js/swo.js`, `js/pva.js` | De drie documentgeneratoren (kandidaatprofiel, samenwerkingsovereenkomst, plan van aanpak). Geen menu-item: ze openen vanaf een kaart. |
 
 **Nooit aanpassen:** `index.html`, `css/base.css`, `js/core.js`, `js/data.js`,
-`js/demo.js`, `supabase/schema.sql`. Mis je daar iets, zet het dan onderaan je
+`js/demo.js`, `js/outlook.js`, `supabase/schema.sql`. Mis je daar iets, zet het dan onderaan je
 eigen bestand onder `/* VERZOEK AAN CORE: ... */` — de coördinator verwerkt het.
 
 ## 2. Registreren
@@ -79,7 +94,14 @@ CRM.matchScore(kandidaat, vacature) / CRM.besteMatches(kandidaat)
 CRM.volledigheid(kandidaat)        // tegen vervuiling
 CRM.canSeeMoney()                  // ALLEEN dan fee/omzet/marge tonen
 CRM.me() / CRM.isVanMij(obj)       // filter "mijn klanten/leads"
+CRM.fee(kandidaat, klant)          // grondslag + fee, één rekenregel
+CRM.opvolging.openVoor(mij) / .tussen(van, tot) / .registreerBron(fn)
+CRM.faseNorm(f) / CRM.faseIs(c, f) / CRM.faseIn(c, lijst)   // 'Voorselectie' heet nu 'Intake'
 ```
+
+Zoek je "wie moet ik vandaag bellen", bouw dat dan niet zelf: vraag het aan
+`CRM.opvolging`. Toen elke module dat apart uitrekende zei het dashboard iets
+anders dan de kandidatenkaart, en dan gelooft niemand het meer.
 
 ## 5. Data opslaan
 

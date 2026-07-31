@@ -1,12 +1,20 @@
-/* Stijl voor de Pijplijn-module (het ATS-bord, verhuisd uit recruitment).
-   De module hergebruikt bewust de rc-*-frameklassen (rc-bar, rc-pad,
-   rc-fil) uit css/recruitment.css zodat beide schermen er identiek
-   uitzien; hieronder staat alles wat alleen het bord nodig heeft. */
+/* Stijl voor de module Klanttrajecten (bestandsnaam blijft pijplijn):
+   het bord én de lijstweergave. De module hergebruikt bewust de
+   rc-*-frameklassen (rc-bar, rc-pad, rc-fil) uit css/recruitment.css
+   zodat beide schermen er identiek uitzien; hieronder staat alles wat
+   alleen dit scherm nodig heeft. */
 
 /* ─── Bord + uitvalstrook ────────────────────────────────────── */
 .rc-bordwrap{display:flex;align-items:flex-start;gap:0}
 .rc-bordwrap .board{flex:1;min-width:0;padding:4px 12px 30px 26px}
-.rc .bcol{max-height:calc(100vh - 330px)}
+/* Kolomhoogte: precies tot onder aan het scherm, zodat je binnen een kolom
+   scrolt in plaats van de hele pagina. Dat getal stond hier hardgecodeerd op
+   330px en klopte alleen zolang de kop even hoog bleef; de regel "klaar om
+   voor te stellen" duwde het bord er meteen doorheen. tekenKolommen() meet nu
+   waar het bord begint en zet --bcolmax; de waarde hieronder is alleen de
+   terugval als dat (nog) niet gebeurd is. max() houdt de kolom bruikbaar op
+   een smal scherm, waar het bord ver naar beneden staat. */
+.rc .bcol{max-height:max(280px, var(--bcolmax, calc(100vh - 330px)))}
 .rc-uit{flex:0 0 168px;width:168px;padding:4px 26px 30px 0;display:flex;flex-direction:column;gap:8px}
 .rc-uitzone{
   border:1px dashed var(--line-2);border-radius:var(--r);background:var(--card-2);
@@ -22,9 +30,62 @@
 .rc-uitverv{padding:2px 0}
 
 .rc-leegkol{font-size:12px;color:var(--muted);text-align:center;padding:16px 8px;line-height:1.5}
-/* Toelichting onder de filters: kandidaten zonder fase horen niet op het bord. */
+/* Toelichting onder de filters: kandidaten zonder intake of met een fase die
+   niet meer bestaat horen niet op dit bord. Opruimwerk, dus meta-tekst. */
 .rc-geenfase:not(:empty){margin-top:8px}
 .rc-geenfase a{color:var(--olive);font-weight:600}
+
+/* ─── Klaar om voor te stellen ────────────────────────────────────
+   Het bord begint bij Voorgesteld, dus wie de intake gehad heeft maar nog
+   aan geen klant hangt komt in géén kolom voor. Deze regel houdt die groep
+   zichtbaar en klikbaar. Bewust een rustige kaart en geen alarm: het is
+   werkvoorraad, geen fout. Eén accent (olijf) op het getal. */
+.pp-klaar:not(:empty){margin-top:2px}
+.pp-klaarknop{
+  display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
+  border:1px solid var(--line);border-left:3px solid var(--olive);border-radius:var(--r);
+  background:var(--card);padding:10px 14px;font-family:var(--body);
+  transition:border-color .12s,background .12s;
+}
+.pp-klaarknop:hover{border-color:var(--olive-l);background:var(--well-2)}
+.pp-klaarn{font-family:var(--disp);font-weight:400;font-size:26px;letter-spacing:.5px;
+  color:var(--olive);line-height:1;flex:0 0 auto;min-width:34px}
+.pp-klaart{min-width:0;flex:1}
+.pp-klaart b{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.pp-klaart small{display:block;font-size:11.5px;font-weight:500;color:var(--muted);margin-top:2px;line-height:1.45}
+.pp-klaarga{flex:0 0 auto;font-size:12px;font-weight:600;color:var(--olive)}
+
+/* ─── Lijstweergave ───────────────────────────────────────────────
+   Dezelfde selectie als het bord, maar sorteerbaar. Bewust géén
+   max-breedte: het team werkt op een groot scherm, en een tabel die op
+   2000px halverwege ophoudt terwijl de KPI-balk en de filterbalk er wél
+   doorlopen ziet er onaf uit. De naamkolom neemt de extra ruimte op. */
+.pp-lijstwrap{padding-bottom:30px}
+.pp-tbl th:first-child,.pp-tbl td:first-child{width:24%}
+.pp-lijstkop{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+  flex-wrap:wrap;margin-bottom:8px}
+.pp-tbl th{white-space:nowrap}
+.pp-tbl td{padding:10px 16px}
+.pp-tbl .pp-fase{
+  display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+  background:var(--card-2);border-radius:999px;padding:3px 11px 3px 9px;cursor:pointer;
+  font-family:var(--body);font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;
+}
+.pp-tbl .pp-fase:hover{border-color:var(--olive-l)}
+/* Stilstand: dezelfde grenzen als de chip op de kaart (4 dagen opletten,
+   10 dagen actie), zodat bord en lijst hetzelfde zeggen. */
+.pp-tbl .pp-let{color:var(--amber);font-weight:600}
+.pp-tbl .pp-stil{color:var(--red);font-weight:600}
+.pp-tbl .pp-mist{color:var(--muted);font-style:italic}
+.pp-tbl .pp-eerst .num{font-weight:600;color:var(--txt-2)}
+.pp-tbl .pp-eerst small{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+.pp-tbl .pp-eerst.vandaag .num,.pp-tbl .pp-eerst.morgen .num,.pp-tbl .pp-eerst.start .num{color:var(--green)}
+.pp-tbl .pp-eerst.gemist .num{color:var(--red)}
+.pp-tbl tr.pp-grprij td{background:var(--card-2);font-size:11.5px;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--txt-2);padding:7px 16px}
+.pp-tbl tr.pp-grprij:hover td{background:var(--card-2)}
+.pp-lijstvoet{display:flex;justify-content:space-between;align-items:center;gap:16px;
+  flex-wrap:wrap;margin-top:12px}
 .rc-rec{background:var(--card-2);border:1px solid var(--line);border-radius:5px;font-size:10px;
   font-weight:600;color:var(--txt-2);padding:2px 5px;letter-spacing:.03em;flex:0 0 auto}
 .bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid var(--line);padding-top:6px}
@@ -48,8 +109,9 @@
 .rc-wdiv.nu{color:var(--olive);border-bottom-color:var(--olive-l)}
 .rc-startnote{font-size:12px;font-weight:600;color:var(--green);background:var(--green-bg);
   border:1px solid var(--green-line);border-radius:var(--r-s);padding:5px 9px}
-/* Zelfde vorm, maar dan als aandachtspunt: kandidaten in Intake zonder
-   geplande videocall (kwam eerder uit het losse tabblad Voorselectie). */
+/* Zelfde vorm, maar dan als aandachtspunt: kandidaten in Voorgesteld zonder
+   geplande afspraak — die wachten op de klant. (Deze melding hing eerder aan
+   de Intake-kolom, die sinds de splitsing niet meer op dit bord staat.) */
 .rc-letnote{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-bg);
   border:1px solid var(--amber-line);border-radius:var(--r-s);padding:5px 9px}
 .rc-grp{display:flex;justify-content:space-between;align-items:center;font-size:11px;
@@ -100,4 +162,13 @@
   .rc-uit{flex:1 1 auto;width:auto;padding:0 14px 24px;flex-direction:row}
   .rc-uit .label{display:none}
   .rc-uitzone{flex:1}
+  /* De "klaar om voor te stellen"-regel wordt op smal een stapel: het getal
+     en de tekst naast elkaar, de doorklik eronder. */
+  .pp-klaarknop{flex-wrap:wrap}
+  .pp-klaarga{width:100%;padding-left:48px}
+  /* De tabel schuift horizontaal in .tblwrap; de kolommen die het smalst
+     dragen (woonplaats-subregel, AM) mogen dan gewoon meeschuiven. */
+  .pp-lijstwrap{padding-bottom:24px}
+  .pp-lijstkop{gap:4px}
+  .pp-tbl td,.pp-tbl th{white-space:nowrap}
 }

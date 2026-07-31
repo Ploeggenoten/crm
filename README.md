@@ -45,7 +45,7 @@ Bouw je iets nieuws met fee, omzet of marge erin: altijd achter
 2. **Redirect-URL.** Supabase → Authentication → URL Configuration: voeg
    `https://ploeggenoten.github.io/crm/` toe aan de redirect-URL's, zodat de
    "wachtwoord vergeten"-mail hier terugkomt.
-3. **Team laten inloggen.** Iedereen gebruikt zijn bestaande account van het
+3. **Team laten inloggen.** Iedereen gebruikt het eigen bestaande account van het
    pijplijnbord — er is geen aparte registratie.
 
 ## Voor ontwikkelaars

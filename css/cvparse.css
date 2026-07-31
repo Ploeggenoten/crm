@@ -1,0 +1,121 @@
+/* ═══════════════════════════════════════════════════════════════
+   CV INLEZEN — het voorstel naast de kandidatenkaart
+   Alles hier bouwt op css/base.css. Geen eigen kleuren: de tinten
+   komen uit :root, zodat dit scherm meebeweegt met de rest.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Breder dan een standaardvenster: er staan twee kolommen met waarden
+   naast elkaar, en die vergelijking is de hele reden dat dit scherm
+   bestaat. In een venster van 520px wordt het een kaartenbak. */
+.modal.cvp-modal{width:min(880px,96vw)}
+.cvp-b{max-height:min(66vh,640px);overflow-y:auto}
+/* .f-row staat in base.css op display:flex, en dat wint van het hidden-
+   attribuut. Zonder deze regel blijft het bestandskiezertje staan als de
+   aanroeper het bestand al meegaf. */
+.cvp-kies[hidden]{display:none}
+
+.cvp-kop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.cvp-kop > b{font-size:13px;font-weight:700}
+.cvp-kop .meta{font-size:12px}
+
+/* ─── Tabel: nu op de kaart ↔ in het CV ───────────────────────── */
+.cvp-tabel{border:1px solid var(--line);border-radius:var(--r-s);overflow:hidden}
+.cvp-hoofd,.cvp-rij{display:grid;grid-template-columns:28px minmax(120px,1.1fr) minmax(110px,1.3fr) minmax(120px,1.6fr);
+  gap:10px;align-items:center;padding:9px 12px}
+.cvp-hoofd{background:var(--well);font-size:11px;font-weight:700;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--muted)}
+.cvp-rij{border-top:1px solid var(--line);cursor:pointer;font-size:13px}
+.cvp-rij:hover{background:var(--card-2)}
+.cvp-rij input[type=checkbox]{width:16px;height:16px;accent-color:var(--olive);cursor:pointer}
+.cvp-lbl{font-weight:600}
+.cvp-nu{color:var(--muted);word-break:break-word}
+.cvp-cv{word-break:break-word}
+/* Overschrijven is iets anders dan aanvullen: dat mag je zien vóórdat je
+   klikt, niet pas als de oude waarde weg is. */
+.cvp-rij.botst{background:var(--amber-bg)}
+.cvp-rij.botst:hover{background:#f7e3d8}
+.cvp-rij.botst .cvp-nu{color:var(--txt);font-weight:600}
+.cvp-rij.uit .cvp-cv{opacity:.45;text-decoration:line-through}
+
+/* ─── Lijsten: werk, opleiding, certificaten ──────────────────── */
+.cvp-lijst{display:flex;flex-direction:column;gap:6px}
+.cvp-item{display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:var(--r-s);background:var(--card)}
+.cvp-item input[type=checkbox]{width:16px;height:16px;accent-color:var(--olive);cursor:pointer;flex:none}
+.cvp-item.let{border-color:var(--amber-line);background:var(--amber-bg)}
+.cvp-item.uit{opacity:.5}
+.cvp-vel{display:grid;grid-template-columns:1.2fr 1.2fr .8fr;gap:6px;flex:1;min-width:0}
+.cvp-vel.twee{grid-template-columns:1.6fr 1fr}
+.cvp-vel input{width:100%;min-width:0;font:inherit;font-size:13px;padding:6px 8px;
+  border:1px solid var(--line-2);border-radius:6px;background:var(--card);color:var(--txt)}
+.cvp-vel input:focus{outline:2px solid var(--olive-l);outline-offset:-1px;border-color:var(--olive-l)}
+.cvp-vel input::placeholder{color:var(--muted);opacity:.6}
+.cvp-let{flex:none}
+
+/* ─── Blokjes met een enkele keuze ────────────────────────────── */
+.cvp-chips{display:flex;flex-direction:column;gap:6px}
+.cvp-blok{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;font-size:13px;
+  border:1px solid var(--line);border-radius:var(--r-s);cursor:pointer}
+.cvp-blok:hover{background:var(--card-2)}
+.cvp-blok.uit{opacity:.5}
+.cvp-blok input{width:16px;height:16px;accent-color:var(--olive);margin-top:1px;flex:none}
+
+.cvp-foto{display:flex;align-items:center;gap:12px;padding:10px;font-size:13px;
+  border:1px solid var(--line);border-radius:var(--r-s);cursor:pointer}
+.cvp-foto:hover{background:var(--card-2)}
+.cvp-foto.uit{opacity:.5}
+.cvp-foto input{width:16px;height:16px;accent-color:var(--olive);flex:none}
+.cvp-foto img{width:64px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none}
+
+/* ─── Ruwe tekst ──────────────────────────────────────────────────
+   Achter een uitklapper, maar wél aanwezig: gaat het parsen mis, dan
+   wil je zien wat er wél uit het bestand kwam in plaats van tegen een
+   leeg scherm aan te kijken. */
+.cvp-ruw{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.cvp-ruw summary{cursor:pointer;font-size:12px;color:var(--muted);font-weight:600}
+.cvp-ruw summary:hover{color:var(--txt)}
+.cvp-ruw pre{margin:10px 0 0;padding:12px;background:var(--well);border-radius:var(--r-s);
+  font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
+  max-height:280px;overflow-y:auto;color:var(--txt-2)}
+
+/* ─── Het bestand op de kandidatenkaart ───────────────────────── */
+.cvp-doc{margin-bottom:12px}
+.cvp-doc-r{display:flex;align-items:center;gap:10px;padding:9px 12px;
+  border:1px solid var(--line);border-radius:var(--r-s);background:var(--card-2)}
+.cvp-doc-r.klein{background:transparent;border-style:dashed;margin-top:6px}
+.cvp-doc-ic{font-size:16px;color:var(--olive);flex:none}
+.cvp-doc-t{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.cvp-doc-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cvp-doc-t .meta{font-size:11.5px}
+.cvp-doc-oud{margin-top:6px}
+.cvp-doc-oud summary{cursor:pointer;font-size:12px;color:var(--muted);font-weight:600}
+.cvp-doc-oud summary:hover{color:var(--txt)}
+
+/* ─── Smal scherm ─────────────────────────────────────────────────
+   Onder de 720px past de vergelijking niet meer naast elkaar. Dan wordt
+   het per veld twee regels onder elkaar, met een label ervoor — liever
+   dat dan een tabel die horizontaal wegschuift. */
+@media(max-width:720px){
+  .cvp-hoofd{display:none}
+  .cvp-rij{grid-template-columns:24px 1fr;row-gap:2px;padding:10px 12px}
+  .cvp-rij .cvp-lbl{grid-column:2}
+  .cvp-rij .cvp-nu,.cvp-rij .cvp-cv{grid-column:2;font-size:12.5px}
+  .cvp-rij .cvp-nu::before{content:'nu: ';color:var(--muted)}
+  .cvp-rij .cvp-cv::before{content:'cv: ';color:var(--muted)}
+  .cvp-vel{grid-template-columns:1fr;gap:4px}
+  .cvp-vel.twee{grid-template-columns:1fr}
+  .cvp-item{align-items:flex-start}
+  .cvp-doc-r{flex-wrap:wrap}
+  /* Op een telefoon één scrolgebied in plaats van twee: een venster dat
+     binnenin nóg een keer scrolt is met een duim niet te bedienen. De
+     knoppen blijven wel staan, anders moet je eerst helemaal naar beneden
+     om te kunnen sluiten. */
+  .modal.cvp-modal .cvp-b{max-height:none;overflow:visible}
+  .modal.cvp-modal .modal-f{position:sticky;bottom:0;background:var(--card);
+    border-top:1px solid var(--line);padding-top:12px}
+  /* Vier knoppen naast elkaar passen niet op een telefoon; dan schuift de
+     eerste onder de rand door en kun je het venster niet meer sluiten. */
+  .modal.cvp-modal .modal-f{flex-wrap:wrap;justify-content:space-between;gap:8px}
+  .modal.cvp-modal .modal-f .spacer{display:none}
+  .modal.cvp-modal .modal-f #cvp_ok{flex:1 0 100%;order:9}
+}

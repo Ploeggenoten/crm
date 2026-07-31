@@ -138,7 +138,7 @@ function teamWaarschuwingHtml(){
               : namen.slice(0,-1).join(', ') + ' en ' + namen[namen.length-1];
   return `<div class="note warn" style="margin-top:14px">
     <b>Van ${opsom} kennen we het werk-e-mailadres nog niet.</b>
-    Wijs je zo iemand een taak toe of noem je hem met @naam, dan komt de melding wél in het CRM,
+    Wijs je zo iemand een taak toe of noem je die met @naam, dan komt de melding wél in het CRM,
     maar het bericht in Teams blijft uit — en daar kijkt het team de hele dag.
     Vul het adres hierboven in en het is meteen opgelost.</div>`;
 }
@@ -238,7 +238,7 @@ function sectieMicrosoft(){
       <div id="in_msuitslag" class="in-msuitslag"><p class="meta">Onderdelen controleren…</p></div>
       <label class="in-msschakel"><input type="checkbox" id="in_teamsuit" ${teamsUit?'':'checked'}>
         <span><b>Teams-meldingen</b>
-          <span class="meta">Krijgt een collega een taak van je, dan stuurt het CRM hem een bericht in Teams.
+          <span class="meta">Krijgt een collega een taak van je, dan stuurt het CRM een bericht in Teams.
             Zet uit als je dat liever niet hebt. Deze keuze geldt alleen in deze browser.</span>
           <span class="meta in-mswaarschuwing" id="in_teamshint"></span></span></label>` : ''}
     </div></div>`;
@@ -354,8 +354,8 @@ function sectieContacten(){
       <div class="spacer"></div><span class="meta"><span class="num">${bruikbaar.length}</span> van <span class="num">${alle.length}</span> met gegevens</span></div>
     <div class="card-b">
       <p class="sub" style="margin:0 0 12px">Zet alle contactpersonen uit het CRM in je eigen Outlook-adresboek.
-        Belt iemand je, dan laat je telefoon meteen zien wie het is en bij welk bedrijf hij werkt.
-        Bestaat de persoon al, dan wordt hij bijgewerkt — er komt niets dubbel te staan.</p>
+        Belt iemand je, dan laat je telefoon meteen zien wie het is en van welk bedrijf.
+        Bestaat het contact al, dan wordt het bijgewerkt — er komt niets dubbel te staan.</p>
       <div class="row"><button class="btn" id="in_ctsync">Alle contactpersonen synchroniseren</button></div>
       <div id="in_ctstatus" style="margin-top:12px"></div>
     </div></div>`;

@@ -31,6 +31,36 @@
 .rc-chips .chip.on b{color:inherit;opacity:.85}
 .rc-chips .chip.on .dot{box-shadow:0 0 0 1px rgba(255,255,255,.5)}
 
+/* ─── De werkstapel op Nieuw ─────────────────────────────────────
+   Eén blok bovenaan het scherm: hoeveel er ligt, hoe lang het al ligt,
+   en de knop om het weg te werken. De staaf is het enige gekleurde
+   element hier — kleur is betekenis, en de betekenis is "dit ligt te
+   lang". Als er niets op Nieuw staat verdwijnt de kleur helemaal. */
+.rc-nieuw{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:12px 16px;margin-bottom:14px}
+.rc-nieuw.let{border-color:var(--amber-line)}
+.rc-nieuw.klaar{background:var(--card-2);border-style:dashed;gap:12px}
+.rc-nieuw.klaar b{font-size:13px;color:var(--ink);display:block}
+.rc-nieuwop{font-size:15px;color:var(--green);font-weight:700}
+.rc-nieuwtel{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
+.rc-nieuwtel b{font-family:var(--disp);font-weight:400;font-size:28px;line-height:1;
+  letter-spacing:.5px;color:var(--ink)}
+.rc-nieuwtel span{font-size:12px;font-weight:600;color:var(--txt-2);
+  text-transform:uppercase;letter-spacing:.05em}
+.rc-nieuwstaafwrap{flex:1;min-width:220px;max-width:520px}
+.rc-nieuwstaaf{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--card-2)}
+.rc-nieuwstaaf i{display:block;height:100%}
+.rc-nieuwstaaf i.vers{background:var(--line-2)}
+.rc-nieuwstaaf i.letop{background:var(--amber-line)}
+.rc-nieuwstaaf i.telang{background:var(--amber)}
+.rc-nieuwtxt{display:flex;flex-wrap:wrap;gap:14px;margin-top:7px;font-size:11.5px;color:var(--muted)}
+.rc-nieuwtxt i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:5px}
+.rc-nieuwtxt i.vers{background:var(--line-2)}
+.rc-nieuwtxt i.letop{background:var(--amber-line)}
+.rc-nieuwtxt i.telang{background:var(--amber)}
+.rc-nieuwtxt .op{color:var(--amber);font-weight:600}
+
 /* ─── Leadtabel ──────────────────────────────────────────────── */
 .rc-tbl td{vertical-align:top;padding-top:11px;padding-bottom:11px}
 .rc-naam{font-weight:600;color:var(--ink)}
@@ -55,6 +85,78 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
 .rc-stwrap select{padding-left:24px;font-size:12.5px;padding-top:5px;padding-bottom:5px;
   border-color:var(--line);background-color:var(--card-2)}
 .rc-stwrap select:hover{border-color:var(--line-2)}
+
+/* Wat te lang op Nieuw staat, valt op: een streep links, verder niets.
+   Een gekleurde rij zou de hele tabel bont maken en de statuskleuren
+   overschreeuwen. */
+tr.rc-telang > td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+.rc-oud-amber{color:var(--amber);font-weight:600}
+.rc-oud-red{color:var(--red);font-weight:700}
+.rc-dub{color:var(--purple);font-weight:600}
+
+/* Eén klik en door: de vier gangbare uitkomsten na een belpoging, direct
+   onder de statuslijst. Klein en tekstueel — het zijn er vier per rij en
+   ze mogen de tabel niet domineren. */
+.rc-snel{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.rc-snelb{border:1px solid var(--line);background:var(--card-2);border-radius:999px;
+  padding:2px 9px;font-family:var(--body);font-size:11px;font-weight:600;color:var(--txt-2);cursor:pointer}
+.rc-snelb:hover{border-color:var(--olive-l);color:var(--olive);background:var(--card)}
+.bcard .rc-snel{margin-top:8px}
+.bcard .rc-koppel,.bcard .rc-move{margin-top:6px;width:100%;justify-content:center;
+  padding:3px 8px;font-size:11px}
+
+/* ─── Het leadbord ───────────────────────────────────────────────
+   Leunt op .board/.bcol/.bcard uit base.css en op de bord-opmaak van de
+   Klanttrajecten (css/pijplijn.css, dat altijd meegeladen wordt). Alleen
+   wat dit bord extra nodig heeft staat hier. */
+.rc-leadbord{margin:0 -26px}
+.rc-leadbord .rc-bordwrap .board{padding-top:0;min-height:0}
+.rc-leadbord .bcol{max-height:calc(100vh - 400px);min-height:180px}
+.rc-kaarttel{margin-top:7px;font-size:12px}
+.rc-meer{font-size:11.5px;color:var(--muted);text-align:center;padding:8px 4px 2px}
+/* De afsluitende kolom is geen werkvoorraad maar een overdracht: geen
+   sleepdoel, en een rustiger vlak zodat het verschil meteen zichtbaar is. */
+.bcol.rc-overdracht{background:var(--card-2);border-style:dashed}
+.bcol.rc-overdracht .bcard{cursor:pointer}
+.rc-overnote{font-size:11.5px;color:var(--txt-2);line-height:1.5;padding:0 2px 4px}
+.rc-uitzone.geenslepen{border-style:solid;opacity:.75}
+
+/* ─── Afsluitende regel: klaar om voor te stellen ────────────── */
+.rc-klaar{margin-top:18px;border-top:1px solid var(--line);padding:14px 2px 4px}
+.rc-klaar.leeg{color:var(--muted)}
+.rc-klaar.leeg b{font-size:12px;font-weight:600;color:var(--txt-2);margin-right:8px}
+.rc-klaarkop{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.rc-klaarkop b{font-size:13px;font-weight:600;color:var(--ink)}
+.rc-klaarkop .num{background:var(--green-bg);border:1px solid var(--green-line);color:var(--green);
+  border-radius:999px;padding:0 9px;font-size:12px;font-weight:700}
+.rc-klaarrij{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+/* ─── Wegwerkmodus (de belronde) ─────────────────────────────── */
+.rc-wwkop{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.rc-wwnaam{font-family:var(--disp);font-weight:400;font-size:24px;line-height:1.15;
+  letter-spacing:.5px;color:var(--ink)}
+.rc-wwbel{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
+.rc-wwbel .btn{text-decoration:none}
+.rc-wwinfo{border-top:1px solid var(--line);padding-top:6px}
+.rc-wwkeuze{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.rc-wwkeuze button{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+  background:var(--card);border-radius:999px;padding:6px 13px;font-family:var(--body);
+  font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.rc-wwkeuze button:hover{border-color:var(--olive-l);background:var(--card-2)}
+kbd{font-family:var(--body);font-size:10.5px;font-weight:700;color:var(--txt-2);
+  background:var(--card-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.rc-wwkeuze button:hover kbd{border-color:var(--olive-l);color:var(--olive)}
+
+/* ─── Vacature koppelen: voorgestelde matches ────────────────── */
+.rc-sug{display:flex;flex-direction:column;gap:6px}
+.rc-sug button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  border:1px solid var(--line);background:var(--card);border-radius:var(--r-s);
+  padding:9px 12px;cursor:pointer;font-family:var(--body)}
+.rc-sug button:hover{border-color:var(--olive-l);background:var(--card-2)}
+.rc-sug b{font-size:13px;font-weight:600;color:var(--ink)}
+.rc-sug small{display:block;font-size:11.5px;color:var(--muted)}
+.rc-sug span{margin-left:auto;font-size:12px;font-weight:600;color:var(--txt-2)}
+.rc-koppel{margin-top:4px}
 
 /* ─── Sleutel/waarde-regels in drawers ───────────────────────── */
 .rc-kv{display:flex;gap:14px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}
@@ -154,4 +256,23 @@ table.rc-qa tr:last-child td{border-bottom:none}
   .rc-tabwrap{padding:10px 14px 0}
   .rc-chips .chip{font-size:11.5px;padding:3px 9px}
   .rc-map{grid-template-columns:1fr}
+  /* De werkstapel wordt een blok: teller boven, staaf eronder, knop over
+     de volle breedte. Naast elkaar wordt het op 375px onleesbaar. */
+  .rc-nieuw{gap:10px;padding:12px 14px}
+  .rc-nieuwstaafwrap{flex:1 0 100%;max-width:none;min-width:0}
+  .rc-nieuw .btn{width:100%;justify-content:center}
+  .rc-leadbord{margin:0 -14px}
+  .rc-leadbord .bcol{max-height:none}
+  /* De filterbalk wrapt; de weergaveschakelaar hoort dan bij de telling
+     op één regel te blijven en niet als losse regel onderaan te hangen. */
+  .rc-fil .seg{margin-left:auto}
+  .rc-wwnaam{font-size:20px}
+  .rc-wwkeuze button{flex:1 1 46%;justify-content:center}
+}
+
+/* Teamscherm (≥1900px, zie de breedteladder in base.css): de extra ruimte
+   vullen we met méér kolommen tegelijk in beeld, niet met bredere kolommen. */
+@media (min-width:1900px){
+  .rc-nieuwstaafwrap{max-width:760px}
+  .rc-leadbord .bcol{max-height:calc(100vh - 360px)}
 }

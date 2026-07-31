@@ -32,8 +32,8 @@
    tot Tjeerd (policy `afspraken_owner_only`). Alles in dit bestand dat
    een bedrag of een percentage teruggeeft is dus alleen zinvol achter
    `CRM.canSeeMoney()`. ÉÉN functie is bewust de uitzondering:
-   `watMist()` — die vertelt de accountmanager welke velden hij nog moet
-   invullen en geeft daarom nooit een bedrag of percentage terug.
+   `watMist()` — die vertelt de accountmanager welke velden nog ontbreken
+   en geeft daarom nooit een bedrag of percentage terug.
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';

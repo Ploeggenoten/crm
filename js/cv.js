@@ -366,7 +366,7 @@ function zijkantHtml(c, o, er, werk){
 
     <div class="cvg-blok">
       <div class="label" style="margin-bottom:6px">Profielschets</div>
-      <textarea id="cvg_schets" rows="8" placeholder="Vier tot zes regels die deze kandidaat samenvatten: achtergrond, waar hij of zij sterk in is, en wat de volgende stap moet brengen.">${h(o.schets)}</textarea>
+      <textarea id="cvg_schets" rows="8" placeholder="Vier tot zes regels die deze kandidaat samenvatten: achtergrond, sterke punten, en wat de volgende stap moet brengen.">${h(o.schets)}</textarea>
       <div class="meta" style="margin-top:6px">Dit is het belangrijkste stuk van het vel — schrijf het in je eigen woorden.</div>
     </div>
 

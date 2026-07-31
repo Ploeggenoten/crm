@@ -159,10 +159,10 @@ altijd te herleiden waaróm iemand afviel.
 
 - **Iedereen komt binnen op status *Nieuw*.** Dat is de bedoeling: *Nieuw* is
   een werkvoorraad, geen archief. Die lijst hoort elke dag leeggewerkt te zijn —
-  óf je hebt gebeld en de status aangepast, óf je hebt hem doorgeschoten. De
-  teller in het menu is precies dit aantal. Staat een sollicitant twee dagen of
-  langer op *Nieuw*, dan komt hij vanzelf op je dashboard terug — net als een
-  lead waarvan de opvolgdatum verstreken is.
+  óf je hebt gebeld en de status aangepast, óf je hebt de sollicitant
+  doorgeschoten. De teller in het menu is precies dit aantal. Staat een
+  sollicitant twee dagen of langer op *Nieuw*, dan komt die vanzelf op je
+  dashboard terug — net als een lead waarvan de opvolgdatum verstreken is.
 - Statussen: Nieuw, Gebeld — geen gehoor, Geen interesse, Niet geschikt,
   Potentieel, Potentieel — andere vacature, Intake gepland, Doorgeschoten. Er is
   geen aparte afwijsknop: afwijzen doe je door de status op *Geen interesse* of
@@ -262,7 +262,7 @@ voorrang hebben, en of je op koers ligt.
 - Volgorde bepalen met de pijltjes of door kaarten te slepen — nummer 1 is de
   belangrijkste.
 - Op een kaart klikken om de gekoppelde kandidaten uit te klappen; klik een
-  kandidaat om naar zijn kaart te gaan.
+  kandidaat om naar de kaart te gaan.
 - **Bewerken**, **+ Taak** of **Niet meer hot**.
 
 **Waar je op moet letten**
@@ -301,7 +301,7 @@ minuut drie namen, met onderbouwing waarom ze passen.
   **Geappt**, **Notitie**, **Inplannen**, **Taak**.
 - Onder **Kansen** staat bij welke vacatures deze kandidaat past, met een score,
   de afstand en een uitleg-zin. De knop **→ Voorstellen bij deze vacature** zet
-  hem direct op Voorgesteld.
+  de kandidaat direct op Voorgesteld.
 - Tabs onderaan: Activiteiten, Taken, Notities, Historie.
 
 **Waar je op moet letten**
@@ -342,7 +342,7 @@ en reistijd is bij dit werk de belangrijkste afhaakreden.
 **Waar je op moet letten**
 
 - Alleen plaatsen die het systeem kent krijgen een positie op de kaart. Staat er
-  een rare of lege woonplaats op een kandidaat, dan verschijnt hij niet — nog een
+  een rare of lege woonplaats op een kandidaat, dan verschijnt die niet — nog een
   reden om woonplaatsen netjes in te vullen.
 - De kaart heeft internet nodig om te laden; lukt dat niet, dan zegt het scherm
   dat gewoon.

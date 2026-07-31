@@ -13,8 +13,10 @@
 <link rel="stylesheet" href="css/dashboard.css">
 <link rel="stylesheet" href="css/sales.css">
 <link rel="stylesheet" href="css/klanten.css">
+<link rel="stylesheet" href="css/contactkaart.css">
 <link rel="stylesheet" href="css/recruitment.css">
 <link rel="stylesheet" href="css/kandidaten.css">
+<link rel="stylesheet" href="css/kandverwijder.css">
 <link rel="stylesheet" href="css/source.css">
 <link rel="stylesheet" href="css/marketing.css">
 <link rel="stylesheet" href="css/performance.css">
@@ -25,6 +27,7 @@
 <!-- Documentgeneratoren: kandidaatprofiel, samenwerkingsovereenkomst,
      plan van aanpak. Geen eigen menu-item; ze openen vanaf een kaart. -->
 <link rel="stylesheet" href="css/cv.css">
+<link rel="stylesheet" href="css/cvparse.css">
 <link rel="stylesheet" href="css/swo.css">
 <link rel="stylesheet" href="css/pva.css">
 
@@ -80,8 +83,19 @@
      salariscomponenten van de kandidaat de grondslag en de fee af.
      Moet vóór de modules staan die hem gebruiken. -->
 <script src="js/fee.js"></script>
+<!-- Opvolging: wanneer er contact hoort te zijn (nazorg, warm houden,
+     verjaardagen, felicitatiemail, herinnering vóór een afspraak). Eén plek,
+     zodat dashboard, bord, kaart en Performance nooit iets anders zeggen. -->
+<script src="js/opvolging.js"></script>
+<!-- Kandidaat verwijderen of anonimiseren. Bibliotheek zonder eigen scherm:
+     de kandidatenkaart hangt de knoppen onderaan. Leest CRM.PLACED bij het
+     laden, dus moet ná js/data.js staan. -->
+<script src="js/kandverwijder.js"></script>
 <!-- Documentgeneratoren. Geen menu-item: ze worden geopend vanaf een
      kandidaat- of klantenkaart, dus ze moeten wel vóór die modules laden. -->
+<!-- CV inlezen: tekstlaag uit pdf/docx halen, velden voorstellen naast
+     wat er al staat, en het bestand zelf bewaren bij de kandidaat. -->
+<script src="js/cvparse.js"></script>
 <script src="js/cv.js"></script>
 <script src="js/swo.js"></script>
 <script src="js/pva.js"></script>
@@ -89,6 +103,10 @@
 <script src="js/dashboard.js"></script>
 <script src="js/sales.js"></script>
 <script src="js/klanten.js"></script>
+<!-- Contactpersoonkaart: eigen kaart per persoon plus een doorzoekbaar
+     overzicht. Geen menu-item — het hoort bij Relaties en registreert zich
+     alleen om #contacten/<id> te kunnen routeren. -->
+<script src="js/contactkaart.js"></script>
 <script src="js/recruitment.js"></script>
 <script src="js/pijplijn.js"></script>
 <script src="js/hot.js"></script>

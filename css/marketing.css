@@ -2,6 +2,25 @@
    Gebruik eerst de klassen uit base.css; voeg hier alleen toe wat echt mist.
    Geen eigen kleuren — alles via de variabelen uit :root. */
 
+/* ─── Filterbalk van het Prestatie-tabblad ───────────────────── */
+/* Drie keuzes naast elkaar: venster, tijdstap, klant. Ze stonden eerst in de
+   paginakop, maar daar passen ze op een telefoon niet en staan ze los van wat
+   ze filteren. Elke keuze houdt zijn eigen label boven zich, zodat je zonder
+   te klikken ziet wat er ingesteld staat. */
+.mkt-filters{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;margin-bottom:18px}
+.mkt-filter{display:flex;flex-direction:column;gap:5px;min-width:0}
+.mkt-filter > .label{margin:0}
+.mkt-filter.grow{flex:1 1 190px;max-width:320px}
+.mkt-filter select{width:100%}
+/* De segmentknoppen mogen wikkelen op een smal scherm in plaats van de balk
+   uit elkaar te duwen. */
+.mkt-filters .seg{flex-wrap:wrap}
+
+/* Een tijdstap zonder één advertentieregel: wel tonen (een stille week is
+   informatie), maar gedempt, zodat de regels mét uitgaven het beeld bepalen. */
+table.tbl tbody tr.mkt-stil > td{color:var(--muted)}
+table.tbl tbody tr.mkt-stil b{font-weight:500;color:var(--txt-2)}
+
 /* ─── Weekvergelijking: deze week tegen vorige week ──────────── */
 /* Sectievlak (.vlak uit base.css) met drie cijfers. Het verschil krijgt
    zijn kleur van CRM.plusMin — hier dus geen eigen kleuren. */
@@ -39,9 +58,15 @@ table.tbl tbody tr.clickable.mkt-r1:hover{background:var(--well)}
 /* Totaalregel — zelfde vorm als de tabellen in Performance. */
 .mkt-tbl tfoot td{background:var(--card-2);border-top:1px solid var(--line);font-weight:600;padding:10px 16px}
 
-/* ─── Dag-voor-dag-strook ────────────────────────────────────── */
-.mkt-dagen{display:flex;gap:7px;align-items:flex-end}
-.mkt-dag{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px}
+/* ─── Strook per dag, week of maand ──────────────────────────── */
+/* De strook toont nu tot 31 staven in plaats van vast 14. Op een breed scherm
+   passen die naast elkaar; op een telefoon zou elke staaf 8px worden en dan
+   zegt hij niets meer. Daarom houdt een staaf een leesbare minimumbreedte en
+   schuift de strook horizontaal binnen zijn eigen kader — de pagina zelf
+   schuift nooit mee. */
+.mkt-strook{overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+.mkt-dagen{display:flex;gap:7px;align-items:flex-end;min-width:100%}
+.mkt-dag{flex:1 1 0;min-width:16px;display:flex;flex-direction:column;align-items:center;gap:5px}
 .mkt-dagtop{font-size:11px;color:var(--txt-2);height:15px;line-height:15px}
 .mkt-dagbar{
   width:100%;height:84px;background:var(--card-2);border-radius:5px;
@@ -170,6 +195,11 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
 }
 
 @media (max-width:900px){
+  /* Onder 900px staan de drie filters onder elkaar; de klantkeuze mag dan de
+     volle breedte pakken, anders wordt een lange klantnaam afgekapt. */
+  .mkt-filters{gap:12px}
+  .mkt-filter{flex-basis:100%}
+  .mkt-filter.grow{max-width:none}
   .mkt-advies{flex-wrap:wrap}
   /* Onder 900px is de trechter twee regels: label boven, balk en aantal
      eronder. De balk mag nooit onder de 60px komen, anders zegt hij niets. */

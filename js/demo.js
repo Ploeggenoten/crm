@@ -167,7 +167,11 @@
 
   const LEADS = Array.from({length:38}, (_,i) => {
     const v = VACS[i % VACS.length];
-    const st = ['Nieuw','Nieuw','Nieuw','Gebeld — geen gehoor','Potentieel','Potentieel','Geen interesse','Intake gepland','Potentieel — andere vacature','Niet geschikt'][i%10];
+    /* 'Intake gepland' bestaat niet meer sinds de recruitmentpijplijn is
+       uitgesplitst — de videocall ís de intake. Zie CRM.LEAD_STATUS. */
+    const st = ['Nieuw','Nieuw','Nieuw','Gebeld — geen gehoor','Potentieel','CV opgevraagd',
+                'Geen interesse','Videocall gepland','CV binnen','Videocall gehad',
+                'Potentieel — andere vacature','Niet geschikt'][i%12];
     return {
       id:'lead'+i, naam:rnd(VN,i*5)+' '+rnd(AN,i*7), telefoon:'06 8765 43'+(10+i%80),
       email:'', woonplaats:rnd(PL,i*3), bron:rnd(['Meta','Indeed','WhatsApp'],i), campagne:'Productie NL – juli',
@@ -178,7 +182,12 @@
       agent_notitie:'WhatsApp-agent: beschikbaar per direct, spreekt Nederlands en Engels.',
       antwoorden:{ervaring:i%2?'ja':'nee', vervoer:i%3?'auto':'ov', start:'per direct'},
       cv: i%4===0 ? {functie:v.functie, ervaringJaren:1+(i%5), skills:['inpakken','heftruck'], talen:['Pools','Engels']} : null,
-      eigenaar: rnd(RECS,i), binnen_op:new Date(Date.now()-i*5400000).toISOString(),
+      /* Elke 5e lead is bewust ouder (4 tot 12 dagen). Anders lag geen enkele
+         demo-lead langer dan twee dagen op Nieuw en ging het signaal
+         "dit blijft te lang liggen" in de demo nooit aan — precies het
+         gedrag dat je wilt kunnen laten zien. */
+      eigenaar: rnd(RECS,i),
+      binnen_op:new Date(Date.now() - (i%5===0 ? (4+(i%9))*86400000 : i*5400000)).toISOString(),
       opvolgen_op: i%7===0 ? d(i%3) : null, kandidaat_id:'', notities:[]
     };
   });

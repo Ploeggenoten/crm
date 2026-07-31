@@ -762,6 +762,12 @@ function inboxCandidates(f){
     (isPlaced(c) || (c.geplaatst_op && faseVan(c) === 'Gestopt')) &&
     !isFlexType(c.type) && !(c.vervangt||'') &&
     !linked.has(c.id) && !dismissed.has(c.id) &&
+    /* Een geanonimiseerde kandidaat heeft geen naam meer, dus de koppeling
+       op naam hieronder kan hem nooit terugvinden. Zonder deze regel duikt
+       elke geanonimiseerde plaatsing opnieuw op als "nog te koppelen" —
+       de bedragen kloppen, maar de actielijst loopt vol met werk dat niet
+       te doen is. */
+    !CRM.kandVerwijder?.isGeanonimiseerd?.(c) &&
     (c.herstart_van ? true : !byName.has(String(c.naam||'').trim().toLowerCase())));
 }
 function stopSignalen(f){
@@ -2202,6 +2208,249 @@ function tabCashflow(el, f){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   BETAALD AAN META — de bank naast wat Meta zelf rapporteert
+   ───────────────────────────────────────────────────────────────
+   Meta rapporteert zijn eigen uitgaven en het CRM toont die in
+   Marketing. Of die cijfers kloppen, weet je pas als je ze naast de
+   bankrekening legt: wat is er écht afgeschreven?
+
+   Waarom niet uit Yuki? De Yuki-koppeling (yuki-sync) haalt per
+   afgesloten maand één regel op — "Werkelijk totaal (Yuki)" in
+   fin_costs_actual, de som van álle kostenrekeningen. Daar zit geen
+   uitsplitsing per leverancier in, dus daar valt Meta niet uit te
+   halen. De enige bron met leveranciersnamen is fin_bank_tx.
+
+   Privacy: fin_bank_tx staat op Tjeerds e-mailadres afgeschermd en
+   dat blijft zo — daar staat élke banktransactie in. Alleen het
+   MAANDTOTAAL gaat naar mkt_meta_betaald, dat het team wél mag lezen.
+   Zie metaRijenVoorTeam(): daar komt niets anders in dan maand,
+   bedrag, aantal regels en wie het bijwerkte.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Zoektermen. Bewust géén losse "meta": Ploeggenoten werft voor
+   productie en industrie, dus "Metaalunie", "Metaal & Techniek" en
+   "metaalbewerking" staan gewoon op het afschrift. Aanpasbaar via de
+   knop Zoektermen; de lijst gaat naar fin_settings.meta_zoektermen. */
+const META_TERMEN_STANDAARD = [
+  'meta platforms', 'meta ireland', 'meta ads',
+  'facebook', 'facebk', 'fb.me/ads', 'instagram'
+];
+const META_SETTING = 'meta_zoektermen';
+
+function metaTermen(f){
+  const ruw = S(f, META_SETTING, null);
+  const lijst = Array.isArray(ruw) ? ruw
+    : (typeof ruw === 'string' ? ruw.split(/[,;\n]/) : null);
+  if(!lijst) return META_TERMEN_STANDAARD.slice();
+  const schoon = [...new Set(lijst.map(t => String(t==null?'':t).trim().toLowerCase()).filter(Boolean))];
+  return schoon.length ? schoon : META_TERMEN_STANDAARD.slice();
+}
+
+/* Staat de term op een woordgrens? "meta" in "meta platforms" wel, in
+   "metaalunie" niet. Termen met leestekens (fb.me/ads) toetsen we
+   alleen aan de kant waar ze met een letter of cijfer beginnen/eindigen. */
+const META_TEKEN = /[a-z0-9]/;
+function opWoordgrens(hooi, term, i){
+  const voor = i > 0 ? hooi[i-1] : '';
+  const na   = hooi[i+term.length] || '';
+  const okVoor = !META_TEKEN.test(term[0]) || !voor || !META_TEKEN.test(voor);
+  const okNa   = !META_TEKEN.test(term[term.length-1]) || !na || !META_TEKEN.test(na);
+  return okVoor && okNa;
+}
+
+/* Eén transactie tegen de termenlijst. Een treffer op een woordgrens
+   wint van een treffer middenin een woord, zodat de melding klopt met
+   de sterkste reden waarom deze regel meedoet. */
+function metaMatch(tx, termen){
+  const velden = [['tegenpartij', String((tx && tx.tegenpartij) || '').toLowerCase()],
+                  ['omschrijving', String((tx && tx.omschrijving) || '').toLowerCase()]];
+  let beste = null;
+  for(const term of termen){
+    if(!term) continue;
+    for(const [veld, hooi] of velden){
+      const i = hooi.indexOf(term);
+      if(i < 0) continue;
+      const treffer = {term, veld, grens: opWoordgrens(hooi, term, i)};
+      if(treffer.grens) return treffer;
+      if(!beste) beste = treffer;
+    }
+  }
+  return beste;
+}
+
+/* Uitgesloten transacties — een verkeerd gematchte regel is erger dan
+   een gemiste, dus je kunt er hier eentje uitzetten. Blijft lokaal:
+   het is een oordeel over bankregels die niemand anders mag zien. */
+const META_UIT_KEY = 'crm_fin_meta_uit';
+function metaUitLijst(){
+  try{ const a = JSON.parse(localStorage.getItem(META_UIT_KEY) || '[]');
+       return new Set(Array.isArray(a) ? a.map(String) : []); }catch(e){ return new Set(); }
+}
+function metaUitBewaar(set){
+  try{ localStorage.setItem(META_UIT_KEY, JSON.stringify([...set])); }catch(e){}
+}
+/* Stabiele sleutel: id als de import die geeft, anders de hash, anders
+   de inhoud zelf — zodat een uitsluiting een herimport overleeft. */
+const metaTxId = x => String(
+  (x && x.id != null && x.id !== '') ? x.id :
+  (x && x.hash) ? x.hash :
+  [x && x.datum, x && x.bedrag, x && x.omschrijving, x && x.tegenpartij].join('|'));
+
+/* ─── Meta-cijfers erbij laden ────────────────────────────────
+   mkt_meta_stats (wat Meta zelf rapporteert) en mkt_meta_betaald
+   (wat het team al te zien krijgt). Apart van finLaad(): het zijn
+   marketingtabellen, en een storing daar mag het kostenscherm niet
+   in de "financiële tabellen onbereikbaar"-melding duwen.          */
+let _meta = null, _metaBezig = null, _metaAlles = false;
+const META_LIMIET = 20000;         // ruim boven het aantal dagregels
+const META_MAANDEN = 13;           // twaalf hele maanden + de lopende
+
+async function metaLaad(force){
+  if(!CRM.canSeeMoney()) return {stats:[], betaald:[], mist:[], fout:null, geenRecht:true};
+  if(_meta && !force) return _meta;
+  if(_metaBezig) return _metaBezig;
+  if(CRM.demo){ _meta = {stats:[], betaald:[], mist:[], fout:null, demo:true}; return _meta; }
+
+  _metaBezig = (async () => {
+    const uit = {stats:[], betaald:[], mist:[], fout:null, vol:false};
+    const vanaf = addMonths(monthKey(todayISO()), -(META_MAANDEN-1));
+    try{
+      const r = await CRM.sb.from('mkt_meta_stats').select('datum,uitgegeven')
+        .gte('datum', vanaf).limit(META_LIMIET);
+      if(r.error) throw r.error;
+      uit.stats = r.data || [];
+      uit.vol = uit.stats.length >= META_LIMIET;
+    }catch(e){ uit.mist.push('mkt_meta_stats'); uit.fout = e; }
+    try{
+      const r = await CRM.sb.from('mkt_meta_betaald')
+        .select('maand,bedrag,bron,regels,bijgewerkt,door').order('maand', {ascending:false});
+      if(r.error) throw r.error;
+      uit.betaald = r.data || [];
+    }catch(e){ uit.mist.push('mkt_meta_betaald'); if(!uit.fout) uit.fout = e; }
+    _meta = uit;
+    return uit;
+  })();
+  try{ return await _metaBezig; }
+  finally{ _metaBezig = null; }
+}
+
+/* ─── De analyse ──────────────────────────────────────────────
+   Levert de gevonden bankregels én het beeld per maand. Geen enkele
+   deling zonder noemer, geen maandtotaal van €0 waar simpelweg niets
+   gevonden is: dat blijft null en dus een streepje op het scherm.   */
+function metaAnalyse(f, md){
+  const termen = metaTermen(f);
+  const uitgezet = metaUitLijst();
+  const tx = (f && Array.isArray(f.tx)) ? f.tx : [];
+  const mk0 = monthKey(todayISO());
+
+  const gevonden = [];
+  let zonderDatum = 0, onleesbaar = 0;
+  for(const x of tx){
+    const m = metaMatch(x, termen);
+    if(!m) continue;
+    const mk = monthKey(x.datum);
+    const bedrag = getal(x.bedrag, 0);
+    const twijfel = [];
+    if(!m.grens)   twijfel.push('de zoekterm staat middenin een woord');
+    if(bedrag > 0) twijfel.push('dit is een bijschrijving, geen betaling');
+    if(!mk){ zonderDatum++; twijfel.push('deze regel heeft geen leesbare datum'); }
+    /* Een bedrag dat geen getal is telt als €0 en verdwijnt daarmee stil
+       uit het maandtotaal. Precies de fout waar je niets van merkt. */
+    if(!leesbaarGetal(x.bedrag)){ onleesbaar++; twijfel.push('het bedrag is niet als getal te lezen en telt hier als €0'); }
+    gevonden.push({
+      id: metaTxId(x), tx: x, mk, bedrag,
+      afgeschreven: -bedrag,          // betalen = negatief op de rekening
+      term: m.term, veld: m.veld, twijfel,
+      viaOms: m.veld === 'omschrijving' && !!String(x.tegenpartij || '').trim(),
+      uit: uitgezet.has(metaTxId(x))
+    });
+  }
+  gevonden.sort((a,b) => String(b.tx.datum||'').localeCompare(String(a.tx.datum||'')));
+
+  const perMaand = new Map();
+  const rij = mk => {
+    if(!perMaand.has(mk)) perMaand.set(mk, {mk, som:0, regels:0, twijfel:0, uitgesloten:0,
+      gerapporteerd:null, statDagen:new Set(), opgeslagen:null, loopt: mk === mk0});
+    return perMaand.get(mk);
+  };
+  for(const g of gevonden){
+    if(!g.mk) continue;
+    const r = rij(g.mk);
+    if(g.uit){ r.uitgesloten++; continue; }
+    r.regels++; r.som += g.afgeschreven;
+    if(g.twijfel.length) r.twijfel++;
+  }
+  for(const s of (md.stats || [])){
+    const mk = monthKey(s && s.datum); if(!mk) continue;
+    const r = rij(mk);
+    r.gerapporteerd = (r.gerapporteerd || 0) + getal(s.uitgegeven, 0);
+    r.statDagen.add(String(s.datum).slice(0,10));
+  }
+  for(const b of (md.betaald || [])){
+    const mk = monthKey(b && b.maand); if(!mk) continue;
+    rij(mk).opgeslagen = b;
+  }
+
+  const maanden = [...perMaand.values()]
+    .map(r => {
+      /* Niets gevonden is niet hetzelfde als €0 betaald. */
+      const betaald = r.regels ? r.som : null;
+      const verschil = (betaald != null && r.gerapporteerd != null) ? betaald - r.gerapporteerd : null;
+      const afwijking = (verschil != null && r.gerapporteerd > 0) ? verschil / r.gerapporteerd : null;
+      const opg = r.opgeslagen;
+      const gedeeld = opg ? getal(opg.bedrag, 0) : null;
+      /* Wijkt het opgeslagen bedrag af van wat we nú berekenen? */
+      const verouderd = (gedeeld != null && betaald != null)
+        && Math.abs(gedeeld - betaald) >= 0.01;
+      return Object.assign({}, r, {betaald, verschil, afwijking, gedeeld, verouderd,
+                                   statDagen: r.statDagen.size});
+    })
+    .sort((a,b) => String(b.mk).localeCompare(String(a.mk)));
+
+  const zichtbaar = maanden.slice(0, META_MAANDEN);
+  /* Vergelijken doen we alleen over maanden waar we van allebei iets
+     weten — anders zet je een halve optelling naast een hele. */
+  const beide = zichtbaar.filter(m => m.betaald != null && m.gerapporteerd != null);
+  const totBetaald = beide.reduce((s,m) => s + m.betaald, 0);
+  const totGerapp  = beide.reduce((s,m) => s + m.gerapporteerd, 0);
+
+  return {
+    termen, gevonden, maanden, zichtbaar, zonderDatum, onleesbaar,
+    meegeteld: gevonden.filter(g => !g.uit && g.mk).length,
+    uitgesloten: gevonden.filter(g => g.uit).length,
+    /* Alleen regels die écht in een maandtotaal terechtkomen. Een regel
+       zonder datum telt nergens mee en krijgt zijn eigen melding — die
+       hier meetellen zou het aantal "twijfelachtig" opblazen. */
+    twijfelN: gevonden.filter(g => !g.uit && g.mk && g.twijfel.length).length,
+    txTotaal: tx.length,
+    beideN: beide.length,
+    totBetaald: beide.length ? totBetaald : null,
+    totGerapp:  beide.length ? totGerapp  : null,
+    totVerschil: beide.length ? totBetaald - totGerapp : null,
+    totAfwijking: totGerapp > 0 ? (totBetaald - totGerapp) / totGerapp : null,
+    teDelen: maanden.filter(m => m.regels > 0)
+  };
+}
+
+/* Wat er — en niets anders dan dat — naar mkt_meta_betaald gaat.
+   Geen omschrijving, geen tegenpartij, geen bedrag per transactie:
+   alleen de maand, het totaal, hoeveel regels erachter zitten en wie
+   het bijwerkte. Deze functie is de enige plek die die rijen bouwt. */
+function metaRijenVoorTeam(an){
+  const nu = new Date().toISOString();
+  const wie = String(CRM.me() || '').slice(0, 80);
+  return an.teDelen.map(m => ({
+    maand: m.mk,
+    bedrag: Math.round(m.betaald * 100) / 100,
+    bron: 'bank',
+    regels: m.regels,
+    bijgewerkt: nu,
+    door: wie
+  }));
+}
+
 /* ═══ TAB: KOSTEN ══════════════════════════════════════════════ */
 function tabKosten(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen kosten in demo',
@@ -2284,7 +2533,388 @@ function tabKosten(el, f){
           : CRM.ui.leeg('Nog geen transacties geïmporteerd','Importeer een bank-CSV op de Cashflow-pagina van de finance-app.'),
         {plat: !!txRijen,
          voet:'Handig om je werkelijke kosten en saldo te staven tegen wat de app verwacht.'})}
+
+      <div id="fin_meta_blok">${CRM.ui.laden('Meta-cijfers ophalen…')}</div>
     </div>`;
+
+  /* De Meta-controle haalt twee marketingtabellen op en komt daarom ná
+     de rest binnen. Eigen try/catch: valt dit blok om, dan blijft het
+     kostenscherm gewoon staan. */
+  metaBlok(el, f);
+}
+
+/* ─── Betaald aan Meta: het scherm ────────────────────────────
+   Twee dingen tegelijk: het verschil per maand (daar gaat het om) en
+   de gevonden bankregels (zodat je kunt zien of de herkenning klopt).
+   Wat het NIET doet: bedragen omrekenen. Verlegde btw en het moment
+   van afschrijven verklaren allebei een verschil; welke van de twee
+   het is, kan dit scherm niet weten — dus zegt het dat gewoon.       */
+
+/* Waarom bank en Meta niet gelijk hóéven te lopen. Staat onder elke
+   variant van het blok: zonder deze twee zinnen trek je de verkeerde
+   conclusie uit een verschil van een paar honderd euro. */
+const META_UITLEG = `
+  <div class="note info" style="margin-top:14px">
+    <b>Een verschil is niet meteen een fout.</b>
+    <div class="fin-meta-uitleg">
+      <p><b>Btw.</b> Meta factureert aan Nederlandse bedrijven meestal met verlegde btw:
+      op de factuur staat 0% en jij geeft de btw zelf aan. Wat er van de rekening gaat ligt
+      dan dicht bij het bedrag exclusief btw — precies wat Meta hier rapporteert. Staat er op
+      jouw facturen wél btw, dan is het bankbedrag ongeveer 21% hoger. Er wordt hier niets
+      omgerekend: je ziet wat er staat.</p>
+      <p><b>Timing.</b> Meta schrijft af zodra je een drempelbedrag haalt, of maandelijks
+      achteraf. Uitgaven van eind juli kunnen dus begin augustus van de rekening gaan.
+      Kijk daarom niet naar één maand, maar naar de rij maanden achter elkaar: loopt het
+      structureel uit elkaar, dan klopt er iets niet.</p>
+    </div>
+  </div>`;
+
+/* Dit blok rekent tot op de cent. Elders in finance staan bedragen in hele
+   euro's, maar hier gaat het om het VERSCHIL tussen twee bronnen: rond je af,
+   dan klopt "1.556 − 1.712 = −157" niet meer met wat er in de kolommen staat,
+   en dan ga je twijfelen aan het scherm in plaats van aan de cijfers. */
+/* Het verschil krijgt bewust GEEN olijf/rood. Elders in het CRM betekent
+   groen "goed", en "er is meer van de rekening gegaan dan Meta rapporteert"
+   is niet goed — het is alleen een richting. Kleur zou hier een oordeel
+   suggereren dat dit scherm niet kan vellen. Alleen het teken dus. */
+const signEur2 = n => { const v = Number(n) || 0;
+  return `<span class="num">${v<0?'−':'+'}${eur2(Math.abs(v))}</span>`; };
+
+function metaFoutNote(md){
+  /* Zoveel dagregels dat we tegen de leeslimiet aan lopen: dan is "wat Meta
+     rapporteert" mogelijk niet compleet, en dat moet je weten vóór je een
+     verschil gaat verklaren. */
+  const volNote = md.vol ? `<div class="note warn" style="margin-bottom:14px">
+    <b>Er zijn meer Meta-dagregels dan dit scherm in één keer leest.</b><br>
+    De kolom "Meta rapporteert" kan daardoor te laag uitvallen. Het bedrag van de bankrekening klopt wél.
+  </div>` : '';
+  if(!md.mist || !md.mist.length) return volNote;
+  const tech = md.fout && md.fout.message ? String(md.fout.message) : '';
+  const geenStats = md.mist.includes('mkt_meta_stats');
+  return `${volNote}<div class="note warn" style="margin-bottom:14px">
+    <b>${H(md.mist.join(' en '))} kon niet gelezen worden.</b><br>
+    ${geenStats
+      ? 'Wat Meta zelf rapporteert ontbreekt daardoor; de bedragen van de bankrekening hieronder kloppen wél.'
+      : 'Wat het team te zien krijgt kon niet opgehaald worden. Bijwerken kan daardoor mislukken.'}
+    ${tech ? `<br><span class="meta">Technische melding: ${H(tech)}</span>` : ''}
+  </div>`;
+}
+
+function metaTermenRegel(an){
+  return `<div class="fin-meta-termen">
+    <span class="label">Gezocht op</span>
+    ${an.termen.map(t => chip(t)).join(' ')}
+  </div>`;
+}
+
+/* Eén gevonden bankregel. `datum`, `tegenpartij` en `omschrijving`
+   blijven hier — dit scherm is alleen voor Tjeerd. Naar het team gaat
+   uitsluitend het maandtotaal (zie metaRijenVoorTeam). */
+function metaTxRij(g){
+  const twijfel = !!g.twijfel.length;
+  const oms = tekst(g.tx.omschrijving, '');
+  return `<tr${g.uit ? ' class="fin-meta-uit"' : ''}>
+    <td><span class="num">${H(dKort(g.tx.datum))}</span></td>
+    <td><b>${H(tekst(g.tx.tegenpartij, 'geen tegenpartij'))}</b>
+      ${oms ? `<div class="rowsub">${H(oms.length > 90 ? oms.slice(0,90) + '…' : oms)}</div>` : ''}</td>
+    <td class="n">${g.bedrag > 0
+      ? `<span class="num pos">+${eur2(g.bedrag)}</span>`
+      : `<span class="num">${eur2(g.afgeschreven || 0)}</span>`}</td>
+    <td>${chip(g.term, twijfel ? 'amber' : '')}
+      <div class="rowsub">${H(g.veld === 'tegenpartij' ? 'in de tegenpartij' : 'in de omschrijving')}</div></td>
+    <td>${twijfel
+      ? `${chip('controleer','amber')}<div class="rowsub">${H(g.twijfel.join(' · '))}</div>`
+      : (g.viaOms
+        ? `<span class="meta">herkend aan de omschrijving, niet aan de tegenpartij</span>`
+        : `<span class="meta">—</span>`)}</td>
+    <td class="n"><label class="fin-meta-vink">
+      <input type="checkbox" data-metatx="${H(g.id)}"${g.uit ? '' : ' checked'}>
+      <span>${g.uit ? 'telt niet mee' : 'telt mee'}</span></label></td>
+  </tr>`;
+}
+
+function metaMaandRij(m){
+  const detail = [];
+  if(m.regels)      detail.push(m.regels + ' transactie' + (m.regels === 1 ? '' : 's'));
+  if(m.uitgesloten) detail.push(m.uitgesloten + ' uitgezet');
+  if(m.loopt)       detail.push('loopt nog');
+  const gedeeld = m.opgeslagen
+    ? `<span class="num">${eur2(m.gedeeld)}</span>
+       <div class="rowsub">${H(tekst(m.opgeslagen.door, 'onbekend'))} · ${H(dKort(m.opgeslagen.bijgewerkt))}${
+         m.verouderd ? ' · wijkt af van de berekening hiernaast' : ''}</div>`
+    : '<span class="meta">nog niet gedeeld</span>';
+  return `<tr>
+    <td><b>${H(mkLabel(m.mk))}</b>${detail.length ? `<div class="rowsub">${H(detail.join(' · '))}</div>` : ''}</td>
+    <td class="n">${m.betaald == null
+      ? '<span class="meta">niets gevonden</span>'
+      : `<b class="num">${eur2(m.betaald)}</b>${m.twijfel ? ' ' + chip(m.twijfel + '× controleer','amber') : ''}`}</td>
+    <td class="n">${m.gerapporteerd == null
+      ? '<span class="meta">geen Meta-cijfers</span>'
+      : `<span class="num">${eur2(m.gerapporteerd)}</span><div class="rowsub">${m.statDagen} dag${m.statDagen === 1 ? '' : 'en'} gerapporteerd</div>`}</td>
+    <td class="n">${m.verschil == null
+      ? '<span class="meta">—</span>'
+      : `${signEur2(m.verschil)}${m.afwijking != null ? `<div class="rowsub">${H(pct0(Math.abs(m.afwijking)))} ${m.verschil >= 0 ? 'meer' : 'minder'} betaald</div>` : ''}`}</td>
+    <td>${gedeeld}</td>
+  </tr>`;
+}
+
+function metaKaart(f, md, an){
+  const acties = `<div class="row tight">
+    <button class="btn ghost sm" id="fin_meta_term">Zoektermen</button>
+    <button class="btn sub sm" id="fin_meta_bij"${an.teDelen.length ? '' : ' disabled title="Er is nog geen maandtotaal om te delen"'}>Bijwerken voor het team</button>
+  </div>`;
+  const voet = 'Alleen het maandtotaal, het aantal regels en jouw naam gaan naar het team — nooit een '
+             + 'omschrijving, tegenpartij of los bedrag. '
+             + (an.gevonden.length
+                ? 'De banktransacties hieronder blijven op dit scherm.'
+                : 'Banktransacties blijven altijd op dit scherm.');
+
+  /* Geen bankexport, geen gegevens. */
+  if(!an.txTotaal){
+    return kaart('Betaald aan Meta', `
+      ${metaFoutNote(md)}
+      ${metaTermenRegel(an)}
+      <div class="note warn" style="margin-top:12px">
+        <b>Er staat nog geen bankafschrift in de database.</b><br>
+        Zonder banktransacties valt er niets te controleren: het CRM kan alleen zien wat er aan Meta
+        betaald is als de mutaties zijn ingelezen. Importeer een bank-CSV op de Cashflow-pagina van de
+        finance-app; daarna verschijnt hier per maand wat er werkelijk is afgeschreven.
+        <div style="margin-top:10px" class="row tight">
+          <a class="btn sub" href="${FIN_APP}#cashflow" target="_blank" rel="noopener">Bank-CSV importeren in de finance-app ↗</a>
+        </div>
+      </div>
+      ${an.zichtbaar.some(m => m.gerapporteerd != null) ? `
+        <div style="margin-top:14px">
+          <div class="label" style="margin-bottom:6px">Wat Meta zelf rapporteert</div>
+          ${tabel('<th>Maand</th><th class="n">Meta rapporteert</th><th class="n">Dagen</th>',
+            an.zichtbaar.filter(m => m.gerapporteerd != null).map(m => `<tr>
+              <td><b>${H(mkLabel(m.mk))}</b></td>
+              <td class="n num">${eur2(m.gerapporteerd)}</td>
+              <td class="n num meta">${m.statDagen}</td></tr>`).join(''))}
+        </div>` : ''}
+      ${META_UITLEG}`, {acties, voet});
+  }
+
+  /* Wel transacties, geen enkele herkend. */
+  if(!an.gevonden.length){
+    return kaart('Betaald aan Meta', `
+      ${metaFoutNote(md)}
+      ${metaTermenRegel(an)}
+      <div class="note warn" style="margin-top:12px">
+        <b>Geen enkele banktransactie herkend als Meta.</b><br>
+        Er zijn ${H(String(an.txTotaal))} transactie${an.txTotaal === 1 ? '' : 's'} doorzocht op tegenpartij én
+        omschrijving, maar geen daarvan bevat een van de zoektermen hierboven. Dat kan twee dingen betekenen:
+        er is niets aan Meta betaald in deze periode, of jouw bank schrijft het anders op.
+        Kijk in de finance-app hoe de afschrijving er letterlijk staat en voeg dat stuk tekst toe als zoekterm.
+        <div style="margin-top:10px" class="row tight">
+          <button class="btn sub" id="fin_meta_term2">Zoektermen aanpassen</button>
+        </div>
+      </div>
+      ${an.zichtbaar.some(m => m.gerapporteerd != null) ? `
+        <div style="margin-top:14px">
+          <div class="label" style="margin-bottom:6px">Wat Meta zelf rapporteert</div>
+          ${tabel('<th>Maand</th><th class="n">Meta rapporteert</th><th class="n">Dagen</th>',
+            an.zichtbaar.filter(m => m.gerapporteerd != null).map(m => `<tr>
+              <td><b>${H(mkLabel(m.mk))}</b></td>
+              <td class="n num">${eur2(m.gerapporteerd)}</td>
+              <td class="n num meta">${m.statDagen}</td></tr>`).join(''))}
+        </div>` : ''}
+      ${META_UITLEG}`, {acties, voet});
+  }
+
+  /* Het normale geval. */
+  /* Ingekort tot 25 regels, maar élke twijfelachtige regel blijft staan:
+     die zijn juist de reden dat deze lijst er is. De datumvolgorde blijft
+     intact, zodat je niet ineens naar een andere sortering kijkt. */
+  const toonTx = (() => {
+    if(_metaAlles) return an.gevonden;
+    const houden = new Set();
+    let n = 0;
+    for(const g of an.gevonden){
+      if(g.twijfel.length) houden.add(g);
+      else if(n < 25){ houden.add(g); n++; }
+    }
+    return an.gevonden.filter(g => houden.has(g));
+  })();
+  const conclusie = (an.totAfwijking == null)
+    ? 'Er is nog geen maand waarin we van allebei iets weten — zodra dat er is, staat hier of de cijfers uit elkaar lopen.'
+    : (Math.abs(an.totAfwijking) < 0.05
+        ? `Over ${an.beideN} maand${an.beideN === 1 ? '' : 'en'} loopt het ${pct0(Math.abs(an.totAfwijking))} uit elkaar. Dat is klein genoeg om aan btw en het moment van afschrijven toe te schrijven: de cijfers van Meta zijn bruikbaar.`
+        : `Over ${an.beideN} maand${an.beideN === 1 ? '' : 'en'} is er ${pct0(Math.abs(an.totAfwijking))} ${an.totVerschil > 0 ? 'méér van de rekening gegaan dan Meta rapporteert' : 'minder van de rekening gegaan dan Meta rapporteert'}. Kijk of dat aan btw of aan het afschrijfmoment ligt voordat je op deze cijfers stuurt.`);
+
+  return kaart('Betaald aan Meta', `
+    ${metaFoutNote(md)}
+    <div class="grid c3" style="margin-bottom:16px">
+      ${CRM.ui.kpi('Van de rekening', H(eur2(an.totBetaald)),
+        H(`${an.beideN} maand${an.beideN === 1 ? '' : 'en'} waarin we van allebei iets weten`), 'accent')}
+      ${CRM.ui.kpi('Meta rapporteert zelf', H(eur2(an.totGerapp)), H('dezelfde maanden, uit mkt_meta_stats'))}
+      ${CRM.ui.kpi('Verschil', an.totVerschil == null ? '—' : signEur2(an.totVerschil),
+        H(an.totAfwijking == null ? 'nog niet te vergelijken' : pct0(Math.abs(an.totAfwijking)) + ' van wat Meta rapporteert'))}
+    </div>
+
+    ${metaTermenRegel(an)}
+    <p class="sub" style="margin:10px 0 0">${H(conclusie)}</p>
+
+    ${an.twijfelN ? `<div class="note warn" style="margin-top:12px">
+      <b>${H(String(an.twijfelN))} van de meegetelde transacties ${an.twijfelN === 1 ? 'is' : 'zijn'} twijfelachtig.</b><br>
+      Ze staan hieronder met een oranje merkteken. Controleer ze voordat je het maandtotaal met het team deelt —
+      één verkeerd gematchte regel is vervelender dan een gemiste.
+    </div>` : ''}
+    ${an.zonderDatum ? `<div class="note warn" style="margin-top:12px">
+      <b>${H(String(an.zonderDatum))} herkende transactie${an.zonderDatum === 1 ? '' : 's'} zonder leesbare datum.</b><br>
+      Die tellen in geen enkele maand mee. Corrigeer de datum in de finance-app.
+    </div>` : ''}
+    ${an.onleesbaar ? `<div class="note warn" style="margin-top:12px">
+      <b>Bij ${H(String(an.onleesbaar))} herkende transactie${an.onleesbaar === 1 ? '' : 's'} is het bedrag niet als getal te lezen.</b><br>
+      ${an.onleesbaar === 1 ? 'Die telt' : 'Die tellen'} hier als €0 en ${an.onleesbaar === 1 ? 'maakt' : 'maken'} het maandtotaal dus te laag.
+      Corrigeer het bedrag in de finance-app voordat je dit met het team deelt.
+    </div>` : ''}
+
+    <div style="margin-top:16px">
+      <div class="label" style="margin-bottom:6px">Per maand</div>
+      ${tabel('<th>Maand</th><th class="n">Van de rekening</th><th class="n">Meta rapporteert</th>'
+            + '<th class="n">Verschil</th><th>In het teamscherm</th>',
+        an.zichtbaar.map(metaMaandRij).join(''))}
+      ${an.maanden.length > an.zichtbaar.length
+        ? `<p class="meta" style="margin:8px 2px 0">Er zijn ${H(String(an.maanden.length - an.zichtbaar.length))} oudere maand(en); dit scherm toont de laatste ${H(String(META_MAANDEN))}.</p>`
+        : ''}
+    </div>
+
+    <div style="margin-top:18px">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <span class="label">Gevonden transacties</span>
+        <span class="meta">${H(String(an.meegeteld))} van ${H(String(an.txTotaal))} bankregels telt mee${
+          an.uitgesloten ? ' · ' + H(String(an.uitgesloten)) + ' door jou uitgezet' : ''}</span>
+      </div>
+      ${tabel('<th>Datum</th><th>Tegenpartij</th><th class="n">Afgeschreven</th>'
+            + '<th>Herkend op</th><th>Let op</th><th class="n">Meetellen</th>',
+        toonTx.map(metaTxRij).join(''))}
+      ${an.gevonden.length > toonTx.length
+        ? `<div style="margin-top:10px"><button class="btn ghost sm" id="fin_meta_meer">Alle ${H(String(an.gevonden.length))} transacties tonen</button></div>`
+        : (_metaAlles && an.gevonden.length > 25
+          ? `<div style="margin-top:10px"><button class="btn ghost sm" id="fin_meta_minder">Alleen de laatste 25 tonen</button></div>`
+          : '')}
+    </div>
+
+    ${META_UITLEG}`, {acties, voet});
+}
+
+/* De zoektermen aanpassen. Ze gaan naar fin_settings (owner-only), zodat
+   de lijst niet in de code verstopt zit én op elk apparaat hetzelfde is. */
+function metaTermenModal(f, nasleep){
+  const huidig = metaTermen(f);
+  const eigen = S(f, META_SETTING, null) != null;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Zoektermen voor Meta-betalingen</div></div>
+    <div class="modal-b">
+      <p class="sub" style="margin:0 0 10px">Eén term per regel. Een bankregel telt mee zodra de tegenpartij
+        óf de omschrijving een van deze termen bevat; hoofdletters maken niet uit.</p>
+      <textarea id="fin_meta_ta" rows="8" spellcheck="false">${H(huidig.join('\n'))}</textarea>
+      <p class="meta" style="margin:10px 0 0">Zet er geen losse "meta" in: dan matcht ook Metaalunie en
+        Metaal &amp; Techniek, en die staan bij jullie gewoon op het afschrift. Termen als "meta platforms"
+        en "facebk" zijn specifiek genoeg.</p>
+      ${eigen ? '' : '<p class="meta" style="margin:6px 0 0">Je gebruikt nu de standaardlijst.</p>'}
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn ghost" id="fin_meta_std">Standaardlijst herstellen</button>
+      <button class="btn" id="fin_meta_ok">Bewaren</button>
+    </div>`, {
+      onOpen(m){
+        const ta = m.querySelector('#fin_meta_ta');
+        setTimeout(() => ta && ta.focus(), 60);
+        m.querySelector('#fin_meta_std').onclick = () => {
+          ta.value = META_TERMEN_STANDAARD.join('\n');
+        };
+        m.querySelector('#fin_meta_ok').onclick = async () => {
+          const lijst = [...new Set(ta.value.split(/[\n,;]/)
+            .map(t => t.trim().toLowerCase()).filter(Boolean))];
+          if(!lijst.length){ CRM.toast('Vul minstens één zoekterm in','err'); return; }
+          CRM.modal._onClose = null; CRM.modal.close();
+          await metaTermenBewaren(f, lijst);
+          if(nasleep) nasleep();
+        };
+      }});
+}
+
+async function metaTermenBewaren(f, lijst){
+  if(!CRM.canSeeMoney()) return;
+  /* Meteen in het geheugen, zodat het scherm klopt ook als het
+     opslaan straks misgaat — dan zegt de melding dat erbij. */
+  f.settings = f.settings || {};
+  f.settings[META_SETTING] = lijst;
+  if(_fin){ _fin.settings = _fin.settings || {}; _fin.settings[META_SETTING] = lijst; }
+  if(CRM.demo){ CRM.toast('Demo-modus — de zoektermen worden niet opgeslagen','err'); return; }
+  const {error} = await CRM.sb.from('fin_settings')
+    .upsert([{key: META_SETTING, value: lijst}], {onConflict:'key'});
+  if(error) return CRM.fout('Zoektermen opslaan mislukt', error);
+  CRM.toast(lijst.length + ' zoekterm' + (lijst.length === 1 ? '' : 'en') + ' bewaard', 'ok');
+}
+
+/* Bijwerken = een schrijfactie, dus altijd van een klik en altijd met
+   een bevestiging waarin staat wat er precies gedeeld wordt. */
+async function metaBijwerken(f, an, nasleep){
+  if(!CRM.canSeeMoney()) return;
+  const rijen = metaRijenVoorTeam(an);
+  if(!rijen.length){ CRM.toast('Er is nog geen maandtotaal om te delen','err'); return; }
+  const totaal = rijen.reduce((s,r) => s + r.bedrag, 0);
+  const ok = await CRM.bevestig(
+    `${rijen.length} ${rijen.length === 1 ? 'maandtotaal' : 'maandtotalen'} delen met het team?`,
+    `Het team ziet straks per maand alleen het bedrag en het aantal transacties — samen ${eur2(totaal)} over `
+    + `${mkLabel(rijen[rijen.length-1].maand)} t/m ${mkLabel(rijen[0].maand)}. `
+    + `Losse banktransacties, omschrijvingen en tegenpartijen blijven op dit scherm.`
+    + (an.twijfelN ? ` Let op: ${an.twijfelN} meegetelde transactie${an.twijfelN === 1 ? '' : 's'} staat nog als twijfelachtig gemarkeerd.` : ''),
+    {knop:'Ja, bijwerken'});
+  if(!ok) return;
+
+  if(CRM.demo){ CRM.toast('Demo-modus — er wordt niets weggeschreven','err'); return; }
+  const {error} = await CRM.sb.from('mkt_meta_betaald').upsert(rijen, {onConflict:'maand'});
+  if(error) return CRM.fout('Bijwerken mislukt', error);
+  /* Lokaal meteen bijwerken zodat de kolom "In het teamscherm" klopt. */
+  if(_meta){
+    const rest = (_meta.betaald || []).filter(b => !rijen.some(r => r.maand === monthKey(b.maand)));
+    _meta.betaald = rijen.concat(rest).sort((a,b) => String(b.maand).localeCompare(String(a.maand)));
+  }
+  CRM.toast(`${rijen.length} maand${rijen.length === 1 ? '' : 'en'} bijgewerkt — het team ziet nu ${eur2(totaal)}`, 'ok');
+  if(nasleep) nasleep();
+}
+
+async function metaBlok(el, f){
+  const doel = el.querySelector('#fin_meta_blok');
+  if(!doel) return;
+  /* Vierde grens naast navigatie, render en finLaad: zonder geldrecht
+     wordt fin_bank_tx hier niet eens aangeraakt. */
+  if(!CRM.canSeeMoney()){ doel.innerHTML = ''; return; }
+  try{
+    const md = await metaLaad();
+    if(!doel.isConnected) return;      // je bent inmiddels naar een ander tabblad
+    const an = metaAnalyse(f, md);
+    doel.innerHTML = metaKaart(f, md, an);
+
+    const opnieuw = () => metaBlok(el, f);
+    const term = () => metaTermenModal(f, opnieuw);
+    const t1 = doel.querySelector('#fin_meta_term');  if(t1) t1.onclick = term;
+    const t2 = doel.querySelector('#fin_meta_term2'); if(t2) t2.onclick = term;
+    const bij = doel.querySelector('#fin_meta_bij');
+    if(bij) bij.onclick = () => metaBijwerken(f, an, opnieuw);
+    const meer = doel.querySelector('#fin_meta_meer');
+    if(meer) meer.onclick = () => { _metaAlles = true; opnieuw(); };
+    const minder = doel.querySelector('#fin_meta_minder');
+    if(minder) minder.onclick = () => { _metaAlles = false; opnieuw(); };
+    doel.querySelectorAll('[data-metatx]').forEach(cb => cb.onchange = () => {
+      const set = metaUitLijst();
+      if(cb.checked) set.delete(cb.dataset.metatx); else set.add(cb.dataset.metatx);
+      metaUitBewaar(set);
+      opnieuw();
+    });
+  }catch(e){
+    console.error('Finance — blok Betaald aan Meta', e);
+    if(!doel.isConnected) return;
+    doel.innerHTML = `<div class="note err">
+      <b>Het blok "Betaald aan Meta" kon niet opgebouwd worden.</b><br>
+      De rest van dit tabblad klopt gewoon. Vernieuw de cijfers met de knop rechtsboven.<br>
+      <span class="meta">Technische melding: ${H((e && e.message) || String(e))}</span></div>`;
+  }
 }
 
 /* ═══ TAB: ADVIES ══════════════════════════════════════════════ */
@@ -2677,7 +3307,7 @@ CRM.registerModule('finance', {
       <button class="btn sub" id="fin_verniew" title="Cijfers opnieuw ophalen">↻ Vernieuwen</button>
       <a class="btn ghost" href="${FIN_APP}" target="_blank" rel="noopener">Finance-app openen ↗</a>`;
     const vBtn = document.getElementById('fin_verniew');
-    if(vBtn) vBtn.onclick = async () => { _fin = null; CRM.toast('Financiële cijfers vernieuwen…'); CRM.render(); };
+    if(vBtn) vBtn.onclick = async () => { _fin = null; _meta = null; CRM.toast('Financiële cijfers vernieuwen…'); CRM.render(); };
 
     mount.innerHTML = CRM.ui.laden('Financiële gegevens ophalen…');
     let f = null, laadFout = null;
@@ -2689,7 +3319,7 @@ CRM.registerModule('finance', {
     if(!f){
       mount.innerHTML = foutBlok(laadFout || _finFout, _mist);
       const btn = mount.querySelector('#fin_opnieuw');
-      if(btn) btn.onclick = () => { _fin = null; CRM.render(); };
+      if(btn) btn.onclick = () => { _fin = null; _meta = null; CRM.render(); };
       return;
     }
 
@@ -2733,7 +3363,7 @@ CRM.registerModule('finance', {
       <div id="fin_body"></div>`;
 
     const opnieuw = mount.querySelector('#fin_opnieuw');
-    if(opnieuw) opnieuw.onclick = () => { _fin = null; CRM.render(); };
+    if(opnieuw) opnieuw.onclick = () => { _fin = null; _meta = null; CRM.render(); };
 
     const body = mount.querySelector('#fin_body');
     const toon = () => {

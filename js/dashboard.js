@@ -36,15 +36,58 @@ const sk = key => VANDAAG() + ':' + key;
 /* Voortgang van de tijdlijn (bijgehouden zonder volledige herteken). */
 let _vgTot = 0, _vgAf = 0;
 
-/* Maandag t/m zondag van de huidige week. */
+/* Tellertje dat bij elke hertekening ophoogt, plus de afmeldfunctie van de
+   Outlook-verversing. Samen zorgen ze dat er nooit meer dan één luisteraar
+   leeft: render() meldt de vorige af, en een luisteraar die van een oudere
+   tekening is stapt er bij de eerste ronde zelf uit. Zonder dit stapelen ze
+   op en wordt er straks vijf keer tegelijk ververst. */
+let _tekening = 0, _afmeldOutlook = null;
+
+/* Maandag t/m zondag van een week. `off` = aantal weken vooruit (of terug).
+   dagPlus rekent op LOKALE kalendervelden (setDate), niet op milliseconden:
+   daarmee blijven maandgrenzen en de zomertijdsprong vanzelf goed — 26 okt
+   + 7 dagen is 2 november, ook al zit er 169 uur tussen. */
 const dagPlus = (basis, n) => { const x = new Date(basis); x.setDate(x.getDate()+n); return x; };
-function maandag(){
+function maandag(off=0){
   const d = new Date(); d.setHours(0,0,0,0);
-  return dagPlus(d, -((d.getDay()+6)%7));
+  return dagPlus(d, -((d.getDay()+6)%7) + off*7);
 }
-function weekBereik(){
-  const ma = maandag();
+/* Let op: zónder argument altijd de HUIDIGE week. looptRegel() telt hiermee
+   "leads deze week"; dat getal mag niet meebewegen als je in de agenda
+   vooruitbladert. */
+function weekBereik(off=0){
+  const ma = maandag(off);
   return { van:dISO(ma), tot:dISO(dagPlus(ma,6)) };
+}
+
+/* ═══ WELKE WEEK STAAT ER ════════════════════════════════════════
+   Tjeerd wil naast deze week ook volgende week kunnen zien. Gekozen
+   voor vooruit- en terugbladeren met ‹ › naast de schakelaar, en niet
+   voor een derde knop "Volgende week":
+     - de schakelaar blijft twee knoppen breed; een derde stand maakt de
+       pil langer dan de kop en zet "Vandaag" en "Volgende week" naast
+       elkaar alsof het gelijkwaardige keuzes zijn;
+     - bladeren zit niet vast aan precies twee weken — een meeloopdag over
+       drie weken of een gemiste taak van vorige week is ook te vinden;
+     - de pijlen verschijnen alléén in weekweergave, dus de dagbaan wordt
+       er geen knop drukker van.
+   Eén week terug tot vier vooruit. Verder vooruit heeft geen zin: het CRM
+   is geen agenda-app, en Outlook levert maar een beperkt aantal afspraken
+   per keer (zie de opmerking bij het ophalen).
+   De keuze leeft ALLEEN in het geheugen — dag/week onthouden we wel, maar
+   morgen weer in week +3 opstarten is geen dagstart. */
+const WEEK_MIN = -1, WEEK_MAX = 4;
+let _weekOff = 0;
+const zetWeekOff = n => { _weekOff = Math.max(WEEK_MIN, Math.min(WEEK_MAX, n)); };
+/* "deze week" / "volgende week" / "vorige week" leest prettiger dan een
+   datumbereik; verder weg is het bereik juist duidelijker. */
+function weekLabel(off){
+  const {van, tot} = weekBereik(off);
+  if(off === 0) return 'Deze week';
+  if(off === 1) return 'Volgende week';
+  if(off === -1) return 'Vorige week';
+  const d = iso => new Date(iso).toLocaleDateString('nl-NL',{day:'numeric',month:'short'});
+  return d(van) + ' – ' + d(tot);
 }
 const inBereik = (x,van,tot) => { const s = kort(x); return !!s && s>=van && s<=tot; };
 
@@ -88,38 +131,47 @@ function sparkline(waarden){
    beneden en dezelfde richting staat al in Performance én — voor jezelf —
    in het blok "Jouw maand". Eén sparkline per scherm is genoeg. */
 
-/* ═══ MOTIVATIEZIN — elke dag een andere, nuchter en recruitment ═ */
+/* ═══ MOTIVATIEZIN ══════════════════════════════════════════════
+   Echte quotes van echte mensen over werken en volhouden (wens Tjeerd,
+   31 jul 2026). Hiervoor stonden hier zelfbedachte recruitmentspreuken;
+   die lazen als een poster in een kantine.
+
+   Met naam erbij, en dat is geen opsmuk: een zin zonder afzender is een
+   spreuk, een zin mét afzender is iemand die iets heeft meegemaakt.
+   Nederlands en Engels door elkaar, want dat is ook hoe er gepraat wordt.
+
+   Bewust weggelaten: quotes waarvan de herkomst omstreden is, hoe mooi
+   ook. "The harder I work, the more luck I have" staat overal op naam van
+   Jefferson maar komt van Coleman Cox; "Discipline is choosing between
+   what you want now and what you want most" wordt aan Lincoln toegeschreven
+   zonder enige bron. Een verkeerde naam onder een goede zin is erger dan
+   geen zin.                                                              */
 const ZINNEN = [
-  'Vandaag maak je iemand aan het werk.',
-  'Eén goed gesprek is meer waard dan tien mailtjes.',
-  'De beste kandidaat van vandaag is al aan het werk — bel hem toch.',
-  'Niemand wordt geplaatst vanuit je inbox.',
-  'Bellen vóór de lunch levert meer op dan plannen erna.',
-  'Een lead van gisteren is vandaag al lauw.',
-  'De vacature vult zichzelf niet.',
-  'Wie het eerst belt, plaatst het eerst.',
-  'Nazorg is de goedkoopste nieuwe plaatsing.',
-  'Elke no-show heeft een verhaal. Vraag ernaar.',
-  'Je pijplijn van volgende maand bouw je vanochtend.',
-  'Twijfel tussen mailen en bellen? Bellen.',
-  'Kandidaten kiezen voor mensen, niet voor bureaus.',
-  'Vandaag vijf leads bellen is beter dan tien morgen.',
-  'Een volle agenda is nog geen volle pijplijn.',
-  'De klant belt niet terug. Jij wel.',
-  'Voorstellen die blijven liggen, worden afwijzingen.',
-  'Werk je lijstje af voordat het lijstje jou afwerkt.',
-  'Eén plaatsing begint met één telefoontje.',
-  'Stilte in de pijplijn hoor je pas over twee weken.',
-  'Snelheid wint van perfectie. Zeker bij leads.',
-  'Wie vandaag zaait, plaatst over twee weken.',
-  'Goede recruiters luisteren meer dan ze praten.',
-  'Die moeilijke klant? Gewoon bellen.',
-  'Een intake zonder vervolg is een gemiste plaatsing.',
-  'Het beste moment om te bellen is nu. Het op één na beste ook.',
-  'Maak het vandaag één kandidaat makkelijker om ja te zeggen.',
-  'Achterstallige taken worden niet vanzelf klaar.',
-  'Je hoeft niet iedereen te plaatsen. Wel iemand.',
-  'Rustige dag? Mooi moment om oude leads wakker te bellen.'
+  {t:'Hard work beats talent when talent doesn\'t work hard.', van:'Tim Notke'},
+  {t:'Genius is one percent inspiration and ninety-nine percent perspiration.', van:'Thomas Edison'},
+  {t:'Opportunity is missed by most people because it is dressed in overalls and looks like work.', van:'Thomas Edison'},
+  {t:'Nothing will work unless you do.', van:'Maya Angelou'},
+  {t:'It always seems impossible until it\'s done.', van:'Nelson Mandela'},
+  {t:'Amateurs sit and wait for inspiration. The rest of us just get up and go to work.', van:'Stephen King'},
+  {t:'Inspiration exists, but it has to find you working.', van:'Pablo Picasso'},
+  {t:'The harder I practice, the luckier I get.', van:'Gary Player'},
+  {t:'There are no traffic jams along the extra mile.', van:'Roger Staubach'},
+  {t:'Well done is better than well said.', van:'Benjamin Franklin'},
+  {t:'Energy and persistence conquer all things.', van:'Benjamin Franklin'},
+  {t:'Little strokes fell great oaks.', van:'Benjamin Franklin'},
+  {t:'Don\'t watch the clock; do what it does. Keep going.', van:'Sam Levenson'},
+  {t:'You miss 100% of the shots you don\'t take.', van:'Wayne Gretzky'},
+  {t:'Perseverance is not a long race; it is many short races one after another.', van:'Walter Elliot'},
+  {t:'Success is the sum of small efforts, repeated day in and day out.', van:'Robert Collier'},
+  {t:'Do the hard jobs first. The easy jobs will take care of themselves.', van:'Dale Carnegie'},
+  {t:'The difference between ordinary and extraordinary is that little extra.', van:'Jimmy Johnson'},
+  {t:'Motivation is what gets you started. Habit is what keeps you going.', van:'Jim Ryun'},
+  {t:'I hated every minute of training. But I said: suffer now, and live the rest of your life as a champion.', van:'Muhammad Ali'},
+  {t:'Je gaat het pas zien als je het doorhebt.', van:'Johan Cruijff'},
+  {t:'Elk nadeel heb z\'n voordeel.', van:'Johan Cruijff'},
+  {t:'Als je niet kunt winnen, moet je zorgen dat je niet verliest.', van:'Johan Cruijff'},
+  {t:'Wie het kleine niet eert, is het grote niet weerd.', van:'Nederlands spreekwoord'},
+  {t:'Zeven keer vallen, acht keer opstaan.', van:'Japans spreekwoord'}
 ];
 /* Eén spreuk per keer dat je de app opent (wens Tjeerd). Vandaar
    sessionStorage: die leeft precies zolang als dit tabblad, dus binnen een
@@ -133,7 +185,10 @@ const MOT_TELLER = 'crm_mot_teller';   // localStorage: hoever we in de lijst zi
 const MOT_WIE    = 'crm_mot_wie';      // sessionStorage: voor wie de zin is
 
 function motivatieHTML(){
-  let zin = '';
+  /* We bewaren de POSITIE in de lijst, niet de zin zelf. Sloeg je de tekst
+     op, dan bleef een oude zin in sessionStorage hangen nadat de lijst was
+     vervangen — en de naam eronder was er dan niet meer bij te vinden. */
+  let zin = null;
   try{
     if(sessionStorage.getItem(MOT_WEG)) return '';
     /* Logt er in hetzelfde tabblad iemand anders in, dan hoort daar ook een
@@ -143,20 +198,22 @@ function motivatieHTML(){
       sessionStorage.removeItem(MOT_ZIN);
       sessionStorage.setItem(MOT_WIE, wie);
     }
-    zin = sessionStorage.getItem(MOT_ZIN) || '';
+    const bewaard = Number(sessionStorage.getItem(MOT_ZIN));
+    if(Number.isInteger(bewaard) && ZINNEN[bewaard]) zin = ZINNEN[bewaard];
     if(!zin){
       const vorige = Number(localStorage.getItem(MOT_TELLER));
       const i = ((Number.isFinite(vorige) ? vorige : -1) + 1) % ZINNEN.length;
       localStorage.setItem(MOT_TELLER, String(i));
       zin = ZINNEN[i];
-      sessionStorage.setItem(MOT_ZIN, zin);
+      sessionStorage.setItem(MOT_ZIN, String(i));
     }
   }catch(e){
     /* Privémodus of geblokkeerde opslag: liever een vaste zin dan geen dashboard. */
     zin = zin || ZINNEN[0];
   }
   return `<div class="mot" id="dash_mot">
-    <span class="hand mot-zin">${h(zin)}</span>
+    <span class="hand mot-zin">${h(zin.t)}</span>
+    <span class="mot-van">${h(zin.van)}</span>
     <button type="button" class="mot-x" id="mot_x" title="Verbergen tot je opnieuw inlogt">✕</button>
   </div>`;
 }
@@ -228,20 +285,14 @@ function bouwDag(){
       sub: acties.slice(0,3).map(c=>c.naam).join(', ') + (acties.length>3?' …':'') });
   }
 
-  const nazorg = [];
-  cs.filter(c => c.fase==='Gestart').forEach(c => {
-    const start = kort(c.start) || kort(c.geplaatstOp);
-    const n = CRM.dagenGeleden(start);
-    if(n==null || n < 0) return;
-    if([3,14,30].find(m => n===m || n===m+1)) nazorg.push(c);
-  });
-  if(nazorg.length){
-    const b = { soort:'sug', key:'nazorg', mod:'kandidaten',
-      titel:`nazorg-belronde: ${nazorg.length} ${nazorg.length===1?'gestarte kandidaat':'gestarte kandidaten'}`,
-      sub: nazorg.slice(0,3).map(c=>c.naam).join(', ') + (nazorg.length>3?' …':'') };
-    b.af = sessieKlaar.has(sk('sug:nazorg'));
-    blokken.push(b);
-  }
+  /* Opvolging: nazorg, warm houden, verjaardagen en de felicitatiemail.
+     Het ritme staat NIET meer hier. Dit blok rekende vroeger vanaf de
+     plaatsingsdatum met een dag speling (dag 3/4, 14/15, 30/31) terwijl
+     het bord, de kaart en Performance vanaf de startdatum op de exacte dag
+     rekenden — dezelfde kandidaat, twee antwoorden. Alles komt nu uit
+     js/opvolging.js. Ontbreekt dat bestand, dan blijft de dag gewoon staan
+     zonder opvolging in plaats van te breken. */
+  opvolgingBlokken(mij, nu).forEach(b => blokken.push(b));
 
   /* 4. Blokken in de lege uren plotten: vanaf nu, max 1 per leeg uur. */
   let cursor = Math.max(START_UUR, new Date().getHours());
@@ -261,13 +312,82 @@ function bouwDag(){
   return { uren, rest, tot: getekend + klaarVandaag, af: af + klaarVandaag };
 }
 
+/* ═══ OPVOLGING → SUGGESTIEBLOKKEN ═══════════════════════════════
+   Het ritme komt uit js/opvolging.js; dit hier is alleen de vertaling
+   naar regels in de dagbaan. Nazorg, warm houden en verjaardagen gaan
+   per soort in ÉÉN blok: drie regels op de dag in plaats van dertien
+   losse, want een lijst die je wegklikt is geen opvolging.
+   De felicitatiemail krijgt wél een eigen regel per kandidaat: die is
+   niet af te vinken maar te dóen, en opent zijn eigen venster. */
+function opvolgingBlokken(mij, nu){
+  if(!CRM.opvolging) return [];
+  let items = [];
+  try{ items = CRM.opvolging.openVoor(mij, nu) || []; }
+  catch(e){ console.warn('opvolging', e); return []; }
+  if(!items.length) return [];
+
+  const uit = [];
+  const groep = (soort, enkel, meer) => {
+    const g = items.filter(i => i.soort === soort);
+    if(!g.length) return;
+    const b = { soort:'sug', key:'opv-' + soort, mod:'kandidaten',
+      titel: g.length === 1 ? enkel(g[0]) : meer(g.length),
+      sub: g.slice(0,3).map(i => i.naam).join(', ') + (g.length > 3 ? ' …' : ''),
+      urgent: g.some(i => i.urgent) };
+    b.af = sessieKlaar.has(sk('sug:' + b.key));
+    /* Bij precies één kandidaat kun je meteen naar de kaart. */
+    if(g.length === 1) b.id = g[0].id;
+    uit.push(b);
+  };
+
+  groep('nazorg',
+    i => `bel ${i.naam} — ${i.kort}`,
+    n => `nazorg-belronde: ${n} kandidaten`);
+  groep('warm',
+    i => `houd ${i.naam} warm — getekend, maar start later`,
+    n => `houd ${n} getekende kandidaten warm`);
+  groep('verjaardag',
+    i => `${i.naam} is vandaag jarig — stuur een appje`,
+    n => `${n} kandidaten zijn vandaag jarig`);
+
+  /* Afspraken en de felicitatiemail krijgen wél een regel per persoon: dat
+     zijn geen belrondes maar losse berichten, elk met een eigen tekst die
+     de AM nakijkt. Ze openen hun eigen venster in plaats van door te
+     klikken naar de kaart. */
+  items.filter(i => i.soort === 'afspraak').forEach(i => uit.push({
+    soort:'sug', key:'opv-afspr:' + i.id + ':' + i.key, mod:'kandidaten', id:i.id,
+    opvActie:i.id + '|' + i.key, urgent:i.afspraakOp === nu,
+    /* `wanneer` komt uit opvolging.js: door de weekendregel kan een
+       herinnering op vrijdag over een afspraak van maandag gaan, en dan
+       mag hier geen "morgen" staan. */
+    titel:`${i.naam}: ${i.wanneer} ${i.kort}${i.tijd ? ' om ' + i.tijd : ''} — stuur een berichtje`,
+    sub:i.sub, w:i.wanneer }));
+
+  items.filter(i => i.soort === 'mail').forEach(i => uit.push({
+    soort:'sug', key:'opv-mail:' + i.id, mod:'kandidaten', id:i.id,
+    opvActie:i.id + '|' + i.key,
+    titel:`felicitatiemail voor ${i.naam} nakijken en versturen`,
+    sub:i.sub, w:'klaar om te sturen' }));
+
+  /* Wat andere modules aanleveren (bv. verjaardagen van contactpersonen
+     uit js/klanten.js) valt buiten de soorten hierboven: één regel per
+     item, zodat die module zelf bepaalt wat er staat. */
+  items.filter(i => !['nazorg','warm','verjaardag','mail','afspraak'].includes(i.soort)).forEach(i => {
+    const b = { soort:'sug', key:'opv-x:' + i.key + ':' + (i.ref || ''),
+      mod:i.mod || '', id:i.id || '', titel:i.titel, sub:i.sub || '', urgent:!!i.urgent };
+    b.af = sessieKlaar.has(sk('sug:' + b.key));
+    uit.push(b);
+  });
+  return uit;
+}
+
 /* ═══ DE WEEK OPBOUWEN ═══════════════════════════════════════════
    Maandag t/m vrijdag altijd; zaterdag en zondag alleen als daar
    iets staat. Per dag: CRM-afspraken, mijn taken met datum en (later,
    asynchroon) de Outlook-afspraken. Chronologisch: eerst wat een tijd
    heeft, daarna de rest. */
 function bouwWeek(){
-  const ma = maandag(), nu = VANDAAG(), mij = CRM.me(), cs = CRM.kandidaten();
+  const ma = maandag(_weekOff), nu = VANDAAG(), mij = CRM.me(), cs = CRM.kandidaten();
   const dagen = [];
   for(let i=0;i<7;i++){
     const d = dagPlus(ma,i), iso = dISO(d);
@@ -299,6 +419,27 @@ function bouwWeek(){
          : t.entiteit==='lead' ? 'recruitment' : '', id:t.ref||'' });
   });
 
+  /* 3. Opvolging: nazorg-check-ins, warm-houd-momenten, verjaardagen en de
+     felicitatiemail. Die staan niet in crm_taken — ze worden uitgerekend uit
+     de startdatum (js/opvolging.js) — dus moeten ze hier expliciet bij.
+     Juist vooruit is dit waardevol: wie volgende week gebeld moet worden,
+     zie je nu al staan in plaats van pas op de ochtend zelf. */
+  if(CRM.opvolging){
+    try{
+      CRM.opvolging.tussen(mij, dagen[0].iso, dagen[6].iso).forEach(m => {
+        const d = opDag(m.datum); if(!d) return;
+        d.items.push({ soort:'sug', key:'opv-w:' + m.key + ':' + (m.ref||''),
+          titel: m.titel, sub: m.sub || m.naam, buiten: d.iso !== nu,
+          /* "Gemist" komt uit opvolging.js, niet uit "de dag is voorbij":
+             een check-in van gisteren die vandaag nog openstaat is niet
+             gemist, en zo noemen betekent dat niemand hem meer oppakt. */
+          urgent: !!m.open || !!m.gemist, w: m.gemist ? 'gemist' : m.open ? 'staat open' : '',
+          mod: m.mod || 'kandidaten', id: m.id || '',
+          opvActie: (m.soort === 'mail' || m.soort === 'afspraak') ? m.id + '|' + m.key : '' });
+      });
+    }catch(e){ console.warn('opvolging in de week', e); }
+  }
+
   dagen.forEach(sorteerDag);
   return dagen;
 }
@@ -319,13 +460,17 @@ function rijHTML(it){
     : it.soort==='sug' ? `data-ses="sug:${h(it.key)}"`
     : `data-ses="${h(it.sesKey||'')}"`;
   const klik = it.mod ? ` data-mod="${h(it.mod)}"${it.id?` data-id="${h(it.id)}"`:''}` : '';
+  /* Berichten (felicitatiemail, succesje vóór een afspraak) openen hun
+     eigen venster in plaats van door te klikken naar de kaart: de tekst
+     nakijken ís de taak. Vorm: "<kandidaat-id>|<moment-sleutel>". */
+  const actie = it.opvActie ? ` data-opvactie="${h(it.opvActie)}"` : '';
   const w = it.w || '';
   /* Zonder vinkje (weekweergave: afspraken) blijft de regel wel uitgelijnd.
      data-buiten = telt niet mee in de voortgang, want die gaat over vandaag. */
   const vinkHTML = it.geenVink
     ? `<span class="tl2-geenvink"></span>`
     : `<input type="checkbox" class="tl2-vink" ${vink}${it.buiten?' data-buiten="1"':''}${it.af?' checked disabled':''} title="Afvinken">`;
-  return `<div class="tl2-item${it.mod?' klik':''}${it.urgent&&!it.af?' urgent':''}${it.soort==='sug'?' sug':''}${it.af?' af':''}"${klik}>
+  return `<div class="tl2-item${it.mod?' klik':''}${it.urgent&&!it.af?' urgent':''}${it.soort==='sug'?' sug':''}${it.af?' af':''}"${klik}${actie}>
     ${vinkHTML}
     <div class="tl2-t"><b>${it.soort==='sug'?'<span class="tl2-ruimte">ruimte:</span> ':''}${h(it.titel)}</b>
       ${it.sub||it.subHtml?`<span class="tl2-s${it.subKlas?' '+it.subKlas:''}">${it.subHtml||h(it.sub)}</span>`:''}</div>
@@ -412,9 +557,31 @@ function dagBaanHTML(P){
    Starcuisine" niet in zonder overal af te kappen. Onder elkaar leest
    het als één lijst, is er ruimte voor de subregel, en op mobiel is het
    exact dezelfde vorm (alleen smaller) in plaats van een tweede indeling. */
+/* Eerlijk zijn over wat Outlook wél en niet levert in een andere week.
+   CRM.outlook.agenda(dagen) rekent altijd vanaf nu vooruit en geeft er
+   maximaal 25 terug; terugkijken kan hij niet. Liever één regel uitleg dan
+   een AM die denkt dat de agenda leeg is. */
+function weekNotitie(){
+  if(!olVerbonden()) return '';
+  if(_weekOff < 0) return `<div class="tl2-wknoot meta">Outlook kijkt niet terug — CRM-taken en check-ins van vorige week staan er wél.</div>`;
+  if(_weekOff >= 2) return `<div class="tl2-wknoot meta">Zo ver vooruit levert Outlook niet altijd alle afspraken; je CRM-agenda klopt wel.</div>`;
+  return '';
+}
+
 function weekBaanHTML(W){
   const toon = W.filter(d => !d.weekend || d.items.length);
-  return `<div class="tl2-week">${toon.map(d => `
+  /* Een lege week hoort geen leeg raster te zijn. Vooruitbladeren naar een
+     week waarin nog niets staat is normaal — zeg dat dan, in plaats van
+     vijf lege dagblokken te tonen die eruitzien alsof er iets stukging. */
+  if(!W.some(d => d.items.length)){
+    const toekomst = _weekOff > 0;
+    return `${weekNotitie()}<div class="tl2-week leeg">${CRM.ui.leeg(
+      _weekOff === 0 ? 'Deze week staat nog niets ingepland'
+        : weekLabel(_weekOff) + ' staat nog leeg',
+      toekomst ? 'Geen afspraken, taken of check-ins. Mooi moment om er iets in te zetten.'
+               : 'Geen afspraken, taken of check-ins in deze week.')}</div>`;
+  }
+  return `${weekNotitie()}<div class="tl2-week">${toon.map(d => `
     <div class="tl2-dag${d.vandaag?' vandaag':''}${d.verleden?' voorbij':''}" data-dag="${h(d.iso)}">
       <div class="tl2-dkop">
         <span class="tl2-dnaam">${h(d.naam)}</span>
@@ -441,6 +608,19 @@ function tijdlijnKaart(P, W){
         <button type="button" data-zicht="dag"${wk?'':' class="on"'}>Vandaag</button>
         <button type="button" data-zicht="week"${wk?' class="on"':''}>Week</button>
       </div>
+      ${wk?`<div class="tl2-wknav">
+        <button type="button" class="tl2-wkpijl" data-wk="${_weekOff-1}"
+          title="Een week terug" aria-label="Een week terug"${_weekOff<=WEEK_MIN?' disabled':''}>‹</button>
+        ${_weekOff===0
+          ? `<span class="tl2-wklbl">${h(weekLabel(0))}</span>`
+          /* Sta je niet in de huidige week, dan is het label zelf de weg
+             terug. Een aparte knop "Nu" ernaast duwde de kop op 1440px al
+             over twee regels, en dit is één ding minder om uit te leggen. */
+          : `<button type="button" class="tl2-wklbl terug" data-wk="0"
+              title="Terug naar deze week">${h(weekLabel(_weekOff))}</button>`}
+        <button type="button" class="tl2-wkpijl" data-wk="${_weekOff+1}"
+          title="Een week vooruit" aria-label="Een week vooruit"${_weekOff>=WEEK_MAX?' disabled':''}>›</button>
+      </div>`:''}
       ${P.tot?`<div class="tl2-vg"><span class="meta num" id="tl2_vgt">${P.af} van ${P.tot} afgerond${wk?' vandaag':''}</span>
         <div class="bar tl2-vgbar"><i id="tl2_vgb" style="width:${pct}%"></i></div></div>`:''}
       <span class="spacer"></span>
@@ -618,7 +798,7 @@ function mailHTML(lijst){
        <span class="mail-per">laatste 3 dagen</span></div>` : '';
   return `<div class="dash-sec">
     <div class="label sec-kop rij">Je mail
-      <button type="button" class="mail-ver" id="mail_ver" title="Mail opnieuw ophalen">↻</button></div>
+      <button type="button" class="mail-ver" id="mail_ver" title="Nu ophalen — het gebeurt ook vanzelf">↻</button></div>
     <div class="card"><div class="card-b mail-b">${kop}${inhoud}</div></div></div>`;
 }
 
@@ -658,15 +838,153 @@ function mailVullen(mount){
   };
   const ver = el.querySelector('#mail_ver');
   if(ver) ver.onclick = async () => {
-    ver.disabled = true; _mail = null; _mailFoutOp = 0;
-    await mailLezen();
-    mailVullen(mount);
+    ver.disabled = true;
+    /* Via dezelfde veilige route als de automatische ronde: mislukt het
+       ophalen, dan blijft de lijst staan in plaats van te verdwijnen. */
+    await mailVerversen(mount, true);
+    const nieuw = mount.querySelector('#mail_ver');
+    if(nieuw) nieuw.disabled = false;
   };
   /* Het koppel-label zit ín de mail-link: klik hem apart af naar het CRM. */
   CRM.$$('.mail-koppel', el).forEach(s => s.onclick = e => {
     e.preventDefault(); e.stopPropagation();
     if(s.dataset.kmod) CRM.ga(s.dataset.kmod, s.dataset.kid ? {id:s.dataset.kid} : {});
   });
+}
+
+/* ═══ OUTLOOK-AGENDA IN DE BAAN ══════════════════════════════════
+   Eén functie voor de eerste vulling én voor elke automatische ronde.
+   Drie regels die het rustig houden:
+     1. Mislukt het ophalen (429 van Microsoft, koppeling verlopen), dan
+        laten we staan wat er stond. Nooit leegmaken bij een fout.
+     2. Is er niets veranderd, dan wordt er niets hertekend. Iemand die
+        aan het lezen of afvinken is, mag de plek niet kwijtraken.
+     3. Staat er een venster open, dan wachten we tot de volgende ronde —
+        onder een openstaande modal het scherm verbouwen is onbeleefd. */
+let _olVinger = '';
+const olVinger = items => (items||[]).map(e => [e.start, e.eind, e.titel].join('|')).join('~');
+const vensterOpen = () => !!(document.querySelector('#modal.on') || document.querySelector('#drawer.on'));
+
+async function agendaVullen(mount, P, W, week){
+  if(!olVerbonden() || !CRM.outlook.agenda) return;
+  /* Hoeveel dagen vooruit? agenda() rekent altijd vanaf NU, dus voor een
+     week verderop tellen we tot en met de laatste dag die in beeld staat.
+     Terugkijken kan Graph zo niet: een week in het verleden levert dus
+     geen Outlook-afspraken op. Dat staat er ook bij, zie weekNotitie(). */
+  let dagen = 1;
+  if(week && W && W.length){
+    const eind = new Date(W[W.length-1].iso + 'T23:59:59').getTime();
+    dagen = Math.max(1, Math.ceil((eind - Date.now()) / 86400000));
+  }
+  let items = null;
+  try{ items = await CRM.outlook.agenda(dagen); }catch(e){ items = null; }
+  if(!Array.isArray(items)) return;                 // fout → laat staan wat er stond
+  if(CRM.view !== 'dashboard' || vensterOpen()) return;
+
+  const vinger = olVinger(items) + '@' + (week ? 'w' + _weekOff : 'd');
+  if(vinger === _olVinger) return;
+  _olVinger = vinger;
+
+  /* De deelnemerslink komt uit Graph en is dus gebruikersinvoer: door de
+     veiligeUrl-poort, anders kan een `javascript:`-adres in een href staan.
+     De tekst kort houden en de knop apart zetten, zodat "Teams" niet
+     wegvalt achter een lange locatienaam (op mobiel was hij onklikbaar). */
+  const olSub = ev => {
+    const join = veiligeUrl(ev.online);
+    return `<span class="tl2-sub-t">Outlook${ev.locatie?' · '+h(ev.locatie):''}</span>` +
+      (join?`<a class="tl2-teams" href="${h(join)}" target="_blank" rel="noopener">Teams</a>`:'');
+  };
+  const scrollWas = window.scrollY;
+
+  if(!week){
+    /* Eerst de vorige ronde eruit, anders staat een verzette afspraak er
+       twee keer. Deze functie moet net zo vaak aangeroepen kunnen worden
+       als er ververst wordt. */
+    let had = P.rest.some(x => x.soort==='outlook');
+    Object.keys(P.uren).forEach(u => {
+      if(P.uren[u].some(x => x.soort==='outlook')) had = true;
+      P.uren[u] = P.uren[u].filter(x => x.soort !== 'outlook');
+    });
+    P.rest = P.rest.filter(x => x.soort !== 'outlook');
+
+    let geplaatst = 0, af = 0;
+    items.forEach(ev => {
+      /* agenda(1) loopt 24 uur vooruit en pakt dus ook morgenochtend mee;
+         in de dagbaan hoort alleen vandaag. */
+      if(String(ev.start||'').slice(0,10) !== VANDAAG()) return;
+      const tijd = String(ev.start||'').slice(11,16);
+      const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
+      const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
+        titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev), subKlas:'metlink' };
+      it.af = sessieKlaar.has(sk(it.sesKey));
+      (P.uren[uur] = P.uren[uur] || []).unshift(it);
+      geplaatst++; if(it.af) af++;
+    });
+    if(!geplaatst && !had) return;
+    _vgTot = P.tot + geplaatst; _vgAf = P.af + af;
+    /* De baan opnieuw tekenen: dan komt een uur dat compact was
+       weggevouwen er vanzelf bij staan. */
+    const body = mount.querySelector('.tl2-card .card-b.tl2-b');
+    if(body){
+      body.innerHTML = dagBaanHTML(P);
+      CRM.$$('.tl2-vouw', body).forEach(v => {
+        v.onclick = () => vouwOpen(v, P);
+        v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
+      });
+    }
+    vgTeken();
+  }else{
+    if(!W) return;
+    let had = false;
+    W.forEach(d => {
+      if(d.items.some(x => x.soort==='outlook')) had = true;
+      d.items = d.items.filter(x => x.soort !== 'outlook');
+    });
+    let raak = 0;
+    items.forEach(ev => {
+      const d = W.find(x => x.iso === String(ev.start||'').slice(0,10));
+      if(!d) return;
+      d.items.push({ soort:'outlook', geenVink:true,
+        titel: ev.titel||'(zonder onderwerp)', tijd:String(ev.start||'').slice(11,16),
+        subHtml: olSub(ev), subKlas:'metlink' });
+      raak++;
+    });
+    if(!raak && !had) return;
+    W.forEach(sorteerDag);
+    /* De hele weekbaan opnieuw tekenen: dan komt een weekenddag die alleen
+       een Outlook-afspraak heeft er ook echt bij, en verdwijnt de lege
+       staat zodra er wél iets is. */
+    const baan = mount.querySelector('.tl2-week');
+    if(baan) baan.outerHTML = weekBaanHTML(W);
+  }
+  vinkHandlers(mount);
+  /* De hoogte kan een paar pixels verspringen; hou de leespositie vast. */
+  if(Math.abs(window.scrollY - scrollWas) > 2) window.scrollTo(0, scrollWas);
+}
+
+/* Verversen van het mailblok. `stil` = een automatische ronde: dan mag een
+   mislukte lezing NIETS wegpoetsen. Er is eerder een fout geweest waarbij
+   het blok na één hik de hele sessie wegbleef; daarom laten we `_mail` bij
+   een automatische ronde alleen los als er iets bruikbaars voor in de
+   plaats komt. Verandert er niets, dan tekenen we ook niets opnieuw —
+   iemand die aan het lezen is mag de plek niet kwijtraken. */
+const mailVinger = m => !m ? '' : m.lijst.map(x => [x.op, x.van, x.onderwerp].join('|')).join('~');
+let _mailVinger = null;
+async function mailVerversen(mount, stil){
+  const oud = _mail, oudeVinger = mailVinger(oud);
+  if(stil){
+    /* Even opzij zetten zodat mailLezen() écht opnieuw ophaalt, maar
+       terugleggen als het misgaat. */
+    _mail = null; _mailFoutOp = 0;
+    const nieuw = await mailLezen().catch(() => null);
+    if(!nieuw){ _mail = oud; _mailFoutOp = 0; return; }   // stil falen: laat staan wat er stond
+  }else{
+    await mailLezen().catch(() => null);
+  }
+  const verse = mailVinger(_mail);
+  if(_mailVinger !== null && verse === oudeVinger && verse === _mailVinger) return;
+  _mailVinger = verse;
+  mailVullen(mount);
 }
 
 /* ═══ RECHTERKOLOM ═══════════════════════════════════════════════ */
@@ -864,6 +1182,14 @@ CRM.registerModule('dashboard', {
   }catch(e){ return 0; } },
 
   render(mount, acties){
+    /* Eerst de vorige aanmelding opruimen — zie de toelichting bij
+       _tekening. Dit is de enige plek waar een dashboard-hertekening
+       begint, dus hier hoort het opruimen ook. */
+    _tekening++;
+    if(_afmeldOutlook){ _afmeldOutlook(); _afmeldOutlook = null; }
+    /* P en W zijn verse objecten zonder Outlook-items: de handtekening van
+       de vorige ronde geldt niet meer, anders blijft de agenda leeg. */
+    _olVinger = '';
     const P = bouwDag();
     const week = zicht()==='week';
     const W = week ? bouwWeek() : null;
@@ -871,7 +1197,8 @@ CRM.registerModule('dashboard', {
     _vgTot = P.tot; _vgAf = P.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
 
-    if(acties) acties.innerHTML = teamChipHTML() + `<button class="btn ghost sm" id="dash_ver">Vernieuwen</button>`;
+    if(acties) acties.innerHTML = teamChipHTML() +
+      `<button class="btn ghost sm" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>`;
 
     mount.innerHTML = `
       <div class="dash2">
@@ -891,6 +1218,15 @@ CRM.registerModule('dashboard', {
     mount.onclick = e => {
       if(e.target.closest('.tl2-vink') || e.target.closest('a') ||
          e.target.closest('[data-af]') || e.target.closest('.meld-rij')) return;
+      /* Opvolging met een eigen venster (felicitatiemail, succesje vóór een
+         afspraak): het venster erbij, niet de kaart eronder. Deze controle
+         staat vóór data-mod, want de regel heeft allebei. */
+      const actieEl = e.target.closest('[data-opvactie]');
+      if(actieEl && CRM.opvolging){
+        const [id, key] = String(actieEl.dataset.opvactie).split('|');
+        const k = CRM.kandidaat(id);
+        if(k) return CRM.opvolging.actie(k, key, () => CRM.render());
+      }
       const el = e.target.closest('[data-mod]');
       if(el) CRM.ga(el.dataset.mod, el.dataset.id ? {id:el.dataset.id} : {});
     };
@@ -910,12 +1246,17 @@ CRM.registerModule('dashboard', {
        duurt dat seconden. Zonder terugkoppeling leek het scherm bevroren en
        drukten mensen nog een paar keer, wat de aanroep gewoon herhaalde.
        Nu vertelt de knop dat hij bezig is en kan hij intussen niet nog eens.
-       Ook de mail wordt losgelaten, anders vernieuwt alles behalve dat blok. */
+       De knop blijft bestaan voor wie niet op de volgende ronde wil wachten,
+       maar hij is geen voorwaarde meer om actuele gegevens te zien: Outlook
+       ververst vanzelf (zie de aanmelding onderaan deze render).
+       nuVerversen() negeert de ondergrens van een minuut — dat is precies
+       waarvoor die functie er is. */
     const ver = document.getElementById('dash_ver');
     if(ver) ver.onclick = async () => {
       if(ver.disabled) return;
       ver.disabled = true; ver.textContent = 'Bezig…';
-      _mail = null; _mailFoutOp = 0;
+      try{ if(olVerbonden() && CRM.outlook.nuVerversen) await CRM.outlook.nuVerversen(); }
+      catch(e){ console.warn('Outlook verversen', e); }
       try{ await CRM.herlaad(); }
       catch(e){
         CRM.fout('Vernieuwen mislukt', e);
@@ -938,7 +1279,18 @@ CRM.registerModule('dashboard', {
     /* Vandaag ↔ Week. De keuze staat in localStorage en overleeft een herlaad. */
     CRM.$$('.tl2-seg button', mount).forEach(b => b.onclick = () => {
       if(b.classList.contains('on')) return;
+      /* Terug naar de dag hoort de agenda ook terug te zetten op de week van
+         nu: anders sta je bij de volgende klik op Week ineens weer drie weken
+         vooruit zonder dat je daarom vroeg. */
+      if(b.dataset.zicht === 'dag') zetWeekOff(0);
       zetZicht(b.dataset.zicht);
+      CRM.render();
+    });
+
+    /* Weken bladeren. */
+    CRM.$$('[data-wk]', mount).forEach(b => b.onclick = () => {
+      if(b.disabled) return;
+      zetWeekOff(Number(b.dataset.wk));
       CRM.render();
     });
 
@@ -977,72 +1329,33 @@ CRM.registerModule('dashboard', {
        koppeling, dan blijven dag én week gewoon de CRM-items tonen. */
     const ob = document.getElementById('tl2_ol');
     if(ob) ob.onclick = async () => { if(await CRM.outlook.verbind()) CRM.render(); };
-    if(olVerbonden() && CRM.outlook.agenda){
-      /* De deelnemerslink komt uit Graph en is dus gebruikersinvoer: door de
-         veiligeUrl-poort, anders kan een `javascript:`-adres in een href staan.
-         De tekst kort houden en de knop apart zetten, zodat "Teams" niet
-         wegvalt achter een lange locatienaam (op mobiel was hij onklikbaar). */
-      const olSub = ev => {
-        const join = veiligeUrl(ev.online);
-        return `<span class="tl2-sub-t">Outlook${ev.locatie?' · '+h(ev.locatie):''}</span>` +
-          (join?`<a class="tl2-teams" href="${h(join)}" target="_blank" rel="noopener">Teams</a>`:'');
-      };
 
-      if(!week){
-        Promise.resolve(CRM.outlook.agenda(1)).then(items => {
-          if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='dag') return;
-          let geplaatst = 0;
-          items.forEach(ev => {
-            const tijd = String(ev.start||'').slice(11,16);
-            const uur = Math.max(START_UUR, Math.min(EIND_UUR-1, parseInt(tijd,10)||START_UUR));
-            const it = { soort:'outlook', sesKey:'ol:'+tijd+String(ev.titel||'').slice(0,20),
-              titel: ev.titel||'(zonder onderwerp)', tijd, subHtml: olSub(ev), subKlas:'metlink' };
-            it.af = sessieKlaar.has(sk(it.sesKey));
-            (P.uren[uur] = P.uren[uur] || []).unshift(it);
-            geplaatst++; if(it.af) _vgAf++;
-          });
-          if(!geplaatst) return;
-          _vgTot += geplaatst;
-          /* De baan opnieuw tekenen: dan komt een uur dat compact was
-             weggevouwen er vanzelf bij staan. */
-          const body = mount.querySelector('.tl2-card .card-b.tl2-b');
-          if(body){
-            body.innerHTML = dagBaanHTML(P);
-            CRM.$$('.tl2-vouw', body).forEach(v => {
-              v.onclick = () => vouwOpen(v, P);
-              v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
-            });
-          }
-          vgTeken(); vinkHandlers(mount);
-        }).catch(()=>{});
-      }else{
-        /* agenda(7) loopt vanaf nu; alles buiten deze week valt vanzelf af. */
-        Promise.resolve(CRM.outlook.agenda(7)).then(items => {
-          if(!items || !items.length || CRM.view!=='dashboard' || zicht()!=='week') return;
-          let raak = 0;
-          items.forEach(ev => {
-            const d = (W||[]).find(x => x.iso === String(ev.start||'').slice(0,10));
-            if(!d) return;
-            d.items.push({ soort:'outlook', geenVink:true,
-              titel: ev.titel||'(zonder onderwerp)', tijd:String(ev.start||'').slice(11,16),
-              subHtml: olSub(ev), subKlas:'metlink' });
-            raak++;
-          });
-          if(!raak) return;
-          W.forEach(sorteerDag);
-          /* De hele weekbaan opnieuw tekenen: dan komt een weekenddag die
-             alleen een Outlook-afspraak heeft er ook echt bij. */
-          const baan = mount.querySelector('.tl2-week');
-          if(baan) baan.outerHTML = weekBaanHTML(W);
-          vinkHandlers(mount);
-        }).catch(()=>{});
-      }
-    }
+    /* Eerste vulling. Daarna houdt de aanmelding hieronder het bij. */
+    agendaVullen(mount, P, W, week);
+    if(mailAan()) mailVerversen(mount);
 
-    /* Je mail: één stille aanroep bij het openen van het dashboard. */
-    if(mailAan()){
-      if(_mail) mailVullen(mount);
-      else mailLezen().then(() => mailVullen(mount)).catch(()=>{});
+    /* ─── Vanzelf verversen ────────────────────────────────────────
+       Wens Tjeerd: niet meer zelf op Vernieuwen hoeven drukken.
+       Vijf minuten is de tussenpoos: een afspraak die net is verzet wil
+       je binnen een kwartier zien, en korter dan dat levert vooral extra
+       Graph-verkeer op bij een koppeling die eerder al een 429 gaf. Wie
+       terugkomt bij het tabblad krijgt sowieso meteen een verversing —
+       dát is het moment waarop je naar verouderde gegevens kijkt.
+
+       DE VALKUIL: bij elke hertekening opnieuw aanmelden stapelt de
+       luisteraars op. Vandaar twee sloten: hierboven meldt render() de
+       vorige aanmelding af, en de luisteraar zelf stapt eruit zodra het
+       dashboard niet meer in beeld is of er intussen opnieuw getekend is. */
+    if(olVerbonden() && CRM.outlook.bijVerversen){
+      const mijnTekening = _tekening;
+      _afmeldOutlook = CRM.outlook.bijVerversen(async () => {
+        if(CRM.view !== 'dashboard' || mijnTekening !== _tekening){
+          if(_afmeldOutlook){ _afmeldOutlook(); _afmeldOutlook = null; }
+          return;
+        }
+        await agendaVullen(mount, P, W, week);
+        if(mailAan()) await mailVerversen(mount, true);
+      }, 5);
     }
 
     /* Cockpitregel bewust VERWIJDERD (wens Tjeerd): banksaldo/omzet horen in

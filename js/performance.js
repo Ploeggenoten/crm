@@ -92,7 +92,7 @@ function pctTxt(deel, totaal, grens=10){
   return `<span class="num">${p}%</span>` + (totaal < grens ? ` <span class="meta num">n=${totaal}</span>` : '');
 }
 
-/* Laatste beweging in de historie — proxy voor "wanneer viel hij af". */
+/* Laatste beweging in de historie — proxy voor "wanneer viel de kandidaat af". */
 function laatsteBeweging(c){
   const hist = c.historie||[];
   if(hist.length){
@@ -120,7 +120,7 @@ function duurzaam(c){
 /* Verste fase die een kandidaat ooit bereikte (0..10, eindfases tellen niet mee).
    Een lege fase (geïmporteerd uit het oude ATS, nooit in de pijplijn geweest)
    levert -1 op: zo'n kandidaat heeft geen trechterpositie en is ook niet
-   "verloren" — hij is er simpelweg nooit ingegaan. */
+   "verloren" — die is er simpelweg nooit ingegaan. */
 const FUNNEL = CRM.PHASES.filter(p => !['Afgevallen','Gestopt'].includes(p.k));
 /* Index BINNEN de trechter. Bewust niet CRM.faseIdx(): die telt Afgevallen en
    Gestopt mee, wat alleen goed gaat zolang die twee toevallig achteraan in
@@ -210,19 +210,20 @@ function namenEnNazorg(D){
     `<button class="pf-naam ${klasse}" data-pfkand="${h(String(c.id))}">${h(c.naam)}<em class="num">${h(extra)}</em></button>`;
   const get = D.getekend.slice().sort((a,b)=>(b.geplaatstOp||'').localeCompare(a.geplaatstOp||''));
   const stp = D.gestopt.slice().sort((a,b)=>(b.gestoptOp||'').localeCompare(a.gestoptOp||''));
-  const nz = CRM.kandidaten()
-    .filter(k => CRM.faseIs(k.fase,'Gestart') && k.start && !k.gestoptOp)
-    .map(k => ({k, d:CRM.dagenGeleden(k.start)}))
-    .filter(x => x.d != null && x.d >= 0 && x.d <= 32)
-    .map(x => ({c:x.k, d:x.d, cp:[3,14,30].find(n=>n>=x.d), nu:[3,14,30].includes(x.d)}))
-    .sort((a,b)=>(b.nu?1:0)-(a.nu?1:0) || (a.cp||99)-(b.cp||99) || a.d-b.d);
+  /* Het nazorgritme werd hier — net als op het bord, de kaart en het
+     dashboard — opnieuw uitgerekend, en die vier gaven niet hetzelfde
+     antwoord. Eén bron nu: js/opvolging.js. Die kolom toont daarom ook het
+     warm houden vóór de start, want dat is dezelfde belofte. */
+  const nz = CRM.opvolging ? CRM.opvolging.lopend(null).slice(0, 12) : [];
 
   const kol = (titel, inhoud, leeg) => `<div class="pf-namenkol">
     <div class="label">${h(titel)}</div>${inhoud || `<div class="meta">${h(leeg)}</div>`}</div>`;
   return `<div class="pf-namen">
     ${kol('Getekend', get.map(c=>rij(c, `${c.type||'W&S'} · ${CRM.fmtDateShort(c.geplaatstOp)||'—'}`,'pos')).join(''), 'Nog niemand in deze periode')}
     ${kol('Gestopt', stp.map(c=>rij(c, CRM.fmtDateShort(c.gestoptOp)||'—','neg')).join(''), 'Niemand — zo houden')}
-    ${kol('Nazorg dag 3 · 14 · 30', nz.map(x=>rij(x.c, x.nu ? `dag ${x.d} — bel vandaag` : `dag ${x.d} → check-in dag ${x.cp||30}`, x.nu?'nu':'')).join(''), 'Geen lopende nazorg')}
+    ${kol('Opvolging', nz.map(x => rij(x.c,
+        x.nu ? `${x.moment.kort} — vandaag` : `${x.moment.kort} · ${CRM.fmtDateShort(x.moment.datum)}`,
+        x.nu ? 'nu' : '')).join(''), 'Geen lopende opvolging')}
   </div>`;
 }
 
@@ -376,8 +377,8 @@ function blokTrechter(p, D){
           <b class="num">${plaatsingen ? (offers/plaatsingen).toFixed(1) : '—'}</b>
           <span class="meta num">${offers} offers · ${plaatsingen} geplaatst</span></div>
       </div>
-      <p class="pf-uitleg meta">Een kandidaat telt bij elke fase die hij ooit bereikte (uit de historie).
-        Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die hij haalde.
+      <p class="pf-uitleg meta">Een kandidaat telt bij elke fase die ooit is bereikt (uit de historie).
+        Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die is gehaald.
         Kandidaten zonder fase (import uit het oude ATS) zijn nooit de pijplijn in gegaan en tellen dus nergens mee.</p>
     </div></div>
   </section>`;

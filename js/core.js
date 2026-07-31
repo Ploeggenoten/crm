@@ -325,6 +325,7 @@ CRM.rowToCand = r => ({
   /* Persoonsgegevens met een eigen bewaartermijn: geboortedatum voor de
      verjaardagstaak, foto als PAD in de afgeschermde map crm-docs. */
   geboortedatum:r.geboortedatum||'', foto:r.foto||'',
+  geanonimiseerdOp:r.geanonimiseerd_op||null,
   ooId:r.oo_id||null, vervangt:r.vervangt||'', rec:r.rec||'', note:r.note||'',
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
@@ -346,6 +347,7 @@ CRM.candToRow = c => ({
   intake:c.intake||null, vt_pct:c.vtPct==null?null:c.vtPct, eju_pct:c.ejuPct==null?null:c.ejuPct,
   overig_pct:c.overigPct==null?null:c.overigPct, herstart_van:c.herstartVan||'',
   geboortedatum:c.geboortedatum||null, foto:c.foto||'',
+  geanonimiseerd_op:c.geanonimiseerdOp||null,
   oo_id:c.ooId||null, vervangt:c.vervangt||'', rec:c.rec||'', note:c.note||'',
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',

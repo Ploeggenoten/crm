@@ -28,9 +28,14 @@
 
   const M = {
     geladen:false, bezig:null,      // bezig = de lopende laad-belofte
-    meta:[], besluiten:[], posts:[], kanalen:[], taken:[],
-    metaFout:null, postsFout:null, kanalenFout:null, takenFout:null, isDemo:false,
+    meta:[], besluiten:[], posts:[], kanalen:[], taken:[], betaald:[],
+    metaFout:null, postsFout:null, kanalenFout:null, takenFout:null, betaaldFout:null, isDemo:false,
     tab:'prestatie', periode:30,
+    /* Prestatie-filters. `periode` is het venster in dagen (0 = alles),
+       `groep` de tijdstap waarop we optellen en `klant` het klantfilter
+       ('' = alle klanten, '__niet__' = uitgaven zonder herkenbare klant). */
+    groep:'dag', klant:'', herkomst:false,
+    _idx:null, _zicht:null,         // index van één render; leeg bij elke teken()
     open:new Set(),                 // uitgeklapte campagnes/advertentiesets
     /* Rendement-tab: welk cohort staat er open, hoe staan de tabellen
        gesorteerd, en de lijstjes achter de doorklikknoppen. */
@@ -46,6 +51,11 @@
   const fmtN  = n => Math.round(N(n)).toLocaleString('nl-NL');
   const maal  = (a,b) => (b ? (a/b) : 0).toFixed(1).replace('.',',');
   const isoT  = d => new Date(Date.now() - d*864e5).toLocaleDateString('sv-SE');
+  /* De eerste dag van een venster van n dagen, vandaag meegerekend. Filters
+     doen `datum >= vanaf(n)`, dus vanaf(7) moet zes dagen terug liggen: met
+     isoT(7) zaten er acht dagen in een venster dat "zeven dagen" heette. Dat
+     maakte elk weekcijfer stilletjes te hoog. */
+  const vanaf = n => isoT(Math.max(0, n - 1));
   const DAGKORT = ['zo','ma','di','wo','do','vr','za'];
   const DAGNAAM = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 
@@ -61,7 +71,10 @@
     ? String(k).trim() : 'var(--line-2)';
 
   function stat(rows){
-    const s = {spend:0, imp:0, kliks:0, leads:0, bereik:0};
+    /* `rijen` = het aantal dagregels waarop dit cijfer rust. Dat is geen
+       sierletter: het is wat je nodig hebt om een kengetal met de hand na te
+       rekenen tegen de onderliggende tabel. */
+    const s = {spend:0, imp:0, kliks:0, leads:0, bereik:0, rijen:rows.length};
     rows.forEach(r => { s.spend+=N(r.uitgegeven); s.imp+=N(r.impressies);
                         s.kliks+=N(r.kliks); s.leads+=N(r.leads); s.bereik+=N(r.bereik); });
     s.cpc = s.kliks ? s.spend/s.kliks : null;
@@ -69,7 +82,69 @@
     s.cpl = s.leads ? s.spend/s.leads : null;
     return s;
   }
-  const binnenPeriode = () => { const cut = isoT(M.periode); return M.meta.filter(r => (r.datum||'') >= cut); };
+  /* ─── Filters op de advertentiecijfers ────────────────────────
+     Twee assen: een venster in dagen en een klant. De klant hangt aan de
+     campagnenaam — in het Meta-account ís een campagne een klant. Die
+     koppeling maken we niet opnieuw: ketenData() legt hem één keer per
+     render aan (campKoppel) en we kijken hem hier alleen op. */
+  const campNaam = r => String(r.campagne||'').trim() || '(campagne zonder naam)';
+  const klantVan = r => index().campKoppel.get(campNaam(r)) || {kkey:'', klant:'', hoe:'niet'};
+  const isDatum  = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d||''));
+
+  const vensterVanaf = () => M.periode ? vanaf(M.periode) : '';
+  const inVenster    = r => { const c = vensterVanaf(); return !c || String(r.datum||'') >= c; };
+  const inKlant      = r => {
+    if(!M.klant) return true;
+    const kk = klantVan(r).kkey;
+    return M.klant === '__niet__' ? !kk : kk === M.klant;
+  };
+  /* Alleen op klant gefilterd: voor blokken met hun eigen vaste venster
+     (de weekvergelijking, de waakhond). */
+  const klantRijen = () => M.klant ? M.meta.filter(inKlant) : M.meta;
+  /* Venster én klant: alles wat de gekozen periode toont. Vier blokken vragen
+     er per render om (kengetallen, grafiek, klanten, campagnes); ze horen
+     gegarandeerd dezelfde rijen te krijgen, dus filteren we één keer. */
+  function zichtbareRijen(){
+    const sleutel = M.periode + '|' + M.klant;
+    if(!M._zicht || M._zicht.sleutel !== sleutel)
+      M._zicht = {sleutel, rijen:M.meta.filter(r => inVenster(r) && inKlant(r))};
+    return M._zicht.rijen;
+  }
+
+  /* ─── Tijdstappen ─────────────────────────────────────────────
+     `datum` is een date-kolom zonder tijdzone; we lezen hem altijd op 12:00
+     lokaal, zodat een dag nooit over de rand van een tijdzone schuift. */
+  const maandagVan = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() - ((x.getDay()+6) % 7));
+                            return x.toLocaleDateString('sv-SE'); };
+  function weekNr(d){
+    /* ISO-weeknummer: donderdag van dezelfde week bepaalt het jaar. */
+    const x = new Date(d + 'T12:00');
+    x.setDate(x.getDate() + 3 - ((x.getDay()+6) % 7));
+    const eerste = new Date(x.getFullYear(), 0, 4, 12);
+    return 1 + Math.round((x - eerste) / 864e5 / 7);
+  }
+  const MND_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+  const dagLabel = d => { const x = new Date(d + 'T12:00');
+                          return `${x.getDate()} ${MND_KORT[x.getMonth()]}`; };
+  const GROEP = {
+    dag:  {enkel:'dag',  meer:'dagen',   titel:'Per dag',
+           sleutel: d => d, staven:31,
+           lang:  k => `${DAGNAAM[new Date(k+'T12:00').getDay()]} ${dagLabel(k)}`,
+           kort:  k => String(new Date(k+'T12:00').getDate()),
+           onder: k => DAGKORT[new Date(k+'T12:00').getDay()]},
+    week: {enkel:'week', meer:'weken',   titel:'Per week',
+           sleutel: maandagVan, staven:26,
+           lang:  k => { const e = new Date(k+'T12:00'); e.setDate(e.getDate()+6);
+                         return `week ${weekNr(k)} · ${dagLabel(k)} t/m ${dagLabel(e.toLocaleDateString('sv-SE'))}`; },
+           kort:  k => String(weekNr(k)),
+           onder: () => 'wk'},
+    maand:{enkel:'maand',meer:'maanden', titel:'Per maand',
+           sleutel: d => d.slice(0,7), staven:24,
+           lang:  k => maandLabel(k),
+           kort:  k => MND_KORT[Number(k.slice(5,7)) - 1] || '?',
+           onder: k => k.slice(2,4)}
+  };
+  const groep = () => GROEP[M.groep] || GROEP.dag;
 
   /* Campagnes, sets en advertenties staan op uitgaven gesorteerd: de
      grootste post bovenaan, zodat de volgorde klopt met de eerste
@@ -120,18 +195,24 @@
       if(CRM.demo){
         demoData(); M.isDemo = true; M.geladen = true; telBadge(); return;
       }
-      const [a,b,c,d,e] = await Promise.all([
+      /* mkt_meta_betaald is het maandtotaal dat Finance uit de banktransacties
+         herkent en wegschrijft — één getal per maand, leesbaar voor het hele
+         team. De banktransacties zelf (fin_bank_tx en alle andere fin_-tabellen)
+         raken we niet aan en mogen we ook niet lezen; die blijven bij Finance. */
+      const [a,b,c,d,e,f] = await Promise.all([
         veilig(CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000)),
         veilig(CRM.sb.from('mkt_ad_besluiten').select('*').order('created_at',{ascending:false})),
         veilig(CRM.sb.from('mkt_posts').select('*')),
         veilig(CRM.sb.from('mkt_kanalen').select('*').order('volgorde')),
-        veilig(CRM.sb.from('mkt_taken').select('*').order('datum').order('created_at'))
+        veilig(CRM.sb.from('mkt_taken').select('*').order('datum').order('created_at')),
+        veilig(CRM.sb.from('mkt_meta_betaald').select('*').order('maand',{ascending:false}))
       ]);
       M.meta = a.rows; M.metaFout = a.fout;
       M.besluiten = b.rows;
       M.posts = c.rows.map(rowToPost); M.postsFout = c.fout;
       M.kanalen = d.rows; M.kanalenFout = d.fout;
       M.taken = e.rows; M.takenFout = e.fout;
+      M.betaald = f.rows; M.betaaldFout = f.fout;
       M.geladen = true;
       telBadge();
     })();
@@ -180,12 +261,18 @@
       && (b.status||'open') === 'open' && !configRij(b));
   }
 
-  function adviezen(){
+  /* `rijen` is standaard álles: de badge en het tabblad tellen de adviezen
+     van het hele account. Het scherm geeft de op klant gefilterde rijen mee,
+     zodat een klantfilter ook hier doorwerkt. De vergelijkingsmaatstaf (acc)
+     blijft bewust accountbreed — "duurder dan gemiddeld" moet het gemiddelde
+     van álle advertenties zijn, niet dat van één klant. */
+  function adviezen(rijen){
     if(!M.meta.length) return [];
-    const d2 = isoT(2), d7 = isoT(7), d14 = isoT(14);
-    const acc = stat(M.meta.filter(r => (r.datum||'') >= isoT(30)));
+    if(!rijen) rijen = M.meta;
+    const d2 = vanaf(2), d7 = vanaf(7), d14 = vanaf(14);
+    const acc = stat(M.meta.filter(r => (r.datum||'') >= vanaf(30)));
     const perAd = new Map();
-    M.meta.forEach(r => {
+    rijen.forEach(r => {
       const k = (r.campagne||'—') + '|' + (r.advertentie||'—');
       if(!perAd.has(k)) perAd.set(k, []);
       perAd.get(k).push(r);
@@ -228,7 +315,7 @@
       /* Expliciet dertig dagen. `rows` bevat de hele historie die we van Meta
          inlazen (tot 3000 dagregels); daarmee vergelijken zou de CPC van deze
          week afzetten tegen een gemiddelde van vorig kwartaal. */
-      const s30  = stat(rows.filter(r => (r.datum||'') >= isoT(30)));
+      const s30  = stat(rows.filter(r => (r.datum||'') >= vanaf(30)));
       if(s7.spend < 20) continue;                        // te weinig om over te oordelen
       const cijfers = `7 dagen: ${CRM.euro(s7.spend)} · ${s7.leads} ${s7.leads===1?'lead':'leads'}`
         + (s7.cpl ? ` · ${CRM.euro(s7.cpl,2)} per lead` : '')
@@ -348,13 +435,14 @@
   /* Maandsleutel uit een datum of tijdstempel. binnen_op is een timestamptz
      (UTC); we rekenen in lokale tijd, zodat een lead van 1 juli 00:30 in juli
      valt en niet in juni. */
-  function maandVan(waarde){
+  function dagVan(waarde){
     const s = String(waarde||'').trim();
     if(!s) return '';
-    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0,7);
+    if(isDatum(s)) return s;
     const d = new Date(s);
-    return isNaN(d) ? '' : d.toLocaleDateString('sv-SE').slice(0,7);
+    return isNaN(d) ? '' : d.toLocaleDateString('sv-SE');
   }
+  const maandVan = waarde => dagVan(waarde).slice(0,7);
   function maandLabel(mk){
     if(!/^\d{4}-\d{2}$/.test(mk)) return 'zonder datum';
     const d = new Date(mk + '-01T12:00');
@@ -424,7 +512,8 @@
       if(cand) gekoppeld.add(String(cand.id));
       if(klant) onthou(klant);
       const r = {
-        lead:l, id:String(l.id), naam:String(l.naam||''), mk:maandVan(l.binnen_op),
+        lead:l, id:String(l.id), naam:String(l.naam||''),
+        dk:dagVan(l.binnen_op), mk:maandVan(l.binnen_op),
         klant, functie, status, cand,
         kkey:kKey(klant), fkey:fKey(functie), viaVacature:!!vac,
         nieuw:       status === 'Nieuw',
@@ -549,14 +638,18 @@
     const uitMap = new Map();
     let uitZonderDatum = 0;
     for(const r of M.meta){
+      /* Eerst koppelen, dan pas de datum keuren: campCache moet élke campagne
+         uit mkt_meta_stats kennen, ook een campagne waarvan alle dagregels een
+         onleesbare datum hebben. Het Prestatie-tabblad zoekt zijn klantfilter
+         in diezelfde cache op en mag daar geen gaten in vinden. */
+      const camp = campNaam(r);
+      const k = koppelCampagne(camp);
       const mk = String(r.datum||'').slice(0,7);
       if(!/^\d{4}-\d{2}$/.test(mk)){ uitZonderDatum += N(r.uitgegeven); continue; }
-      const camp = String(r.campagne||'').trim() || '(campagne zonder naam)';
       const set  = String(r.advertentieset||'').trim();
       const sleutel = mk + '|' + camp + '|' + set;
       let rij = uitMap.get(sleutel);
       if(!rij){
-        const k = koppelCampagne(camp);
         const functie = k.kkey ? zoekFunctie(k.kkey, set) : '';
         rij = {mk, campagne:camp, set, kkey:k.kkey, klant:k.klant, hoe:k.hoe,
                functie, fkey:fKey(functie), bedrag:0, formulieren:0};
@@ -580,7 +673,18 @@
     }).sort((a,b) => b.bedrag - a.bedrag);
 
     return {leads, uitRijen, maanden, gaten, losseKand, lossePlaatsingen,
-            campagnes, klantNaam, uitZonderDatum, aantalKand:cands.length};
+            campagnes, klantNaam, uitZonderDatum, aantalKand:cands.length,
+            /* campagnenaam → {kkey, klant, hoe}. Eén koppeling voor het hele
+               scherm: Rendement rekent ermee, Prestatie filtert ermee. */
+            campKoppel:campCache};
+  }
+
+  /* Eén index per render. `teken()` gooit hem leeg; alles wat daarna tekent
+     werkt op dezelfde momentopname. Zonder dit zou het Prestatie-tabblad de
+     hele kandidaten- en leadadministratie per tabel opnieuw doorlopen. */
+  function index(){
+    if(!M._idx) M._idx = ketenData();
+    return M._idx;
   }
 
   /* De trechter over een groep leads. Bewust twee soorten stappen: wat er
@@ -618,7 +722,7 @@
   /* ═══ 5. VACATURE-RADAR ══════════════════════════════════════ */
   const norm = s => String(s||'').toLowerCase();
   function radar(dagen = 14){
-    const cut = isoT(dagen);
+    const cut = vanaf(dagen);
     /* De advertentiestructuur is campagne = klant, advertentieset = functie,
        advertentie = hook. Zo matchen we ook: functie op de set, klant op de campagne. */
     const advRijen = M.meta.filter(r => (r.datum||'') >= cut)
@@ -846,10 +950,10 @@
     {t:'Mythe kapot: "uitzendwerk betaalt slecht"', f:'Reel / video', d:'Employer branding', k:'"Uitzendbureaus pakken de helft van je loon." Echt?'},
     {t:'De machine die niemand mag aanraken (behalve jij)', f:'Reel / video', d:'Kandidaten werven', k:'Deze machine is €2 miljoen waard. Jij bedient hem.'},
     {t:'Ploegentoeslag-rekensom: dit levert de nachtploeg op', f:'Carousel', d:'Kandidaten werven', k:'Nachtdienst = +25%. Reken maar mee: €___ extra p/m.'},
-    {t:'Eerste week van een nieuwe kracht bij {K}', f:'Foto + tekst', d:'Employer branding', k:'Week 1 zit erop. Dit vond hij ervan.'},
+    {t:'Eerste week van een nieuwe kracht bij {K}', f:'Foto + tekst', d:'Employer branding', k:'Week 1 zit erop. Dit vond onze nieuwe collega ervan.'},
     {t:'Praca w Holandii — post in het Pools', f:'Foto + tekst', d:'Kandidaten werven', k:'Szukamy operatorów. Dobra stawka, praca od zaraz.'},
     {t:'POV: je eerste meeloopdag bij {K}', f:'Story', d:'Kandidaten werven', k:'Kom mee, we lopen samen een dagje mee.'},
-    {t:'Waarom hij na 3 maanden een contract tekende', f:'Foto + tekst', d:'Kandidaten werven', k:'Van flexkracht naar vast. Zo ging dat.'},
+    {t:'Waarom deze flexkracht na 3 maanden tekende', f:'Foto + tekst', d:'Kandidaten werven', k:'Van flexkracht naar vast. Zo ging dat.'},
     {t:'Klantcase voor LinkedIn: ploeg compleet bij {K}', f:'Foto + tekst', d:'Klanten / leadgen', k:'6 weken, 4 operators, 0 no-shows. Zo bouwden we de ploeg bij {K}.'},
     {t:'Achter de schermen: zo ziet de werkvloer er écht uit', f:'Story', d:'Employer branding', k:'Geen stockfoto\'s. Dit is het echt.'},
     {t:'5 vragen die jij mag stellen in je sollicitatiegesprek', f:'Carousel', d:'Kandidaten werven', k:'Een gesprek is tweerichtingsverkeer.'}
@@ -858,7 +962,7 @@
      dezelfde: trend van de week × echte collega's × zelfspot. */
   const AFKIJKBANK = [
     {t:'Jongerentaal-script: de voorman leest voor', v:'Currys (UK) — 1,9 mln views', i:'Jongste collega schrijft de tekst vol internettaal, de oudste leest hem bloedserieus voor tijdens een rondleiding.', k:'Onze voorman (55) legt uit waarom dit magazijn een 10/10 is — in de woorden van onze jongste collega.'},
-    {t:'De baas doet één keer mee met een trend', v:'vanHaren — manager Ferry gaat er steeds mee viraal', i:'Hoe stijver de leidinggevende, hoe beter. Eén take, niet te netjes gefilmd.', k:'We vroegen de ploegbaas of hij héél even mee wilde doen. Hij zei: één keer dan.'},
+    {t:'De baas doet één keer mee met een trend', v:'vanHaren — manager Ferry gaat er steeds mee viraal', i:'Hoe stijver de leidinggevende, hoe beter. Eén take, niet te netjes gefilmd.', k:'We vroegen de ploegbaas om héél even mee te doen. Antwoord: één keer dan.'},
     {t:'Welke collega ben jij?', v:'TikTok-klassieker — iedereen herkent zichzelf', i:'Vier tot zes herkenbare types, elk 2-3 seconden in beeld. Mensen sturen hem naar elkaar door.', k:'Elke ploeg heeft ze: de heftruck-koning, de scanner-kwijtraker, de klaarstaander om 14:59. Welke ben jij?'},
     {t:'We luisteren en we oordelen niet', v:'wereldwijde trend, ook mét de baas erbij', i:'Team op een rij, iedereen bekent om de beurt iets kleins, niemand mag reageren.', k:'We luisteren en we oordelen niet — de nachtploeg-editie.'},
     {t:'POV: jij op de werkvloer', v:'#warehouseworker zit er vol mee', i:'De camera is de kijker. Eén situatie, één grap, tien seconden.', k:'POV: het is je eerste dag en je weet nog niet dat Henk altijd de goede steekwagen inpikt.'},
@@ -944,7 +1048,7 @@
 
   /* Voorraad: hoeveel weken kun je vooruit met wat er klaarstaat? */
   function voorraad(){
-    const pub28 = M.posts.filter(p => GEPUBLICEERD(p) && (p.datum||'') >= isoT(28)).length;
+    const pub28 = M.posts.filter(p => GEPUBLICEERD(p) && (p.datum||'') >= vanaf(28)).length;
     const tempo = pub28 / 4;
     const klaar = M.posts.filter(p => p.fase === 'Idee' || p.fase === 'Script klaar').length;
     const gepland = M.posts.filter(p => p.fase === 'Ingepland' && (p.datum||'') >= CRM.todayISO()).length;
@@ -970,8 +1074,13 @@
 
   function teken(){
     const mount = M.mount; if(!mount) return;
+    M._idx = null; M._zicht = null;      // één index per render
     kopActies();
+    /* Twee lijsten met opzet: `adv` telt de adviezen van het hele account (dat
+       is wat de badge en het tabblad beloven), `advTonen` is wat er ná het
+       klantfilter overblijft. */
     const adv = adviezen(), nag = nagPosts(), gaten = radar(), werk = openTaken();
+    const advTonen = M.klant ? adviezen(klantRijen()) : adv;
     const TABS = [
       {k:'prestatie', t:'Prestatie', n:adv.length + agentAdviezen().length},
       {k:'keten',     t:'Rendement', n:0},
@@ -980,7 +1089,7 @@
       {k:'ideeen',    t:'Ideeën',    n:0},
       {k:'radar',     t:'Vacature-radar', n:gaten.length}
     ];
-    const body = M.tab === 'prestatie' ? prestatieHtml(adv)
+    const body = M.tab === 'prestatie' ? prestatieHtml(advTonen, adv.length - advTonen.length)
                : M.tab === 'keten'     ? ketenHtml()
                : M.tab === 'content'   ? contentHtml(nag)
                : M.tab === 'kanalen'   ? kanalenHtml()
@@ -998,19 +1107,95 @@
   function kopActies(){
     const el = M.actiesEl || document.getElementById('pageacties');
     if(!el) return;
-    /* De dagenkiezer hoort alleen bij Prestatie. Rendement rekent in
-       cohorten (hele maanden) — een venster van 7 of 14 dagen zou daar een
-       halve maand afsnijden en precies de verkeerde vergelijking maken. */
-    const perKiezer = (M.tab==='prestatie') ? `
-      <div class="seg" id="mkt_per">${[7,14,30].map(d =>
-        `<button data-per="${d}" class="${M.periode===d?'on':''}">${d} dagen</button>`).join('')}</div>` : '';
-    el.innerHTML = perKiezer +
-      `<a class="btn ghost" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`;
-    CRM.$$('[data-per]', el).forEach(b => b.onclick = () => { M.periode = Number(b.dataset.per); teken(); });
+    /* De filters van Prestatie stonden hier in de paginakop. Met drie keuzes
+       (venster, tijdstap, klant) past dat niet meer op een telefoon, en een
+       filter hoort naast wat het filtert. Ze staan nu in een filterbalk boven
+       het tabblad zelf; hier blijft alleen de link naar het bord. */
+    el.innerHTML = `<a class="btn ghost" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`;
+  }
+
+  /* ── Filterbalk van het Prestatie-tabblad ──
+     Venster = hoeveel dagen terug, tijdstap = waarop we optellen, klant =
+     welke campagnes meetellen. Alle drie werken door in de kengetallen, de
+     grafiek én elke tabel op dit tabblad. */
+  const VENSTERS = [{d:7,t:'7 dagen'}, {d:14,t:'14 dagen'}, {d:30,t:'30 dagen'},
+                    {d:90,t:'90 dagen'}, {d:0,t:'Alles'}];
+  function filterBalkHtml(){
+    const D = index();
+    /* Klantenlijst: iedereen met advertentie-uitgaven én iedereen met een
+       Meta-lead. Die tweede groep hoort erbij — een klant zónder campagne maar
+       mét leads is precies het geval dat je wilt kunnen opzoeken. */
+    const namen = new Map();
+    for(const k of D.campKoppel.values()) if(k.kkey) namen.set(k.kkey, k.klant || k.kkey);
+    for(const r of D.leads) if(r.kkey) namen.set(r.kkey, r.klant || r.kkey);
+    const lijst = [...namen].sort((a,b) => a[1].localeCompare(b[1], 'nl'));
+    const losseUitgaven = M.meta.some(r => !klantVan(r).kkey);
+    /* Staat er een klantsleutel in het filter die niet meer bestaat (klant
+       hernoemd, campagne weg), dan valt het filter terug op "alle klanten" —
+       liever alles tonen dan een leeg scherm zonder uitleg. */
+    if(M.klant && M.klant !== '__niet__' && !namen.has(M.klant)) M.klant = '';
+
+    return `<div class="vlak mkt-filters">
+      <div class="mkt-filter">
+        <span class="label" id="mkt_lbl_ven">Venster</span>
+        <div class="seg" role="group" aria-labelledby="mkt_lbl_ven">${VENSTERS.map(v =>
+          `<button data-per="${v.d}" class="${M.periode===v.d?'on':''}"${M.periode===v.d?' aria-current="true"':''}>${h(v.t)}</button>`).join('')}</div>
+      </div>
+      <div class="mkt-filter">
+        <span class="label" id="mkt_lbl_grp">Optellen per</span>
+        <div class="seg" role="group" aria-labelledby="mkt_lbl_grp">${['dag','week','maand'].map(g =>
+          `<button data-groep="${g}" class="${M.groep===g?'on':''}"${M.groep===g?' aria-current="true"':''}>${h(g)}</button>`).join('')}</div>
+      </div>
+      <div class="mkt-filter grow">
+        <label class="label" for="mkt_klant">Klant</label>
+        <select id="mkt_klant">
+          <option value=""${M.klant===''?' selected':''}>Alle klanten</option>
+          ${losseUitgaven ? `<option value="__niet__"${M.klant==='__niet__'?' selected':''}>Zonder herkenbare klant</option>` : ''}
+          ${lijst.map(([k,n]) => `<option value="${h(k)}"${M.klant===k?' selected':''}>${h(n)}</option>`).join('')}
+        </select>
+      </div>
+      ${(M.periode!==30 || M.groep!=='dag' || M.klant) ? `<div class="mkt-filter">
+        <span class="label" aria-hidden="true">&nbsp;</span>
+        <button class="btn ghost sm" id="mkt_reset">Filters wissen</button></div>` : ''}
+    </div>`;
+  }
+  const klantLabel = () => {
+    if(!M.klant) return 'alle klanten';
+    if(M.klant === '__niet__') return 'uitgaven zonder herkenbare klant';
+    const D = index();
+    for(const k of D.campKoppel.values()) if(k.kkey === M.klant) return k.klant || M.klant;
+    for(const r of D.leads) if(r.kkey === M.klant) return r.klant || M.klant;
+    return M.klant;
+  };
+  /* Het venster in gewone taal, mét de echte begin- en einddatum. Zo is elk
+     getal op dit scherm met de hand na te rekenen tegen de dagregels. */
+  function vensterTekst(){
+    const cut = vensterVanaf();
+    if(!cut){
+      const vroegst = M.meta.map(r => r.datum).filter(isDatum).sort()[0];
+      return vroegst ? `alles vanaf ${CRM.fmtDateShort(vroegst)}` : 'alle beschikbare dagen';
+    }
+    return `${M.periode} dagen: ${CRM.fmtDateShort(cut)} t/m ${CRM.fmtDateShort(CRM.todayISO())}`;
   }
 
   /* ── Knoppen binnen de weergave ── */
   function bindActies(root){
+    /* Filterbalk van Prestatie. Elke wijziging tekent het hele tabblad
+       opnieuw: kengetallen, grafiek en tabellen horen altijd hetzelfde
+       venster en dezelfde klant te tonen. */
+    CRM.$$('[data-per]', root).forEach(b => b.onclick = () => { M.periode = Number(b.dataset.per); teken(); });
+    CRM.$$('[data-groep]', root).forEach(b => b.onclick = () => { M.groep = b.dataset.groep; teken(); });
+    const klantKies = root.querySelector('#mkt_klant');
+    if(klantKies) klantKies.onchange = () => { M.klant = klantKies.value; teken(); };
+    const wis = root.querySelector('#mkt_reset');
+    if(wis) wis.onclick = () => { M.periode = 30; M.groep = 'dag'; M.klant = ''; teken(); };
+    CRM.$$('[data-klantfilter]', root).forEach(el => el.onclick = () => {
+      M.klant = el.dataset.klantfilter === M.klant ? '' : el.dataset.klantfilter;
+      teken(); window.scrollTo({top:0});
+    });
+    const herk = root.querySelector('#mkt_herkomst');
+    if(herk) herk.onclick = () => { M.herkomst = !M.herkomst; teken(); };
+
     CRM.$$('[data-bes]', root).forEach(b => b.onclick = () => {
       const [keuze, ad, camp] = b.dataset.bes.split('|');
       besluit(ad, camp, keuze);
@@ -1096,68 +1281,478 @@
      Drie cijfers van de laatste zeven dagen met het verschil tegenover de
      zeven dagen daarvoor. */
   function weekHtml(){
-    const nu  = stat(M.meta.filter(r => (r.datum||'') >= isoT(7)));
-    const vor = stat(M.meta.filter(r => (r.datum||'') >= isoT(14) && (r.datum||'') < isoT(7)));
+    const bron = klantRijen();
+    const nu  = stat(bron.filter(r => (r.datum||'') >= vanaf(7)));
+    const vor = stat(bron.filter(r => (r.datum||'') >= vanaf(14) && (r.datum||'') < vanaf(7)));
     if(!nu.imp && !vor.imp) return '';           /* twee weken stil: geen strook */
 
     const cel = (label, waarde, delta) =>
       `<div class="mkt-week-c"><span class="label">${h(label)}</span>
         <b class="num">${waarde}</b><span class="mkt-week-d">${delta}</span></div>`;
+    /* "Leads" heet hier leadacties: het is de kolom `leads` uit
+       mkt_meta_stats, en die telt actiegebeurtenissen van Meta op — geen
+       unieke mensen. Zie het herkomstblok bij de kengetallen. */
     const cellen =
       cel('Uitgegeven', CRM.euro(nu.spend),
           verschil(nu.spend, vor.spend, n => CRM.euro(n), 'neutraal')) +
-      cel('Leads', fmtN(nu.leads),
+      cel('Meta-leadacties', fmtN(nu.leads),
           verschil(nu.leads, vor.leads, n => fmtN(n), 'hoger')) +
-      cel('Kosten per lead', nu.cpl ? CRM.euro(nu.cpl,2) : '—',
+      cel('Kosten per leadactie', nu.cpl ? CRM.euro(nu.cpl,2) : '—',
           nu.cpl && vor.cpl ? verschil(nu.cpl, vor.cpl, n => CRM.euro(n,2), 'lager')
                             : `<span class="meta">geen vergelijking mogelijk</span>`);
 
     return `<div class="vlak mkt-week">
-      <span class="label">Deze week vs vorige week</span>
+      <span class="label">Deze week vs vorige week${M.klant ? ` — ${h(klantLabel())}` : ''}</span>
       <div class="mkt-week-r">${cellen}</div>
-      <span class="meta">Laatste zeven dagen tegenover de zeven daarvóór. Meer of minder uitgeven is op zichzelf
-        niet goed of slecht — dat verschil blijft daarom kleurloos.</span>
+      <span class="meta">Laatste zeven dagen (${h(CRM.fmtDateShort(vanaf(7)))} t/m ${h(CRM.fmtDateShort(CRM.todayISO()))})
+        tegenover de zeven daarvóór. Deze strook houdt zijn eigen venster aan — het klantfilter werkt wél door, de
+        vensterkeuze hierboven niet. Meer of minder uitgeven is op zichzelf niet goed of slecht, dus dat verschil
+        blijft kleurloos.</span>
     </div>`;
   }
 
-  function prestatieHtml(adv){
+  /* ── Waar komen deze kengetallen vandaan? ──
+     Elk cijfer op dit tabblad komt uit één kolom van mkt_meta_stats. Die
+     kolommen worden gevuld door de edge-functie meta-sync, en twee ervan
+     tellen iets anders dan hun naam doet vermoeden. Dat hoort op het scherm te
+     staan, niet in een hoofd of in een rapport dat niemand terugleest. */
+  function herkomstHtml(s){
+    const regel = (w, t) => `<div class="mkt-def"><b>${h(w)}</b><span>${t}</span></div>`;
+    const kolom = k => `<span class="num">${h(k)}</span>`;
+    return `<div class="vlak mkt-uitleg">
+      <div class="row">
+        <span class="label" style="margin:0">Herkomst van deze cijfers</span>
+        <div class="spacer"></div>
+        <button class="btn sm ghost" id="mkt_herkomst" aria-expanded="${M.herkomst?'true':'false'}">${
+          M.herkomst ? 'Uitleg verbergen' : 'Waar komt dit vandaan?'}</button>
+      </div>
+      <p class="sub" style="margin:8px 0 0;max-width:78ch">Alles hierboven komt uit de tabel
+        <span class="num">mkt_meta_stats</span>: één regel per dag, per advertentie. Die tabel wordt gevuld door de
+        synchronisatie met Meta — dit scherm rekent er alleen mee en kan er niets aan corrigeren.</p>
+      ${M.herkomst ? `<div class="mkt-defs">
+        ${regel('Uitgegeven', `Optelsom van de kolom ${kolom('uitgegeven')}, gevuld met het Meta-veld ${kolom('spend')}.
+          Dat is wat Meta zegt te hebben uitgegeven, niet wat er van de rekening is gegaan — zie de vergelijking met de bank hieronder.`)}
+        ${regel('Meta-leadacties', `Optelsom van de kolom ${kolom('leads')}. De synchronisatie vult die kolom door
+          <b>vijf Meta-actietypen bij elkaar op te tellen</b>: ${kolom('lead')}, ${kolom('leadgen_grouped')},
+          ${kolom('onsite_conversion.lead_grouped')}, ${kolom('offsite_conversion.fb_pixel_lead')} en ${kolom('onsite_web_lead')}.
+          Meta rapporteert die deels als overlappende totalen, dus dezelfde lead kan er meerdere keren in zitten.
+          Het is dus een aantal <b>actiegebeurtenissen</b>, geen aantal mensen — en het is geen zuivere formuliertelling,
+          want pixel-leads van de website zitten er ook in.`)}
+        ${regel('Kosten per leadactie', `${kolom('uitgegeven')} gedeeld door ${kolom('leads')}. Worden leads meervoudig
+          geteld, dan valt dit bedrag te laag uit: het lijkt goedkoper dan het is. Zonder leadacties staat er een streepje,
+          geen € 0,00.`)}
+        ${regel('Kliks (alle)', `Optelsom van de kolom ${kolom('kliks')}, gevuld met het Meta-veld ${kolom('clicks')}.
+          Dat telt <b>elke</b> klik op de advertentie mee: ook likes, reacties, delen en klikken op de paginanaam.
+          Het aantal mensen dat écht naar het formulier of de website ging staat in een ander Meta-veld
+          (${kolom('inline_link_clicks')}) en wordt op dit moment niet opgehaald.`)}
+        ${regel('CPC en CTR', `Berekend op diezelfde ${kolom('kliks')}. Omdat daar niet-doorklikken in zitten,
+          zijn CPC en CTR hier gunstiger dan de werkelijke kosten per doorklik.`)}
+        ${regel('Impressies en bereik', `De kolommen ${kolom('impressies')} en ${kolom('bereik')}, één op één uit de
+          Meta-velden ${kolom('impressions')} en ${kolom('reach')}. Let op: bereik is bij Meta een aantal unieke mensen
+          per rapportageperiode; dagcijfers optellen over een week telt iemand die twee dagen keek dus dubbel.`)}
+        ${regel('Periode', `${h(vensterTekst())}. Het venster telt vandaag mee en loopt precies dat aantal dagen terug.
+          De kolom ${kolom('datum')} is een datum zonder tijdzone; we lezen hem in lokale tijd.`)}
+        ${regel('Klant', `Een Meta-campagne is een klant. De klantnaam wordt in de campagnenaam herkend op hele woorden;
+          lukt dat niet, dan wegen de leads mee die diezelfde campagnenaam dragen. Lukt geen van beide, dan blijven de
+          uitgaven staan als "zonder herkenbare klant" — ze worden nooit stilzwijgend over de andere klanten verdeeld.`)}
+        ${regel('Laatste synchronisatie', `De kolom ${kolom('synced_at')} van de nieuwste regel. Loopt die achter,
+          dan zijn deze cijfers ouder dan ze lijken.`)}
+        ${s && s.imp ? regel('Nu op dit scherm', `${kolom(CRM.euro(s.spend,2))} uitgegeven · ${kolom(fmtN(s.leads))} leadacties ·
+          ${kolom(fmtN(s.kliks))} kliks · ${kolom(fmtN(s.imp))} impressies, over ${kolom(fmtN(s.rijen||0))} dagregels.`) : ''}
+      </div>` : ''}
+    </div>`;
+  }
+
+  /* ── De kruiscontrole op de leadtelling ──
+     Meta's eigen leadtelling naast het aantal leads dat écht in het CRM staat.
+     Lopen die ver uiteen, dan is dat geen detail: dan staat er een getal op het
+     scherm waar niemand een budget op mag baseren. We rekenen niets om en
+     verzinnen geen correctiefactor — we laten beide getallen zien. */
+  function leadControleHtml(s, rows){
+    if(!s.leads && !rows.length) return '';
+    const D = index();
+    const cut = vensterVanaf();
+    const crmLeads = D.leads.filter(r => r.dk && (!cut || r.dk >= cut) && (!M.klant
+      || (M.klant === '__niet__' ? !r.kkey : r.kkey === M.klant)));
+    const n = crmLeads.length, m = s.leads;
+    /* Wanneer is het verschil groot genoeg om iemand lastig mee te vallen?
+       Als er in het CRM niets staat terwijl Meta leads meldt, of als het
+       verschil meer dan de helft van de Meta-telling is. */
+    const scheef = m > 0 && (n === 0 || Math.abs(m - n) > m * 0.5);
+    const perKlik = s.kliks ? (m / s.kliks * 100) : null;
+
+    const cijfers = `<div class="mkt-week-r" style="margin:10px 0 4px">
+      <div class="mkt-week-c"><span class="label">Meta telt (kolom leads)</span>
+        <b class="num">${fmtN(m)}</b><span class="mkt-week-d">leadacties, mogelijk meervoudig geteld</span></div>
+      <div class="mkt-week-c"><span class="label">In het CRM (crm_leads, bron Meta)</span>
+        <b class="num">${fmtN(n)}</b><span class="mkt-week-d">leads met binnenkomstdatum in deze periode</span></div>
+      <div class="mkt-week-c"><span class="label">Verschil</span>
+        <b class="num">${(m - n) > 0 ? '+' : ''}${fmtN(m - n)}</b>
+        <span class="mkt-week-d">${m ? `${CRM.pct(Math.abs(m - n) / m * 100, 0)} van de Meta-telling` : 'geen Meta-telling'}</span></div>
+    </div>`;
+
+    if(!scheef) return `<div class="note info" style="margin-bottom:18px">
+      <b>Meta's leadtelling naast de leads in het CRM.</b>
+      ${cijfers}
+      <span class="meta">Deze twee liggen dicht bij elkaar. Let er wel op dat de Meta-telling een optelsom van vijf
+      overlappende actietypen is; gelijk lopen betekent niet dat allebei kloppen.</span></div>`;
+
+    return `<div class="note warn" style="margin-bottom:18px">
+      <b>De leadcijfers stroken niet met elkaar — baseer hier nog geen budget op.</b>
+      ${cijfers}
+      <span class="meta" style="display:block;margin-top:4px">
+        ${n === 0
+          ? `Meta meldt <span class="num">${fmtN(m)}</span> leadacties over deze periode, terwijl er in
+             <span class="num">crm_leads</span> geen enkele lead met bron Meta staat. Eén van beide klopt niet:
+             óf de leads komen niet in het CRM terecht, óf de Meta-telling telt iets anders dan leads.`
+          : `Meta meldt <span class="num">${fmtN(m)}</span> leadacties, in het CRM staan
+             <span class="num">${fmtN(n)}</span> leads met bron Meta over dezelfde periode.`}
+        ${perKlik != null ? ` Op <span class="num">${fmtN(s.kliks)}</span> kliks is dat
+          <span class="num">${CRM.pct(perKlik, 1)}</span> van alle kliks${perKlik > 10
+            ? ' — voor een wervingsadvertentie onwaarschijnlijk hoog, wat past bij meervoudig tellen' : ''}.` : ''}
+        De synchronisatie telt vijf Meta-actietypen bij elkaar op die elkaar deels overlappen; zolang dat niet is
+        aangepast, is de Meta-telling geen betrouwbaar aantal leads. We rekenen het bewust niet om naar een
+        "waarschijnlijk" getal — dat zou een verzonnen cijfer zijn.
+      </span></div>`;
+  }
+
+  /* ── Wat Meta rapporteert tegenover wat er betaald is ──
+     `uitgegeven` is Meta's eigen opgave. Wat er werkelijk van de rekening ging
+     staat in mkt_meta_betaald: het maandtotaal dat vanuit Finance uit de
+     banktransacties wordt herkend en weggeschreven. Deze module leest alleen
+     dat maandtotaal en komt niet in de fin_*-tabellen — die blijven van
+     Finance. Het blok is bewust maandelijks en accountbreed: een
+     bankafschrijving valt niet per dag of per klant te splitsen. */
+  function betaaldHtml(){
+    /* Een tabel die nog niet bestaat is geen storing: dan is de koppeling met
+       de bank simpelweg nog niet aangezet. Dat leggen we uit in de lege staat.
+       Een échte leesfout (rechten, netwerk) hoort wél als fout op het scherm. */
+    const mist = M.betaaldFout &&
+      /does not exist|schema cache|relation/i.test(String(M.betaaldFout?.message || M.betaaldFout || ''));
+    if(M.betaaldFout && !mist) return foutBlok('De betaalde bedragen', M.betaaldFout);
+    const gerapporteerd = new Map();
+    for(const r of M.meta){
+      const mk = String(r.datum||'').slice(0,7);
+      if(!/^\d{4}-\d{2}$/.test(mk)) continue;
+      gerapporteerd.set(mk, (gerapporteerd.get(mk)||0) + N(r.uitgegeven));
+    }
+    const betaald = new Map();
+    for(const r of (M.betaald||[])){
+      const mk = String(r.maand||'').slice(0,7);
+      if(!/^\d{4}-\d{2}$/.test(mk)) continue;
+      betaald.set(mk, r);
+    }
+    const maanden = [...new Set([...gerapporteerd.keys(), ...betaald.keys()])].sort().reverse().slice(0, 12);
+
+    const voetnoot = `<div class="card-f"><span class="meta">
+      Meta factureert Nederlandse bedrijven meestal met <b>verlegde btw</b>: het betaalde bedrag ligt dan dicht bij het
+      bedrag exclusief btw. We rekenen hier niets om — er staat wat er staat.
+      Meta schrijft bovendien af bij een <b>drempelbedrag</b> of maandelijks achteraf, dus uitgaven van eind juli kunnen
+      begin augustus van de rekening gaan. Een verschil in één maand is daarom nog geen fout; een verschil dat maand na
+      maand dezelfde kant op staat wél.
+      Dit blok telt altijd alle campagnes samen en gaat per maand: een bankafschrijving valt niet per klant of per dag
+      te splitsen. Het venster en het klantfilter hierboven werken er dus niet in door.</span></div>`;
+
+    if(!betaald.size) return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Meta gerapporteerd tegenover betaald</div>
+        <span class="meta">nog niets ingelezen</span></div>
+      <div class="card-b">
+        <div class="note info" style="margin:0">
+          <b>Er is nog geen betaald bedrag om mee te vergelijken.</b>
+          <span class="meta" style="display:block;margin-top:4px">De bedragen hierboven zijn wat Meta zelf rapporteert.
+          Wat er werkelijk aan Meta betaald is, komt uit de banktransacties: Finance herkent die en schrijft per maand
+          één totaal weg naar <span class="num">mkt_meta_betaald</span>, dat het hele team mag lezen. Zolang er nog geen
+          bankafschrift is ingelezen, blijft die tabel leeg — en dan tonen we hier geen nul, want nul betaald zou iets
+          heel anders betekenen dan niets gemeten. Inlezen doet Tjeerd in Finance; alleen zijn account mag deze tabel
+          vullen.${mist ? ' De tabel bestaat op dit moment nog niet in de database — draai eerst het schema.' : ''}</span>
+        </div>
+      </div>
+      ${voetnoot}</div>`;
+
+    const rij = mk => {
+      const g = gerapporteerd.get(mk);
+      const b = betaald.get(mk);
+      const verschilBedrag = (b && g != null) ? N(b.bedrag) - g : null;
+      return `<tr>
+        <td><b>${h(maandLabel(mk))}</b>${b?.bijgewerkt
+          ? `<div class="rowsub">bijgewerkt ${h(CRM.fmtDateShort(b.bijgewerkt))}${b.door?` door ${h(b.door)}`:''}</div>` : ''}</td>
+        <td class="n num">${g == null ? '<span class="meta">—</span>' : CRM.euro(g)}</td>
+        <td class="n num">${b ? CRM.euro(N(b.bedrag))
+          : '<span class="meta">nog niet ingelezen</span>'}</td>
+        <td class="n num">${verschilBedrag == null ? '<span class="meta">—</span>'
+          : `${verschilBedrag > 0 ? '+' : verschilBedrag < 0 ? '−' : ''}${CRM.euro(Math.abs(verschilBedrag))}`}
+          ${verschilBedrag != null && g > 0
+            ? `<div class="rowsub">${CRM.pct(Math.abs(verschilBedrag)/g*100, 1)} van de opgave</div>` : ''}</td>
+        <td class="meta">${b ? `${h(b.bron || 'bank')}${N(b.regels) ? ` · ${fmtN(b.regels)} ${N(b.regels)===1?'transactie':'transacties'}` : ''}`
+          : '<span class="meta">—</span>'}</td>
+      </tr>`;
+    };
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Meta gerapporteerd tegenover betaald</div>
+        <span class="meta">per maand · alle campagnes</span></div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl"><thead><tr>
+          <th>Maand</th><th class="n">Meta rapporteert</th><th class="n">Betaald volgens bank</th>
+          <th class="n">Verschil</th><th>Herkomst</th>
+        </tr></thead><tbody>${maanden.map(rij).join('')}</tbody></table>
+      </div>
+      ${voetnoot}</div>`;
+  }
+
+  function prestatieHtml(adv, verborgenAdv){
     if(!M.meta.length) return M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : leegMeta();
-    const rows = binnenPeriode();
+    const rows = zichtbareRijen();
     const s = stat(rows);
     const laatst = M.meta[0]?.synced_at ? CRM.fmtDate(M.meta[0].synced_at) : '';
+    const leeg = !rows.length;
     return `
+      ${filterBalkHtml()}
+      ${leeg ? `<div class="card mkt-kaart"><div class="card-b">${CRM.ui.leeg(
+          'Geen advertentiecijfers in deze selectie',
+          `Er staat geen enkele dagregel in mkt_meta_stats voor ${vensterTekst().toLowerCase()}${
+            M.klant ? ` en ${klantLabel()}` : ''}. Kies hierboven een langer venster of een andere klant. `
+          + 'Nul regels is iets anders dan nul euro: we tonen daarom geen bedragen in plaats van € 0,00.'
+          + leegLeadsTekst())}</div></div>`
+        : `
       ${weekHtml()}
-      ${adviesHtml(adv)}
-      <div class="grid c4" style="margin-bottom:18px">
-        ${CRM.ui.kpi('Uitgegeven', `<span class="num">${CRM.euro(s.spend)}</span>`, `laatste ${M.periode} dagen`, 'accent')}
-        ${CRM.ui.kpi('Leads', `<span class="num">${fmtN(s.leads)}</span>`, s.leads ? 'via Meta-formulieren' : 'nog geen leads')}
-        ${CRM.ui.kpi('Kosten per lead', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`, 'gemiddeld over de periode')}
-        ${CRM.ui.kpi('Kliks', `<span class="num">${fmtN(s.kliks)}</span>`,
-          `<span class="num">${fmtN(s.imp)}</span> impressies · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span> · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span>`)}
+      ${adviesHtml(adv, verborgenAdv)}
+      <div class="grid c4" style="margin-bottom:12px">
+        ${CRM.ui.kpi('Uitgegeven', `<span class="num">${CRM.euro(s.spend)}</span>`,
+          `${h(vensterTekst())}${M.klant ? ` · ${h(klantLabel())}` : ''}`, 'accent')}
+        ${CRM.ui.kpi('Meta-leadacties', `<span class="num">${fmtN(s.leads)}</span>`,
+          s.leads ? 'kolom <span class="num">leads</span> — vijf overlappende actietypen opgeteld, dus geen uniek aantal mensen'
+                  : 'geen leadacties gemeld in deze selectie')}
+        ${CRM.ui.kpi('Kosten per leadactie', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`,
+          s.cpl ? 'uitgegeven ÷ leadacties — te laag zodra leads dubbel geteld worden' : 'geen leadacties om door te delen')}
+        ${CRM.ui.kpi('Kliks (alle)', `<span class="num">${fmtN(s.kliks)}</span>`,
+          `<span class="num">${fmtN(s.imp)}</span> impressies · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span> · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span><br>
+           Meta-veld <span class="num">clicks</span>: inclusief likes, reacties, delen en klikken op de paginanaam`)}
       </div>
+      ${herkomstHtml(s)}
+      <div style="height:18px"></div>
+      ${leadControleHtml(s, rows)}
+      ${betaaldHtml()}
+      ${periodeHtml(rows, s)}
+      ${klantTabelHtml(rows, s)}
 
-      <div class="card" style="margin-bottom:18px">
+      <div class="card mkt-kaart">
         <div class="card-h"><div class="h2">Per campagne</div>
           <span class="meta">Klik een regel open voor advertentiesets en advertenties</span></div>
-        <div class="tblwrap" style="border:none;border-radius:0 0 var(--r-l) var(--r-l)">
+        <div class="tblwrap" style="border:none;border-radius:0">
           <table class="tbl mkt-tbl">
             <thead><tr>
               <th>Campagne</th><th class="n">Uitgegeven</th>
               <th style="width:96px">Aandeel uitgaven</th>
-              <th class="n">Leads</th><th class="n">€ / lead</th><th class="n">Kliks</th>
+              <th class="n">Leadacties</th><th class="n">€ / leadactie</th><th class="n">Kliks</th>
               <th class="n">CPC</th><th class="n">CTR</th>
             </tr></thead>
             <tbody id="mkt_camp">${campagneRijen()}</tbody>
             ${totaalRij()}
           </table>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-h"><div class="h2">Dag voor dag</div><span class="meta">laatste 14 dagen</span></div>
-        <div class="card-b">${dagStrook()}</div>
         ${laatst ? `<div class="card-f"><span class="meta">Laatste synchronisatie met Meta: <span class="num">${h(laatst)}</span></span></div>` : ''}
-      </div>`;
+      </div>`}`;
+  }
+
+  /* Geen advertentie-uitgaven wil niet zeggen geen leads: een klant kan Meta-
+     leads hebben zonder dat er in dit venster een campagne op zijn naam liep.
+     Dat hoort in de lege staat te staan, anders lijkt het alsof Meta hier
+     niets heeft opgeleverd. */
+  function leegLeadsTekst(){
+    const cut = vensterVanaf();
+    const n = index().leads.filter(r => r.dk && (!cut || r.dk >= cut) && (!M.klant
+      || (M.klant === '__niet__' ? !r.kkey : r.kkey === M.klant))).length;
+    if(!n) return '';
+    return ` Er ${n===1?'staat':'staan'} in deze selectie wél ${n} lead${n===1?'':'s'} met bron Meta in het CRM —`
+      + ' die zijn dus binnengekomen zonder dat er in dit venster uitgaven aan deze klant toegerekend konden worden.';
+  }
+
+  /* ── Uitgaven per dag, week of maand ──
+     Eén kaart met de grafiek en de tabel eronder, zodat de staaf die opvalt en
+     de regel die je wilt narekenen naast elkaar staan en niet twee kaarten uit
+     elkaar liggen. Beide volgen dezelfde tijdstap, hetzelfde venster en
+     hetzelfde klantfilter. */
+  function emmers(rows){
+    const g = groep();
+    const per = new Map();
+    let zonderDatum = 0;
+    for(const r of rows){
+      const d = String(r.datum||'');
+      if(!isDatum(d)){ zonderDatum += N(r.uitgegeven); continue; }
+      const k = g.sleutel(d);
+      let e = per.get(k);
+      if(!e){ e = {k, rows:[]}; per.set(k, e); }
+      e.rows.push(r);
+    }
+    /* Lege perioden horen erbij: een week zonder uitgaven is informatie, geen
+       reden om de week over te slaan. We lopen van de eerste dag van het
+       venster tot vandaag en zorgen dat elke tijdstap bestaat. */
+    const dagen = rows.map(r => r.datum).filter(isDatum).sort();
+    const start = vensterVanaf() || dagen[0] || CRM.todayISO();
+    const eind  = CRM.todayISO();
+    const loop  = new Date(start + 'T12:00');
+    const stop  = new Date(eind + 'T12:00');
+    for(let i = 0; i < 1200 && loop <= stop; i++){
+      const d = loop.toLocaleDateString('sv-SE');
+      const k = g.sleutel(d);
+      if(!per.has(k)) per.set(k, {k, rows:[]});
+      loop.setDate(loop.getDate() + 1);
+    }
+    const lijst = [...per.values()].sort((a,b) => a.k.localeCompare(b.k));
+    lijst.forEach(e => { e.s = stat(e.rows); });
+    return {lijst, zonderDatum};
+  }
+
+  function periodeHtml(rows, tot){
+    const g = groep();
+    const {lijst, zonderDatum} = emmers(rows);
+    if(!lijst.length) return '';
+    const staven = lijst.slice(-g.staven);
+    const max = Math.max(...staven.map(e => e.s.spend), 0.01);
+    const getoond = staven.length < lijst.length;
+
+    const grafiek = staven.some(e => e.s.spend > 0)
+      ? `<div class="mkt-strook"><div class="mkt-dagen">${staven.map(e => {
+          const cpl = e.s.leads ? e.s.spend/e.s.leads : null;
+          const titel = `${g.lang(e.k)} — ${CRM.euro(e.s.spend,2)} · ${fmtN(e.s.kliks)} kliks · ${fmtN(e.s.leads)} leadacties${cpl?` · ${CRM.euro(cpl,2)} per leadactie`:''}`;
+          const wknd = M.groep === 'dag' && [0,6].includes(new Date(e.k+'T12:00').getDay());
+          return `<div class="mkt-dag${wknd?' we':''}" title="${h(titel)}">
+            <div class="mkt-dagtop num">${e.s.leads || ''}</div>
+            <div class="mkt-dagbar"><i style="height:${e.s.spend > 0 ? Math.max(2, Math.round(e.s.spend/max*100)) : 0}%"></i></div>
+            <div class="mkt-daglbl"><b class="num">${h(g.kort(e.k))}</b><span>${h(g.onder(e.k))}</span></div>
+          </div>`;
+        }).join('')}</div></div>
+        <div class="row" style="margin-top:12px"><span class="meta">Staafhoogte = uitgegeven per ${h(g.enkel)} ·
+          getal boven de staaf = leadacties${M.groep !== 'dag' ? ` · de laatste ${h(g.enkel)} loopt nog en is dus lager dan hij wordt` : ''}${
+          getoond ? ` · de grafiek toont de laatste ${staven.length} ${h(g.meer)}, de tabel de hele periode` : ''}</span></div>`
+      : CRM.ui.leeg(`Geen uitgaven in deze ${h(g.meer)}`,
+          'Er stond geen advertentie aan in deze selectie. Zonder advertenties komen er geen Meta-leads binnen.',
+          `<a class="btn" href="${ADSMANAGER}" target="_blank" rel="noopener">Ads Manager openen ↗</a>`);
+
+    /* De tijdstap waar vandaag in valt is nog niet vol. Zonder dat erbij te
+       zeggen leest de laatste staaf als een daling, terwijl de week gewoon nog
+       moet aflopen — precies de verkeerde conclusie om budget op te baseren. */
+    const nuSleutel = g.sleutel(CRM.todayISO());
+    const rij = e => {
+      const s = e.s;
+      const deelP = tot.spend ? s.spend/tot.spend*100 : 0;
+      const loopt = e.k === nuSleutel;
+      return `<tr${s.rijen ? '' : ' class="mkt-stil"'}>
+        <td><b>${h(g.lang(e.k))}</b>${loopt ? ` <span class="chip">loopt nog</span>` : ''}${
+          s.rijen ? '' : `<div class="rowsub">geen advertentie aan</div>`}</td>
+        <td class="n num">${CRM.euro(s.spend)}</td>
+        <td>${CRM.ui.bar(deelP)}</td>
+        <td class="n num">${fmtN(s.leads)}</td>
+        <td class="n num">${s.cpl?CRM.euro(s.cpl,2):'<span class="meta">—</span>'}</td>
+        <td class="n num">${fmtN(s.kliks)}</td>
+        <td class="n num">${s.cpc?CRM.euro(s.cpc,2):'<span class="meta">—</span>'}</td>
+        <td class="n num">${s.ctr!=null?CRM.pct(s.ctr,2):'<span class="meta">—</span>'}</td>
+      </tr>`;
+    };
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">${h(g.titel)}</div>
+        <span class="meta">${h(vensterTekst())}${M.klant ? ` · ${h(klantLabel())}` : ''}</span></div>
+      <div class="card-b">${grafiek}</div>
+      <div class="tblwrap" style="border:none;border-radius:0;border-top:1px solid var(--line)">
+        <table class="tbl mkt-tbl"><thead><tr>
+          <th>${h(g.titel.replace('Per ','').replace(/^./, c => c.toUpperCase()))}</th>
+          <th class="n">Uitgegeven</th><th style="width:96px">Aandeel</th>
+          <th class="n">Leadacties</th><th class="n">€ / leadactie</th><th class="n">Kliks</th>
+          <th class="n">CPC</th><th class="n">CTR</th>
+        </tr></thead>
+        <tbody>${lijst.slice().reverse().slice(0, 200).map(rij).join('')}</tbody>
+        <tfoot><tr><td><b>Hele periode</b></td>
+          <td class="n num">${CRM.euro(tot.spend)}</td><td></td>
+          <td class="n num">${fmtN(tot.leads)}</td>
+          <td class="n num">${tot.cpl?CRM.euro(tot.cpl,2):'<span class="meta">—</span>'}</td>
+          <td class="n num">${fmtN(tot.kliks)}</td>
+          <td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'<span class="meta">—</span>'}</td>
+          <td class="n num">${tot.ctr!=null?CRM.pct(tot.ctr,2):'<span class="meta">—</span>'}</td>
+        </tr></tfoot>
+      </table></div>
+      <div class="card-f"><span class="meta">Optelling van de dagregels uit <span class="num">mkt_meta_stats</span>
+        (<span class="num">${fmtN(tot.rijen)}</span> regels in deze selectie). CPC en CTR worden per ${h(g.enkel)} opnieuw
+        berekend, niet gemiddeld — een gemiddelde van gemiddelden weegt een stille dag even zwaar als een drukke.
+        ${zonderDatum > 0 ? `<b>${h(CRM.euro(zonderDatum))}</b> aan uitgaven heeft geen leesbare datum en staat in geen enkele ${h(g.enkel)}.` : ''}</span></div>
+    </div>`;
+  }
+
+  /* ── Per klant ──
+     Waar gaat het geld heen. Uitgaven die we aan geen klant kunnen koppelen
+     krijgen hun eigen regel; ze worden nooit over de andere klanten verdeeld.
+     De leads uit het CRM staan er bewust naast: dát is de enige leadtelling op
+     dit tabblad die niet uit Meta komt. */
+  function klantTabelHtml(rows, tot){
+    const D = index();
+    const cut = vensterVanaf();
+    const groepen = new Map();
+    const zorg = (key, label) => {
+      if(!groepen.has(key)) groepen.set(key, {key, label, rows:[], campagnes:new Set(), crm:0, geenKlant:key === '__niet__'});
+      return groepen.get(key);
+    };
+    for(const r of rows){
+      const k = klantVan(r);
+      const g = zorg(k.kkey || '__niet__', k.kkey ? (k.klant || k.kkey) : 'Zonder herkenbare klant');
+      g.rows.push(r);
+      g.campagnes.add(campNaam(r));
+    }
+    /* Leads tellen mee ook als er geen euro aan die klant hangt: een klant met
+       Meta-leads maar zonder campagne is een echte situatie en hoort zichtbaar
+       te zijn, niet weggelaten. */
+    for(const r of D.leads){
+      if(!r.dk || (cut && r.dk < cut)) continue;
+      if(M.klant && (M.klant === '__niet__' ? !!r.kkey : r.kkey !== M.klant)) continue;
+      const g = zorg(r.kkey || '__niet__', r.kkey ? (r.klant || r.kkey) : 'Zonder herkenbare klant');
+      g.crm++;
+    }
+    const rijen = [...groepen.values()].map(g => ({...g, s:stat(g.rows)}))
+      .sort((a,b) => b.s.spend - a.s.spend || b.crm - a.crm || a.label.localeCompare(b.label,'nl'));
+    if(!rijen.length) return '';
+    const crmTot = rijen.reduce((s,r) => s + r.crm, 0);
+
+    const rij = r => `<tr class="clickable${M.klant === r.key ? ' mkt-op' : ''}" data-klantfilter="${h(r.key)}"
+        title="Klik om alleen deze klant te tonen">
+      <td><b>${h(r.label)}</b>
+        ${r.geenKlant ? `<span class="chip amber" style="margin-left:6px">niet toegewezen</span>` : ''}
+        <div class="rowsub">${r.campagnes.size
+          ? h([...r.campagnes].join(' · '))
+          : 'geen campagne in deze periode'}</div></td>
+      <td class="n num">${CRM.euro(r.s.spend)}</td>
+      <td>${CRM.ui.bar(tot.spend ? r.s.spend/tot.spend*100 : 0)}</td>
+      <td class="n num">${fmtN(r.s.leads)}</td>
+      <td class="n num">${r.crm ? fmtN(r.crm) : '<span class="meta">0</span>'}</td>
+      <td class="n num">${r.s.spend > 0 && r.crm ? CRM.euro(r.s.spend/r.crm, 2) : '<span class="meta">—</span>'}</td>
+      <td class="n num">${fmtN(r.s.kliks)}</td>
+      <td class="n num">${r.s.cpc?CRM.euro(r.s.cpc,2):'<span class="meta">—</span>'}</td>
+    </tr>`;
+
+    const nietBedrag = rijen.filter(r => r.geenKlant).reduce((s,r) => s + r.s.spend, 0);
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Per klant</div>
+        <span class="meta">${h(vensterTekst())} · klik een regel om erop te filteren</span></div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl"><thead><tr>
+          <th>Klant</th><th class="n">Uitgegeven</th><th style="width:96px">Aandeel</th>
+          <th class="n">Meta-leadacties</th><th class="n">Leads in CRM</th>
+          <th class="n">€ / CRM-lead</th><th class="n">Kliks</th><th class="n">CPC</th>
+        </tr></thead>
+        <tbody>${rijen.map(rij).join('')}</tbody>
+        <tfoot><tr><td><b>Alles bij elkaar</b></td>
+          <td class="n num">${CRM.euro(tot.spend)}</td><td></td>
+          <td class="n num">${fmtN(tot.leads)}</td>
+          <td class="n num">${fmtN(crmTot)}</td>
+          <td class="n num">${tot.spend > 0 && crmTot ? CRM.euro(tot.spend/crmTot, 2) : '<span class="meta">—</span>'}</td>
+          <td class="n num">${fmtN(tot.kliks)}</td>
+          <td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'<span class="meta">—</span>'}</td>
+        </tr></tfoot>
+      </table></div>
+      <div class="card-f"><span class="meta">Een campagne is een klant. Herkennen we de klant niet in de campagnenaam
+        en wijzen de leads ook niet duidelijk één kant op, dan staan de uitgaven op de regel
+        <b>Zonder herkenbare klant</b>${nietBedrag > 0 ? ` — nu <span class="num">${h(CRM.euro(nietBedrag))}</span>` : ''};
+        ze worden nooit stilzwijgend over de andere klanten verdeeld. <b>€ / CRM-lead</b> rekent met de leads die
+        werkelijk in het CRM staan, niet met de Meta-telling; staat er een streepje, dan zijn er geen CRM-leads of geen
+        toegewezen uitgaven om mee te delen.</span></div>
+    </div>`;
   }
 
   function leegMeta(){
@@ -1166,10 +1761,24 @@
       'Zodra de dagelijkse Meta-synchronisatie draait, verschijnen hier de uitgaven, kliks, CPC en kosten per lead. De koppeling en de tabel worden vanuit het marketingbord beheerd.', knop);
   }
 
-  function adviesHtml(adv){
+  function adviesHtml(adv, verborgen){
     if(!M.meta.length) return '';
-    const agent = agentAdviezen();
-    if(!adv.length && !agent.length) return `<div class="note ok" style="margin-bottom:18px">Geen openstaande advertentie-adviezen — alles loopt binnen de bandbreedte.</div>`;
+    const alleAgent = agentAdviezen();
+    /* Ook de adviezen van de agent horen bij een campagne, en dus bij een
+       klant. Staat er geen campagne bij, dan valt het advies aan niemand toe
+       te rekenen en blijft het staan — verbergen zou het onvindbaar maken. */
+    const agent = M.klant
+      ? alleAgent.filter(b => !String(b.campagne||'').trim()
+          || (M.klant === '__niet__' ? !klantVan(b).kkey : klantVan(b).kkey === M.klant))
+      : alleAgent;
+    verborgen = (verborgen || 0) + (alleAgent.length - agent.length);
+    /* Wat het klantfilter wegneemt zeggen we erbij. Anders lijkt het alsof er
+       geen adviezen zijn terwijl ze alleen bij een andere klant staan. */
+    const gefilterd = verborgen > 0
+      ? `<div class="rowsub" style="margin-top:4px"><span class="num">${fmtN(verborgen)}</span>
+         ${verborgen===1?'advies staat':'adviezen staan'} bij een andere klant en ${verborgen===1?'is':'zijn'} nu verborgen.</div>` : '';
+    if(!adv.length && !agent.length) return `<div class="note ok" style="margin-bottom:18px">Geen openstaande advertentie-adviezen${
+      M.klant ? ` voor ${h(klantLabel())}` : ''} — alles loopt binnen de bandbreedte.${gefilterd}</div>`;
     /* Rood = ingrijpen, oranje = urgentie/waarschuwing, olijf = positief
        (zelfde betekenis als .pos elders in de app). */
     const kleurVar = {red:'var(--red)', amber:'var(--amber)', green:'var(--olive)'};
@@ -1194,7 +1803,8 @@
     const aantal = adv.length + agent.length;
     return `<div class="card" style="margin-bottom:18px">
       <div class="card-h"><div class="h2">Adviezen</div>
-        <span class="meta">${aantal===1?'1 advertentie vraagt':aantal+' advertenties vragen'} om een besluit</span></div>
+        <span class="meta">${aantal===1?'1 advertentie vraagt':aantal+' advertenties vragen'} om een besluit${
+          verborgen > 0 ? ` · ${fmtN(verborgen)} verborgen door het klantfilter` : ''}</span></div>
       <div>${agent.map(agentRij).join('')}${adv.map(a => `
         <div class="mkt-advies">
           <span class="dot" style="background:${kleurVar[a.kleur]}"></span>
@@ -1220,7 +1830,7 @@
   /* Campagne → advertentieset → advertentie, uitklapbaar */
   function boom(){
     const camps = new Map();
-    binnenPeriode().forEach(r => {
+    zichtbareRijen().forEach(r => {
       const c = r.campagne || '—', s = r.advertentieset || '—', a = r.advertentie || '—';
       if(!camps.has(c)) camps.set(c, {naam:c, rows:[], sets:new Map()});
       const C = camps.get(c); C.rows.push(r);
@@ -1251,7 +1861,7 @@
       return `<tr><td colspan="${KOLOMMEN}" style="padding:0">${CRM.ui.leeg('Geen advertenties in deze periode',
         'Er liep geen advertentie in dit venster. Kies hierboven een langere periode, of zet een campagne aan — zonder advertenties komen er geen Meta-leads binnen.', knop)}</td></tr>`;
     }
-    const tot = stat(binnenPeriode());
+    const tot = stat(zichtbareRijen());
     let html = '';
     camps.sort(opWaarde).forEach(c => {
       const ck = 'c:'+c.naam, cOpen = M.open.has(ck);
@@ -1277,7 +1887,7 @@
   /* Totaalregel — zelfde patroon als de tabellen in Performance, zodat je
      de campagnes tegen het geheel kunt lezen zonder zelf op te tellen. */
   function totaalRij(){
-    const tot = stat(binnenPeriode());
+    const tot = stat(zichtbareRijen());
     if(!tot.imp && !tot.kliks && !tot.spend) return '';
     return `<tfoot><tr><td><b>Alle campagnes</b></td>
       <td class="n num">${CRM.euro(tot.spend)}</td>
@@ -1289,35 +1899,8 @@
       <td class="n num">${tot.ctr!=null?CRM.pct(tot.ctr,2):'—'}</td></tr></tfoot>`;
   }
 
-  function dagStrook(){
-    const cut = isoT(14), per = new Map();
-    M.meta.filter(r => (r.datum||'') >= cut).forEach(r => {
-      const d = per.get(r.datum) || {spend:0, kliks:0, leads:0};
-      d.spend += N(r.uitgegeven); d.kliks += N(r.kliks); d.leads += N(r.leads);
-      per.set(r.datum, d);
-    });
-    const dagen = [];
-    for(let i=13; i>=0; i--){
-      const dt = isoT(i);
-      dagen.push(Object.assign({datum:dt}, per.get(dt) || {spend:0, kliks:0, leads:0}));
-    }
-    const max = Math.max(...dagen.map(d => d.spend), 1);
-    if(!dagen.some(d => d.spend > 0)) return CRM.ui.leeg(
-      'Twee weken zonder uitgaven',
-      'Er stond geen advertentie aan. Zonder advertenties komen er geen Meta-leads binnen.',
-      `<a class="btn" href="${ADSMANAGER}" target="_blank" rel="noopener">Ads Manager openen ↗</a>`);
-    return `<div class="mkt-dagen">${dagen.map(d => {
-      const dag = new Date(d.datum + 'T12:00'), wknd = [0,6].includes(dag.getDay());
-      const cpl = d.leads ? d.spend/d.leads : null;
-      const titel = `${CRM.fmtDay(d.datum)} — ${CRM.euro(d.spend,2)} · ${d.kliks} kliks · ${d.leads} leads${cpl?` · ${CRM.euro(cpl,2)} per lead`:''}`;
-      return `<div class="mkt-dag${wknd?' we':''}" title="${h(titel)}">
-        <div class="mkt-dagtop num">${d.leads || ''}</div>
-        <div class="mkt-dagbar"><i style="height:${Math.max(2, Math.round(d.spend/max*100))}%"></i></div>
-        <div class="mkt-daglbl"><b class="num">${dag.getDate()}</b><span>${DAGKORT[dag.getDay()]}</span></div>
-      </div>`;
-    }).join('')}</div>
-    <div class="row" style="margin-top:12px"><span class="meta">Staafhoogte = uitgegeven per dag · getal boven de staaf = leads</span></div>`;
-  }
+  /* dagStrook() is vervangen door periodeHtml(): dezelfde strook, maar dan
+     op de gekozen tijdstap, in het gekozen venster en voor de gekozen klant. */
 
   /* ── 6b. Rendement (cohorten) ── */
   /* Doorklikken: elk lijstje krijgt een sleutel in M.drill, de knop draagt
@@ -1328,7 +1911,7 @@
   function ketenHtml(){
     if(!M.meta.length && M.metaFout) return foutBlok('De Meta-cijfers', M.metaFout);
     M.drill = new Map();
-    const D = ketenData();
+    const D = index();
     if(!D.maanden.length) return `${M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : ''}
       <div class="card"><div class="card-b">${CRM.ui.leeg('Nog niets te meten',
         'Er zijn geen Meta-uitgaven en geen leads met bron Meta. Zodra de dagelijkse synchronisatie draait of de eerste Meta-lead binnenkomt, staat hier per maand wat het geld heeft opgeleverd.',
@@ -1375,9 +1958,9 @@
         ${regel('Afgevallen aan de telefoon', 'Status "Geen interesse" of "Niet geschikt" — beoordeeld en afgevallen.')}
         ${regel('Gekwalificeerd', 'Status "Potentieel", "Potentieel — andere vacature", "Intake gepland" of "Doorgeschoten".')}
         ${regel('Doorgeschoten naar kandidaat', 'De lead heeft een kandidaat_id, óf er staat een kandidaat met deze lead_id. Eén van beide is genoeg.')}
-        ${regel('Voorgesteld', 'Die kandidaat staat nu op Voorgesteld of verder, of stond daar ooit volgens zijn historie.')}
+        ${regel('Voorgesteld', 'Die kandidaat staat nu op Voorgesteld of verder, of stond daar ooit volgens de historie.')}
         ${regel('Geplaatst', 'Die kandidaat heeft getekend (Contract getekend of Gestart) of is daarna gestopt. Een latere stop maakt de plaatsing niet ongedaan.')}
-        ${regel('Nog in behandeling', 'De lead of zijn kandidaat is nog niet klaar: leadstatus nog open, of de kandidaat staat nog in de pijplijn. Zolang dat zo is heet het cohort "nog niet uitgewerkt" en zijn de uitkomsten voorlopig.')}
+        ${regel('Nog in behandeling', 'De lead of de gekoppelde kandidaat is nog niet klaar: leadstatus nog open, of de kandidaat staat nog in de pijplijn. Zolang dat zo is heet het cohort "nog niet uitgewerkt" en zijn de uitkomsten voorlopig.')}
         ${regel('Uitgaven per klant', 'Een Meta-campagne is een klant. We herkennen de klant aan de klantnaam in de campagnenaam; lukt dat niet, dan aan de leads die diezelfde campagnenaam dragen (minstens twee, en een duidelijke meerderheid). Lukt geen van beide, dan staan de uitgaven apart als "niet toegewezen" — ze worden nooit stilzwijgend over de andere klanten verdeeld.')}
         ${regel('Uitgaven per vacature', 'Een advertentieset is een functie. We zoeken bij de klant een vacature met die functienaam; vinden we die niet, dan blijft de advertentieset als eigen regel staan.')}
         ${regel('Kosten per plaatsing', 'Uitgaven van het cohort gedeeld door de plaatsingen uit dat cohort. Bij een cohort dat nog loopt staat er "voorlopig" bij: dat getal kan alleen nog dalen.')}
@@ -1700,7 +2283,7 @@
         + 'Alles op dit scherm rekent met de leads die daadwerkelijk in het CRM staan — het echte rendement is dus hooguit beter dan hier staat.');
     if(g.zonderDatum.length)
       P(`${fmtN(g.zonderDatum.length)} leads zonder binnenkomstdatum`,
-        'Zonder datum hoort een lead bij geen enkele maand en telt hij nergens mee.', 'gat:datum', g.zonderDatum);
+        'Zonder datum hoort een lead bij geen enkele maand en telt nergens mee.', 'gat:datum', g.zonderDatum);
     const zStatus = bij(g.zonderStatus), zVreemd = bij(g.vreemdeStatus), zKlant = bij(g.zonderKlant),
           zVac = bij(g.zonderVacature), zKandWeg = bij(g.kandidaatWeg), zDoor = bij(g.doorZonderKandidaat);
     if(zStatus.length)
@@ -2160,6 +2743,11 @@
        vergelijken en zou het Rendement-tabblad één cohort tonen. */
     for(let d=104; d>=0; d--){
       const datum = isoT(d), recent = d < 7;
+      /* Ruim een week zonder advertenties. Advertenties staan in het echt ook
+         weleens uit, en zonder zo'n gat kun je niet zien hoe het scherm een
+         stille periode toont: een lege staaf en een gedempte regel horen daar
+         te staan, geen € 0,00 alsof er iets gemeten is. */
+      if(d >= 47 && d <= 54) continue;
       const wknd  = [0,6].includes(new Date(datum+'T12:00').getDay());
       ADS.forEach((x,i) => {
         const cpc   = x.cpc * (recent && x.rc ? x.rc : 1);
@@ -2189,6 +2777,27 @@
        note:'Deze set krijgt 60% van het campagnebudget maar levert de duurste leads. Verschuif een deel naar Orderpickers.',
        created_at:new Date(Date.now()-1*864e5).toISOString()}
     ];
+
+    /* Wat er werkelijk aan Meta betaald is, zoals Finance het per maand uit de
+       banktransacties wegschrijft. Bewust niet gelijk aan wat Meta rapporteert
+       (verlegde btw, en Meta schrijft af bij een drempel), en de lopende maand
+       staat er nog niet in — die afschrijving moet nog komen. */
+    const mnd = terug => {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - terug);
+      return d.toLocaleDateString('sv-SE');
+    };
+    const perMaand = new Map();
+    M.meta.forEach(r => { const k = r.datum.slice(0,7);
+      perMaand.set(k, (perMaand.get(k)||0) + r.uitgegeven); });
+    M.betaald = [1,2,3].map(t => {
+      const m = mnd(t);
+      const gerapporteerd = perMaand.get(m.slice(0,7)) || 0;
+      /* Iets minder dan de opgave: een deel van de laatste dagen valt in de
+         afschrijving van de maand erna. */
+      return {maand:m, bedrag:Math.round(gerapporteerd * (0.93 + 0.05*rnd()) * 100)/100,
+              bron:'bank', regels:2 + (t % 3),
+              bijgewerkt:new Date(Date.now() - t*4*864e5).toISOString(), door:'Tjeerd'};
+    });
 
     /* Kanalen zoals ze in mkt_kanalen staan: naam, kleur, volgorde, weekdoel. */
     M.kanalen = [
@@ -2221,7 +2830,7 @@
       P(12, 'Instagram', 'Ploegendienst: drie hardnekkige mythes','Carrousel', 'Gepubliceerd', '', {bereik:6100, likes:151, reacties:9, leads:2}, 'Iedereen denkt dit over nachtdiensten.'),
       P(16, 'LinkedIn',  'Starcuisine breidt uit met drie collega\'s','Tekst', 'Learnings',    'Starcuisine — Productiemedewerker', {bereik:2700, likes:74, reacties:6, leads:0}, 'Drie ploeggenoten erbij bij Starcuisine.',
         'Klantcases op LinkedIn halen weinig bereik maar leveren wél gesprekken op — meten op reacties, niet op views.'),
-      P(21, 'TikTok',    'Van magazijn naar teamleider in een jaar','Reel',    'Gepubliceerd', '', {bereik:17400, likes:520, reacties:31, leads:9}, 'Een jaar geleden orderpicker, nu stuurt hij de ploeg aan.',
+      P(21, 'TikTok',    'Van magazijn naar teamleider in een jaar','Reel',    'Gepubliceerd', '', {bereik:17400, likes:520, reacties:31, leads:9}, 'Een jaar geleden orderpicker, nu teamleider van de ploeg.',
         'Doorgroeiverhalen doen het beter dan salarisposts bij het jongere publiek op TikTok.'),
       P(28, 'Facebook',  'Nachtploeg gezocht in Bodegraven',      'Foto',      'Learnings',    '', {bereik:4800, likes:44, reacties:31, leads:5}, 'Nachtdienst = +25%. Reken maar mee.',
         'De meningsvraag in de caption verdrievoudigde de reacties zonder dat Meta het als bait zag.'),

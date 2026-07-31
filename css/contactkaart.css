@@ -1,0 +1,176 @@
+/* Stijl voor de contactpersonen (js/contactkaart.js). Alleen dit bestand
+   schrijft hier. Eerst de klassen uit base.css; hier staat alleen wat mist.
+
+   Eén uitzondering, bewust: de zijbalk van de relatiekaart gebruikt het
+   kaartframe .kl-railkaart / .kl-r-ct uit css/klanten.css. Die klassen
+   bepalen de compacte railmaat én de volgorde van de blokken op mobiel,
+   en dat hoort de relatiekaart te blijven bepalen. Alles binnenin dat
+   frame is van dit bestand. */
+
+/* ═══ OVERZICHT ═══════════════════════════════════════════════ */
+.ck-fil{gap:10px}
+.ck-tbl td{vertical-align:middle}
+.ck-tbl b{font-size:13px}
+.ck-tbl .chip{margin-left:6px}
+/* Alleen op een telefoon: de functie onder de naam (zie de mediaquery). */
+.ck-mobfunctie{display:none;font-size:11.5px;color:var(--muted);margin-top:2px}
+/* Bereikbaarheid: nummer boven adres, allebei kort gehouden. */
+.ck-bereik{max-width:230px}
+.ck-bereik span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Stilte is het getal waar het overzicht om draait: rustig zolang het klopt,
+   merkoranje zodra het te lang duurt. Eén accent op dit scherm — langer dan
+   negentig dagen en "nooit" onderscheiden zich door gewicht, niet door een
+   tweede kleur, anders wordt een lijst met veel stilte een lichtkrant. */
+.ck-stil{font-variant-numeric:tabular-nums;font-weight:600;color:var(--txt)}
+.ck-stil.lang{color:var(--amber)}
+.ck-stil.nooit{color:var(--amber);font-weight:700}
+.ck-afg{margin-left:7px;font-style:italic}
+
+/* ═══ KAART ═══════════════════════════════════════════════════ */
+.ck-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.ck-hero-t{min-width:0;flex:1}
+.ck-naam{font-size:24px}
+.ck-wie{margin-top:7px}
+.ck-klantlink{font-weight:600}
+.ck-contact{margin-top:9px;font-size:13px;color:var(--txt-2);
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.ck-sep{color:var(--line-2)}
+.ck-snel{align-self:flex-start;justify-content:flex-end}
+/* Bellen is een echte link (tel:); hij mag niet als tekstlink oogen. */
+.ck-snel a.btn:hover{text-decoration:none}
+
+/* KPI-rij: het aantal dagen groot, de eenheid ernaast klein — anders leest
+   "12" als een los cijfer zonder betekenis. */
+.ck-kpi .kpi{padding:16px 18px 14px}
+.ck-lc{display:flex;align-items:baseline;gap:7px}
+.ck-eenheid{font-size:12px;color:var(--txt-2)}
+
+/* ─── Dossier: rail links, werkruimte rechts ──────────────────
+   Op het teamscherm (≥1500px) valt de werkruimte in twee kolommen: de
+   geschiedenis links, wat er loopt rechts. Extra breedte vullen we met
+   méér inhoud naast elkaar, niet met dezelfde inhoud uitgerekt. */
+.ck-dossier{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+.ck-rail{display:flex;flex-direction:column;gap:12px;min-width:0;
+  position:sticky;top:84px;max-height:calc(100vh - 100px);overflow-y:auto;scrollbar-width:thin}
+.ck-werk{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
+.ck-kol{display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (min-width:1500px){
+  .ck-dossier{grid-template-columns:320px minmax(0,1fr)}
+  .ck-werk{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
+}
+
+/* Railkaarten: iets compacter dan de gewone kaarten. */
+.ck-railkaart > .card-h{padding:11px 16px}
+.ck-railkaart > .card-b{padding:12px 16px 14px}
+.ck-railkaart .h2{font-size:13.5px}
+.ck-railknop{width:100%;margin-top:10px;justify-content:center}
+
+/* Gegevens: label links, waarde rechts, alles op één regel. */
+.ck-gg{display:flex;flex-direction:column;gap:7px}
+.ck-gg-rij{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px}
+.ck-gg-lbl{color:var(--muted);flex:0 0 auto}
+.ck-gg-val{min-width:0;text-align:right;color:var(--txt);overflow:hidden;text-overflow:ellipsis}
+.ck-note{margin:12px 0 0;padding-top:11px;border-top:1px solid var(--line);
+  font-size:12.5px;line-height:1.5;color:var(--txt-2);white-space:pre-wrap}
+
+/* Verjaardag: groen, want dit is een kans en geen probleem (signalen zijn
+   merkoranje). Alleen dag en maand — het jaartal komt hier nooit in beeld. */
+.ck-jarig{padding:9px 11px;border-radius:var(--r-s);margin-bottom:12px;
+  background:var(--green-bg);border:1px solid var(--green-line)}
+.ck-jarig b{display:block;font-size:12.5px;color:#1e6b3f}
+.ck-jarig .meta{font-size:11.5px}
+.ck-jarig.nu b{font-weight:700}
+
+/* Taken in de rail */
+.ck-taken{display:flex;flex-direction:column;gap:2px}
+label.ck-taak{display:flex;align-items:flex-start;gap:10px;padding:8px 8px;border-radius:var(--r-s);cursor:pointer}
+label.ck-taak:hover{background:var(--card-2)}
+label.ck-taak > span{flex:1;min-width:0}
+label.ck-taak b{display:block;font-size:12.5px;font-weight:600}
+label.ck-taak .meta{display:block;margin-top:2px}
+label.ck-taak input{margin-top:3px;flex:0 0 auto}
+.ck-afleiding{margin:9px 0 0;font-style:italic;line-height:1.45}
+
+/* ─── Signalen ───────────────────────────────────────────────── */
+ul.ck-sig{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+ul.ck-sig li{font-size:13px;color:var(--txt-2);line-height:1.5;padding-left:18px;position:relative}
+ul.ck-sig li::before{content:'•';position:absolute;left:4px;top:-1px;color:var(--amber);font-size:15px}
+ul.ck-sig b{color:var(--ink)}
+
+/* ─── Geschiedenis ───────────────────────────────────────────── */
+/* Een afgeleide regel mag er niet uitzien als een vastgelegde. Klein,
+   gedempt en cursief: zichtbaar onzeker. */
+.chip.ck-afgchip{font-size:10.5px;padding:0 7px;font-style:italic;
+  background:transparent;border-style:dashed;color:var(--muted)}
+.ck-meer{margin-top:6px}
+
+/* ─── Wat er loopt / dit jaar ────────────────────────────────── */
+.ck-afleiding-blok{margin:0 0 16px;max-width:70ch}
+.ck-sublabel{display:block;margin:0 0 8px}
+.ck-lijst + .ck-sublabel,.ck-geen + .ck-sublabel{margin-top:18px}
+.ck-lijst{display:flex;flex-direction:column;gap:6px}
+.ck-rij{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r-s);
+  border:1px solid var(--line-2);background:var(--card);color:var(--txt);text-decoration:none}
+.ck-rij b{font-size:13px;font-weight:600;min-width:0}
+.ck-rij .meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-rij .chip{margin-left:auto;flex:0 0 auto}
+.ck-rij-d{margin-left:auto;flex:0 0 auto;white-space:nowrap}
+a.ck-rij.klik{transition:border-color .12s}
+a.ck-rij.klik:hover{border-color:var(--olive-l);text-decoration:none}
+.ck-geen{margin:0}
+
+/* ═══ RAIL OP DE RELATIEKAART ═════════════════════════════════ */
+.ck-railzoek{width:100%}
+.ck-railrijen{display:flex;flex-direction:column;margin-top:10px}
+.ck-railrij{display:flex;flex-direction:column;gap:2px;padding:9px 8px;border-radius:var(--r-s);
+  cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s}
+.ck-railrij:hover{background:var(--card-2);border-color:var(--line)}
+.ck-railrij:focus-visible{background:var(--card-2)}
+.ck-railrij + .ck-railrij{margin-top:2px;position:relative}
+.ck-railrij + .ck-railrij::before{content:'';position:absolute;left:8px;right:8px;top:-2px;height:1px;background:var(--line)}
+.ck-railrij b{font-size:13px}
+.ck-railcontact{margin-top:2px;font-size:12.5px;color:var(--txt-2);
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.ck-railcontact a{max-width:100%}
+.ck-raillc{white-space:nowrap;font-size:11.5px;margin-top:2px}
+.ck-raillc.lang{color:var(--amber)}
+
+/* Jarig deze maand, boven de lijst — het moment waarop een AM belt. */
+.ck-jarigblok{margin-top:10px;padding:9px 10px;border-radius:var(--r-s);
+  background:var(--green-bg);border:1px solid var(--green-line)}
+.ck-jarigkop{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:#1e6b3f;margin-bottom:5px}
+.ck-jarigrij{display:flex;align-items:baseline;gap:8px;padding:3px 4px;margin:0 -4px;
+  border-radius:var(--r-s);cursor:pointer;font-size:13px;color:var(--txt)}
+.ck-jarigrij:hover{background:rgba(255,255,255,.6)}
+.ck-jarigrij b{min-width:0;font-weight:600}
+.ck-jarigrij .num{margin-left:auto;font-size:11.5px;color:var(--txt-2);white-space:nowrap}
+.ck-jarigrij.nu .num{color:#1e6b3f;font-weight:700}
+
+/* ═══ MOBIEL ══════════════════════════════════════════════════ */
+@media (max-width:900px){
+  .ck-dossier{display:flex;flex-direction:column;gap:14px}
+  .ck-rail{position:static;max-height:none;overflow:visible}
+  .ck-snel{width:100%;justify-content:flex-start}
+  /* Twee tegels naast elkaar in plaats van vier onder elkaar: anders scroll
+     je op een telefoon langs een halve pagina cijfers voor je bij de
+     geschiedenis bent. Klasse verdubbeld om .grid.c4 te overstemmen. */
+  .grid.ck-kpi{grid-template-columns:repeat(auto-fit,minmax(148px,1fr))}
+  .ck-kpi .kpi{padding:14px 14px 12px}
+  .ck-kpi .big{font-size:26px}
+}
+@media (max-width:700px){
+  .ck-fil > .searchbox{flex:1 1 100% !important;max-width:none !important;min-width:0}
+  .ck-fil > select{flex:1 1 calc(50% - 5px);min-width:0;text-overflow:ellipsis}
+  .ck-fil > .spacer{display:none}
+  .ck-fil > .meta{margin-left:auto}
+  /* Op een telefoon gaat het om wie het is, waar, en hoe lang het stil is.
+     Functie, bereikbaarheid en verjaardag vallen weg; de functie komt terug
+     als regeltje onder de naam, zodat er niets verdwijnt. */
+  .ck-tbl th:nth-child(2),.ck-tbl td:nth-child(2),
+  .ck-tbl th:nth-child(4),.ck-tbl td:nth-child(4),
+  .ck-tbl.metjarig th:nth-child(6),.ck-tbl.metjarig td:nth-child(6){display:none}
+  .ck-mobfunctie{display:block}
+  .ck-tbl td{padding:10px 12px}
+}

@@ -79,6 +79,29 @@ table.tbl tr.fin-sum td{border-top:1px solid var(--line-2);font-weight:700;color
 /* De krapste week in de 13-weken tabel licht op. */
 table.tbl tr.fin-laagst td{background:var(--well)}
 
+/* ─── Betaald aan Meta ─────────────────────────────────────────
+   Het blok leunt volledig op .card/.tbl/.chip/.note uit base.css;
+   hier staat alleen wat daar niet in zit. */
+
+/* De actieve zoektermen als rij chips achter een label. */
+.fin-meta-termen{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.fin-meta-termen > .label{margin:0 4px 0 0}
+
+/* Uitleg over btw en timing: twee korte alinea's, rustig uitgelijnd. */
+.fin-meta-uitleg{margin-top:8px}
+.fin-meta-uitleg p{margin:0 0 8px;line-height:1.55}
+.fin-meta-uitleg p:last-child{margin-bottom:0}
+
+/* Een uitgezette transactie blijft leesbaar maar telt zichtbaar niet mee. */
+table.tbl tr.fin-meta-uit td{opacity:.5}
+table.tbl tr.fin-meta-uit td:first-child{position:relative}
+
+/* Het vinkje "meetellen": label en tekst op één regel, niet uit elkaar
+   getrokken door de rechts uitgelijnde getalkolom. */
+.fin-meta-vink{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font-size:12px;color:var(--txt-2);white-space:nowrap}
+.fin-meta-vink input{margin:0}
+
 /* ─── Brede schermen: meer naast elkaar, niets uitgerekt ──────────
    Finance heeft geen eigen leesbreedte-rem (de .grid-klassen uit base.css
    zetten al kolommen bij), dus hier gaat het puur om de blokken die vast
@@ -112,4 +135,7 @@ table.tbl tr.fin-laagst td{background:var(--well)}
   .fin-adv{padding:11px 12px;gap:9px}
   .fin-brief{padding:14px 15px}
   .fin-chart svg{min-width:460px}
+  /* De Meta-tabellen hebben zes kolommen; op een telefoon scrollen ze
+     binnen hun eigen .tblwrap in plaats van de pagina mee te trekken. */
+  .fin-meta-vink span{display:none}
 }

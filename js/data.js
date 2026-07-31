@@ -4,9 +4,27 @@
    Één plek, zodat fases en kleuren overal identiek zijn.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Recruitment-pijplijn (identiek aan het bestaande pijplijnbord) ─── */
+/* ─── Twee pijplijnen, één overdrachtspunt ──────────────────────
+   Tot 31 juli 2026 was er één lange keten: leads in een tabel, en daarna
+   één bord dat begon bij Intake. Dat liep vast op twee dingen. Er komen
+   ruwweg 4.400 leads per maand binnen en er worden er ~30 geplaatst, dus
+   die twee horen niet op hetzelfde bord. En de stappen ertussen — cv
+   opvragen, cv binnen, videocall inplannen — bestonden nergens, waardoor
+   iemand daar weken kon blijven hangen zonder dat het opviel.
+
+   Sindsdien:
+
+   RECRUITMENTPIJPLIJN — van binnenkomst tot en met de intake. Werkt op
+   crm_leads; de laatste stap maakt er een kandidaat van. Hoog volume,
+   draait om snelheid: alles wat op Nieuw staat moet weg.
+
+   KLANTTRAJECTEN — vanaf het moment dat we iemand bij een klant
+   voorstellen. Werkt op candidates. Laag volume, draait om diepte.
+
+   Het bord begint daarom bij 'Voorgesteld' en niet meer bij 'Intake':
+   wie erop staat is compleet — kaart, cv, intake en videocall gehad.  */
 CRM.PHASES = [
-  {k:'Intake',c:'#9aa3b2'},{k:'Voorgesteld',c:'#5b8bbf'},{k:'O&O sessie',c:'#9575b8'},
+  {k:'Voorgesteld',c:'#5b8bbf'},{k:'O&O sessie',c:'#9575b8'},
   {k:'Eerste gesprek',c:'#5a9bd4'},{k:'Tweede gesprek',c:'#4178b0'},{k:'Meeloopdag',c:'#d9a441'},
   {k:'In de wacht',c:'#4a9d9d'},{k:'Offer',c:'#d97941'},{k:'Contract ondertekenen',c:'#6a9e3f'},
   {k:'Contract getekend',c:'#3d9968'},{k:'Gestart',c:'#3d9968'},
@@ -32,8 +50,24 @@ CRM.faseIs = (a, b) => CRM.faseNorm(a) === CRM.faseNorm(b);
 /* Zit deze fase in de lijst? (vervanger van `lijst.includes(c.fase)`) */
 CRM.faseIn = (f, lijst) => { const x = CRM.faseNorm(f); return (lijst||[]).some(d => CRM.faseNorm(d) === x); };
 
-CRM.faseKleur = f => (CRM.PHASES.find(p=>p.k===CRM.faseNorm(f))||{}).c || '#8a927c';
+/* 'Intake' is geen bordfase meer, maar bestaat wél nog als waarde: het is
+   de laatste stap van de recruitmentpijplijn. Kleur en label moeten
+   blijven werken, anders wordt zo'n kaart grijs en naamloos op elk scherm
+   dat hem toevallig toont. */
+CRM.VOOR_BORD  = [{k:'Intake', c:'#9aa3b2'}];
+CRM.ALLE_FASES = CRM.PHASES.concat(CRM.VOOR_BORD);
+
+CRM.faseKleur = f => (CRM.ALLE_FASES.find(p=>p.k===CRM.faseNorm(f))||{}).c || '#8a927c';
+/* Positie ÓP het bord. -1 betekent "nog niet voorgesteld" — dat geldt voor
+   Intake en voor los geïmporteerde kandidaten zonder fase. */
 CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=>p.k===x); };
+
+/* Klaar om voor te stellen: kaart bestaat, intake is gehad, maar er is nog
+   geen klant aan gekoppeld. Dit is het getal waar Tjeerd op stuurt — "hoeveel
+   potentiële kandidaten hebben we nou" — en het stond tot nu toe nergens. */
+CRM.klaarOmVoorTeStellen = c =>
+  !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
+      && (CRM.faseIs(c.fase, 'Intake') || !!c.intake);
 
 CRM.AFVAL_CATS = {
   niet_gekwalificeerd:['Taal','Ervaring/skills','Motivatie','No-show','Fysiek/gezondheid','Klant wees af','Meeloopdag niet goed','Anders'],
@@ -66,17 +100,34 @@ CRM.salesKleur = f => (CRM.SALES_FASES.find(p=>p.k===f)||{}).c || '#8a927c';
 
 /* ─── Kandidaat-leads (vóór de pijplijn) ────────────────────────
    Statussen die een AM aan een binnengekomen lead geeft.        */
+/* De recruitmentpijplijn, in de volgorde waarin het werk gebeurt.
+   'CV opgevraagd', 'CV binnen' en de twee videocall-stappen zijn er op
+   31 juli 2026 bij gekomen: dat werk gebeurde altijd al, maar had geen
+   status, dus je kon niet zien waar iemand bleef hangen.
+   'Intake gepland' is vervallen — de videocall ís de intake.
+   In productie stond crm_leads op nul rijen, dus hier hoefde niets
+   gemigreerd te worden.                                              */
 CRM.LEAD_STATUS = [
   {k:'Nieuw',                c:'#5b8bbf', ico:'✨'},
   {k:'Gebeld — geen gehoor', c:'#9aa3b2', ico:'📵'},
+  {k:'Potentieel',           c:'#d9a441', ico:'⭐'},
+  {k:'CV opgevraagd',        c:'#c78a3f', ico:'📄'},
+  {k:'CV binnen',            c:'#b08948', ico:'📥'},
+  {k:'Videocall gepland',    c:'#4178b0', ico:'📅'},
+  {k:'Videocall gehad',      c:'#3d9968', ico:'🎥'},
+  {k:'Doorgeschoten',        c:'#2f8f5b', ico:'→'},
+  /* Eindstations, geen doorstroom. */
   {k:'Geen interesse',       c:'#8a8f7a', ico:'✕'},
   {k:'Niet geschikt',        c:'#a08a7a', ico:'⊘'},
-  {k:'Potentieel',           c:'#d9a441', ico:'⭐'},
-  {k:'Potentieel — andere vacature', c:'#9575b8', ico:'🔀'},
-  {k:'Intake gepland',       c:'#3d9968', ico:'📅'},
-  {k:'Doorgeschoten',        c:'#2f8f5b', ico:'→'}
+  {k:'Potentieel — andere vacature', c:'#9575b8', ico:'🔀'}
 ];
-CRM.LEAD_OPEN   = ['Nieuw','Gebeld — geen gehoor','Potentieel','Potentieel — andere vacature','Intake gepland'];
+/* Nog werk aan te doen. 'Potentieel — andere vacature' hoort hier bewust
+   níét bij: die persoon is goed maar wacht op iets wat er nu niet is, en
+   moet niet elke dag als openstaand werk op je scherm staan. */
+CRM.LEAD_OPEN   = ['Nieuw','Gebeld — geen gehoor','Potentieel','CV opgevraagd',
+                   'CV binnen','Videocall gepland','Videocall gehad'];
+/* Waar een lead uiteindelijk terechtkomt: verder of afgevallen. */
+CRM.LEAD_EIND   = ['Doorgeschoten','Geen interesse','Niet geschikt','Potentieel — andere vacature'];
 CRM.leadKleur   = s => (CRM.LEAD_STATUS.find(x=>x.k===s)||{}).c || '#8a927c';
 CRM.leadIco     = s => (CRM.LEAD_STATUS.find(x=>x.k===s)||{}).ico || '•';
 CRM.LEAD_BRONNEN = ['Meta','Indeed','WhatsApp','Website','Referral','Handmatig','Anders'];
