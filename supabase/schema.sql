@@ -22,6 +22,10 @@ alter table candidates add column if not exists vervoer     text default '';  --
 -- Golden candidate: goede kandidaat zonder passende vacature op dit moment.
 -- Geen fase maar een vlag — zo raken we ze nooit meer uit het oog.
 alter table candidates add column if not exists golden      boolean default false;
+-- Geboortedatum: voor de verjaardagstaak op het dashboard van de AM.
+-- Alleen dag en maand worden getoond; het jaartal blijft in de database staan
+-- omdat een datumveld nu eenmaal een jaar nodig heeft, maar nergens in beeld.
+alter table candidates add column if not exists geboortedatum date;
 
 -- Klanten: salesfase, eigenaar (AM), contactgegevens.
 alter table clients add column if not exists fase        text default '';
@@ -230,8 +234,13 @@ create table if not exists crm_contacten (
   linkedin  text default '',
   hoofd     boolean default false,
   note      text default '',
+  -- Zelfde reden als bij kandidaten: verjaardagstaak op het AM-dashboard.
+  geboortedatum date,
   created_at timestamptz default now()
 );
+-- Voor bestaande installaties, want de create hierboven doet niets meer zodra
+-- de tabel al bestaat.
+alter table crm_contacten add column if not exists geboortedatum date;
 create index if not exists crm_contacten_klant on crm_contacten(klant);
 
 -- ─── 7b. Opgemaakte stukken (SWO, plan van aanpak, kandidaatprofiel) ──
