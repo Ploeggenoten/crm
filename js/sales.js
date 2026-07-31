@@ -173,7 +173,7 @@ async function legVast(naam, soort){
 
 /* ─── KPI's ────────────────────────────────────────────────────── */
 /* De KPI's volgen de actieve filters — zo krijgt een AM met "Mijn klanten"
-   aan meteen zijn eigen cijfers te zien. */
+   aan meteen de eigen cijfers te zien. */
 function kpiHTML(alle){
   const actief = alle.filter(k=>CRM.SALES_ACTIEF.includes(faseVan(k)));
   const gespr  = alle.filter(k=>faseVan(k)==='Gesprek ingepland');
@@ -746,7 +746,7 @@ function radarRijen(){
     || String(a.bedrijf).localeCompare(String(b.bedrijf)));
 }
 
-const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig'};
+const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig', osm:'OpenStreetMap'};
 const bronChip = b => {
   const kleur = b==='claude-research' ? ' purple' : b==='handmatig' ? ' blue' : '';
   return `<span class="chip${kleur}">${h(BRON_LBL[b]||b||'—')}</span>`;

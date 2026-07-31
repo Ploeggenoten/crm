@@ -144,6 +144,70 @@ Deno.serve(async (req) => {
       { headers: { "Content-Type": "application/json" } });
   }
 
+  // Modus 'osm': échte productie/logistiek-bedrijven uit OpenStreetMap (gratis,
+  // geen sleutel). Geen wervingssignaal, wel gegarandeerd EINDBEDRIJVEN: fabrieken,
+  // magazijnen en distributiecentra. Regio = ISO3166-2 (NL-ZH, NL-NH, NL-UT, NL-NB …).
+  if (body.osm) {
+    const regio = String(body.regio ?? "NL-ZH");
+    const max = Math.min(Number(body.max ?? 60), 150);
+    const ql = `[out:json][timeout:60];
+area["ISO3166-2"="${regio}"]->.a;
+(
+  nwr["man_made"="works"]["name"](area.a);
+  nwr["building"="warehouse"]["name"](area.a);
+  nwr["building"="industrial"]["name"](area.a);
+  nwr["industrial"]["name"](area.a);
+  nwr["office"="logistics"]["name"](area.a);
+);
+out center tags 2500;`;
+    let elements: Record<string, unknown>[] = [];
+    try {
+      const r = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST", headers: { "Content-Type": "text/plain" }, body: ql,
+      });
+      if (!r.ok) return new Response(JSON.stringify({ error: "overpass status " + r.status }), { status: 502 });
+      const j = await r.json();
+      elements = (j.elements ?? []) as Record<string, unknown>[];
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "overpass onbereikbaar", detail: String(e) }), { status: 502 });
+    }
+
+    // Dedup tegen bestaande klanten én bestaande radar-rijen.
+    const { data: clients2 } = await service.from("clients").select("naam");
+    const bekend2 = new Set((clients2 ?? []).map((c) => norm(c.naam)));
+    const { data: radarNu } = await service.from("crm_leadradar").select("bedrijf");
+    for (const rr of radarNu ?? []) bekend2.add(norm(String(rr.bedrijf ?? "")));
+
+    // Namen die een terrein/gebied beschrijven i.p.v. een bedrijf.
+    const gebiedRe = /industrieterrein|bedrijventerrein|bedrijvenpark|industriepark|industriegebied|\bhaven\b|\bterrein\b|\bzone\b|logistiek park|business park/i;
+    const vandaag2 = new Date().toISOString().slice(0, 10);
+    const gezien = new Set<string>();
+    let nieuw = 0, overgeslagen = 0;
+    for (const el of elements) {
+      if (nieuw >= max) break;
+      const t = (el.tags ?? {}) as Record<string, string>;
+      const naam = String(t.name ?? "").trim();
+      if (!naam || naam.length < 3) { overgeslagen++; continue; }
+      const nn = norm(naam);
+      if (!nn || gezien.has(nn) || bekend2.has(nn)) { overgeslagen++; continue; }
+      if (isBureau(naam) || gebiedRe.test(naam)) { overgeslagen++; continue; }
+      gezien.add(nn);
+      const magazijn = t.building === "warehouse" || t.office === "logistics";
+      const plaats = t["addr:city"] ?? t["addr:place"] ?? t["addr:suburb"] ?? "";
+      const website = t.website ?? t["contact:website"] ?? "";
+      const { error } = await service.from("crm_leadradar").insert({
+        id: "lr" + Date.now() + Math.floor(Math.random() * 10000),
+        bedrijf: naam, plaats: String(plaats),
+        functies: magazijn ? "Magazijn / distributie" : "Productie / fabriek",
+        vacatures: 0, bron: "osm", url: String(website),
+        gevonden_op: vandaag2, laatst_gezien: vandaag2, status: "nieuw",
+      });
+      if (!error) nieuw++; else overgeslagen++;
+    }
+    return new Response(JSON.stringify({ ok: true, regio, gescand: elements.length, nieuw, overgeslagen }),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
   const APP_ID = Deno.env.get("ADZUNA_APP_ID"), APP_KEY = Deno.env.get("ADZUNA_APP_KEY");
   if (!APP_ID || !APP_KEY)
     return new Response(JSON.stringify({ error: "secrets ADZUNA_APP_ID/ADZUNA_APP_KEY ontbreken" }), { status: 500 });
