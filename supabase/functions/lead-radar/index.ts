@@ -148,18 +148,28 @@ Deno.serve(async (req) => {
   // geen sleutel). Geen wervingssignaal, wel gegarandeerd EINDBEDRIJVEN: fabrieken,
   // magazijnen en distributiecentra. Regio = ISO3166-2 (NL-ZH, NL-NH, NL-UT, NL-NB …).
   if (body.osm) {
-    const regio = String(body.regio ?? "Zuid-Holland");   // provincienaam (admin_level 4)
+    const regio = String(body.regio ?? "Zuid-Holland");
     const max = Math.min(Number(body.max ?? 60), 150);
-    const ql = `[out:json][timeout:90];
-area["name"="${regio}"]["admin_level"="4"]->.a;
+    // Bounding box per provincie (zuid,west,noord,oost). Veel sneller dan
+    // filteren op de provincie-polygoon (die time-out't onder Overpass-drukte).
+    const BBOX: Record<string, string> = {
+      "Zuid-Holland": "51.65,3.85,52.35,4.95",
+      "Noord-Holland": "52.15,4.45,53.20,5.35",
+      "Utrecht": "51.95,4.85,52.30,5.55",
+      "Noord-Brabant": "51.30,4.15,51.85,6.05",
+      "Gelderland": "51.75,5.05,52.45,6.85",
+      "Flevoland": "52.25,5.20,52.80,6.05",
+      "Overijssel": "52.15,5.85,52.75,7.10",
+      "Limburg": "50.75,5.55,51.60,6.25",
+    };
+    const bbox = BBOX[regio] ?? BBOX["Zuid-Holland"];
+    const ql = `[out:json][timeout:40][bbox:${bbox}];
 (
-  nwr["man_made"="works"]["name"](area.a);
-  nwr["office"="logistics"]["name"](area.a);
-  nwr["building"="warehouse"]["name"]["website"](area.a);
-  nwr["building"="industrial"]["name"]["website"](area.a);
-  nwr["industrial"]["name"]["operator"](area.a);
+  nwr["man_made"="works"]["name"];
+  nwr["office"="logistics"]["name"];
+  nwr["building"="warehouse"]["name"]["website"];
 );
-out center tags 800;`;
+out center tags 600;`;
     // Overpass weigert anonieme/Deno-requests (406) — dus een nette User-Agent.
     // Twee servers: valt de eerste uit (drukte → 504), dan de reserve.
     const endpoints = [
@@ -175,10 +185,13 @@ out center tags 800;`;
     let gelukt = false, laatst = 0;
     for (const ep of endpoints) {
       try {
-        const r = await fetch(ep, { method: "POST", headers: osmHeaders, body: "data=" + encodeURIComponent(ql) });
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 45000);   // max 45s per server
+        const r = await fetch(ep, { method: "POST", headers: osmHeaders, body: "data=" + encodeURIComponent(ql), signal: ctrl.signal });
+        clearTimeout(timer);
         laatst = r.status;
         if (r.ok) { const j = await r.json(); elements = (j.elements ?? []) as Record<string, unknown>[]; gelukt = true; break; }
-      } catch (_e) { /* volgende server proberen */ }
+      } catch (_e) { /* time-out of fout → volgende server proberen */ }
     }
     if (!gelukt) return new Response(JSON.stringify({ error: "overpass onbereikbaar", status: laatst }), { status: 502 });
 
