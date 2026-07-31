@@ -58,6 +58,23 @@
   --nav-w:232px;
 }
 
+/* ─── Breedtestappen — het scherm waar het team omheen staat ─────
+   Ploeggenoten werkt dagelijks met het hele team om één groot scherm
+   (±2000px). Modules hadden allemaal hun eigen leesbreedte-rem
+   (860–1240px), waardoor rechts een derde van dat scherm leeg bleef.
+   Vanaf nu geldt in het hele systeem dezelfde ladder:
+
+     < 1500px  — één leeskolom, precies zoals het was (laptop, tablet)
+     ≥ 1500px  — "breed":  de rem vervalt, blokken gaan 2 naast elkaar
+     ≥ 1900px  — "teamscherm": waar het past een derde kolom erbij
+
+   REGEL: extra breedte vullen we met MEER inhoud naast elkaar, nooit
+   met dezelfde inhoud uitgerekt. Lopende tekst (uitleg, lege staten,
+   hulpteksten) houdt daarom altijd zijn eigen max-width in ch/px —
+   die remmen blijven staan. Deze twee getallen staan bewust alleen
+   hier in een comment: media queries kunnen geen custom properties
+   lezen, dus elke module herhaalt 1500px / 1900px letterlijk. */
+
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{
@@ -299,7 +316,12 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 
 /* ─── Pijplijnbord (kolommen) ────────────────────────────────── */
 .board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:4px 28px 32px;min-height:60vh}
-.bcol{flex:0 0 268px;width:268px;background:var(--well-2);border:1px solid var(--line-2);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
+/* flex:1 0 268px in plaats van 0 0 268px: de kolommen mogen GROEIEN als ze
+   met z'n allen passen (gefilterd bord, weinig fases) — dan blijft er rechts
+   geen strook crème over. Krimpen mogen ze niet, anders zou een bord met elf
+   fases zijn kolommen tot 150px persen; dan schuift het bord liever, precies
+   zoals nu. max-width houdt een kolom leesbaar als er maar drie zijn. */
+.bcol{flex:1 0 268px;width:268px;max-width:360px;background:var(--well-2);border:1px solid var(--line-2);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 160px)}
 .bcol.over{background:#dbe1c4;border-color:var(--olive-l)}
 /* Bordkolommen mogen eruit springen: fasekleur als bovenrand + telbadge. */
 .bcol-h{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
@@ -334,6 +356,10 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 }
 .drawer.on{transform:none}
 .drawer:not(.on){pointer-events:none}
+/* Op het teamscherm staat iedereen naar hetzelfde detailpaneel te kijken.
+   880px op 2000px liet daar driekwart scrim over; de velden binnenin staan
+   in .f-grid (auto-fit 190px) en zetten die extra ruimte om in kolommen. */
+@media (min-width:1900px){ .drawer{width:min(1180px,66vw)} }
 .drawer-h{background:var(--card);border-bottom:1px solid var(--line);padding:16px 22px;display:flex;align-items:flex-start;gap:13px}
 .drawer-h .x{margin-left:auto}
 .drawer-b{flex:1;overflow-y:auto;padding:20px 22px 60px}

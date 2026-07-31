@@ -1305,7 +1305,16 @@ const ooSessies = () => CRM.state.ooSessions || [];
 const ooSessie  = id => ooSessies().find(s => String(s.id) === String(id));
 const sessLeden = id => CRM.kandidaten().filter(c => String(c.ooId) === String(id) && c.fase === 'O&O sessie');
 
-function alles(){ tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges(); }
+/* `alles()` tekent de eigen schermdelen van Recruitment opnieuw. Die bestaan
+   alleen als Recruitment ook echt in beeld is. De fasewissel en het
+   uitvalformulier worden óók vanaf het pijplijnbord aangeroepen (slepen naar
+   de uitvalstrook) en vanaf de kandidatenkaart — dan moet de module die op dat
+   moment openstaat verversen, anders blijft de kaart daar in zijn oude kolom
+   staan en lijkt het alsof er niets is opgeslagen. */
+function alles(){
+  if(CRM.view !== 'recruitment') return CRM.render();
+  tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges();
+}
 
 /* Contract getekend + startdatum bereikt → automatisch Gestart (zoals het bord). */
 async function promoteerStarts(){

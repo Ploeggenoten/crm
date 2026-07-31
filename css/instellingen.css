@@ -46,3 +46,21 @@ tr.in-nu td{background:var(--card-2)}
 .in-msschakel span{display:flex;flex-direction:column;gap:1px}
 .in-msschakel b{font-size:13px;font-weight:600}
 .in-msschakel .meta{font-size:11.5px}
+
+/* ─── Breed scherm: de instellingenkaarten naast elkaar ──────────
+   860px op een teamscherm van 2000px was de smalste kolom van de hele app
+   (55% benutting). De kaarten zijn los van elkaar te lezen — targets, team,
+   Microsoft, contacten, export, systeem — dus ze mogen naast elkaar. Met
+   column-count in plaats van grid, omdat de kaarten sterk in hoogte
+   verschillen: multicol vult de kolommen uit en laat geen ragged gat.
+   break-inside:avoid houdt één kaart altijd in één kolom.
+   De marges worden hier omgezet van boven naar onder (de module zet een
+   inline margin-top op elke kaart behalve de eerste); anders zou de bovenste
+   kaart van kolom 2 en 3 20px lager beginnen dan die van kolom 1. */
+@media (min-width:1500px){
+  .in-wrap{max-width:none;column-count:2;column-gap:22px}
+  .in-wrap > .card{margin-top:0 !important;margin-bottom:20px;break-inside:avoid}
+}
+@media (min-width:1900px){
+  .in-wrap{column-count:3}
+}

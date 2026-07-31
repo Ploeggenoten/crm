@@ -97,6 +97,17 @@
 }
 .hi-preview .meta{font-weight:400}
 
+/* ── Breed scherm: kaarten naast elkaar ─────────────────────────
+   960px was de leesbreedte van één kaart; op een teamscherm betekende dat
+   dat je nog steeds maar drie vacatures tegelijk zag met de helft van het
+   scherm leeg ernaast. De kaart zelf blijft ongeveer even breed — er komen
+   alleen kolommen bij, zodat de hele hotlijst in één blik past.
+   align-items:start zodat een uitgeklapte kaart zijn buurman niet oprekt. */
+@media (min-width:1500px){
+  .hotlijst{max-width:none;display:grid;align-items:start;
+    grid-template-columns:repeat(auto-fit,minmax(500px,1fr))}
+}
+
 /* ── Mobiel ─────────────────────────────────────────────────── */
 @media (max-width:700px){
   .hot-top{flex-wrap:wrap}

@@ -577,6 +577,7 @@ function kaart(mount, acties, id){
         <div class="stack">
           ${kansenHtml(c)}
           ${trajectHtml(c)}
+          ${uitvalHtml(c)}
           ${contractHtml(c)}
           ${factuurklaarHtml(c)}
           ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
@@ -592,6 +593,10 @@ function kaart(mount, acties, id){
   bindVelden(mount, c);
   bindSterren(mount, c);
   bindMist(mount, c);
+  /* Uitvalgegevens vastleggen of bijwerken vanaf de kaart zelf — hetzelfde
+     formulier als op het bord, zodat er maar één plek is waar dit gebeurt. */
+  mount.querySelector('#c_uitval')?.addEventListener('click',
+    () => CRM.kandidaatUitval(c.id, c.fase));
   /* "Klaar voor facturatie": springen naar het ontbrekende veld. Sommige
      velden staan alleen op de kaart in bepaalde fases (geplaatstOp verschijnt
      pas bij een plaatsing). Bestaat het veld hier niet, dan wordt de knop
@@ -1226,6 +1231,45 @@ function intakeHtml(c){
     </div></div>`;
 }
 
+/* ─── Uitval ──────────────────────────────────────────────────────
+   Sleept iemand een kaart op het bord naar de uitvalstrook, dan wordt hier
+   direct zichtbaar wát er is vastgelegd — niet alleen dat de fase veranderde.
+   Stond eerder als twee losse regeltjes in het Trajectblok; dat liet de helft
+   van het uitvalformulier onzichtbaar (soort, wie, toelichting, herbruikbaar).
+   Labels staan hier bewust lokaal: modules delen in dit project geen code. */
+const AFVAL_SOORT = {niet_gekwalificeerd:'Niet gekwalificeerd', offer_afgewezen:'Offer afgewezen'};
+const STOP_DOOR   = {kandidaat:'Kandidaat zelf', klant:'Klant', anders:'Anders'};
+
+function uitvalHtml(c){
+  const afgevallen = c.fase === 'Afgevallen', gestopt = c.fase === 'Gestopt';
+  if(!afgevallen && !gestopt) return '';
+  const rij = (lbl, waarde) => waarde
+    ? `<div class="kd-veld"><span class="label">${h(lbl)}</span><span>${h(waarde)}</span></div>` : '';
+  /* recyclebaar is bewust drieledig: true / false / null (nooit beoordeeld). */
+  const herbruik = c.recyclebaar == null ? 'nog niet beoordeeld'
+                 : c.recyclebaar ? 'ja — mag opnieuw aangeboden worden' : 'nee';
+  const leeg = !c.afvalCat && !c.stopCat && !c.reden && !c.afvalType && !c.stopDoor;
+  return `<div class="card">
+    <div class="card-h"><div class="h2">${afgevallen ? 'Afgevallen' : 'Gestopt'}</div>
+      <span class="chip${afgevallen?'':' red'}">${h(CRM.fmtDate(c.gestoptOp || c.since) || '—')}</span>
+      <span class="spacer"></span>
+      <button class="btn ghost sm" id="c_uitval">${leeg ? 'Reden vastleggen' : 'Bijwerken'}</button></div>
+    <div class="card-b">
+      ${leeg ? `<div class="note warn" style="margin:0 0 12px">De fase staat op ${h(c.fase)}, maar er is nog geen reden vastgelegd.
+        Zonder reden telt deze kaart nergens mee in de uitvalcijfers.</div>` : ''}
+      <div class="kd-velden">
+        ${afgevallen
+          ? rij('Soort', AFVAL_SOORT[c.afvalType] || c.afvalType) + rij('Reden', c.afvalCat)
+          : rij('Gestopt door', STOP_DOOR[c.stopDoor] || c.stopDoor) + rij('Reden', c.stopCat)}
+        ${gestopt ? rij('Gestopt op', CRM.fmtDate(c.gestoptOp)) + rij('Was geplaatst op', CRM.fmtDate(c.geplaatstOp)) : ''}
+        ${rij('Herbruikbaar', herbruik)}
+        ${c.reden ? `<div class="kd-veld"><span class="label">Toelichting</span><span>${h(c.reden)}</span></div>` : ''}
+      </div>
+      ${gestopt && !c.geplaatstOp ? `<div class="note warn" style="margin-top:12px">Geen plaatsingsdatum ingevuld.
+        Deze stop telt daardoor niet mee bij "gestopt deze maand".</div>` : ''}
+    </div></div>`;
+}
+
 /* ─── Klaar voor facturatie ───────────────────────────────────────
    Wat er nog ontbreekt voordat de fee uitgerekend kan worden. Het lijstje
    is voor IEDEREEN: de AM moet weten wat hij moet invullen, en dat zijn
@@ -1362,8 +1406,6 @@ function trajectHtml(c){
         ${TRAJECT_VELDEN.map(f => veldRij(c, f)).join('')}
         ${teams?`<div class="kd-veld"><span class="label">Videocall</span><span>
           <a class="btn sub sm kd-teamsl" href="${h(teams)}" target="_blank" rel="noopener">Teams-link</a></span></div>`:''}
-        ${c.afvalCat?`<div class="kd-veld"><span class="label">Reden afval</span><span>${h(c.afvalCat)}</span></div>`:''}
-        ${c.stopCat?`<div class="kd-veld"><span class="label">Reden stop</span><span>${h(c.stopCat)}${c.stopDoor?' ('+h(c.stopDoor)+')':''}</span></div>`:''}
       </div>
       <div class="kd-stappen">${stappen.map((p,i) =>
         `<i class="${i<=idx&&idx>=0?'on':''}" style="${i<=idx&&idx>=0?'background:'+p.c:''}" title="${h(p.k)}"></i>`).join('')}</div>

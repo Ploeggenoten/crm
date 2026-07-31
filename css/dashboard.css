@@ -237,6 +237,33 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
 .zij-spark svg{display:block;opacity:.85;flex:0 0 auto}
 .zij-spark{display:flex;align-items:center;gap:8px;margin-top:10px}
 
+/* ─── Breed scherm: de rechterrail splitst in kolommen ───────────
+   Het dashboard zat op max-width:1240px vast. Op het teamscherm (±2000px)
+   stond daardoor alles in de linkerhelft en bleef rechts een leeg crème
+   vlak staan. De rem gaat er vanaf 1500px af, maar de tijdlijn rekken we
+   NIET mee uit: een dagbaan van 1700px maakt de dag niet overzichtelijker.
+   In plaats daarvan gaat alle gewonnen breedte naar de rail, die zichzelf
+   in kolommen opdeelt zodra elk blok 285px kan krijgen. Zo staan "Je mail",
+   "Hot vacatures", "Voor jou" en "Jouw maand" naast elkaar in plaats van
+   onder elkaar — de hele dag in één blik, zonder scrollen.
+
+   auto-fit (niet auto-fill): heeft een rol minder blokken — een marketeer
+   ziet geen "Jouw maand", zonder Outlook-koppeling geen "Je mail" — dan
+   vallen de lege sporen weg en verdelen de overgebleven blokken de ruimte,
+   in plaats van dat er een gat blijft staan. */
+@media (min-width:1500px){
+  .dash2{max-width:none}
+  /* De rail krijgt de grootste fr-factor: extra breedte gaat vooral daarheen.
+     De tijdlijn groeit wel mee, maar veel trager — en niet onder de 500px,
+     want dan gaan de regels in de dagbaan afkappen. De rail zet die ruimte
+     zelf om in kolommen: rond 1600px past een tweede, rond 1870px een derde.
+     Daarom staat hier geen harde stap op 1900px — auto-fit doet het beter
+     dan een vast getal, omdat het aantal blokken per rol verschilt. */
+  .dash2-grid{grid-template-columns:minmax(500px,1.15fr) minmax(600px,1.5fr)}
+  .zij{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));
+    gap:16px;align-content:start;align-items:start}
+}
+
 /* ─── Mobiel: tijdlijn boven, rechterkolom eronder ───────────── */
 @media (max-width:1000px){
   .dash2-grid{grid-template-columns:1fr}

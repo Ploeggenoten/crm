@@ -114,3 +114,14 @@
 .pf-naam.pos em{color:var(--olive)}
 .pf-naam.neg em{color:var(--red)}
 .pf-naam.nu em{color:var(--amber);font-weight:600}
+
+/* ─── Breed scherm ───────────────────────────────────────────────
+   De rem van 1240px verdwijnt vanaf 1500px. Anders dan bij het dashboard is
+   uitrekken hier wél winst: elk blok is een grid dat kolommen bijzet
+   (.grid c3/c4, .pf-namen, .pf-tempo — allemaal auto-fit) of een grafiek of
+   tabel, en die worden met meer breedte fijnmaziger in plaats van ijler.
+   .pf-uitleg houdt bewust zijn eigen max-width van 760px: dat is lopende
+   tekst en die blijft op één leesbare regellengte staan. */
+@media (min-width:1500px){
+  .pf{max-width:none}
+}
