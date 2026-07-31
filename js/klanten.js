@@ -877,7 +877,7 @@ function gegevensHtml(k){
    Word-document erbij.
 
    PRIVACY: dit hele blok — en élke euro en élk percentage erin —
-   staat achter CRM.canSeeMoney(). Zonder rechten wordt de kaart niet
+   staat achter CRM.magOpbrengstZien(). Zonder rechten wordt de kaart niet
    getekend, niets opgehaald en niets berekend. Wat een AM wél moet
    zien (welke velden er nog ontbreken) komt uit
    CRM.fee.watMist(), en dat is bewust bedrag- en percentageloos.

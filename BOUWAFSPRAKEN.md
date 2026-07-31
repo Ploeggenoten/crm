@@ -92,7 +92,8 @@ CRM.logActiviteit(entiteit, ref, soort, tekst)   // klant|kandidaat|lead|vacatur
 CRM.activiteitenVoor(entiteit, ref)
 CRM.matchScore(kandidaat, vacature) / CRM.besteMatches(kandidaat)
 CRM.volledigheid(kandidaat)        // tegen vervuiling
-CRM.canSeeMoney()                  // ALLEEN dan fee/omzet/marge tonen
+CRM.magOpbrengstZien()             // fee per plaatsing + omzet per klant — HELE TEAM
+CRM.canSeeMoney()                  // winst, marge, cashflow, banksaldo — ALLEEN de eigenaar
 CRM.me() / CRM.isVanMij(obj)       // filter "mijn klanten/leads"
 CRM.fee(kandidaat, klant)          // grondslag + fee, één rekenregel
 CRM.opvolging.openVoor(mij) / .tussen(van, tot) / .registreerBron(fn)
@@ -127,9 +128,25 @@ en `crm_leads`, `crm_activiteiten`, `crm_taken`, `crm_documenten`, `crm_kansen`,
 
 ## 6. Geld en privacy
 
-Fee, omzet, marge en alles uit `fin_*` **alleen** tonen achter
-`if(CRM.canSeeMoney())`. Het team mag die cijfers niet zien. Toon in plaats
-daarvan aantallen (plaatsingen, gesprekken) — die zijn voor iedereen.
+Sinds 31 juli 2026 zijn er **twee** poorten. Pak de juiste:
+
+| | Wat | Wie |
+|---|---|---|
+| `CRM.magOpbrengstZien()` | Fee per plaatsing, omzet per klant | Iedereen die is ingelogd |
+| `CRM.canSeeMoney()` | Winst, marge, cashflow, banksaldo, gefactureerde omzet, alles uit `fin_*` | Alleen de eigenaar |
+
+Besluit Tjeerd: "fee mag zichtbaar zijn voor iedereen, omzet per klant ook
+prima. Alleen winst etc en cashflow en allemaal andere cijfers zijn voor
+finance bij mij." Zonder de fee stuurt een accountmanager op aantallen in
+plaats van op opbrengst.
+
+**Lezen open, schrijven dicht:** het team ziet de fee, maar alleen de eigenaar
+kan een fee-afspraak wijzigen (`crm_afspraken`). Een percentage per klant is
+een onderhandelingsresultaat, geen veld dat je even bijwerkt. De database doet
+hetzelfde.
+
+Kun je iets niet tonen, toon dan het aantal (plaatsingen, gesprekken) — dat is
+voor iedereen.
 
 ## 7. Nederlands
 

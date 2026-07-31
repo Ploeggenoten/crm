@@ -833,7 +833,7 @@ function toonKaart(ev){
     /* De accountmanager staat er niet als voetnoot bij maar als de
        tweede kop van de kaart: dit is een compliment aan een persoon,
        geen systeemmelding. Wie het feest van een ander ziet, weet
-       binnen één blik wie hij moet feliciteren. */
+       binnen één blik wie er gefeliciteerd moet worden. */
     (am ? '<div class="feest-am">' + CRM.avatar(am) +
           '<div class="feest-am-t"><span>Binnengehaald door</span><b>' + h(am) + '</b></div>' +
           '</div>' : '') +

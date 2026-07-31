@@ -7,7 +7,7 @@ Nog niet ingelogd of Outlook nog niet gekoppeld? Begin bij
 [SNELSTART.md](SNELSTART.md).
 
 Het menu is opgedeeld in groepen: **Overzicht** (Dashboard), **Commercie**
-(Sales, Relaties), **Recruitment** (Recruitment, Pijplijn, Hot vacatures,
+(Sales, Relaties), **Recruitment** (Recruitment, Klanttrajecten, Vacatures,
 Kandidaten, Sourcing), **Groei** (Marketing, Performance) en — alleen bij
 Tjeerd — Finance en Instellingen.
 
@@ -164,7 +164,7 @@ altijd te herleiden waaróm iemand afviel.
   sollicitant twee dagen of langer op *Nieuw*, dan komt die vanzelf op je
   dashboard terug — net als een lead waarvan de opvolgdatum verstreken is.
 - Statussen: Nieuw, Gebeld — geen gehoor, Geen interesse, Niet geschikt,
-  Potentieel, Potentieel — andere vacature, Intake gepland, Doorgeschoten. Er is
+  Potentieel, Potentieel — andere vacature, Videocall gepland, Doorgeschoten. Er is
   geen aparte afwijsknop: afwijzen doe je door de status op *Geen interesse* of
   *Niet geschikt* te zetten.
 - Bij **+ Sollicitant** zijn naam en telefoonnummer verplicht. Zonder nummer kun
@@ -192,13 +192,13 @@ altijd te herleiden waaróm iemand afviel.
 
 ---
 
-## Pijplijn
+## Klanttrajecten
 
 **Waarvoor.** Het ATS-bord, van Intake tot Gestart. De uitval leeft bewust in
 Recruitment, zodat dit bord alleen lopende trajecten toont.
 
 Klik je op een kaart, dan opent de **volledige kandidatenkaart** — niet meer het
-smalle bewerkpaneel van het oude pijplijnbord. De knop **← Terug naar het bord**
+smalle bewerkpaneel van het oude pijplijnbord. De knop **← Terug naar Klanttrajecten**
 zet je terug op dezelfde plek, met dezelfde filters.
 
 **Wat het je oplevert.** In één scherm zie je waar het vastloopt, wie er deze
@@ -246,7 +246,7 @@ Verder:
 
 ---
 
-## Hot vacatures
+## Vacatures
 
 **Waarvoor.** De vacatures waar op dit moment de meeste druk op staat, met een
 deadline en een meetbaar doel.

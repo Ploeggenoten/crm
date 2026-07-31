@@ -977,6 +977,7 @@ function kaart(mount, acties, id){
   mount.querySelectorAll('#c_cvlees, #c_cvleeg').forEach(b => b.onclick = () => cvLezen(c));
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
   if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
+  if(CRM.intakeAI) CRM.intakeAI.bindBlok(mount);
   const certKnop = mount.querySelector('#c_certnieuw');
   if(certKnop) certKnop.onclick = () => certModal(c, -1);
   mount.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => certModal(c, Number(b.dataset.cert)));
@@ -1495,7 +1496,7 @@ function intakeHtml(c){
   const knop = `<button class="btn ghost sm" id="c_intake2">${i?'Intake bijwerken':'Intake invullen'}</button>`;
   if(!i) return `<div class="card"><div class="card-h"><div class="h2">Intake</div>
       <span class="spacer"></span>${knop}</div>
-    <div class="card-b">${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall — dat voorkomt verrassingen later.')}</div></div>`;
+    <div class="card-b">${CRM.intakeAI ? CRM.intakeAI.blokHtml(c) : ''}${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall — of lees een transcript in.')}</div></div>`;
   const cijfer = Number(i.cijfer || i.commitment || 0);
   const rest = Object.keys(i).filter(k => !['cijfer','commitment','drijfveer','drijfveren','risico','risicos','op','door'].includes(k));
   return `<div class="card">
@@ -1693,7 +1694,7 @@ function trajectHtml(c){
       </div>
       <div class="kd-stappen">${stappen.map((p,i) =>
         `<i class="${i<=idx&&idx>=0?'on':''}" style="${i<=idx&&idx>=0?'background:'+p.c:''}" title="${h(p.k)}"></i>`).join('')}</div>
-      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(CRM.faseNorm(c.fase)||'Nog niet in de pijplijn')}</div>
+      <div class="meta">${idx>=0&&idx<11?`Stap <span class="num">${idx+1}</span> van <span class="num">11</span>`:h(CRM.faseNorm(c.fase)||'Nog niet bij een klant voorgesteld')}</div>
     </div>
     <!-- Verhuisd uit de bewerk-drawer van het bord: fasewissel mét
          poortwachters, video-intake, no-show en afmelden. -->

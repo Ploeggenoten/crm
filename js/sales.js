@@ -328,7 +328,7 @@ function kansenHTML(){
   const samenvatting = CRM.canSeeMoney()
     ? `<div class="grid c3 s-kpi">
         ${CRM.ui.kpi('Open kansen', `<span class="num">${open.length}</span>`, `${posities} posities`)}
-        ${CRM.ui.kpi('Pijplijnwaarde', `<span class="num">${CRM.euro(totaal)}</span>`, 'onvoorwaardelijk')}
+        ${CRM.ui.kpi('Pijplijnwaarde', `<span class="num">${CRM.euro(totaal)}</span>`, 'ongewogen — de volle waarde van alle open kansen')}
         ${CRM.ui.kpi('Gewogen waarde', `<span class="num">${CRM.euro(gewogen)}</span>`, 'naar kans-percentage', 'accent')}</div>`
     : `<div class="grid c3 s-kpi">
         ${CRM.ui.kpi('Open kansen', `<span class="num">${open.length}</span>`, 'bij ' + new Set(open.map(o=>o.klant)).size + ' bedrijven')}
@@ -893,7 +893,7 @@ async function radarNaarLead(id){
   CRM.logActiviteit('klant', r.bedrijf, 'systeem',
     `Gevonden via Leadradar: ${nVac} vacature${nVac===1?'':'s'} voor ${r.functies||'onbekende functies'}`);
   await zetRadarStatus(id, 'toegevoegd');
-  CRM.toast(`${r.bedrijf} staat nu als lead op het pijplijnbord — "pijplijn →" opent de kaart`, 'ok');
+  CRM.toast(`${r.bedrijf} staat nu als lead in je klantpijplijn — "pijplijn →" opent de kaart`, 'ok');
 }
 
 /* Negeren: de motor slaat genegeerde bedrijven voortaan over. */

@@ -26,7 +26,7 @@ const CRM = window.CRM = {
   modules:{},           // key -> {title, icon, group, render, adminOnly, badge}
   view:null,            // huidige module-key
   state:{               // gedeelde data (via CRM.load())
-    cands:[], clients:[], vacs:[], profiles:[], targets:[],
+    cands:[], clients:[], vacs:[], profiles:[], targets:[], afspraken:[],
     leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[], meldingen:[], ooSessions:[],
     _loaded:false
   },
@@ -44,7 +44,7 @@ CRM.isAdmin = () => !!(CRM.user && ADMIN_EMAILS.includes((CRM.user.email||'').to
    OPBRENGST — wat een plaatsing heeft opgeleverd: de fee per plaatsing en
    de omzet per klant. Dat is het resultaat van het werk van het team, en
    dat mogen ze zien. Zonder dat cijfer weet een AM niet wat een plaatsing
-   waard is en stuurt hij op aantallen in plaats van op opbrengst.
+   waard is en stuurt die op aantallen in plaats van op opbrengst.
 
    BEDRIJFSCIJFERS — winst, marge, cashflow, banksaldo, kostprijs,
    facturatie: alleen de eigenaar. Dat zijn de fin_*-tabellen, die ook op
@@ -316,7 +316,7 @@ async function veilig(promise, naam){
 
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions] = await Promise.all([
+  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions, afspraken] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
     veilig(sb.from('vacatures').select('*'), 'vacatures'),
@@ -329,9 +329,19 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen'),
     veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten'),
     veilig(sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200), 'crm_meldingen'),
-    veilig(sb.from('oo_sessions').select('*'), 'oo_sessions')
+    veilig(sb.from('oo_sessions').select('*'), 'oo_sessions'),
+    /* De commerciële afspraken (fee-percentages per klant) worden hier
+       centraal opgehaald sinds 31 jul 2026. Daarvoor deed elke module dat
+       zelf, en de kandidatenkaart deed het helemaal niet — met als gevolg
+       dat wie 's ochtends vanaf het dashboard doorklikte te horen kreeg
+       "er is nog geen commerciële afspraak vastgelegd bij deze klant",
+       terwijl die afspraak gewoon bestond. Pas ná het openen van Relaties
+       klopte het bedrag. Dat is precies het soort stille fout waar
+       vertrouwen op sneuvelt: het scherm liegt en niemand kan zien dat het
+       liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
+    veilig(sb.from('crm_afspraken').select('*'), 'crm_afspraken')
   ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, _loaded:true});
+  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, _loaded:true});
   return CRM.state;
 };
 CRM.herlaad = async () => { await CRM.load(true); CRM.render(); };

@@ -103,7 +103,7 @@ const STATUS_NORM = {
   'Gebeld — geen gehoor': {dagen:1, doe:'wacht op een tweede poging',
     waarom:'Eén gemiste poging zegt niets. Een tweede hoort dezelfde of de volgende dag te volgen, op een ánder tijdstip — anders bel je eeuwig tijdens dezelfde dienst.'},
   'Potentieel': {dagen:2, doe:'wacht op een vervolgstap',
-    waarom:'Je hebt iemand aan de lijn gehad die wil. Dan is twee dagen stilte het punt waarop hij denkt dat het niet doorgaat.'},
+    waarom:'Je hebt iemand aan de lijn gehad die wil. Dan is twee dagen stilte het punt waarop diegene denkt dat het niet doorgaat.'},
   'CV opgevraagd': {dagen:3, doe:'stuurde nog geen cv',
     waarom:'Een cv dat na drie dagen niet binnen is, komt uit zichzelf niet meer. Eén appje of belletje is genoeg — daarna is het een nee.'},
   'CV binnen': {dagen:1, doe:'cv ligt klaar — plan de call',
@@ -370,7 +370,7 @@ function tekenActies(acties){
     el.querySelector('#rc_import').onclick = importModal;
     el.querySelector('#rc_nieuw').onclick  = nieuweSollicitantKeuze;
   } else {
-    el.innerHTML = `<span class="meta">Uitval leeft buiten het bord — sleep op de Pijplijn een kaart naar de uitvalstrook</span>`;
+    el.innerHTML = `<span class="meta">Uitval leeft buiten het bord — sleep op Klanttrajecten een kaart naar de uitvalstrook</span>`;
   }
 }
 
@@ -3132,7 +3132,7 @@ function nieuweKandidaatModal(prefill){
     <div class="modal-h"><div class="h2">${prefill.vervangt?'Vervanger aanmaken':'Nieuwe kandidaat'}</div>
       <p class="sub" style="margin:6px 0 0">${prefill.vervangt
         ? `Vervanger voor ${h(prefill.vervangtNaam||'')} — telt niet dubbel in het target.`
-        : 'Komt op Intake te staan: klaar om voor te stellen, maar nog niet bij een klant. Zodra je die bij een klant voorstelt verschijnt hij op Klanttrajecten.'}</p></div>
+        : 'Komt op Intake te staan: klaar om voor te stellen, maar nog niet bij een klant. Zodra je die bij een klant voorstelt verschijnt de kaart op Klanttrajecten.'}</p></div>
     <div class="modal-b">
       <div class="f-grid">
         <div class="f-row"><label for="nk_naam">Naam</label><input type="text" id="nk_naam"></div>
@@ -3526,7 +3526,16 @@ function intakeForm(id){
       <div class="f-row"><label>Klaar om voor te stellen?</label>${chips('klaar',['ja','nog niet'],it.klaar)}</div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button>
+      <button class="btn ghost" id="in_uittranscript">Uit transcript</button>
       <button class="btn" id="in_ok">Intake opslaan</button></div>`, {onOpen(m){
+      /* Er is maar één modal, dus het formulier moet eerst dicht; onKlaar
+         zet hem daarna weer open, nu gevuld met wat er uit het gesprek kwam. */
+      const trKnop = m.querySelector('#in_uittranscript');
+      if(trKnop) trKnop.onclick = () => {
+        if(!CRM.intakeAI) return CRM.toast('Transcript inlezen is nu niet beschikbaar','err');
+        CRM.modal.close();
+        CRM.intakeAI.open({kandidaat:c, onKlaar:() => intakeForm(c.id)});
+      };
       CRM.$$('.rc-inchips', m).forEach(g => CRM.$$('.chip', g).forEach(b => b.onclick = () => {
         CRM.$$('.chip', g).forEach(x => x.classList.remove('on'));
         b.classList.add('on');

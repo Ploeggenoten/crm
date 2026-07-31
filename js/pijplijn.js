@@ -105,7 +105,7 @@ function dagenInFase(c){
    startdatum zit nu eenmaal een opzegtermijn. */
 const FASE_NORM = {
   'Voorgesteld':           {let:3,  actie:7,  waarom:'De klant heeft het profiel. Blijft een reactie uit, dan bel jij — wachten kost de kandidaat aan een ander bureau.'},
-  'O&O sessie':            {let:10, actie:21, waarom:'Een sessie wordt vooruit gepland. Pas als iemand er na tien dagen nog geen sessie heeft, staat hij echt stil.'},
+  'O&O sessie':            {let:10, actie:21, waarom:'Een sessie wordt vooruit gepland. Pas als iemand er na tien dagen nog geen sessie heeft, staat het traject echt stil.'},
   'Eerste gesprek':        {let:3,  actie:7,  waarom:'Na een eerste gesprek hoort binnen drie dagen een vervolg of een afwijzing te komen. Stilte leest de kandidaat als een nee.'},
   'Tweede gesprek':        {let:3,  actie:7,  waarom:'Twee gesprekken gehad betekent dat beide kanten het willen weten. Drie dagen zonder besluit is uitstel, geen zorgvuldigheid.'},
   'Meeloopdag':            {let:2,  actie:5,  waarom:'Na een meeloopdag weten beide partijen het meestal dezelfde dag nog. Twijfel die blijft hangen wordt een afzegging.'},

@@ -652,7 +652,11 @@ function pipelineForecast(f){
       const cash = monthKey(addDays(plaatsing, 30));   // factuur + betaaltermijn ≈ 1 mnd later
       const fb = c.maandloon ? feeBerekening(f, c) : null;
       const cFee = (fb && fb.fee) ? fb.fee : fee;
-      return {c, kans, fee:cFee, feeEcht: !!(fb && fb.fee), gewogen: cFee*kans,
+      /* `zeker` is false zodra de fee uit het vlakke standaardpercentage
+         rolt in plaats van uit een echt klanttarief. Die vlag werd berekend
+         maar nergens gebruikt, waardoor een geschat bedrag zonder ~-teken
+         als hard getal in de forecast stond. */
+      return {c, kans, fee:cFee, feeEcht: !!(fb && fb.fee && fb.zeker), gewogen: cFee*kans,
               netto: cFee*kans*behoud, plaatsing, cashMaand: cash};
     })
     .sort((a,b) => b.kans - a.kans);
@@ -1849,7 +1853,7 @@ function tekenPlTabel(el, f){
             <div class="rowsub">${H([p.functie, p.klant].filter(Boolean).join(' · '))}${
               p.gestopt_op ? ` · <span style="color:var(--red)">gestopt ${H(dKort(p.gestopt_op))}</span>` : ''}</div></td>
           <td class="n"><span class="num">${eur(getalOfNull(p.fee_excl))}</span></td>
-          <td>${chip(st.lbl, st.cls)}${g.vervangingNodig ? ' ' + chip('vervangen!','red')
+          <td>${chip(st.lbl, st.cls)}${g.vervangingNodig ? ' ' + chip('vervangen','red')
              : g.actief ? ' ' + chip('garantie tot ' + dKort(g.tot), 'purple') : ''}</td>
           <td class="n"><span class="num">${nGef}/${act.length || p.aantal_termijnen || 0}</span> <span class="meta">gefact.</span></td>
           <td class="n">${ps.open ? `<span class="num" style="color:var(--amber)">${eur(ps.open)}</span>` : '<span class="meta">—</span>'}</td>

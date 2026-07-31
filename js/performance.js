@@ -422,7 +422,7 @@ function blokRecruiters(p, D){
         <th></th>
         ${kop('netto','Netto','n')}
         ${kop('duur','Duurzaam','n')}
-        ${kop('pijplijn','In pijplijn','n')}
+        ${kop('pijplijn','In klanttraject','n')}
         ${kop('looptijd','Doorlooptijd','n')}
         ${kop('gesprekken','Gesprekken','n')}
       </tr></thead>

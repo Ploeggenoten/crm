@@ -50,11 +50,11 @@ betekent "gezien".
 **2. Nieuwe sollicitanten bellen.** **Recruitment** → tab **Inkomende
 sollicitanten**. Elke sollicitant komt binnen op status *Nieuw*; die lijst moet
 elke dag leeg. Bel via het telefoonnummer in de rij en zet daarna de status in
-het uitklaplijstje van diezelfde rij. Kies je *Intake gepland*, dan opent meteen
+het uitklaplijstje van diezelfde rij. Kies je *Videocall gepland*, dan opent meteen
 een venster om datum en tijd vast te leggen. Klik op de naam voor de details en
 de knop **→ Doorschieten naar pijplijn**.
 
-**3. De kolom Intake leegwerken.** **Pijplijn** → eerste kolom **Intake**. Daar
+**3. De kolom Intake leegwerken.** **Klanttrajecten** → eerste kolom **Intake**. Daar
 staat iedereen die net binnen is. Klik op de kaart, plan met **Videocall
 inplannen** een Teams-gesprek, vul daarna de **Intake** in, en zet de kandidaat
 met **→ Voorstellen** door zodra er een klant bij past.
@@ -63,10 +63,10 @@ met **→ Voorstellen** door zodra er een klant bij past.
 > interessant is, volgt meteen een volledige kandidatenkaart — dat scheelt
 > een tussenstap waar mensen bleven liggen.
 
-**4. Pijplijn bijwerken.** **Pijplijn**. Sleep een kaart naar de volgende
+**4. Trajecten bijwerken.** Ga naar **Klanttrajecten**. Sleep een kaart naar de volgende
 kolom, of gebruik de knop **Verplaatsen naar fase…** op de kaart (handig op je
 telefoon). Klik op een kaart en je krijgt de **volledige kandidatenkaart**, met
-een knop **← Terug naar het bord** die je op dezelfde plek terugzet. Valt iemand
+een knop **← Terug naar Klanttrajecten** die je op dezelfde plek terugzet. Valt iemand
 af of stopt iemand? Sleep naar de strook **Uitval** rechts — dan krijg je het
 redenformulier.
 
@@ -75,7 +75,7 @@ contactpersoon → **Gespreksverslag**. Noem je `@Tjerk` of `@Rajesh` in de teks
 dan krijgt diegene automatisch een melding. Een afspraak plannen doe je met
 **Inplannen**, een opvolgactie met **+ Taak**.
 
-Kijk daarnaast een keer per dag bij **Hot vacatures**: daar staan de vacatures
+Kijk daarnaast een keer per dag bij **Vacatures**: daar staan de vacatures
 met een deadline en een doel, op volgorde van druk.
 
 ## 5. Documenten opmaken
