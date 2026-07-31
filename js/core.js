@@ -322,6 +322,9 @@ CRM.rowToCand = r => ({
   intake:(r.intake&&typeof r.intake==='object')?r.intake:null,
   vtPct:r.vt_pct==null?null:Number(r.vt_pct), ejuPct:r.eju_pct==null?null:Number(r.eju_pct),
   overigPct:r.overig_pct==null?null:Number(r.overig_pct), herstartVan:r.herstart_van||'',
+  /* Persoonsgegevens met een eigen bewaartermijn: geboortedatum voor de
+     verjaardagstaak, foto als PAD in de afgeschermde map crm-docs. */
+  geboortedatum:r.geboortedatum||'', foto:r.foto||'',
   ooId:r.oo_id||null, vervangt:r.vervangt||'', rec:r.rec||'', note:r.note||'',
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
@@ -342,6 +345,7 @@ CRM.candToRow = c => ({
   stop_categorie:c.stopCat||'', recyclebaar:c.recyclebaar==null?null:!!c.recyclebaar,
   intake:c.intake||null, vt_pct:c.vtPct==null?null:c.vtPct, eju_pct:c.ejuPct==null?null:c.ejuPct,
   overig_pct:c.overigPct==null?null:c.overigPct, herstart_van:c.herstartVan||'',
+  geboortedatum:c.geboortedatum||null, foto:c.foto||'',
   oo_id:c.ooId||null, vervangt:c.vervangt||'', rec:c.rec||'', note:c.note||'',
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
@@ -646,7 +650,7 @@ CRM.opslag = {
     if(d.soort === 'geweigerd') return {url:'', fout:'Deze link is geweigerd: hij wijst niet naar een bestand.'};
     if(d.soort === 'blob' || d.soort === 'extern') return {url:d.url, fout:''};
 
-    const sleutel = d.pad + (opts.download ? ' dl' : '');
+    const sleutel = (opts.download ? 'dl:' : 'toon:') + d.pad;
     const c = _opslagCache.get(sleutel);
     if(c && c.tot > Date.now() + OPSLAG_MARGE) return {url:c.url, fout:''};
 
@@ -666,7 +670,7 @@ CRM.opslag = {
   wis(waarde){
     if(waarde == null){ _opslagCache.clear(); return; }
     const p = this.pad(waarde);
-    if(p){ _opslagCache.delete(p); _opslagCache.delete(p + ' dl'); }
+    if(p){ _opslagCache.delete('toon:' + p); _opslagCache.delete('dl:' + p); }
   },
 
   /* Klikafhandelaar voor een document. Asynchroon mag hier: de gebruiker

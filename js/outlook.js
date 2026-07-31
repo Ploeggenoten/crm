@@ -62,9 +62,20 @@ function msalLaden(){
   if(_laadBelofte) return _laadBelofte;
   _laadBelofte = new Promise((ok, nee) => {
     if(window.msal) return ok();
-    const s = document.createElement('script');
-    s.src = MSAL_CDN; s.onload = () => ok(); s.onerror = () => nee(new Error('MSAL laden mislukt'));
-    document.head.appendChild(s);
+    /* Eerst de eigen kopie, dan pas de CDN. Diezelfde CDN gaf eerder in dit
+       project wisselende 404's op de Supabase-bibliotheek, en toen lag de hele
+       app plat. Mislukt de koppeling met Microsoft, dan lijkt dat op "even
+       opnieuw verbinden" terwijl er in werkelijkheid een bestand niet geladen
+       is — precies het soort fout dat je nooit vindt. */
+    const bronnen = ['assets/msal-browser.min.js', MSAL_CDN];
+    (function probeer(i){
+      if(i >= bronnen.length) return nee(new Error('MSAL laden mislukt'));
+      const s = document.createElement('script');
+      s.src = bronnen[i];
+      s.onload  = () => window.msal ? ok() : probeer(i + 1);
+      s.onerror = () => probeer(i + 1);
+      document.head.appendChild(s);
+    })(0);
   }).then(() => {
     _msal = new msal.PublicClientApplication({
       /* Single-tenant app: authority moet de eigen tenant zijn, niet /organizations. */
@@ -72,10 +83,37 @@ function msalLaden(){
              redirectUri: location.origin + location.pathname },
       cache:{ cacheLocation:'localStorage' }
     });
-    const acc = _msal.getAllAccounts();
-    if(acc.length) _account = acc[0];
+    _account = kiesAccount(_msal.getAllAccounts());
   });
   return _laadBelofte;
+}
+
+/* Welk Microsoft-account hoort bij deze gebruiker?
+
+   Hier stond `acc[0]` — het eerste account dat de browser toevallig kende.
+   Wie naast zijn eigen postbus ook een gedeelde postbus gebruikt
+   (recruitment@, info@) heeft er twee, en dan las het dashboard de agenda en
+   de mail van de verkeerde. Erger nog: het wisselde, want die volgorde ligt
+   niet vast. Een mailvenster dat de ene dag jouw inbox toont en de andere dag
+   die van de afdeling is niet "een beetje verkeerd" — dan klopt alles wat
+   erop staat niet meer.
+
+   We koppelen daarom op het adres waarmee je in het CRM zit. Is dat er niet
+   bij, dan kiezen we niets: liever de knop "Verbinden" dan stilletjes de
+   verkeerde postbus. */
+function bijMij(acc){
+  const mijn = String(CRM.user?.email || '').trim().toLowerCase();
+  if(!mijn) return null;
+  return acc.find(a => String(a.username||'').toLowerCase() === mijn) || null;
+}
+function kiesAccount(acc){
+  if(!acc || !acc.length) return null;
+  const eigen = bijMij(acc);
+  if(eigen) return eigen;
+  /* Eén account en geen CRM-adres om mee te vergelijken: dat is vrijwel
+     zeker gewoon de gebruiker zelf (of een demo). Dan niet zeuren. */
+  if(acc.length === 1 && !CRM.user?.email) return acc[0];
+  return null;
 }
 
 async function token(interactiefOk = true){
@@ -84,10 +122,23 @@ async function token(interactiefOk = true){
     if(!interactiefOk) return null;
     /* Volledige set proberen; ontbreekt er één machtiging in de tenant,
        dan alsnog inloggen met de kern zodat agenda blijft werken. */
+    /* loginHint zet het juiste adres alvast klaar, en prompt:'select_account'
+       laat Microsoft de keuze tonen in plaats van door te schieten naar het
+       account dat daar toevallig al ingelogd is. Wie een gedeelde postbus
+       gebruikt kwam anders zonder één klik in de verkeerde inbox terecht. */
+    const hint = String(CRM.user?.email || '').trim();
+    const opzet = scopes => hint ? {scopes, loginHint:hint, prompt:'select_account'} : {scopes};
     let r;
-    try{ r = await _msal.loginPopup({scopes: MS_SCOPES}); }
+    try{ r = await _msal.loginPopup(opzet(MS_SCOPES)); }
     catch(e){ console.warn('login met alle scopes mislukt, terugval op kern', e);
-              r = await _msal.loginPopup({scopes: MS_KERN}); }
+              r = await _msal.loginPopup(opzet(MS_KERN)); }
+    /* Ook na een handmatige keuze controleren: in het keuzevenster van
+       Microsoft is de gedeelde postbus één regel van de eigen verwijderd. */
+    if(hint && String(r.account?.username||'').toLowerCase() !== hint.toLowerCase()){
+      CRM.toast(`Je koos ${r.account?.username || 'een ander account'}, maar in het CRM zit je als ${hint}. `
+                + 'Verbind met dat adres, anders zie je de agenda en mail van een andere postbus.', 'err');
+      return null;
+    }
     _account = r.account;
   }
   for(const set of [MS_SCOPES, MS_KERN]){
@@ -253,12 +304,26 @@ CRM.outlook = {
   /* Is déze gebruiker verbonden? */
   verbonden: () => !!_account,
   accountNaam: () => _account?.username || '',
+  /* Zijn er andere Microsoft-accounts bekend in deze browser dan het jouwe?
+     Zo ja, dan is het de moeite waard om op het scherm te tonen wélke postbus
+     je nu leest — anders is dat onzichtbaar tot je je erin vergist. */
+  andereAccounts(){
+    if(!_msal) return [];
+    const mijn = String(CRM.user?.email || '').toLowerCase();
+    return _msal.getAllAccounts()
+      .map(a => a.username || '')
+      .filter(u => u && u.toLowerCase() !== mijn);
+  },
 
   async verbind(){
     if(!CRM.outlook.beschikbaar()){
       CRM.toast('Outlook-koppeling nog niet geactiveerd — zie SETUP-OUTLOOK.md','err'); return false;
     }
-    try{ await token(true); CRM.toast('Outlook verbonden als ' + CRM.outlook.accountNaam(),'ok'); return true; }
+    try{
+      const t = await token(true);
+      if(!t) return false;                 // afgebroken of verkeerd account: token() meldde het al
+      CRM.toast('Outlook verbonden als ' + CRM.outlook.accountNaam(),'ok'); return true;
+    }
     catch(e){ CRM.fout('Verbinden mislukt', e); return false; }
   },
   async verbreek(){
@@ -267,13 +332,25 @@ CRM.outlook = {
     _account = null; CRM.toast('Outlook-koppeling verbroken');
   },
 
-  /* Agenda van de komende N dagen (voor het dashboard). Stil: vraagt
-     nooit om login — geeft null als niet verbonden. */
-  async agenda(dagen = 1){
+  /* Agenda voor het dashboard. Stil: vraagt nooit om login — geeft null
+     als niet verbonden.
+     opts.vanaf — begin van het venster (Date of ISO). Zonder dit begint het
+     venster nu, en dan mist de weekweergave de afspraken van eerder deze
+     week: op donderdag zag je maandag tot en met woensdag niet meer staan.
+     Het aantal opgevraagde afspraken schaalt mee met de lengte van het
+     venster. Er stond een vaste $top=25; bij vooruitbladeren naar week +4
+     is dat een venster van 31 dagen, en dan kapte Graph de laatste dagen
+     stilzwijgend af — een lege dag die niet leeg was. */
+  async agenda(dagen = 1, opts = {}){
     if(!CRM.outlook.beschikbaar() || !_account) return null;
-    const nu = new Date(); const tot = new Date(nu.getTime() + dagen*86400000);
+    const nu  = opts.vanaf ? new Date(opts.vanaf) : new Date();
+    if(isNaN(nu)) return null;
+    const tot = new Date(nu.getTime() + dagen*86400000);
+    /* Ruim boven een volle agenda (8 per dag), met een plafond zodat één
+       overvolle maand niet een antwoord van honderden kilobytes oplevert. */
+    const top = Math.min(400, Math.max(25, Math.ceil(dagen) * 8));
     try{
-      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=25&$select=subject,start,end,location,onlineMeeting,webLink,attendees`,
+      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,location,onlineMeeting,webLink,attendees`,
         { headers:{ Prefer:'outlook.timezone="W. Europe Standard Time"' } }, false);
       return (d?.value||[]).map(e => ({
         titel: e.subject, start: e.start?.dateTime, eind: e.end?.dateTime,
