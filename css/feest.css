@@ -63,11 +63,40 @@
    te weinig, dan zet het script hem op 0 en verdwijnt hij; de padding
    hierboven krimpt dan vanzelf mee. De waarde in :root is alleen de
    startwaarde voor het eerste beeld. */
-/* Ruststand: rechtsboven, nét onder de paginakop. */
+/* Ruststand: rechtsboven, nét onder de paginakop — én kleiner.
+   Tijdens het feest mag het bericht groot zijn; wat daarná blijft staan
+   hoort een bescheiden hoek te zijn. De kaart wordt daarom smaller en
+   krapper gezet: dezelfde informatie (naam, klant, AM, tellers, fee),
+   alleen minder ruim. Gemeten op 1440×900: één kaart is dan 300×~290px,
+   met twee samengevouwen regels erboven ~380px hoog — ruim onder een
+   tiende van het scherm, en de rechterkolom eronder blijft bruikbaar. */
 .feest-laag.rust{
   align-items:flex-end; justify-content:flex-start;
   padding:76px 20px 20px;
 }
+.feest-laag.rust .feest-kaart{ width:min(300px, calc(100vw - 32px)); padding:16px 18px 14px; }
+.feest-laag.rust .feest-over{ font-size:10px; margin-bottom:6px; }
+.feest-laag.rust .feest-naam{ font-size:23px; margin-bottom:5px; }
+.feest-laag.rust .feest-naam.lang{ font-size:19px; }
+.feest-laag.rust .feest-bij{ font-size:12.5px; line-height:1.4; }
+.feest-laag.rust .feest-am{ margin-top:11px; padding-top:10px; gap:9px; }
+.feest-laag.rust .feest-am .ava{ flex:0 0 30px; width:30px; height:30px; font-size:12px; }
+.feest-laag.rust .feest-am-t b{ font-size:14.5px; }
+.feest-laag.rust .feest-tellers{ margin-top:10px; padding-top:10px; gap:8px; }
+.feest-laag.rust .feest-tel{ padding:7px 6px 6px; }
+.feest-laag.rust .feest-tel-n{ font-size:22px; }
+.feest-laag.rust .feest-tel span{ font-size:10px; margin-top:2px; }
+/* In de ruststand past het bedrag op één regel naast zijn label; dat
+   scheelt hoogte zonder dat er informatie af gaat. */
+.feest-laag.rust .feest-fee{
+  margin-top:10px; padding-top:9px;
+  flex-direction:row; justify-content:center; align-items:baseline; gap:8px;
+}
+.feest-laag.rust .feest-fee span{ font-size:9.5px; letter-spacing:1px; }
+.feest-laag.rust .feest-fee b{ font-size:16px; }
+.feest-laag.rust .feest-hand{ display:none; }
+.feest-laag.rust .feest-sluit{ margin-top:12px; min-height:34px; font-size:12.5px; padding:0 16px; }
+.feest-laag.rust .feest-x{ top:7px; right:7px; width:26px; height:26px; font-size:15px; }
 
 /* ─── De kaart ─────────────────────────────────────────────────── */
 .feest-kaart{

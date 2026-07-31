@@ -787,8 +787,12 @@ function bijZin(ev){
      · samenvoegen tot "2 plaatsingen" valt af — de kern van het
        bericht is wie je moet feliciteren, en dat gaat verloren zodra
        je het samenvat;
-     · stapelen kost ruimte, en dát is oplosbaar: vanaf drie kaarten
-       gaan ze in de compacte vorm (klasse `veel` op de laag).
+     · stapelen kost ruimte, en dát is oplosbaar: alleen de NIEUWSTE
+       kaart staat er voluit, alles daarboven vouwt samen tot één regel
+       met naam, accountmanager en kruisje (zie css/feest.css). Klik je
+       de volle kaart weg, dan klapt de regel eronder open. Zo staat
+       elke plaatsing er met naam, verdwijnt er nooit één ongezien, en
+       kost een stapel toch niet meer dan een hoek van het scherm.
    Nieuwste onderaan, zodat de eerdere berichten niet verspringen
    onder de muis van iemand die net wil wegklikken. */
 function toonKaart(ev){
@@ -851,15 +855,16 @@ function toonKaart(ev){
     '<button class="feest-sluit" type="button">Gezien — sluiten</button>' +
     '<button class="feest-x" type="button" aria-label="Bericht sluiten">×</button>';
   wrap.appendChild(kaart);
-  wrap.classList.toggle('veel', wrap.children.length >= 3);
 
-  /* De tellers staan alleen op de NIEUWSTE kaart. Twee redenen. Het
-     maandtotaal is op elke kaart hetzelfde getal — drie keer "7
-     plaatsingen deze maand" onder elkaar leest als een fout. En de
-     kaarten zijn met tellers erbij zo hoog dat een stapel van drie niet
-     meer op een laptopscherm past; zonder tellers wel. De naam van de
-     accountmanager blijft wél op elke kaart staan: dát is per plaatsing
-     verschillend en is de reden dat de kaart er is. */
+  /* De tellers staan alleen op de NIEUWSTE kaart, en ze worden bij de
+     oudere echt WEGGEHAALD in plaats van verborgen. Het maandtotaal is
+     op elke kaart hetzelfde getal — drie keer "9 plaatsingen deze maand"
+     onder elkaar leest als een fout. En als je straks de bovenste
+     wegklikt en de kaart eronder klapt open, zou die anders een
+     verouderd totaal laten zien van het moment waarop híj gemaakt werd.
+     Liever geen getal dan een getal dat niet meer klopt.
+     De naam van de accountmanager en de fee blijven wél op elke kaart:
+     die zijn per plaatsing verschillend en veranderen niet meer. */
   CRM.$$('.feest-tellers', wrap).forEach(el => { if(el.closest('.feest-kaart') !== kaart) el.remove(); });
   meetRuimte(wrap);
 
@@ -889,7 +894,7 @@ function toonKaart(ev){
     kaart.classList.add('uit');
     setTimeout(() => {
       if(kaart.parentNode) kaart.parentNode.removeChild(kaart);
-      if(laag){ laag.classList.toggle('veel', laag.children.length >= 3); meetRuimte(laag); }
+      if(laag) meetRuimte(laag);
     }, 380);
   };
   kaart._sluit = weg;
@@ -1006,7 +1011,11 @@ function zetStand(rust){
   const kaarten = Array.from(laag.children);
   const voor = kaarten.map(k => k.getBoundingClientRect());
   laag.classList.toggle('rust', rust);
-  if(rustig()) return;                     // geen glijbeweging bij minder beweging
+  /* Niet glijden als niemand het ziet. Bij `prefers-reduced-motion`
+     spreekt dat vanzelf; op een achtergrondtabblad is het bovendien
+     schadelijk: css-overgangen lopen daar niet door, dus de kaart zou
+     met een halve verschuiving blijven staan tot iemand terugkomt. */
+  if(rustig() || document.visibilityState === 'hidden') return;
   kaarten.forEach((k, i) => {
     const na = k.getBoundingClientRect();
     const dx = Math.round(voor[i].left - na.left), dy = Math.round(voor[i].top - na.top);
