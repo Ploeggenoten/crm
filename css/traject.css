@@ -1,0 +1,108 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLOEGGENOTEN CRM — AFGESLOTEN TRAJECTEN
+   Zo weinig mogelijk eigen stijl. Kaarten, knoppen, chips, notities en
+   labels komen uit css/base.css. Hier staat alleen wat daar niet in
+   zit: de vier redenknoppen in het venster en het regelblokje dat op
+   de klantkaart en de vacaturepagina komt te staan.
+   Eén accent, en het is oranje (--amber): dit is een waarschuwing, geen
+   fout. Lime blijft weg — die hoort alleen op donkere vlakken.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Het venster ──────────────────────────────────────────────── */
+
+/* De ene zin die het venster draagt. Iets groter dan de rest, want als
+   er één ding gelezen moet worden is het deze. */
+.tj-zin{
+  margin:0;font-size:15px;line-height:1.55;color:var(--txt);
+}
+.tj-voet{margin:6px 0 0;line-height:1.5}
+
+/* Waar de kandidaat naartoe gaat. Onder een dun streepje, zodat het
+   visueel ná het verlies komt en niet ermee concurreert. */
+.tj-naar{
+  margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line);
+  font-size:14px;color:var(--txt-2);
+}
+
+.tj-reden{margin-top:20px}
+.tj-reden .label{display:block;margin-bottom:8px}
+
+/* De vier knoppen. Onder elkaar op één kolom en niet in een raster van
+   twee bij twee: naast elkaar lees je ze als paren, en dan kiest de
+   helft van de mensen tussen twee opties in plaats van tussen vier.
+   Volle breedte, dus de klikvlakken zijn even groot — geen enkele
+   optie is per ongeluk de makkelijkste. */
+.tj-knoppen{display:flex;flex-direction:column;gap:8px}
+
+.tj-r{
+  display:block;width:100%;text-align:left;
+  font-family:var(--body);font-size:14px;font-weight:600;
+  color:var(--txt);background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-s);
+  padding:11px 14px;cursor:pointer;
+  transition:background .12s,border-color .12s;
+}
+.tj-r:hover{background:var(--card-2);border-color:var(--olive-l)}
+.tj-r:active{background:var(--oranje);border-color:var(--oranje);color:#fff}
+
+/* Gekozen. Olijf en niet oranje: oranje is in dit venster de kleur van
+   wat je kwijtraakt (de knop rechtsonder), en dezelfde kleur voor de
+   keuze én voor de gevolgen maakt het venster één oranje vlak. */
+.tj-r.aan{
+  background:var(--green-bg);border-color:var(--olive);
+  box-shadow:inset 3px 0 0 var(--olive);
+}
+.tj-r.aan:hover{background:var(--green-bg)}
+
+/* De bevestigknop staat uit tot er een reden ligt. Zichtbaar uit, niet
+   verstopt: je moet kunnen zien dát er een knop is en dat er nog iets
+   moet gebeuren voordat hij werkt. */
+.modal-f .btn[disabled]{opacity:.42;cursor:not-allowed;filter:none}
+.modal-f .btn[disabled]:hover{filter:none}
+
+/* Het vak in het geblokkeerde venster (kandidaat is geplaatst). */
+.tj-vak{
+  border:1px solid var(--line);border-radius:var(--r-s);
+  background:var(--card-2);padding:10px 14px;margin-top:14px;
+}
+.tj-vak .label{display:block;margin-bottom:4px}
+.tj-p{margin:0;font-size:13px;line-height:1.6;color:var(--txt)}
+
+/* ─── Het blok op de klantkaart en de vacaturepagina ───────────── */
+.tj-blok{
+  border:1px solid var(--amber-line);background:var(--amber-bg);
+  border-radius:var(--r);padding:12px 16px;
+}
+.tj-kop{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-bottom:8px;
+}
+.tj-kop .label{color:#8a5a1a}
+
+/* Eén regel per traject: naam links, reden ertussen, datum rechts.
+   Grid en geen flex, zodat de datums onder elkaar uitlijnen ook als de
+   redenen verschillend lang zijn. */
+.tj-regel{
+  display:grid;grid-template-columns:minmax(0,auto) 1fr auto;
+  align-items:baseline;gap:10px;
+  padding:5px 0;font-size:13.5px;line-height:1.45;
+}
+.tj-regel + .tj-regel{border-top:1px solid var(--amber-line)}
+.tj-naam{font-weight:700;color:var(--txt);min-width:0;overflow-wrap:anywhere}
+.tj-reden-t{color:var(--txt-2);min-width:0;overflow-wrap:anywhere}
+
+.tj-meer{margin:8px 0 0}
+/* De geruststelling over de cijfers staat apart en klein: het is de
+   vraag die een AM meteen stelt ("telt dit tegen mij?"), maar hij hoort
+   niet zwaarder te wegen dan de trajecten zelf. */
+.tj-uitleg{margin:8px 0 0;line-height:1.5}
+
+/* Naast een lijst (vacaturepagina) mag het compacter en zonder uitleg. */
+.tj-smal{padding:10px 14px}
+.tj-smal .tj-regel{font-size:13px;padding:4px 0}
+
+/* Op een smal scherm past drie kolommen niet: datum onder de regel. */
+@media (max-width:560px){
+  .tj-regel{grid-template-columns:1fr auto;gap:4px 10px}
+  .tj-reden-t{grid-column:1 / -1}
+}

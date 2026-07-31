@@ -357,23 +357,40 @@ CRM.PLAATS_ALIAS = {
    drijven. */
 const LANDEN = /^(the\s+)?(netherlands|nederland|holland|nl|dutch)$/;
 
-CRM.plaatsSleutel = s => {
-  let ruw = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
-    .replace(/\(.*?\)/g,' ');                      /* "(ZH)", "(gem. Westland)" */
-  /* Alles achter de eerste komma is provincie of land, nooit de plaatsnaam
-     zelf. "Krimpen a/d IJssel" heeft geen komma en blijft dus heel. */
-  const delen = ruw.split(',').map(d => d.trim()).filter(Boolean);
-  if(delen.length > 1){
-    /* Achterste delen die een land zijn eraf; de rest is de plaats. */
-    while(delen.length > 1 && LANDEN.test(delen[delen.length-1])) delen.pop();
-    ruw = delen[0];
-  }
-  const k = ruw
-    .replace(/^\s*\d{4}\s*[a-z]{0,2}\b/,'')         /* postcode ervoor */
-    .replace(/^\s*gem(eente)?\.?\s+/,'')
-    .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
-  return CRM.PLAATS_ALIAS[k] || k;
-};
+/* Gememoïseerd: deze functie doet zeven stringbewerkingen en wordt bij elke
+   afstandsmeting twee keer aangeroepen — en afstand meten gebeurt in lussen
+   over honderden kandidaten × tientallen vacatures. Het aantal verschillende
+   plaatsnamen in het bestand is een paar honderd, dus de cache blijft klein.
+   (Zou CRM.PLAATS_ALIAS ooit tijdens het draaien wijzigen, dan moet de cache
+   mee leeggegooid worden; op dit moment doet niets dat.) */
+CRM.plaatsSleutel = (() => {
+  const cache = new Map();
+  const bereken = s => {
+    let ruw = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+      .replace(/\(.*?\)/g,' ');                      /* "(ZH)", "(gem. Westland)" */
+    /* Alles achter de eerste komma is provincie of land, nooit de plaatsnaam
+       zelf. "Krimpen a/d IJssel" heeft geen komma en blijft dus heel. */
+    const delen = ruw.split(',').map(d => d.trim()).filter(Boolean);
+    if(delen.length > 1){
+      /* Achterste delen die een land zijn eraf; de rest is de plaats. */
+      while(delen.length > 1 && LANDEN.test(delen[delen.length-1])) delen.pop();
+      ruw = delen[0];
+    }
+    const k = ruw
+      .replace(/^\s*\d{4}\s*[a-z]{0,2}\b/,'')         /* postcode ervoor */
+      .replace(/^\s*gem(eente)?\.?\s+/,'')
+      .replace(/\baan\s+de[nr]?\s+/g,'a/d ').replace(/[^a-z0-9/]/g,'');
+    return CRM.PLAATS_ALIAS[k] || k;
+  };
+  return s => {
+    const ruw = String(s == null ? '' : s);
+    const uit = cache.get(ruw);
+    if(uit !== undefined) return uit;
+    const k = bereken(ruw);
+    if(cache.size < 5000) cache.set(ruw, k);
+    return k;
+  };
+})();
 CRM.afstandKm = (a,b) => {
   const pa = CRM.PLAATSEN[CRM.plaatsSleutel(a)], pb = CRM.PLAATSEN[CRM.plaatsSleutel(b)];
   if(!pa || !pb) return null;
@@ -383,35 +400,371 @@ CRM.afstandKm = (a,b) => {
   return Math.round(2*R*Math.asin(Math.sqrt(x)));
 };
 
-/* Kandidaat ↔ vacature matchen op functie en woonlocatie.
-   Bewust simpel en uitlegbaar: functiewoorden + reisafstand. */
-CRM.matchScore = (kandidaat, vacature) => {
-  if(!kandidaat || !vacature) return 0;
-  let score = 0;
-  const woorden = s => String(s||'').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>3);
-  const kf = new Set([...woorden(kandidaat.functie), ...woorden(kandidaat.cv?.functie), ...(kandidaat.cv?.skills||[]).map(s=>String(s).toLowerCase())]);
-  const vf = woorden(vacature.functie);
-  const overlap = vf.filter(w => kf.has(w)).length;
-  if(vf.length) score += (overlap / vf.length) * 60;
+/* ═══════════════════════════════════════════════════════════════
+   KANDIDAAT ↔ VACATURE
+   ═══════════════════════════════════════════════════════════════
+   Tot 31 juli 2026 rekende deze functie met drie dingen: overlap in
+   functiewoorden (60), reisafstand (30) en ervaringsjaren (10). Dat gaf
+   twee voorstellen die een recruiter meteen weggooit:
 
-  const km = CRM.afstandKm(kandidaat.woonplaats, vacature.locatie);
-  if(km != null){
-    // Blue collar: reistijd is een echte uitvalreden. Dichtbij weegt zwaar.
-    if(km <= 10) score += 30; else if(km <= 20) score += 24;
-    else if(km <= 30) score += 16; else if(km <= 45) score += 8;
-  }else{
-    const kp = String(kandidaat.woonplaats||'').toLowerCase().trim();
-    const vp = String(vacature.locatie||'').toLowerCase().trim();
-    if(kp && vp){ if(kp===vp) score += 30; else if(vp.includes(kp)||kp.includes(vp)) score += 18; }
-    else score += 8;
+     · een kandidaat op 24 km, op de fiets, bij een klant in wisseldienst —
+       met "86% match". Vervoer en ploegendienst zijn precies de twee dingen
+       waar een plaatsing in productie en logistiek op klapt.
+     · "Lasser · 40% match — zoekt productiemedewerker". Iedereen die in
+       dezelfde plaats woont haalde ~40 punten en kwam daarmee boven de
+       drempel van 30 die besteMatches hanteert, ook zonder één raakvlak.
+
+   En er zat een rekenfout in: een lege woonplaats gaf +8 terwijl 60 km
+   verderop 0 gaf. Kandidaten zónder woonplaats scoorden dus systematisch
+   hóger dan bekende kandidaten die net te ver wonen — dat zijn er 55 van
+   de 298 geïmporteerde kandidaten.
+
+   DRIE REGELS
+   1. Harde eisen zijn geen punten. Een verlopen VCA, geen nachtdienst
+      willen of geen vervoer naar een industrieterrein is geen aftrek van
+      tien punten maar een streep door de rekening. Die staan apart in
+      `blokkers` en zetten een PLAFOND op de score — geblokkeerd mag nooit
+      als 86% op het scherm komen. Blokkeren doen we niet: de kandidaat
+      blijft zichtbaar mét de reden, zoals de app elders vraagt "Toch
+      voorstellen zonder ingevulde intake?".
+   2. Onbekend is niet hetzelfde als goed. Een leeg veld levert NUL punten
+      voor dat onderdeel — nooit meer dan een ingevuld veld dat niet past —
+      en komt in `onbekend`, zodat het scherm kan zeggen wat het niet weet.
+   3. Uitlegbaar. `regel` verantwoordt de uitkomst in één zin.
+
+   DEFENSIEF: de vacaturevelden ploegendienst/eisen/bereikbaarheid staan nog
+   niet in elke database. Ontbreekt er een, dan gaat er niets stuk én doen we
+   niet alsof de eis niet bestaat: het onderdeel levert nul punten op en de
+   reden staat in `onbekend`.
+
+   CRM.matchScore blijft een getal van 0–100 (vier modules rekenen ermee);
+   CRM.match geeft hetzelfde antwoord mét de onderbouwing.               */
+(function(){
+
+CRM.MATCH_GEWICHT = Object.freeze({functie:45, afstand:25, ploegen:10, eisen:10, ervaring:5, salaris:5});
+/* Plafonds. Het laagste dat van toepassing is wint. */
+CRM.MATCH_PLAFOND = Object.freeze({
+  blokker:35,          /* hier gaat het op stuk — nooit als goede match tonen */
+  anderVak:25,         /* beide functies ingevuld, geen enkel raakvlak: onder
+                          de drempel van besteMatches, dus weg uit de suggesties */
+  functieOnbekend:40   /* we weten het belangrijkste niet */
+});
+
+/* Woorden uit een functietitel; alles van drie letters of korter is ruis. */
+const woorden = s => String(s||'').toLowerCase().split(/[^a-z]+/).filter(w => w.length > 3);
+
+/* ─── Wat we kunnen herkennen ────────────────────────────────────
+   Alleen eisen met een eenduidige naam. "Ervaring in de voedingsindustrie"
+   staat er bewust NIET bij: dat kunnen we niet toetsen, en dan zeggen we
+   dat liever dan te doen alsof. Alles wordt op kleine letters getoetst. */
+const CERT_EISEN = [
+  {k:'vca',        lbl:'VCA',                   pat:/\bv\.?\s?c\.?\s?a\.?\b|\bvcu\b/},
+  {k:'heftruck',   lbl:'heftruckcertificaat',   pat:/heftruck|vorkheftruck/},
+  {k:'reachtruck', lbl:'reachtruckcertificaat', pat:/reach\s*-?\s*truck/},
+  {k:'hoogwerker', lbl:'hoogwerkercertificaat', pat:/hoogwerker/},
+  {k:'bhv',        lbl:'BHV',                   pat:/\bbhv\b|bedrijfshulpverlen/},
+  {k:'ehbo',       lbl:'EHBO',                  pat:/\behbo\b/},
+  {k:'code95',     lbl:'code 95',               pat:/code\s*-?\s*95/},
+  {k:'adr',        lbl:'ADR',                   pat:/\badr\b/},
+  {k:'haccp',      lbl:'HACCP',                 pat:/\bhaccp\b/},
+  {k:'sog',        lbl:'SOG',                   pat:/\bsog\b/},
+  {k:'nen3140',    lbl:'NEN 3140',              pat:/nen\s*-?\s*3140/},
+  {k:'las',        lbl:'lasdiploma',            pat:/lasdiploma|\bnil\b|\bmig\b|\btig\b/},
+  {k:'rijbewijsC', lbl:'rijbewijs C of CE',     pat:/rijbewijs\s*c\b|\bc\s*\/\s*e\b/},
+  {k:'rijbewijsB', lbl:'rijbewijs B',           pat:/rijbewijs\s*b\b|\brijbewijs\b/}
+];
+/* Talen. Aan de EIS-kant alleen voluit geschreven namen: een klant schrijft
+   "goede beheersing van het Nederlands", nooit "NL". Zou je de tweeletterige
+   codes ook aan die kant toestaan, dan leest "ervaring in de voedingsindustrie"
+   als een Duitse taaleis (\bde\b). Aan de KANDIDAAT-kant juist wél, want daar
+   staat "NL, EN". */
+const TAAL_EISEN = [
+  {k:'nl', lbl:'Nederlands', eis:/nederlands|dutch/,   kand:/nederlands|dutch|\bnl\b/},
+  {k:'en', lbl:'Engels',     eis:/engels|english/,     kand:/engels|english|\ben\b/},
+  {k:'de', lbl:'Duits',      eis:/duits|german/,       kand:/duits|german|\bde\b/},
+  {k:'pl', lbl:'Pools',      eis:/pools|polish/,       kand:/pools|polish|\bpl\b/},
+  {k:'ro', lbl:'Roemeens',   eis:/roemeens/,           kand:/roemeens|\bro\b/},
+  {k:'tr', lbl:'Turks',      eis:/turks/,              kand:/turks|\btr\b/},
+  {k:'ar', lbl:'Arabisch',   eis:/arabisch/,           kand:/arabisch|\bar\b/},
+  {k:'bg', lbl:'Bulgaars',   eis:/bulgaars/,           kand:/bulgaars|\bbg\b/},
+  {k:'hu', lbl:'Hongaars',   eis:/hongaars/,           kand:/hongaars|\bhu\b/},
+  {k:'es', lbl:'Spaans',     eis:/spaans|spanish/,     kand:/spaans|spanish|\bes\b/},
+  {k:'fr', lbl:'Frans',      eis:/frans|french/,       kand:/frans|french|\bfr\b/}
+];
+
+/* Hoe zwaar een rooster is. 'wisselend' staat bovenaan: wie wisseldienst
+   aankan kan elk vast rooster ook aan, andersom niet. */
+const PLOEG_RANG = {'geen':0, '2-ploegen':2, '3-ploegen':3, '5-ploegen':5, 'wisselend':9};
+const ploegRang = p => { const r = PLOEG_RANG[String(p||'').trim().toLowerCase()]; return r == null ? null : r; };
+
+const isDatum = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s == null ? '' : s));
+
+/* ─── Eisen van de vacature ontleden ─────────────────────────────
+   Gecached op de tekst zelf: één vacature wordt tegen honderden kandidaten
+   gehouden, en dan hoeft dit maar één keer. */
+const _eisenCache = new Map();
+function eisenUit(tekst){
+  const t = String(tekst||'').trim().toLowerCase();
+  if(!t) return null;
+  let uit = _eisenCache.get(t);
+  if(uit) return uit;
+  uit = {cert:[], taal:[], vrij:[]};
+  t.split(/[,;•\/\n]|\s+en\s+/).map(s => s.trim()).filter(Boolean).forEach(deel => {
+    const c = CERT_EISEN.find(x => x.pat.test(deel));
+    if(c){ if(!uit.cert.includes(c)) uit.cert.push(c); return; }
+    const l = TAAL_EISEN.find(x => x.eis.test(deel));
+    if(l){ if(!uit.taal.includes(l)) uit.taal.push(l); return; }
+    uit.vrij.push(deel);
+  });
+  if(_eisenCache.size < 500) _eisenCache.set(t, uit);
+  return uit;
+}
+
+/* ─── Papieren van de kandidaat ──────────────────────────────────
+   Twee bakken, en dat verschil doet ertoe. `metDatum` komt uit
+   cv.certificaten + cv.certGeldig — daar staat de geldigheidsdatum, dus daar
+   kan iets verlopen zijn. `zonderDatum` is cv.skills en het rijbewijsveld:
+   dat zijn geen papieren met een houdbaarheid, maar wel de plek waar heftruck
+   en VCA in de praktijk staan. Een vermelding zonder datum mag een verlopen
+   certificaat nóóit witwassen, dus zoeken we altijd eerst in de eerste bak.
+   Gecached op het cv-object; CRM.rowToCand geeft dezelfde objectreferentie
+   door, dus de cache overleeft een hertekening. */
+const _certCache = new WeakMap();
+function papieren(k){
+  const cv = (k && k.cv && typeof k.cv === 'object') ? k.cv : null;
+  let uit = cv ? _certCache.get(cv) : null;
+  if(!uit){
+    uit = {metDatum:[], zonderDatum:[]};
+    if(cv){
+      const map = (cv.certGeldig && typeof cv.certGeldig === 'object') ? cv.certGeldig : {};
+      (Array.isArray(cv.certificaten) ? cv.certificaten : []).forEach(x => {
+        const obj = x && typeof x === 'object';
+        const naam = String((obj ? (x.naam || x.certificaat || x.titel) : x) || '').trim();
+        if(!naam) return;
+        const tot = String((obj ? (x.geldigTot || x.geldig_tot) : '') || map[naam.toLowerCase()] || '').trim();
+        uit.metDatum.push({naam:naam.toLowerCase(), tot: isDatum(tot) ? tot : ''});
+      });
+      (Array.isArray(cv.skills) ? cv.skills : []).forEach(s => {
+        const n = String(s||'').trim().toLowerCase(); if(n) uit.zonderDatum.push(n);
+      });
+      _certCache.set(cv, uit);
+    }
   }
-  if(kandidaat.cv?.ervaringJaren >= 1) score += 10;
-  return Math.round(Math.min(100, score));
+  /* Het rijbewijsveld staat op de kandidaat zelf, niet op het cv, dus dat
+     hangt buiten de cache. "B + heftruck" krijgt het woord "rijbewijs"
+     ervoor, anders herkent de eis "rijbewijs B" die B niet. 'geen' juist
+     niet, want dan zou "rijbewijs geen" als een rijbewijs tellen. */
+  const rb = String((k && k.rijbewijs) || '').trim().toLowerCase();
+  const extra = (rb && !/^(geen|nee|n\.?v\.?t\.?|-)$/.test(rb)) ? ['rijbewijs ' + rb] : [];
+  const metDatum = uit.metDatum, zonderDatum = extra.length ? uit.zonderDatum.concat(extra) : uit.zonderDatum;
+  /* Staat er over deze persoon HELEMAAL niets aan certificaten of skills? Dan
+     is "geen VCA" geen waarneming maar een aanname — we hebben het nooit
+     gevraagd. Dat verschil bepaalt of het een waarschuwing wordt of een
+     openstaande vraag. Een ingevuld rijbewijsveld telt hier bewust NIET als
+     bewijs dat er naar certificaten gevraagd is; voor een rijbewijs-eis is
+     dat veld juist wél het antwoord, ook als het 'geen' zegt. */
+  return {metDatum, zonderDatum,
+          certGevraagd: !!(metDatum.length || uit.zonderDatum.length),
+          rijbewijsGevraagd: !!rb};
+}
+
+/* Hooguit drie dingen opnoemen; daarna tellen. Een regel die niemand leest
+   legt niets uit. */
+const somOp = (lijst, max = 3) => lijst.length <= max ? lijst.join(', ')
+  : lijst.slice(0, max).join(', ') + ' + ' + (lijst.length - max) + ' meer';
+
+/* ═══ De match ═══════════════════════════════════════════════════ */
+CRM.match = (kandidaat, vacature) => {
+  const uit = {score:0, km:null, blokkers:[], twijfels:[], onbekend:[], plussen:[], regel:''};
+  if(!kandidaat || !vacature) return uit;
+  const G = CRM.MATCH_GEWICHT, P = CRM.MATCH_PLAFOND;
+  const vandaag = CRM.todayISO();
+  let score = 0, plafond = 100;
+
+  /* ── 1. Functie (45) — waar het vak over gaat ───────────────── */
+  const vf = woorden(vacature.functie);
+  const kf = new Set([...woorden(kandidaat.functie), ...woorden(kandidaat.cv && kandidaat.cv.functie),
+                      ...((kandidaat.cv && kandidaat.cv.skills) || []).map(s => String(s).toLowerCase())]);
+  if(!vf.length){
+    uit.onbekend.push('geen functietitel bij de vacature');
+  }else if(!kf.size){
+    uit.onbekend.push('geen gezochte functie bij de kandidaat');
+    plafond = Math.min(plafond, P.functieOnbekend);
+  }else{
+    const overlap = vf.filter(w => kf.has(w));
+    if(overlap.length){
+      score += overlap.length / vf.length * G.functie;
+      uit.plussen.push(overlap.length === vf.length ? 'zelfde functie' : 'functie sluit deels aan');
+    }else{
+      /* Dít is de "Lasser · 40% — zoekt productiemedewerker"-regel. Twee
+         ingevulde functies zonder één gemeenschappelijk woord is geen zwakke
+         match maar een ander vak. Niet verbergen, wel uit de top. */
+      plafond = Math.min(plafond, P.anderVak);
+      uit.twijfels.push('zoekt ' + (String(kandidaat.functie||'').trim() ||
+        String((kandidaat.cv && kandidaat.cv.functie)||'').trim() || 'iets anders') +
+        ', dit is ' + String(vacature.functie||'').trim());
+    }
+  }
+
+  /* ── 2. Reisafstand (25) ────────────────────────────────────── */
+  let km = CRM.afstandKm(kandidaat.woonplaats, vacature.locatie);
+  if(km == null){
+    /* Precies dezelfde plaatssleutel is geen gok maar een gelijkheid. De oude
+       versie deed hier ook nog aan "de een zit in de ander" (Rotterdam ⊂
+       Rotterdam-Zuid) — dat wás een gok en is eruit. */
+    const kp = CRM.plaatsSleutel(kandidaat.woonplaats), vp = CRM.plaatsSleutel(vacature.locatie);
+    if(kp && vp && kp === vp) km = 0;
+  }
+  uit.km = km;
+  if(km == null){
+    /* GEEN punten. Hier zat de fout: leeg gaf +8 en 60 km gaf 0. */
+    uit.onbekend.push(!String(kandidaat.woonplaats||'').trim() ? 'woonplaats van de kandidaat onbekend'
+      : !String(vacature.locatie||'').trim() ? 'geen locatie bij de vacature'
+      : 'plaats "' + String(kandidaat.woonplaats).trim() + '" staat niet in de afstandentabel');
+  }else{
+    /* Ook de verste meetbare afstand levert nog een punt op. Niet omdat 90 km
+       goed is, maar omdat een gemeten afstand die niet past nooit gelijk mag
+       eindigen met een leeg veld — dat was precies de fout die we eruit halen.
+       Boven de 100 km valt het naar nul; daar breekt de sortering de gelijke
+       stand op het aantal onbekende gegevens. */
+    const deel = km <= 10 ? 1 : km <= 20 ? .8 : km <= 30 ? .56 : km <= 45 ? .28
+               : km <= 60 ? .12 : km <= 100 ? .04 : 0;
+    score += deel * G.afstand;
+    if(km <= 20) uit.plussen.push(km + ' km');
+    else if(deel === 0) uit.twijfels.push(km + ' km reizen');
+  }
+
+  /* ── 3. Vervoer × afstand × bereikbaarheid ──────────────────────
+     De harde kant. Wie geen auto heeft staat om 06:00 niet op een
+     industrieterrein, en 24 km op de fiets houdt niemand vol. Deze twee
+     regels gelden ook als de vacature geen bereikbaarheid ingevuld heeft:
+     ze gaan over de kandidaat en de afstand, niet over de klant. */
+  const vervoer = String(kandidaat.vervoer||'').trim().toLowerCase();
+  if(!vervoer) uit.onbekend.push('vervoer van de kandidaat niet ingevuld');
+  if(km != null && vervoer === 'fiets' && km > 15)
+    uit.blokkers.push(km + ' km op de fiets');
+  if(km != null && vervoer === 'geen' && km > 5)
+    uit.blokkers.push(km + ' km zonder eigen vervoer');
+
+  const bereik = String(vacature.bereikbaarheid||'').trim().toLowerCase();
+  if(!bereik){
+    uit.onbekend.push('bereikbaarheid niet ingevuld bij de vacature');
+  }else if(/alleen met eigen vervoer/.test(bereik)){
+    if(vervoer && vervoer !== 'auto') uit.blokkers.push('alleen met eigen vervoer bereikbaar, kandidaat heeft ' +
+      (vervoer === 'geen' ? 'geen vervoer' : vervoer));
+    else if(vervoer === 'auto') uit.plussen.push('eigen auto');
+  }else if(/eigen vervoer handiger|met het ov/.test(bereik)){
+    if(vervoer === 'geen') uit.twijfels.push('geen vervoer, werkplek is niet om de hoek');
+  }
+
+  /* ── 4. Ploegendienst (10) ──────────────────────────────────── */
+  const vRang = ploegRang(vacature.ploegendienst), kRang = ploegRang(kandidaat.ploegen);
+  if(vRang == null){
+    uit.onbekend.push('ploegendienst niet ingevuld bij de vacature');
+  }else if(vRang === 0){
+    score += G.ploegen;                       /* dagdienst: dat kan iedereen */
+  }else if(kRang == null){
+    uit.onbekend.push('kandidaat heeft niet ingevuld welke diensten kunnen');
+  }else if(kRang === 0){
+    uit.blokkers.push('wil geen ploegendienst, vacature is ' + String(vacature.ploegendienst).trim());
+  }else if(kRang >= vRang){
+    score += G.ploegen;
+    uit.plussen.push(String(vacature.ploegendienst).trim() + ' past');
+  }else{
+    score += G.ploegen * .4;
+    uit.twijfels.push('draait ' + String(kandidaat.ploegen).trim() + ', gevraagd is ' + String(vacature.ploegendienst).trim());
+  }
+
+  /* ── 5. Eisen: certificaten, rijbewijs en taal (10) ─────────── */
+  const eisen = eisenUit(vacature.eisen);
+  if(!eisen){
+    uit.onbekend.push('geen eisen ingevuld bij de vacature');
+  }else{
+    const pap = papieren(kandidaat);
+    let toetsbaar = 0, gehaald = 0;
+    eisen.cert.forEach(eis => {
+      toetsbaar++;
+      const raak = pap.metDatum.filter(c => eis.pat.test(c.naam));
+      if(raak.length){
+        const metDatum = raak.filter(c => c.tot);
+        if(!metDatum.length){ gehaald++; uit.onbekend.push('geldigheid ' + eis.lbl + ' onbekend'); }
+        else if(metDatum.some(c => c.tot >= vandaag)){ gehaald++; uit.plussen.push(eis.lbl + ' geldig'); }
+        else{
+          /* Erger dan geen certificaat: je dénkt dat het geregeld is. */
+          /* Mét jaartal: "verlopen op 1 mrt" laat in het midden of dat vorige
+             maand was of drie jaar geleden, en dat scheelt voor de vraag of
+             het even bijgewerkt kan worden. */
+          uit.blokkers.push(eis.lbl + ' verlopen op ' +
+            CRM.fmtDate(metDatum.map(c => c.tot).sort().pop()));
+        }
+      }else if(pap.zonderDatum.some(s => eis.pat.test(s))){
+        gehaald++; uit.onbekend.push('geldigheid ' + eis.lbl + ' onbekend');
+      }else if(!(eis.k === 'rijbewijsB' || eis.k === 'rijbewijsC' ? pap.rijbewijsGevraagd : pap.certGevraagd)){
+        /* Niets op de kaart over certificaten of rijbewijs: dan weten we het
+           niet. Geen punten (onbekend is niet goed), maar ook geen streep
+           door de rekening — er is niemand geweest die het gevraagd heeft. */
+        uit.onbekend.push(eis.lbl + ' niet uitgevraagd');
+      }else{
+        uit.blokkers.push('geen ' + eis.lbl);
+      }
+    });
+    eisen.taal.forEach(eis => {
+      toetsbaar++;
+      const talen = String(kandidaat.talen||'').trim().toLowerCase();
+      if(!talen) uit.onbekend.push('talen van de kandidaat niet ingevuld');
+      else if(eis.kand.test(talen)){ gehaald++; uit.plussen.push(eis.lbl); }
+      else uit.blokkers.push('spreekt geen ' + eis.lbl);
+    });
+    /* Vrije tekst ("ervaring in de voedingsindustrie") toetsen we niet, en
+       dat zeggen we ook. Nooit blokkeren op iets wat we niet kunnen lezen. */
+    if(eisen.vrij.length) uit.onbekend.push('niet te toetsen eis: ' + somOp(eisen.vrij, 2));
+    if(toetsbaar) score += G.eisen * (gehaald / toetsbaar);
+  }
+
+  /* ── 6. Beschikbaarheid ─────────────────────────────────────── */
+  const besch = String(kandidaat.beschikbaar||'').trim().toLowerCase();
+  if(besch === 'niet') uit.blokkers.push('meldt zich niet beschikbaar');
+
+  /* ── 7. Ervaring (5) ────────────────────────────────────────── */
+  const jaren = kandidaat.cv && Number(kandidaat.cv.ervaringJaren);
+  if(!jaren && jaren !== 0) uit.onbekend.push('ervaringsjaren onbekend');
+  else if(jaren >= 3){ score += G.ervaring; uit.plussen.push(jaren + ' jaar ervaring'); }
+  else if(jaren >= 1) score += G.ervaring * .6;
+
+  /* ── 8. Salaris in de range (5) ─────────────────────────────── */
+  const loon = kandidaat.maandloon == null || kandidaat.maandloon === '' ? null : Number(kandidaat.maandloon);
+  const hi = vacature.sal_max == null ? null : Number(vacature.sal_max);
+  if(loon == null || (hi == null && vacature.sal_min == null)) uit.onbekend.push('salaris niet te vergelijken');
+  else if(hi != null && loon > hi) uit.twijfels.push('zit boven de loonrange van deze vacature');
+  else score += G.salaris;
+
+  /* ── Plafond en uitleg ──────────────────────────────────────── */
+  if(uit.blokkers.length) plafond = Math.min(plafond, P.blokker);
+  uit.score = Math.max(0, Math.min(plafond, Math.round(score)));
+
+  uit.regel = uit.score + '% — ' + (uit.plussen.length ? somOp(uit.plussen) : 'niets aantoonbaars dat past')
+    + (uit.blokkers.length ? ' · gaat op stuk: ' + somOp(uit.blokkers) : '')
+    + (uit.twijfels.length ? ' · let op: ' + somOp(uit.twijfels, 2) : '')
+    + (uit.onbekend.length ? ' · niet bekend: ' + somOp(uit.onbekend, 2) : '');
+  return uit;
 };
-CRM.besteMatches = (kandidaat, n=5) => CRM.state.vacs
-  .map(v => ({vacature:v, score:CRM.matchScore(kandidaat, v)}))
-  .filter(m => m.score >= 30)
-  .sort((a,b)=>b.score-a.score).slice(0,n);
+
+CRM.matchScore = (kandidaat, vacature) => CRM.match(kandidaat, vacature).score;
+
+/* Suggesties voor één kandidaat. Alleen open vacatures — een gesloten
+   vacature voorstellen is geen suggestie maar ruis. Wie een streep door de
+   rekening heeft blijft zichtbaar maar zakt naar onderen; het plafond van 35
+   zorgt dat zo iemand nooit bovenaan een lijstje staat. */
+CRM.besteMatches = (kandidaat, n=5) => (CRM.state.vacs||[])
+  .filter(v => (v.status || 'Open') === 'Open')
+  .map(v => { const m = CRM.match(kandidaat, v); return {vacature:v, score:m.score, m}; })
+  .filter(x => x.score >= 30)
+  .sort((a,b) => (a.m.blokkers.length?1:0) - (b.m.blokkers.length?1:0)
+              || b.score - a.score
+              || a.m.onbekend.length - b.m.onbekend.length)
+  .slice(0,n);
+
+})();
 
 /* ─── Kwalificatie- en zoekhelpers (filters, Source-kaart) ────── */
 CRM.BESCHIKBAAR = ['direct','in overleg','niet'];

@@ -202,6 +202,16 @@
 .kd-score .bar{width:100%}
 .kd-uitleg{margin:9px 0 11px;line-height:1.5}
 
+/* Wat het systeem al wist — één regel per geval, geen chipmuur.
+   Een streepje links in plaats van een gevuld vlak: dit is een
+   kanttekening bij een voorstel, geen alarm dat het scherm overneemt. */
+.kd-kanslet{margin:0 0 14px}
+.kd-sig{font-size:12.5px;line-height:1.5;color:var(--txt-2);
+  border-left:2px solid var(--line-2);padding-left:9px;margin:0 0 9px}
+.kd-sig.amber{border-left-color:var(--amber);color:#8a5a1a}
+.kd-sig.red{border-left-color:var(--red);color:#a4301f}
+.kd-kansnoot{margin:12px 0 0;line-height:1.55;max-width:82ch}
+
 /* ─── Traject-stappen ─────────────────────────────────────────── */
 .kd-stappen{display:flex;gap:3px;margin:16px 0 8px}
 .kd-stappen i{flex:1;height:6px;border-radius:99px;background:#e8ecdf}

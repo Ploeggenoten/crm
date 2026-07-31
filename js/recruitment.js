@@ -2665,13 +2665,23 @@ function furthestPhaseIdx(c){
 const afvalTypeVan = c => c.afvalType ||
   (furthestPhaseIdx(c) >= CRM.faseIdx('In de wacht') ? 'offer_afgewezen' : 'niet_gekwalificeerd');
 
-/* Totaal jaarsalaris uit componenten. VT default 8% (zat voorheen impliciet in
-   de jaarfactor 12,96). VT rekent over loon incl. ploegentoeslag; EJU en overig
-   over het kale jaarloon. Identiek aan het bord — de finance-app rekent hiermee. */
-function totaalJaarSalaris(loon, ploeg, vt, eju, overig){
+/* Totaal jaarsalaris uit componenten. Rekende dit zelf uit — een tweede
+   formule naast die in js/fee.js, die daardoor kon gaan afwijken. Nu roept
+   hij CRM.fee.grondslag aan: dezelfde rekenregel als de kandidatenkaart, de
+   klantkaart, Performance en Finance.
+
+   Zonder `afspraak` geldt de standaardgrondslag uit de overeenkomst
+   (12 maanden, VT 8% over loon incl. ploegentoeslag, EJU en overig over het
+   kale jaarloon) — reken voor reken de oude formule, zodat het bedrag in dit
+   venster en op de kandidaatkaart (js/kandidaten.js roept dit aan via
+   CRM._rcDeel) niet verandert. Geef je wél een afspraak mee, dan volgt de
+   uitkomst de grondslagvlaggen van die klant. */
+function totaalJaarSalaris(loon, ploeg, vt, eju, overig, afspraak){
   if(!loon) return null;
-  const jr = loon * 12;
-  return jr*(1+(ploeg||0)/100)*(1+((vt==null||vt==='')?8:+vt)/100) + jr*((eju||0)/100) + jr*((overig||0)/100);
+  const gr = CRM.fee.grondslag(
+    {maandloon:loon, toeslagPct:ploeg, vtPct:vt, ejuPct:eju, overigPct:overig},
+    afspraak || null);
+  return gr.compleet ? gr.jaarSalaris : null;
 }
 
 /* Garantie en vervanging (zelfde regels als het bord). */

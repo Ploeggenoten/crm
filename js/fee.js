@@ -360,29 +360,39 @@ function watMist(kandidaat, afspraak){
 /* ═══════════════════════════════════════════════════════════════
    4. DE BEREKENING
    ═══════════════════════════════════════════════════════════════ */
+/* TWEE PLAATSINGEN DIE GEEN FEE OPLEVEREN.
+   Dit stond alleen in js/performance.js, waardoor de kandidatenkaart en
+   het feestscherm er wél een bedrag bij zetten. Gevolg: een Flex-plaatsing
+   kreeg een W&S-fee van € 8.087 op de kaart, en het feestscherm stuurde dat
+   bedrag naar het hele team — voor geld dat nooit gefactureerd wordt.
+   Het hoort hier, in de gedeelde rekenregel, zodat elke aanroeper het
+   meekrijgt in plaats van dat iedereen het opnieuw moet bedenken.
+
+   Flex     — de opbrengst loopt via gewerkte uren, niet via een fee.
+   Vervangt — een kosteloze vervanging binnen de garantie; de fee is al
+              gefactureerd op de voorganger.
+
+   Los exporteerbaar (sinds 31 jul 2026) omdat Finance de kandidaat al vóór
+   de berekening moet kunnen wegfilteren: zo'n kandidaat hoort niet met fee 0
+   in de forecast, hij hoort er helemaal niet in te staan. Finance had die
+   twee uitzonderingen daarom in een eigen filterregel staan — nu leest hij
+   dezelfde lijst als de rest. */
+function geenFeeReden(kandidaat){
+  const c = kandidaat || {};
+  if(String(c.type || 'W&S') === 'Flex')
+    return 'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee.';
+  if(c.vervangt)
+    return 'Kosteloze vervanging binnen de garantie — de fee is al gefactureerd op de voorganger.';
+  return '';
+}
+
 function bereken(kandidaat, afspraak){
   const c = kandidaat || {};
 
-  /* TWEE PLAATSINGEN DIE GEEN FEE OPLEVEREN.
-     Dit stond alleen in js/performance.js, waardoor de kandidatenkaart en
-     het feestscherm er wél een bedrag bij zetten. Gevolg: een Flex-plaatsing
-     kreeg een W&S-fee van € 8.087 op de kaart, en het feestscherm stuurde dat
-     bedrag naar het hele team — voor geld dat nooit gefactureerd wordt.
-     Het hoort hier, in de gedeelde rekenregel, zodat elke aanroeper het
-     meekrijgt in plaats van dat iedereen het opnieuw moet bedenken.
-
-     Flex     — de opbrengst loopt via gewerkte uren, niet via een fee.
-     Vervangt — een kosteloze vervanging binnen de garantie; de fee is al
-                gefactureerd op de voorganger. */
-  const geenFeeReden =
-      (String(c.type || 'W&S') === 'Flex')
-        ? 'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee.'
-    : (c.vervangt)
-        ? 'Kosteloze vervanging binnen de garantie — de fee is al gefactureerd op de voorganger.'
-    : '';
-  if(geenFeeReden){
+  const geenFee = geenFeeReden(c);
+  if(geenFee){
     const gr0 = grondslag(c, afspraak);
-    return {fee:null, pct:null, bron:'nvt', uitleg:geenFeeReden, reden:geenFeeReden,
+    return {fee:null, pct:null, bron:'nvt', uitleg:geenFee, reden:geenFee,
             grondslag:gr0, waarschuwingen:[], factuurdatum:'', vervaldatum:'',
             garantieTot:'', geenFee:true};
   }
@@ -477,7 +487,7 @@ function leegAfspraak(klant){
 window.CRM = window.CRM || {};
 window.CRM.fee = {
   /* rekenwerk */
-  grondslag, bereken, watMist, pctVoor,
+  grondslag, bereken, watMist, pctVoor, geenFeeReden,
   /* hulpstukken die modules delen */
   normaliseer, geldigOp, voorKlant, leegAfspraak,
   getal, pctGetal, plusDagen, plusMaanden,

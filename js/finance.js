@@ -611,9 +611,10 @@ function furthestIdx(c){
 const isResolvedCand = c => ['Contract getekend','Gestart','Afgevallen','Gestopt'].includes(faseVan(c)) || !!c.geplaatst_op;
 const reachedPlacement = c => !!c.geplaatst_op || furthestIdx(c) >= PLAATSING_IDX;
 
-/* Tarief opzoeken (bron: calc.js tariefVoor): eerst klant+functie, dan klant-standaard */
+/* Tarief opzoeken (bron: calc.js tariefVoor): eerst klant+functie, dan klant-standaard.
+   Blijft bestaan als TERUGVAL — zie feePct() hieronder. */
 function tariefVoor(f, bordKlant, functie){
-  const rijen = f.tarieven.filter(r => CRM.zelfdeKlant(r.klant, bordKlant));
+  const rijen = (f.tarieven||[]).filter(r => CRM.zelfdeKlant(r.klant, bordKlant));
   if(!rijen.length) return null;
   const nf = String(functie||'').toLowerCase();
   const opFunctie = rijen.find(r => r.functie && nf &&
@@ -622,22 +623,104 @@ function tariefVoor(f, bordKlant, functie){
   const rij = opFunctie || standaard || rijen[0];
   return {pct: getalOfNull(rij.tarief_pct), rij};
 }
-/* bron: calc.js jaarSalaris() — VT default 8%, over loon incl. ploegentoeslag */
-function jaarSalaris(c, loon){
-  const ploeg = getal(c.toeslag_pct);
-  const vt = (c.vt_pct == null || c.vt_pct === '') ? 8 : getal(c.vt_pct, 8);
-  const eju = getal(c.eju_pct), overig = getal(c.overig_pct);
-  const jr = loon*12;
-  return jr * (1+ploeg/100) * (1+vt/100) + jr*eju/100 + jr*overig/100;
+
+/* ═══════════════════════════════════════════════════════════════
+   ÉÉN REKENREGEL VOOR DE FEE — 31 jul 2026
+   Hier stond een eigen jaarSalaris() (bron: calc.js) naast die in
+   js/fee.js. Ze waren het niet eens: fee.js volgt de grondslagvlaggen
+   uit de klantafspraak (telt de dertiende maand mee of niet, rekent
+   over 12 of 13 maanden), deze rekende altijd 12 maanden en telde
+   altijd alles mee. Bij 2960 met 15% ploegentoeslag, 8% VT en 8,33%
+   eindejaarsuitkering, bij een klant waar de EJU níét meetelt:
+   fee.js € 44.115,84 tegen finance € 47.074,66 — bij 23% is dat
+   € 681 verschil op één plaatsing. Dezelfde kandidaat kreeg dus een
+   ander bedrag op zijn kaart dan in de forecast.
+
+   Daarom rekent Finance nu via CRM.fee. Dat is een BEWUSTE AFWIJKING
+   van ~/ploeggenoten-finance/js/calc.js: die app kent crm_afspraken
+   niet en blijft altijd 12 maanden met alles erin rekenen. Zolang de
+   finance-app niet meeverhuist, wijkt de forecast hier dus af van de
+   forecast dáár — bij elke klant waarvan de afspraak niet de volle
+   standaardgrondslag is. Zie het rapport; dit is Tjeerds keuze.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* De ruwe candidates-rij is snake_case, CRM.fee leest camelCase. Niet zelf
+   overtypen: CRM.rowToCand is de mapping die het hele CRM gebruikt. */
+const feeKand = c => CRM.rowToCand(c);
+
+/* De afspraak hoort bij de DATUM VAN TEKENEN, niet bij vandaag — anders
+   rekent een plaatsing van vorig jaar met het tarief van dit jaar. */
+const afspraakVan = c => CRM.fee.voorKlant(c.klant, c.geplaatst_op || c.start || null);
+
+/* Welk percentage geldt, als FRACTIE (0,23) — de eenheid die de rest van
+   deze module en calc.js gebruiken.
+
+   Twee bronnen houden een percentage per klant bij:
+     crm_afspraken.fee_standaard / fee_regels — hele getallen (23), per
+       functiegroep, hoort bij de getekende SWO, leesbaar voor het team;
+     fin_tarieven.tarief_pct — fracties (0,23), los onderhouden in de
+       finance-app, alleen voor Tjeerd.
+   De afspraak wint: dat is wat er getekend is. fin_tarieven blijft als
+   terugval staan zolang die tabel nog apart bijgehouden wordt, zodat een
+   klant zonder afspraak niet ineens zonder tarief valt. Het vlakke
+   fee_pct uit fin_settings is en blijft een schatting (zeker:false). */
+function feePct(f, c){
+  const a = afspraakVan(c);
+  if(a){
+    const p = CRM.fee.pctVoor(feeKand(c), a);
+    if(p.pct != null) return {pct: p.pct/100, bron:'afspraak', zeker:true, uitleg:p.uitleg, afspraak:a};
+  }
+  const t = tariefVoor(f, c.klant, c.functie);
+  if(t && t.pct != null)
+    return {pct: t.pct, bron:'tarief', zeker:true, afspraak:a,
+            uitleg:'Geen commerciële afspraak gevonden — tarief uit fin_tarieven gebruikt.'};
+  return {pct: Sn(f,'fee_pct',0.22), bron:'standaard', zeker:false, afspraak:a,
+          uitleg:'Geen tarief bekend voor deze klant — vlak standaardpercentage, dus een schatting.'};
 }
-/* bron: calc.js feeBerekening() — alleen het bedrag; de wizard blijft in de finance-app */
+
+/* Waar de twee bronnen elkaar tegenspreken. Niet om automatisch op te lossen:
+   een percentage per klant is een onderhandelingsresultaat. Wel om te tonen,
+   want zolang het stil blijft rekent de ene helft van het systeem anders dan
+   de andere. */
+function tariefConflicten(f){
+  const uit = [];
+  for(const rij of (f.tarieven||[])){
+    const a = CRM.fee.voorKlant(rij.klant, null);
+    if(!a) continue;
+    const p = CRM.fee.pctVoor({functie: rij.functie || ''}, a);
+    if(p.pct == null) continue;
+    const tarief = getalOfNull(rij.tarief_pct);
+    if(tarief == null) continue;
+    if(Math.abs(p.pct/100 - tarief) > 0.0005)
+      uit.push({klant: rij.klant, functie: rij.functie || '', afspraak: p.pct/100, tarief});
+  }
+  return uit;
+}
+
+/* Het bruto jaarsalaris waarover de fee rekent — nu via CRM.fee.grondslag,
+   met de grondslagvlaggen van de klantafspraak. Zonder afspraak is de
+   uitkomst identiek aan de oude formule hier (12 maanden, VT 8% over loon
+   incl. ploegentoeslag, EJU en overig over het kale jaarloon). */
+function jaarSalaris(c, loon, afspraak){
+  const k = Object.assign(feeKand(c), {maandloon: loon});
+  const gr = CRM.fee.grondslag(k, afspraak !== undefined ? afspraak : afspraakVan(c));
+  return gr.compleet ? gr.jaarSalaris : 0;
+}
+
+/* Alleen het bedrag; de fee-wizard blijft in de finance-app.
+   WEG: het maandloon uit een vrij notitieveld raden met
+   /\b([2-6]\d{3})\b/. Dat was hier al onbereikbaar — de enige aanroeper
+   (pipelineForecast) roept deze functie alleen aan als c.maandloon
+   gevuld is — dus er verandert geen bedrag door het te schrappen, en er
+   raakt geen plaatsing zijn fee kwijt. Wat wél weg is: het risico dat
+   een postcode of een jaartal uit een notitie ononderscheidbaar als
+   maandloon de forecast in rolt. Wie een loon kent, vult het veld. */
 function feeBerekening(f, c){
-  const tarief = tariefVoor(f, c.klant, c.functie);
-  const loonNote = String(c.note||'').match(/\b([2-6]\d{3})\b/);
-  const loon = getalOfNull(c.maandloon) || (loonNote ? Number(loonNote[1]) : null);
-  if(loon && tarief) return {fee: Math.round(jaarSalaris(c, loon) * tarief.pct), zeker:true};
-  if(loon) return {fee: Math.round(jaarSalaris(c, loon) * Sn(f,'fee_pct',0.22)), zeker:false};
-  return null;
+  const loon = getalOfNull(c.maandloon);
+  if(!loon) return null;
+  const p = feePct(f, c);
+  return {fee: Math.round(jaarSalaris(c, loon, p.afspraak) * p.pct),
+          zeker: p.zeker, bron: p.bron, uitleg: p.uitleg};
 }
 
 /* bron: calc.js pipelineForecast() */
@@ -648,8 +731,14 @@ function pipelineForecast(f){
   const behoud = 1 - (k.stopPct || 0);
   const t = todayISO();
   const linked = new Set(f.placements.map(p => p.pipeline_candidate_id).filter(Boolean));
+  /* Flex en een kosteloze vervanging leveren geen fee op. Die twee regels
+     stonden hier los overgeschreven (`!isFlexType(c.type) && !c.vervangt`);
+     ze komen nu uit CRM.fee, zodat er niet opnieuw een derde plek ontstaat
+     die er anders over denkt. isFlexType blijft ernaast staan omdat het CRM
+     ook het oude label 'detachering' nog in de data heeft. */
   const rows = cands().filter(c =>
-      kansen[faseVan(c)] > 0 && !isFlexType(c.type) && !(c.vervangt||'') && !linked.has(c.id))
+      kansen[faseVan(c)] > 0 && !isFlexType(c.type)
+      && !CRM.fee.geenFeeReden(c) && !linked.has(c.id))
     .map(c => {
       const kans = kansen[faseVan(c)];
       const plaatsing = (c.start && c.start > t) ? String(c.start).slice(0,10)
@@ -749,8 +838,13 @@ function tariefAdvies(f){
     if(p.gestopt_op) k.gestopt++;
   }
   const rows = Object.values(per).map(k => {
-    const tr = tariefVoor(f, k.klant, '');
-    return {...k, pct: tr ? tr.pct : null, jaarNetto: k.netto*12/verstrekenMnd};
+    /* Zelfde volgorde als de forecast (afspraak vóór fin_tarieven), anders
+       staat in de ene kaart 22% en in de andere 23% voor dezelfde klant.
+       Een geschat percentage telt hier niet als tarief — dan hoort er
+       "geen tarief" te staan, niet een cijfer dat niemand heeft afgesproken. */
+    const tp = feePct(f, {klant: k.klant, functie: ''});
+    return {...k, pct: tp.zeker ? tp.pct : null, pctBron: tp.bron,
+            jaarNetto: k.netto*12/verstrekenMnd};
   });
   const met = rows.filter(r => r.pct && r.netto > 0);
   const totNetto = met.reduce((s,r) => s + r.netto, 0) || 1;
@@ -769,7 +863,9 @@ function inboxCandidates(f){
   const byName    = new Set(f.placements.map(p => String(p.kandidaat||'').trim().toLowerCase()).filter(Boolean));
   return cands().filter(c =>
     (isPlaced(c) || (c.geplaatst_op && faseVan(c) === 'Gestopt')) &&
-    !isFlexType(c.type) && !(c.vervangt||'') &&
+    /* Zelfde gedeelde uitzondering als in de forecast: geen fee = niets
+       af te ronden. Zie CRM.fee.geenFeeReden. */
+    !isFlexType(c.type) && !CRM.fee.geenFeeReden(c) &&
     !linked.has(c.id) && !dismissed.has(c.id) &&
     /* Een geanonimiseerde kandidaat heeft geen naam meer, dus de koppeling
        op naam hieronder kan hem nooit terugvinden. Zonder deze regel duikt
@@ -2974,6 +3070,25 @@ function tabAdvies(el, f){
       ${sectie('sterkte','🟢 Sterktes')}
 
       ${belastingKaart(f)}
+
+      ${(() => {
+        /* Twee bronnen voor hetzelfde percentage. Het CRM rekent met de
+           afspraak; de losse finance-app rekent met fin_tarieven. Zolang
+           beide bestaan is het enige eerlijke antwoord: laten zien waar ze
+           uiteenlopen, zodat Tjeerd kiest welke waar is. */
+        const cf = tariefConflicten(f);
+        if(!cf.length) return '';
+        return `<div class="note warn">
+          <b>${cf.length} klant${cf.length===1?'':'en'} met twee verschillende percentages.</b>
+          Het CRM rekent met de commerciële afspraak (crm_afspraken); de losse
+          finance-app rekent met fin_tarieven. Ze zijn het hier niet eens:
+          <ul style="margin:8px 0 0;padding-left:18px">${cf.map(x =>
+            `<li>${H(x.klant)}${x.functie ? ' · ' + H(x.functie) : ''}: afspraak
+              <b class="num">${pctF(x.afspraak)}</b> · fin_tarieven
+              <b class="num">${pctF(x.tarief)}</b></li>`).join('')}</ul>
+          <div style="margin-top:8px">Zet het percentage op één plek — de afspraak — en laat
+          fin_tarieven daaruit volgen.</div></div>`;
+      })()}
 
       ${ta.rows.length ? kaart('Tarief-adviseur — wat levert elke klant echt op', tabel(
         `<th>Klant</th><th class="n">Plaatsingen ${H(todayISO().slice(0,4))}</th><th class="n">Netto omzet</th>`

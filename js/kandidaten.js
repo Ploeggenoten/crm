@@ -138,6 +138,181 @@ function kansen(c){
     .sort((a,b) => b.score - a.score).slice(0,5);
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   WAT HET SYSTEEM AL WEET BIJ EEN VOORSTEL  (CRM.kdHistorie)
+
+   Op het moment dat je iemand bij een klant voorstelt, staat elders in
+   deze app al op het scherm dat die persoon ergens anders loopt, dat
+   déze klant hem eerder liet afvallen, of dat de vacature al vol is.
+   Dat werd nergens bij elkaar gebracht. Hier wel — drie vragen, drie
+   antwoorden, en alleen uit velden die daadwerkelijk zijn vastgelegd:
+
+     1. loopt deze persoon al ergens anders, en in welke fase?
+        → fase + klant + since op de kaart zelf.
+     2. is deze persoon eerder bij DEZE klant afgevallen of gestopt?
+        → afval_categorie / stop_categorie op een kaart van dezelfde
+          persoon bij dezelfde klant. "Dezelfde persoon" komt uit
+          candidates.herstart_van — het veld dat js/recruitment.js zet
+          bij heraanbieden. Dat is een vastgelegde koppeling, geen gok
+          op naam of telefoonnummer.
+     3. is deze vacature al vol? → CRM.vacBezetting uit js/hot.js, zodat
+        dit getal nooit iets anders zegt dan het Openstaand-overzicht.
+
+   Waarschuwen, niet blokkeren: iemand opnieuw voorstellen bij een klant
+   die hem eerder afwees kan een prima zet zijn. De app vertelt het,
+   en laat de knop staan.
+
+   Snelheid: één index per tekenronde (zelfde patroon als js/hot.js).
+   Er wordt bewust GEEN activiteitenlijst doorlopen — die telt duizenden
+   rijen en levert alleen vrije tekst op. Kosten: één pass over de
+   kandidaten.                                                        */
+(function(){
+  let IX = null;
+  function ix(){
+    if(IX) return IX;
+    const t0 = (window.performance && performance.now) ? performance.now() : 0;
+    const alle = CRM.kandidaten();
+    const perId = new Map(), kind = new Map();
+    alle.forEach(k => {
+      perId.set(String(k.id), k);
+      const ouder = String(k.herstartVan || '');
+      if(!ouder) return;
+      const r = kind.get(ouder); if(r) r.push(k); else kind.set(ouder, [k]);
+    });
+    IX = {perId, kind, n:alle.length,
+          ms:((window.performance && performance.now) ? performance.now() : 0) - t0};
+    Promise.resolve().then(() => { IX = null; });   // geldig binnen één tick
+    return IX;
+  }
+
+  /* Alle kaarten van dezelfde persoon: omhoog via herstartVan, omlaag via
+     de kaarten die naar deze wijzen. De gezien-set is er niet voor de
+     sierlijkheid — een herstart_van die (door een import) naar zichzelf of
+     in een kringetje wijst zou anders de hele kaart laten hangen. */
+  function keten(c){
+    const {perId, kind} = ix();
+    const uit = [], gezien = new Set();
+    (function loop(k){
+      if(!k || gezien.has(String(k.id))) return;
+      gezien.add(String(k.id)); uit.push(k);
+      if(k.herstartVan) loop(perId.get(String(k.herstartVan)));
+      (kind.get(String(k.id)) || []).forEach(loop);
+    })(c);
+    return uit;
+  }
+
+  /* Loopt er op deze kaart nog iets? Voorgesteld t/m Contract ondertekenen
+     telt, en een plaatsing waar nog geen stopdatum bij staat ook. */
+  const looptNu     = k => !!k.fase && CRM.faseIdx(k.fase) >= 0 && !CRM.faseIn(k.fase, CRM.DONE);
+  const geplaatstNu = k => CRM.faseIn(k.fase, CRM.PLACED) && !k.gestoptOp;
+  const isUitval    = k => CRM.faseIs(k.fase, 'Afgevallen') || CRM.faseIs(k.fase, 'Gestopt');
+
+  /* Het lopende of gestarte traject van deze persoon, ongeacht bij wie.
+     Een plaatsing weegt zwaarder dan een lopend gesprek, dus die eerst. */
+  function lopendTraject(c){
+    if(!c) return null;
+    const kaarten = keten(c).filter(k => k.klant && (looptNu(k) || geplaatstNu(k)));
+    if(!kaarten.length) return null;
+    const k = kaarten.find(geplaatstNu) || kaarten[0];
+    return {klant:k.klant, fase:CRM.faseNorm(k.fase), geplaatst:geplaatstNu(k),
+            sinds:k.since || '', zelfdeKaart:String(k.id) === String(c.id),
+            klantBestaat: !!CRM.klant(k.klant)};
+  }
+
+  /* Wie wees af? Dat staat in de gegevens en verzinnen we er niet bij.
+     Deze twee categorieën zijn de klant; de rest is de kandidaat zelf of
+     een reden waar geen partij aan hangt. Zelfde lijst als de
+     contactpersoonkaart gebruikt (js/contactkaart.js). */
+  const AFWIJS_KLANT = ['Klant wees af','Meeloopdag niet goed'];
+
+  /* Eerdere afgeronde trajecten van deze persoon bij DEZE klant.
+     Nieuwste eerst; twee keer bij dezelfde klant afgevallen levert dus
+     ook twee regels op. */
+  function eerderBij(c, klant){
+    if(!c || !klant) return [];
+    return keten(c)
+      .filter(k => isUitval(k) && k.klant && CRM.zelfdeKlant(k.klant, klant))
+      .map(k => {
+        const gestopt = CRM.faseIs(k.fase, 'Gestopt');
+        const reden = (gestopt ? k.stopCat : k.afvalCat) || '';
+        const doorKlant = gestopt ? k.stopDoor === 'klant' : AFWIJS_KLANT.includes(k.afvalCat);
+        return {
+          klant:k.klant, gestopt, reden, doorKlant,
+          offerAf: !gestopt && k.afvalType === 'offer_afgewezen',
+          wanneer: k.gestoptOp || k.since || '',
+          herbruikbaar: k.recyclebaar,
+          zelfdeKaart: String(k.id) === String(c.id)
+        };
+      })
+      .sort((a,b) => String(b.wanneer).localeCompare(String(a.wanneer)));
+  }
+
+  /* Eén zin over zo'n eerdere uitkomst. Geen "hij" of "hem": we weten het
+     geslacht niet en het staat nergens vastgelegd. */
+  function eerderZin(e){
+    const kop = e.gestopt
+      ? (e.doorKlant ? 'Deze klant beëindigde het contract eerder'
+                     : 'Eerder hier gestart en weer gestopt')
+      : e.doorKlant ? 'Deze klant wees deze persoon eerder af'
+      : e.offerAf   ? 'Eerder hier het aanbod niet geaccepteerd'
+                    : 'Eerder hier afgevallen';
+    /* 'Klant wees af' als reden achter "Deze klant wees deze persoon eerder
+       af" is twee keer hetzelfde. De categorie voegt dan niets toe. */
+    const dubbel = e.reden === 'Klant wees af';
+    const staart = [
+      dubbel ? '' : (e.reden ? e.reden.toLowerCase() : 'geen reden vastgelegd'),
+      e.wanneer ? CRM.fmtDate(e.wanneer) : ''
+    ].filter(Boolean).join(' · ');
+    return staart ? kop + ' — ' + staart : kop;
+  }
+
+  /* De bezetting komt uit js/hot.js, zodat de kandidatenkaart en het
+     Openstaand-overzicht nooit een ander aantal noemen. Is die module er
+     niet, dan zeggen we hierover niets in plaats van zelf te gaan tellen. */
+  const bezetting = v => (v && CRM.vacBezetting) ? CRM.vacBezetting(v) : null;
+
+  /* Zit deze persoon al op deze vacature? Op vacature_id, met dezelfde
+     terugval op klant + functie die js/hot.js gebruikt voor kaarten uit de
+     oude ATS-import. */
+  function alGekoppeld(c, v){
+    if(!c || !v) return false;
+    if(c.vacatureId && String(c.vacatureId) === String(v.id)) return true;
+    return !c.vacatureId && !!c.klant && !!c.functie
+        && CRM.zelfdeKlant(c.klant, v.klant) && c.functie === v.functie;
+  }
+
+  /* De drie waarschuwingen bij één kandidaat-vacaturecombinatie, in de
+     volgorde waarin ze ertoe doen. Bewust kort gehouden: bij elke naam drie
+     chips leest niemand meer. */
+  function signalen(c, v){
+    const uit = [];
+    if(!c || !v) return uit;
+    if(alGekoppeld(c, v)){
+      uit.push({k:'gekoppeld', kleur:'green', tekst:'staat al op deze vacature'});
+      return uit;                       // de rest is dan niet meer het punt
+    }
+    const lp = lopendTraject(c);
+    if(lp && !CRM.zelfdeKlant(lp.klant, v.klant))
+      uit.push({k:'elders', kleur:'amber',
+        tekst:(lp.geplaatst ? 'werkt al bij ' : 'loopt al bij ') + lp.klant
+              + ' — ' + lp.fase + (lp.sinds ? ' sinds ' + CRM.fmtDateShort(lp.sinds) : '')});
+    const eer = eerderBij(c, v.klant);
+    if(eer.length)
+      uit.push({k:'eerder', kleur:'amber',
+        tekst:eerderZin(eer[0]) + (eer.length > 1 ? ' (en ' + (eer.length-1) + ' keer eerder)' : '')});
+    const b = bezetting(v);
+    if(b && !b.teVullen)
+      uit.push({k:'vol', kleur:'amber',
+        tekst:'deze vacature is vol — ' + b.geplaatst + ' van ' + b.gevraagd + ' '
+              + (b.gevraagd === 1 ? 'positie' : 'posities') + ' gevuld'
+              + (b.aantalBekend ? '' : ', aantal niet ingevuld')});
+    return uit;
+  }
+
+  CRM.kdHistorie = {ververs(){ IX = null; }, keten, lopendTraject, eerderBij, eerderZin,
+                    alGekoppeld, signalen, meting(){ return {n:ix().n, ms:ix().ms}; }};
+})();
+
 /* ─── Reisafstand tot de werkplek ─────────────────────────────────
    "Reistijd/afstand" en "Reistijd/vervoer" zijn vaste uitvalcategorieën
    (CRM.AFVAL_CATS en CRM.STOP_CATS in js/data.js). Dan wil je die afstand
@@ -1604,39 +1779,73 @@ function factuurklaarHtml(c){
     </div></div>`;
 }
 
-/* ─── Kansen: past bij deze vacatures ─────────────────────────── */
+/* ─── Kansen: past bij deze vacatures ───────────────────────────
+   De matchscore zegt of iemand past. Wat hier sinds 31 jul 2026 bij staat
+   zegt of je het moet dóen: loopt deze persoon al ergens, wees deze klant
+   hem eerder af, en is de vacature al vol. Zie CRM.kdHistorie bovenaan dit
+   bestand.
+
+   Het lopende traject staat één keer bovenaan en niet bij elke regel — het
+   is voor alle vijf de vacatures hetzelfde feit, en vijf keer dezelfde
+   waarschuwing is net zo onbruikbaar als geen. Per regel blijft over wat
+   per vacature verschilt. */
 function kansenHtml(c){
   const lijst = kansen(c);
+  const H = CRM.kdHistorie;
+  const lp = H ? H.lopendTraject(c) : null;
+  const kop = !lp ? '' : `<div class="note warn kd-kanslet">
+    ${lp.geplaatst ? 'Werkt op dit moment bij' : 'Loopt op dit moment bij'}
+    <b>${h(lp.klant)}</b> — ${h(lp.fase)}${lp.sinds ? ' sinds ' + h(CRM.fmtDate(lp.sinds)) : ''}${
+      lp.klantBestaat ? '' : ' <span class="meta">(die klant staat niet meer in het systeem)</span>'}.
+    Ergens anders voorstellen kan, maar bespreek het eerst.</div>`;
+
+  let afgeleid = false;
+  const body = lijst.map(m => {
+    const v = m.vacature;
+    const sig = (H ? H.signalen(c, v) : []).filter(s => s.k !== 'elders');
+    if(sig.some(s => s.k === 'eerder')) afgeleid = true;
+    const gekoppeld = sig.some(s => s.k === 'gekoppeld');
+    const kleur = m.score >= 70 ? 'green' : m.score >= 50 ? '' : 'amber';
+    return `<div class="kd-kans">
+      <div class="row" style="flex-wrap:nowrap;align-items:flex-start">
+        <div style="min-width:0;flex:1">
+          <b>${h(v.functie)}</b>
+          <div class="meta"><a href="#klanten/${encodeURIComponent(v.klant)}" data-klant="${h(v.klant)}">${h(v.klant)}</a>
+            · ${h(v.locatie||'—')}${m.km?` · <span class="num">${m.km}</span> km`:''}</div>
+        </div>
+        <div class="kd-score">
+          ${CRM.ui.bar(m.score, kleur)}
+          <span class="meta num">${m.score}% match</span>
+          ${m.dichtbij?'<span class="meta">op reisafstand</span>':''}
+        </div>
+      </div>
+      <p class="sub kd-uitleg">${h(uitleg(c, v))}</p>
+      ${sig.filter(s => s.k !== 'gekoppeld').map(s =>
+        `<div class="kd-sig ${h(s.kleur)}">${h(s.tekst)}</div>`).join('')}
+      ${gekoppeld ? '<span class="chip green">Al gekoppeld aan deze vacature</span>'
+        : `<button class="btn ghost sm" data-voorstel="${h(String(v.id))}">→ Voorstellen bij deze vacature</button>`}
+    </div>`;
+  }).join('');
+
   return `<div class="card">
     <div class="card-h"><div class="h2">Kansen — past bij deze vacatures</div></div>
-    <div class="card-b">${lijst.length ? lijst.map(m => {
-      const v = m.vacature;
-      const zelfde = String(c.vacatureId||'') === String(v.id);
-      const kleur = m.score >= 70 ? 'green' : m.score >= 50 ? '' : 'amber';
-      return `<div class="kd-kans">
-        <div class="row" style="flex-wrap:nowrap;align-items:flex-start">
-          <div style="min-width:0;flex:1">
-            <b>${h(v.functie)}</b>
-            <div class="meta"><a href="#klanten/${encodeURIComponent(v.klant)}" data-klant="${h(v.klant)}">${h(v.klant)}</a>
-              · ${h(v.locatie||'—')}${m.km?` · <span class="num">${m.km}</span> km`:''}</div>
-          </div>
-          <div class="kd-score">
-            ${CRM.ui.bar(m.score, kleur)}
-            <span class="meta num">${m.score}% match</span>
-            ${m.dichtbij?'<span class="meta">op reisafstand</span>':''}
-          </div>
-        </div>
-        <p class="sub kd-uitleg">${h(uitleg(c, v))}</p>
-        ${zelfde ? '<span class="chip green">Al gekoppeld aan deze vacature</span>'
-          : `<button class="btn ghost sm" data-voorstel="${h(String(v.id))}">→ Voorstellen bij deze vacature</button>`}
-      </div>`;
-    }).join('') : CRM.ui.leeg('Nog geen passende vacature',
-        'Vul de gezochte functie en woonplaats in — dan zoekt het systeem zelf de vacatures erbij.')}</div></div>`;
+    <div class="card-b">${kop}${lijst.length ? body : CRM.ui.leeg('Nog geen passende vacature',
+        'Vul de gezochte functie en woonplaats in — dan zoekt het systeem zelf de vacatures erbij.')}
+      ${afgeleid ? `<p class="meta kd-kansnoot">Een eerdere afwijzing komt uit de uitvalregistratie op de kaart.
+        Er is geen veld dat een afwijzing als paar kandidaat–klant vastlegt: wat hier staat is de klant die
+        toen op die kaart stond. Is dezelfde persoon later op een nieuwe kaart heraangeboden, dan lezen we
+        de oude kaart mee via de heraanbied-koppeling.</p>` : ''}</div></div>`;
 }
 
 async function voorstellen(c, v){
+  /* Het laatste moment waarop het nog uitmaakt. Wat de kaart al liet zien
+     staat hier nog één keer, zodat het niet net buiten beeld valt als je
+     naar beneden hebt gescrold. Het blijft een bevestiging, geen blokkade. */
+  const sig = (CRM.kdHistorie ? CRM.kdHistorie.signalen(c, v) : [])
+    .filter(s => s.k !== 'gekoppeld').map(s => 'Let op: ' + s.tekst + '.');
   const ok = await CRM.bevestig('Voorstellen bij deze vacature?',
-    c.naam + ' → ' + v.functie + ' bij ' + v.klant + '. De fase gaat naar Voorgesteld.');
+    [c.naam + ' → ' + v.functie + ' bij ' + v.klant + '. De fase gaat naar Voorgesteld.']
+      .concat(sig).join(' '));
   if(!ok) return;
   const nieuw = Object.assign({}, c, {
     klant:v.klant, functie:v.functie || c.functie, vacatureId:v.id, fase:'Voorgesteld',
@@ -2069,3 +2278,26 @@ CRM.registerModule('kandidaten', {
       kandidaten zo binnenkomen, dan is een waarde 'CV' in de bronlijst
       (CRM.LEAD_BRONNEN in js/data.js) preciezer dan 'Handmatig', dat we
       nu gebruiken omdat het een bestaande waarde is. */
+
+/* VERZOEK AAN COORDINATOR — geschiedenis bij een voorstel (31 jul 2026):
+
+   1. supabase/schema.sql — er is geen veld dat een afwijzing vastlegt als
+      PAAR kandidaat × klant. De uitvalreden staat op de kandidaatkaart en
+      hangt dus aan de klant die op dát moment op die kaart stond. Wordt
+      dezelfde kaart later hergebruikt voor een andere klant, dan is de
+      oude afwijzing weg. CRM.kdHistorie leest daarom ook de kaarten die
+      via `herstart_van` aan elkaar hangen (dat is wél vastgelegd), maar
+      een tabel `crm_voorstellen` (kandidaat, klant, vacature, uitkomst,
+      datum) zou dit definitief oplossen — en zou meteen de vraag
+      "hoe vaak hebben we bij deze klant iemand voorgesteld" beantwoorden.
+
+   2. js/recruitment.js — het uitvalformulier vraagt niet wie er afwees als
+      de reden 'Anders' is. `afvalType` + `afvalCat` samen bepalen nu of we
+      "deze klant wees af" mogen zeggen; bij 'Anders' zeggen we alleen
+      "eerder hier afgevallen". Eén radioknop (klant / kandidaat / anders,
+      zoals bij Gestopt) zou die regel scherper maken.
+
+   3. js/data.js — `CRM.matchScore` filtert niets op geschiedenis of
+      bezetting, en dat is goed zo: die twee horen gescheiden. Mocht de
+      score ooit harde eisen gaan afdwingen, houd dan de bezetting erbuiten;
+      CRM.vacBezetting (js/hot.js) is daar de enige bron voor.               */

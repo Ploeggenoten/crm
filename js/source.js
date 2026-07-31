@@ -928,8 +928,12 @@ function tekenSourcing(mount, acties){
     if(sorter) sorter.querySelectorAll('button').forEach(b => b.onclick = () => { zetS('sort', b.dataset.s); teken(); });
   }
 
-  /* Eén kandidaatregel met alles wat je nodig hebt om te bellen. */
-  function kandRij(c, km, score){
+  /* Eén kandidaatregel met alles wat je nodig hebt om te bellen.
+     `m` is het antwoord van CRM.match (of null als er geen vacature is om
+     tegen te houden). De blokkers staan bewust vóór de belknoppen: dat is de
+     reden om níét te bellen, en die hoort niet onderaan weggestopt. */
+  function kandRij(c, km, m){
+    const score = m ? m.score : null;
     const st = stilte(c);
     const gold = goldenIds().has(String(c.id));
     const tel = String(c.telefoon||'').trim();
@@ -940,10 +944,14 @@ function tekenSourcing(mount, acties){
         ${gold ? '<span class="src2-goud" title="Golden candidate">★</span>' : ''}
         ${sterHtml(c.ster)}
         <span class="spacer"></span>
-        ${score != null ? `<span class="chip${score>=70?' green':score>=50?'':' amber'}"><span class="num">${score}%</span> match</span>` : ''}
+        ${score != null ? `<span class="chip${m.blokkers.length?' red':score>=70?' green':score>=50?'':' amber'}" title="${h(m.regel)}"><span class="num">${score}%</span> match</span>` : ''}
         ${km != null ? `<span class="chip"><span class="num">${km}</span> km</span>` : ''}
       </div>
       <div class="src2-kand-s">${h(c.functie||'geen functie ingevuld')} · ${h(c.woonplaats||'woonplaats onbekend')}</div>
+      ${m && m.blokkers.length ? `<div class="src2-blok">Hier gaat het op stuk: ${h(m.blokkers.join(' · '))}</div>` : ''}
+      ${m && m.twijfels.length ? `<div class="src2-twijfel">Let op: ${h(m.twijfels.join(' · '))}</div>` : ''}
+      ${m && m.onbekend.length ? `<div class="src2-onbekend">Niet bekend: ${h(m.onbekend.slice(0,3).join(' · '))}${
+          m.onbekend.length > 3 ? ' + ' + (m.onbekend.length - 3) + ' meer' : ''}</div>` : ''}
       <div class="row tight src2-kand-c">
         ${st.dagen != null ? `<span class="chip ${st.kleur}">${h(st.tekst)}</span>` : ''}
         ${c.beschikbaar ? `<span class="chip">${h(c.beschikbaar)}</span>` : ''}
@@ -979,6 +987,23 @@ function tekenSourcing(mount, acties){
     </details>`;
   }
 
+  /* Waar de match op toetst, boven de lijst. Staan de eisen niet ingevuld,
+     dan zeggen we dát — anders leest een lijst zonder waarschuwingen als
+     "iedereen voldoet", terwijl er simpelweg niets te toetsen viel.
+     `k in v` onderscheidt "kolom bestaat niet in deze database" niet van
+     "leeg gelaten"; voor de recruiter is het gevolg hetzelfde, dus één tekst. */
+  function eisenNote(v){
+    const heeft = [
+      v.ploegendienst ? 'ploegendienst: ' + v.ploegendienst : '',
+      v.bereikbaarheid ? 'bereikbaarheid: ' + v.bereikbaarheid : '',
+      v.eisen ? 'eisen: ' + v.eisen : ''
+    ].filter(Boolean);
+    if(!heeft.length) return `<div class="note warn" style="margin-bottom:12px">Bij deze vacature staan geen
+      ploegendienst, bereikbaarheid of certificaateisen. Daar kan de match dus niet op toetsen — vul ze in
+      op de vacaturekaart, dan valt hier meteen te zien wie er afvalt op vervoer of een verlopen certificaat.</div>`;
+    return `<div class="note info" style="margin-bottom:12px">Getoetst op ${h(heeft.join(' · '))}.</div>`;
+  }
+
   function sortSeg(){
     const opts = [{k:'match', l:'Match'}, {k:'afstand', l:'Afstand'}, {k:'stil', l:'Langst niet gesproken'}];
     return `<div class="seg" id="s2_sort">${opts.map(o =>
@@ -994,12 +1019,19 @@ function tekenSourcing(mount, acties){
     const d = ix.dekking.get(v.id) || {binnen:[]};
     /* Scores pas hier berekenen, alleen voor wie binnen de straal woont.
        Over alle vacatures × alle kandidaten scoren is verspild werk. */
-    const lijst = d.binnen.map(m => ({...m, score:CRM.matchScore(m.c, v), st:stilte(m.c)}));
+    const lijst = d.binnen.map(x => { const m = CRM.match(x.c, v); return {...x, m, score:m.score, st:stilte(x.c)}; });
+    /* Op match sorteren betekent: eerst wie er zonder streep doorheen komt.
+       Twee mensen met 35% zijn niet gelijkwaardig als bij de een de VCA
+       verlopen is. Bij gelijke stand gaat wie we vollediger kennen voor —
+       zo staat een leeg veld nooit boven een ingevuld veld. */
+    const geblokt = x => x.m.blokkers.length ? 1 : 0;
     if(S.sort === 'afstand')   lijst.sort((a,b) => a.km - b.km || b.score - a.score);
     else if(S.sort === 'stil') lijst.sort((a,b) => (b.st.dagen ?? -1) - (a.st.dagen ?? -1) || a.km - b.km);
-    else                       lijst.sort((a,b) => b.score - a.score || a.km - b.km);
+    else                       lijst.sort((a,b) => geblokt(a) - geblokt(b) || b.score - a.score
+                                               || a.m.onbekend.length - b.m.onbekend.length || a.km - b.km);
 
     const zichtbaar = lijst.slice(0, toonMeer);
+    const nBlok = lijst.filter(geblokt).length;
     return `<div class="card src2-paneel">
       <div class="card-h">
         <div class="h2">${h(v.functie||'Vacature')}${v.aantal>1?` <span class="num">×${v.aantal}</span>`:''}</div>
@@ -1009,12 +1041,14 @@ function tekenSourcing(mount, acties){
           ? `<span class="chip">${h(CRM.euro(v.sal_min))}–${h(CRM.euro(v.sal_max))}</span>` : ''}
       </div>
       <div class="card-b">
+        ${eisenNote(v)}
         <div class="row" style="margin-bottom:12px">
-          <span class="label">${lijst.length} binnen ${S.radius} km</span>
+          <span class="label">${lijst.length} binnen ${S.radius} km${
+            nBlok ? ` · <span class="neg num">${nBlok}</span> met een streep door de rekening` : ''}</span>
           <span class="spacer"></span>${sortSeg()}
         </div>
         ${zichtbaar.length
-          ? `<div class="src2-kandlijst">${zichtbaar.map(m => kandRij(m.c, m.km, m.score)).join('')}</div>
+          ? `<div class="src2-kandlijst">${zichtbaar.map(m => kandRij(m.c, m.km, m.m)).join('')}</div>
              ${lijst.length > zichtbaar.length
                ? `<button class="btn ghost sm block" data-meer="1" style="margin-top:12px">Toon de volgende ${
                    Math.min(50, lijst.length - zichtbaar.length)} van ${lijst.length}</button>` : ''}`
@@ -1070,9 +1104,10 @@ function tekenSourcing(mount, acties){
       CRM.ui.leeg('Kies een golden candidate', 'Dit zijn goede mensen die je bewaard hebt omdat er destijds niets passends was. Hier zie je of dat inmiddels veranderd is.')}</div>`;
 
     const p = plaatsPunt(c.woonplaats);
-    const kansen = p ? ix.vacs.map(x => ({v:x.v, km:kmTussen(p.coord, x.coord), score:CRM.matchScore(c, x.v)}))
-      .filter(m => m.km != null && m.km <= S.radius)
-      .sort((a,b) => b.score - a.score || a.km - b.km) : [];
+    const kansen = p ? ix.vacs.map(x => { const m = CRM.match(c, x.v);
+        return {v:x.v, km:kmTussen(p.coord, x.coord), score:m.score, m}; })
+      .filter(x => x.km != null && x.km <= S.radius)
+      .sort((a,b) => (a.m.blokkers.length?1:0) - (b.m.blokkers.length?1:0) || b.score - a.score || a.km - b.km) : [];
 
     return `<div class="card src2-paneel">
       <div class="card-h"><div class="h2"><span class="src2-goud">★</span> ${h(c.naam)}</div>
@@ -1085,8 +1120,9 @@ function tekenSourcing(mount, acties){
             dus we kunnen hier niets meten. Vul een herkende woonplaats in op de kandidatenkaart.</div>`
           : kansen.length ? `<div class="src2-vaclijst">${kansen.slice(0,12).map(m => `
               <a class="src2-vacrij" href="#klanten/${encodeURIComponent(m.v.klant||'')}" data-klant="${h(m.v.klant||'')}">
-                <span><b>${h(m.v.functie||'Vacature')}</b><span class="src2-rij-s">${h(m.v.klant||'—')} · ${h(m.v.locatie||'—')}</span></span>
-                <span class="row tight"><span class="chip${m.score>=70?' green':m.score>=50?'':' amber'}"><span class="num">${m.score}%</span></span>
+                <span><b>${h(m.v.functie||'Vacature')}</b><span class="src2-rij-s">${h(m.v.klant||'—')} · ${h(m.v.locatie||'—')}</span>${
+                  m.m.blokkers.length ? `<span class="src2-blok">${h(m.m.blokkers.join(' · '))}</span>` : ''}</span>
+                <span class="row tight"><span class="chip${m.m.blokkers.length?' red':m.score>=70?' green':m.score>=50?'':' amber'}" title="${h(m.m.regel)}"><span class="num">${m.score}%</span></span>
                   <span class="chip"><span class="num">${m.km}</span> km</span></span>
               </a>`).join('')}</div>${kansen.length > 12
               ? `<p class="meta">+ ${kansen.length - 12} andere vacatures binnen ${S.radius} km, met een lagere match.</p>` : ''}`

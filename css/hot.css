@@ -127,6 +127,16 @@
 .ovd-mwie b{font-size:13px;font-weight:600;color:var(--ink)}
 .ovd-mrij .chip{font-size:11px;padding:1px 9px}
 .ovd-mrij:hover .hk-ga{color:var(--olive)}
+/* Een rij met geschiedenis blijft gewoon aanklikbaar en op zijn plek — hij
+   krijgt alleen een streepje en een regel eronder. Wegfilteren zou de
+   beslissing voor de accountmanager nemen; dat is niet aan het scherm. */
+.ovd-mrij.let{border-left:2px solid var(--amber-line);padding-left:8px}
+.ovd-mrij .ovd-msig{font-size:11.5px;line-height:1.45;color:#8a5a1a;margin-top:2px}
+/* Op smal scherm mag de rij twee regels worden in plaats van te knijpen. */
+@media (max-width:640px){
+  .ovd-mrij{align-items:flex-start}
+  .ovd-mrij .ovd-msig{white-space:normal}
+}
 
 /* ═══ HOT — rustige prioriteitenkaarten ═══════════════════════ */
 

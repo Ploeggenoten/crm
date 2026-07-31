@@ -144,6 +144,12 @@
   const isOpenstaand = v => statusOpen(v) && telling(v).teVullen > 0;
   const isVolMaarOpen = v => statusOpen(v) && telling(v).teVullen === 0;
 
+  /* Gedeeld met js/kandidaten.js — die kaart waarschuwt bij "Kansen" dat een
+     vacature al vol is en moet daarvoor exact dit getal gebruiken. Eén
+     implementatie: twee schermen die over dezelfde vacature iets anders
+     zeggen is precies het probleem dat deze telling moest oplossen. */
+  CRM.vacBezetting = v => v ? telling(v) : null;
+
   /* Waar knelt het? Vier niveaus, van "hier gebeurt niets" naar "loopt".
      Dit is de standaardsortering én de waarschuwing op de kaart, zodat het
      scherm en de volgorde nooit iets anders zeggen. */
@@ -519,13 +525,20 @@
     const teller = doel > 0 && !dat(v.doel_gezet_op);
     const posities = Number(v.aantal) || 1;
     const teHoog = doel > 0 && (v.doel_soort === 'plaatsingen') && doel > posities;
+    /* Een doel dat om twee voorstellen vraagt op een vacature waar geen plek
+       meer is, is werk voor niets. Het Openstaand-overzicht wist dit al
+       ("alle 2 posities gevuld"); de doelteller zweeg erover en telde
+       vrolijk door. Zelfde telling, dus de twee kunnen niet uiteenlopen. */
+    const volT = telling(v);
+    const volChip = (doel > 0 && !volT.teVullen)
+      ? ` <span class="chip amber" title="Alle ${volT.gevraagd} ${volT.gevraagd===1?'positie is':'posities zijn'} gevuld. Het doel blijft staan — haal de vacature van het hot-bord of pas de status aan als er niets meer bij hoeft.">vacature is vol</span>` : '';
     const zin = doel ? `minimaal ${doel} ${woord(doel, v.doel_soort)} voor ${dagLang(v.deadline)}`
                      : 'nog geen doel ingesteld';
     const status = !doel ? `<span class="meta">stel een doel in via Bewerken</span>`
       : teller ? `<span class="meta">de teller is nooit gestart — open Bewerken en sla het doel opnieuw op</span>`
-      : gehaald ? `<span class="doel-ok">doel gehaald ✓</span>`
+      : gehaald ? `<span class="doel-ok">doel gehaald ✓</span>${volChip}`
       : `<span class="num">${beh}</span> van <span class="num">${doel}</span> · nog ${doel-beh} te gaan${
-          teHoog ? ` <span class="chip amber" title="Er ${posities===1?'is':'zijn'} maar ${posities} ${posities===1?'positie':'posities'} op deze vacature — meer plaatsingen kunnen niet.">meer dan ${posities} ${posities===1?'positie':'posities'}</span>` : ''}`;
+          teHoog ? ` <span class="chip amber" title="Er ${posities===1?'is':'zijn'} maar ${posities} ${posities===1?'positie':'posities'} op deze vacature — meer plaatsingen kunnen niet.">meer dan ${posities} ${posities===1?'positie':'posities'}</span>` : ''}${volChip}`;
     const pct = (doel && !teller) ? Math.min(100, beh/doel*100) : 0;
 
     // Mini-funnel
@@ -801,15 +814,24 @@
       <div class="card-b">
         ${!sug.length
           ? `<p class="meta" style="margin:0">Geen beschikbare kandidaat die genoeg lijkt op deze functie en locatie.</p>`
-          : `<div class="ovd-match">${sug.map(m => `<div class="ovd-mrij" data-cand="${h(m.c.id)}">
+          : `<div class="ovd-match">${sug.map(m => {
+              /* Wat er over deze persoon al vastligt en hier iets betekent:
+                 loopt al ergens anders, of is hier eerder afgevallen. Zie
+                 CRM.kdHistorie in js/kandidaten.js. Waarschuwen, niet
+                 wegfilteren — een tweede kans kan een prima zet zijn. */
+              const sig = (CRM.kdHistorie ? CRM.kdHistorie.signalen(m.c, v) : [])
+                .filter(s => s.k === 'elders' || s.k === 'eerder');
+              return `<div class="ovd-mrij${sig.length?' let':''}" data-cand="${h(m.c.id)}">
               <span class="ovd-score num">${m.score}</span>
               <div class="ovd-mwie"><b>${h(m.c.naam)}</b>
                 <span class="meta">${h(m.c.functie || 'functie onbekend')}${
                   m.c.woonplaats ? ' · ' + h(m.c.woonplaats) : ''}${
-                  m.km ? ` · ${m.km} km` : ''}</span></div>
+                  m.km ? ` · ${m.km} km` : ''}</span>
+                ${sig.map(s => `<span class="ovd-msig">${h(s.tekst)}</span>`).join('')}</div>
               ${m.c.beschikbaar ? `<span class="chip">${h(m.c.beschikbaar)}</span>` : ''}
-              <span class="hk-ga">→</span></div>`).join('')}</div>
-             <p class="meta" style="margin:10px 0 0">Deze volgorde is afgeleid uit functiewoorden en reisafstand, niet ergens vastgelegd. Beoordeel zelf.</p>`}
+              <span class="hk-ga">→</span></div>`;
+            }).join('')}</div>
+             <p class="meta" style="margin:10px 0 0">Deze volgorde is afgeleid uit functiewoorden en reisafstand, niet ergens vastgelegd. Beoordeel zelf. De regels eronder komen wél uit vastgelegde velden: de fase en klant op de kaart, en de uitvalreden.</p>`}
       </div></section>`;
 
     /* ── Vacaturetekst ── */

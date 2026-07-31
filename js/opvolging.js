@@ -97,6 +97,56 @@ const CONTACT = ['bel','gesprek','whatsapp','mail','bezoek'];
    zichtbaar op de kandidatenkaart — daar hoort de eerlijkheid. */
 const MAX_OPEN_DAGEN = 7;
 
+/* ─── Index op de activiteiten ────────────────────────────────────
+   Elk ritmemoment moet weten of er al contact is geweest, en dat antwoord
+   komt uit de activiteiten. Dat gebeurde per kandidaat met
+   CRM.activiteitenVoor(), en die loopt élke keer de hele lijst af. Bij
+   duizend kandidaten en tienduizend activiteiten is dat tien miljoen
+   vergelijkingen per hertekening — plus een sortering per kandidaat.
+   Nu bouwen we de lijstjes één keer en is een kandidaat een opzoeking.
+   Zelfde patroon als js/contactkaart.js (idx) en js/recruitment.js
+   (bouwDubbel).
+
+   ONGELDIG WORDEN — een index die blijft hangen is erger dan geen index.
+   De stempel telt de activiteiten en kijkt naar de eerste en de laatste
+   rij. Er wordt vooraan bijgeschreven (CRM.logActiviteit doet unshift) en
+   bij het wissen van een kandidaat verdwijnen er rijen uit het midden;
+   allebei veranderen de lengte. Wisselt een kandidaat van fase, dan raakt
+   dat de activiteiten niet — die index mag dan gewoon blijven staan, want
+   het ritme zelf wordt bij elke aanroep opnieuw gerekend.
+
+   VOLGORDE — de kandidaatlijstjes worden hier één keer oplopend op `op`
+   gesorteerd, precies zoals bepaalGedaan dat eerst per kandidaat deed.
+   De klantlijstjes NIET: klantRegel pakt daar de eerste treffer uit en
+   die hoort dezelfde te zijn als bij CRM.activiteitenVoor(), dus houden
+   we de volgorde van CRM.state.activiteiten aan.                     */
+const LEEG = [];
+let _actIdx = null, _actStempel = '';
+function actStempel(){
+  const a = CRM.state.activiteiten || [];
+  return a.length + '|' + (a.length ? a[0].id + '|' + a[a.length-1].id : '');
+}
+function actIndex(){
+  const s = actStempel();
+  if(_actIdx && _actStempel === s) return _actIdx;
+  const kand = new Map(), klant = new Map();
+  (CRM.state.activiteiten || []).forEach(a => {
+    const m = a.entiteit === 'kandidaat' ? kand : a.entiteit === 'klant' ? klant : null;
+    if(!m) return;
+    const sleutel = String(a.ref);
+    const lijst = m.get(sleutel);
+    if(lijst) lijst.push(a); else m.set(sleutel, [a]);
+  });
+  kand.forEach(l => l.sort((a,b) => String(a.op || '').localeCompare(String(b.op || ''))));
+  _actIdx = {kand, klant};
+  _actStempel = s;
+  return _actIdx;
+}
+/* De lijstjes zijn gedeeld bezit: lezen mag, wijzigen niet. Wie sorteert of
+   splitst maakt eerst een kopie (filter en slice doen dat vanzelf). */
+const actsVanKandidaat = id   => actIndex().kand.get(String(id)) || LEEG;
+const actsVanKlant     = naam => actIndex().klant.get(String(naam)) || LEEG;
+
 /* ═══ 1. NAZORG ═══════════════════════════════════════════════════
    Tjeerds eigen woorden: "startdag zelf een appje, dag 1, einde van de
    week, na 2 weken, 1 maand en dan maandelijks" — tot één jaar na de
@@ -169,13 +219,13 @@ function jarigDoelgroep(c){
   if(c.gestoptOp) return false;
   return true;
 }
-/* candidates.geboortedatum staat wél in het schema maar wordt (nog) niet
-   door CRM.rowToCand gemapt. Daarom lezen we hem uit de ruwe rij; zodra
-   core hem meeneemt werkt de eerste tak vanzelf. */
-const rijVan = c => (CRM.state.cands || []).find(r => String(r.id) === String(c.id)) || null;
+/* candidates.geboortedatum wordt inmiddels gewoon gemapt in CRM.rowToCand
+   (js/core.js), dus we lezen hem rechtstreeks van de kandidaat. Hier stond
+   een omweg langs de ruwe rij in CRM.state.cands voor de tijd dat dat nog
+   niet zo was; die zocht per kandidaat de hele lijst af — bij duizend
+   kandidaten een miljoen vergelijkingen voor een veld dat er al staat. */
 function geboortedatum(c){
-  const v = c.geboortedatum || (rijVan(c) || {}).geboortedatum || '';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v == null ? '' : v));
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(c.geboortedatum == null ? '' : c.geboortedatum));
   return m ? m[0] : '';
 }
 const schrikkel = j => (j % 4 === 0 && j % 100 !== 0) || j % 400 === 0;
@@ -350,8 +400,9 @@ function merk(a){
 }
 
 function bepaalGedaan(c, momenten){
-  const acts = CRM.activiteitenVoor('kandidaat', c.id)
-    .slice().sort((a,b) => String(a.op || '').localeCompare(String(b.op || '')));
+  /* Al oplopend op `op` gesorteerd door de index hierboven — dezelfde
+     volgorde als de sortering die hier eerst per kandidaat stond. */
+  const acts = actsVanKandidaat(c.id);
   const gebruikt = new Set();
 
   /* Ronde 1 — expliciet vastgelegde check-ins. Die zijn hard bewijs. */
@@ -468,7 +519,7 @@ const naTwaalf = iso => iso !== vandaag() || new Date().getHours() >= RONDE_UUR;
    met de hand zet als hij buiten het CRM om gebeld heeft. Leeg = nooit. */
 function laatsteKlantContact(k, acts){
   let uit = dag(k.laatst_contact) || '';
-  (acts || CRM.activiteitenVoor('klant', k.naam)).forEach(a => {
+  (acts || actsVanKlant(k.naam)).forEach(a => {
     if(!CONTACT.includes(a.soort)) return;
     const d = dag(a.op);
     if(d > uit) uit = d;
@@ -479,8 +530,9 @@ function laatsteKlantContact(k, acts){
 /* De hoofdcontactpersoon, met terugval op de klant zelf. Een klant zónder
    contactpersoon mag niet uit de ronde vallen: dan bel je het algemene
    nummer, en als dat er ook niet is zeggen we dat gewoon. */
-function hoofdContact(k){
-  const lijst = (CRM.state.contacten || []).filter(c => c.klant === k.naam);
+function hoofdContact(k, ix){
+  const lijst = ix ? (ix.contacten.get(k.naam) || LEEG)
+                   : (CRM.state.contacten || []).filter(c => c.klant === k.naam);
   const c = lijst.find(x => x.hoofd) || lijst[0] || null;
   return {
     naam:    c ? String(c.naam || '').trim() : '',
@@ -492,8 +544,8 @@ function hoofdContact(k){
 
 /* Eén klant in de ronde: alles wat de AM nodig heeft om te bellen zonder
    zich eerst in te lezen. */
-function klantRegel(k, vrijdag, tot){
-  const acts  = CRM.activiteitenVoor('klant', k.naam);
+function klantRegel(k, vrijdag, tot, ix){
+  const acts  = actsVanKlant(k.naam);
   const sleutel = KLANT_KEY + ':' + vrijdag;
 
   /* Gedaan, in dezelfde volgorde als bij de check-ins hierboven: eerst een
@@ -508,7 +560,7 @@ function klantRegel(k, vrijdag, tot){
   const uitKaart = dag(k.laatst_contact);
   if(!bewijs && uitKaart && uitKaart >= vrijdag && uitKaart <= tot) bron = 'kaart';
 
-  const mensen = CRM.kandidatenVan(k.naam);
+  const mensen = ix ? (ix.kandidaten.get(k.naam) || LEEG) : CRM.kandidatenVan(k.naam);
   return {
     naam:  k.naam,
     klant: k,
@@ -528,8 +580,25 @@ function klantRegel(k, vrijdag, tot){
       CRM.faseIs(c.fase, 'Contract getekend') ||
       (CRM.faseIs(c.fase, 'Gestart') && c.start && String(c.start).slice(0,10) > CRM.todayISO()))),
     vacs:  CRM.vacaturesVan(k.naam).filter(v => (v.status || 'Open') === 'Open'),
-    contact: hoofdContact(k)
+    contact: hoofdContact(k, ix)
   };
+}
+
+/* De ronde in één doorloop indexeren. CRM.kandidatenVan() bouwt intern de
+   hele kandidatenlijst opnieuw op (CRM.kandidaten() is niet gecacht), dus
+   per klant aanroepen betekende bij honderd klanten honderdduizend
+   opgebouwde kandidaatobjecten voor één vrijdagregel. Hetzelfde gold voor
+   de contactpersonen. Deze index leeft precies zolang als de ronde die hem
+   nodig heeft — hij wordt bij elke tekenronde opnieuw gebouwd en kan dus
+   niet achterlopen op de gegevens. */
+function rondeIndex(){
+  const kandidaten = new Map(), contacten = new Map();
+  const bij = (m, sleutel, waarde) => {
+    const l = m.get(sleutel); if(l) l.push(waarde); else m.set(sleutel, [waarde]);
+  };
+  CRM.kandidaten().forEach(c => bij(kandidaten, c.klant, c));
+  (CRM.state.contacten || []).forEach(ct => bij(contacten, ct.klant, ct));
+  return {kandidaten, contacten};
 }
 
 /* Welke klanten? Niet alles wat in de database staat. CRM.actieveKlanten()
@@ -541,9 +610,10 @@ function klantRegel(k, vrijdag, tot){
    zou precies de dubbele waarheid opleveren die dit bestand opruimt.       */
 function rondeKlanten(mij, vrijdag){
   const tot = plusDagen(vrijdag, RONDE_DAGEN);
+  const ix = rondeIndex();
   return (CRM.actieveKlanten() || [])
     .filter(k => !(mij && k.eigenaar && k.eigenaar !== mij))
-    .map(k => klantRegel(k, vrijdag, tot))
+    .map(k => klantRegel(k, vrijdag, tot, ix))
     /* Bovenaan wie je het langst niet gesproken hebt, en daarboven nog wie
        je nog nóóit gesproken hebt. Wie deze week al aan de lijn hing zakt
        vanzelf naar onderen: die kost hooguit een half belletje. */
@@ -1463,7 +1533,44 @@ function bindKaart(root, c, na){
       Komt die wens er, dan hoort hij als één gedeelde helper in core —
       bijvoorbeeld `CRM.werkdag(iso)` — en niet als een tweede lijstje in
       een module. Dit bestand kan hem dan meteen gebruiken.
-   6. js/opvolging.js moet in index.html geladen worden NA js/data.js en
+   6b. GEBOORTEDATUM — punt 1 hierboven is inmiddels ingewilligd
+      (js/core.js, CRM.rowToCand regel 407). Dit bestand leest hem sinds
+      31 juli 2026 rechtstreeks van de kandidaat; de omweg langs de ruwe
+      rij in CRM.state.cands is weg. Punt 1 mag geschrapt worden.
+   7. CRM.kandidaten() HEEFT GEEN CACHE (js/data.js:145):
+      `CRM.state.cands.map(CRM.rowToCand)` bouwt bij elke aanroep duizend
+      objecten opnieuw op. Het dashboard roept hem 112× per hertekening
+      aan — 112.000 objecten voor gegevens die niet veranderd zijn. Dit
+      bestand vangt dat binnen de vrijdagronde zelf op (rondeIndex), maar
+      dat lost het alleen hier op. Voorstel voor js/data.js:
+        let _kc = null, _kcStempel = '';
+        const kcStempel = () => CRM.state.cands.length + '|' + CRM._dataVersie;
+        CRM.kandidaten = () => {
+          const s = kcStempel();
+          if(_kc && _kcStempel === s) return _kc;
+          _kc = CRM.state.cands.map(CRM.rowToCand); _kcStempel = s;
+          return _kc;
+        };
+      Een lengte alleen is niet genoeg: een fasewissel verandert een veld,
+      niet het aantal. Er is dus één teller nodig die overal wordt
+      opgehoogd waar CRM.state.cands wordt gewijzigd (CRM._dataVersie++,
+      of een CRM.raakteData()-helper in core). Zonder die teller liever
+      géén cache — een lijst die blijft hangen na een fasewissel is erger
+      dan een trage lijst.
+   8. CRM.fmtDate / fmtDateShort / fmtDay / euro / pct (js/core.js:75-114)
+      maken bij ÉLKE aanroep een nieuwe Intl-formatter, want
+      `toLocaleDateString('nl-NL', {...})` bouwt er intern eentje op.
+      Gemeten: 10.000× fmtDate = 301 ms, met één gedeelde formatter 6 ms.
+      Voorstel (drie regels, ongewijzigde uitkomst):
+        const FMT_DATE  = new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'short',year:'numeric'});
+        const FMT_KORT  = new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'short'});
+        const FMT_DAG   = new Intl.DateTimeFormat('nl-NL',{weekday:'short',day:'numeric',month:'short'});
+      en in de helpers `FMT_DATE.format(d)` in plaats van
+      `d.toLocaleDateString(...)`. Idem voor CRM.euro met één
+      Intl.NumberFormat per aantal decimalen. Dit bestand roept fmtDate,
+      fmtDateShort en fmtDay honderden keren per hertekening aan; het is
+      vijftig keer winst voor een handvol regels in core.
+   9. js/opvolging.js moet in index.html geladen worden NA js/data.js en
       js/outlook.js en VÓÓR js/dashboard.js, js/kandidaten.js, js/pijplijn.js
       en js/performance.js — net als js/fee.js. Alle gebruikers zijn
       defensief geschreven (`if(!CRM.opvolging) …`), dus zonder die regel
