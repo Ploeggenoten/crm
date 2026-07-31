@@ -22,6 +22,13 @@ alter table candidates add column if not exists vervoer     text default '';  --
 -- Golden candidate: goede kandidaat zonder passende vacature op dit moment.
 -- Geen fase maar een vlag — zo raken we ze nooit meer uit het oog.
 alter table candidates add column if not exists golden      boolean default false;
+-- Pasfoto van de kandidaat. Bevat het PAD in de map 'crm-docs'
+-- (bv. 'kandidaten/<id>.jpg'), nooit een url — de map is afgeschermd en de
+-- app tekent per keer een tijdelijke link (zie CRM.opslag in js/core.js).
+-- Bewust een eigen kolom en geen veld in het cv-jsonb: een foto is een
+-- persoonsgegeven met een eigen bewaartermijn, en je wilt hem los kunnen
+-- verwijderen zonder de rest van het CV aan te raken.
+alter table candidates add column if not exists foto        text default '';
 -- Geboortedatum: voor de verjaardagstaak op het dashboard van de AM.
 -- Alleen dag en maand worden getoond; het jaartal blijft in de database staan
 -- omdat een datumveld nu eenmaal een jaar nodig heeft, maar nergens in beeld.
