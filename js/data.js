@@ -112,20 +112,36 @@ CRM.actieveKlanten = () => {
    netto = getekend deze maand − gestopt deze maand. */
 CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
   const cs = CRM.kandidaten();
-  /* Wie in DEZE maand tekende én weer stopte, telde dubbel negatief: hij viel
-     buiten 'getekend' (zijn fase is inmiddels Gestopt) maar wél binnen
-     'gestopt', dus netto −1 terwijl het bord en de finance-app 0 zeggen.
-     Tekenen is een gebeurtenis die heeft plaatsgevonden; een latere stop maakt
-     dat niet ongedaan. Daarom telt ook een Gestopt-kaart mee als hij in deze
-     maand geplaatst is — dan heffen de +1 en de −1 elkaar netjes op. */
+  /* Twee regels van het bord die hier ontbraken en het netto-getal scheeftrokken:
+     1. Een stop telt alleen als er ook écht getekend is. Zonder plaatsingsdatum
+        is er geen plaatsing om vanaf te trekken — het bord eist `c.geplaatstOp`
+        en waarschuwt daar zelfs voor in het uitvalformulier.
+     2. Een gestopte VERVANGER telt niet nog eens af. Zijn voorganger is al als
+        stop geteld; hem meetellen zou dezelfde plek twee keer aftrekken (het
+        bord noemt dat op de kaart "inruiler gestopt · geen target-effect").
+     Wie in DEZE maand tekende én weer stopte, telde daarnaast dubbel negatief:
+     hij viel buiten 'getekend' (zijn fase is inmiddels Gestopt) maar wél binnen
+     'gestopt', dus netto −1 terwijl de finance-app 0 zegt. Tekenen is een
+     gebeurtenis die heeft plaatsgevonden; een latere stop maakt dat niet
+     ongedaan. Daarom telt een Gestopt-kaart mee als getekend — maar met exact
+     dezelfde uitzondering als hierboven, anders levert een vervanger die tekent
+     en stopt een +1 op zonder bijbehorende −1. */
+  const teltAlsStop = c => c.fase==='Gestopt' && !!c.geplaatstOp && !c.vervangt;
   const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk &&
-    (CRM.PLACED.includes(c.fase) || c.fase === 'Gestopt'));
-  const gestopt  = cs.filter(c => c.fase==='Gestopt' && (c.gestoptOp||'').slice(0,7)===mk);
+    (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
+  const gestopt  = cs.filter(c => teltAlsStop(c) && (c.gestoptOp||'').slice(0,7)===mk);
   return {getekend, gestopt, netto: getekend.length - gestopt.length};
 };
+/* Het oude bord schrijft de standaardtarget weg onder de sleutel '__default',
+   het CRM onder '__default__' (js/instellingen.js schrijft ze allebei). Wie zijn
+   default ooit alleen op het bord heeft gezet, kreeg hier stilzwijgend de
+   noodwaarde 8 te zien. Daarom lezen we beide sleutels. */
+CRM.TARGET_DEFAULT_KEYS = ['__default__','__default'];
 CRM.maandTarget = (mk = CRM.todayISO().slice(0,7)) => {
-  const t = CRM.state.targets.find(t=>t.maand===mk) || CRM.state.targets.find(t=>t.maand==='__default__');
-  return t ? t.aantal : 8;
+  const rijen = CRM.state.targets || [];
+  const t = rijen.find(t => t.maand === mk)
+         || CRM.TARGET_DEFAULT_KEYS.map(k => rijen.find(t => t.maand === k)).find(Boolean);
+  return t && t.aantal != null ? t.aantal : 8;
 };
 
 /* Filter "mijn" — elke AM kijkt standaard naar zijn eigen klanten/leads. */

@@ -115,6 +115,56 @@
     };
   });
 
+  /* ── Randgevallen ──────────────────────────────────────────────
+     Niemand mag uit beeld vallen. Deze negen kaarten zijn precies de
+     gevallen waarvan dat het snelst gebeurt; ze staan in de demo zodat je
+     met eigen ogen kunt zien waar ze terechtkomen in plaats van erop te
+     moeten vertrouwen. Verwacht gedrag:
+       - geen fase / golden      → niet op het bord, wél gemeld onder de filters
+       - 'Voorselectie'          → gewoon in de kolom Intake (CRM.faseNorm)
+       - fase die niet bestaat   → niet op het bord, apart gemeld
+       - afvaller mét stopdatum  → amberen waarschuwing in de Uitval-tab
+       - gestopte vervanger      → telt niet nóg een keer af van het target
+       - stop zonder plaatsing   → telt helemaal niet af
+       - verwijderde vacature    → kaart blijft leesbaar, geen lege kolom
+       - O&O-sessie van een andere klant → onder "Zonder sessie", niet weg  */
+  const P1 = mnd + '-02', P2 = mnd + '-03';
+  const basis = (id, naam, extra) => Object.assign({
+    id, naam, klant:'Starcuisine', functie:'Productiemedewerker', type:'W&S', fase:'',
+    datum:'', tijd:'', start:'', since:d(-14), bron:'Indeed', geplaatst_op:'', gestopt_op:'',
+    maandloon:2800, vt_pct:8, rec:'Tjeerd', telefoon:'06 1111 2233', email:'', woonplaats:'Gouda',
+    vacature_id:'Starcuisine::Productiemedewerker', notities:[], historie:[], no_shows:0
+  }, extra);
+
+  const RAND = [
+    basis('rand1','Golden Gerda',   {fase:'', golden:true, functie:'Operator', klant:'', vacature_id:''}),
+    basis('rand2','Loze Lodewijk',  {fase:'', functie:'Inpakmedewerker'}),
+    basis('rand3','Oude Otto',      {fase:'Voorselectie', datum:d(2), tijd:'11:00'}),
+    basis('rand4','Fantoom Frits',  {fase:'Screening'}),
+    basis('rand5','Scheve Saskia',  {fase:'Afgevallen', gestopt_op:d(-20), afval_type:'niet_gekwalificeerd',
+                                     afval_categorie:'Taal', since:d(-20)}),
+    basis('rand6','Gestopte Gerard',{fase:'Gestopt', start:P1, geplaatst_op:P1, gestopt_op:P2,
+                                     garantie_mnd:3, stop_door:'kandidaat', stop_categorie:'Werk beviel niet',
+                                     since:P2, recyclebaar:true}),
+    basis('rand7','Vervanger Vera', {fase:'Gestopt', vervangt:'rand6', start:P1, geplaatst_op:P1,
+                                     gestopt_op:P2, stop_door:'klant', stop_categorie:'Conflict/houding', since:P2}),
+    basis('rand8','Spook Sander',   {fase:'Gestopt', gestopt_op:P2, stop_door:'anders',
+                                     stop_categorie:'Anders', since:P2}),
+    basis('rand9','Weesje Wim',     {fase:'Voorgesteld', vacature_id:'Verwijderde::Vacature',
+                                     klant:'Verwijderde Klant', functie:'Onbekende functie'})
+  ];
+  CANDS.push(...RAND);
+
+  /* O&O-sessies: het bord toont per sessie een kop met n/4. Sessie 2 staat op
+     een ándere klant dan de kandidaat die eraan hangt — zo is te zien dat die
+     kandidaat bij een klantfilter onder "Zonder sessie" belandt en niet
+     stilletjes van het bord valt. */
+  const OO = [
+    {id:'oo1', klant:'Whisk Food',  functie:'Productiemedewerker', datum:d(3),  locatie:'Rijnsburg'},
+    {id:'oo2', klant:'Good Life Foods', functie:'Operator',        datum:d(10), locatie:'Zoetermeer'}
+  ];
+  CANDS.filter(c => c.fase === 'O&O sessie').forEach((c, i) => { c.oo_id = i === 0 ? 'oo2' : 'oo1'; });
+
   const LEADS = Array.from({length:38}, (_,i) => {
     const v = VACS[i % VACS.length];
     const st = ['Nieuw','Nieuw','Nieuw','Gebeld — geen gehoor','Potentieel','Potentieel','Geen interesse','Intake gepland','Potentieel — andere vacature','Niet geschikt'][i%10];
@@ -190,8 +240,12 @@
     Object.assign(CRM.state, {
       cands:CANDS, clients:KLANTEN, vacs:VACS, leads:LEADS, activiteiten:ACTS,
       taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN, meldingen:MELDINGEN,
+      ooSessions:OO,
       profiles:RECS.map((n,i)=>({id:'p'+i,naam:n,rol:i===0?'admin':'user'})),
-      targets:[{maand:mnd,aantal:8},{maand:'__default__',aantal:8}], _loaded:true, _demo:true
+      /* Bewust de sleutel die het OUDE BORD wegschrijft ('__default', niet
+         '__default__'). Zo loopt de demo over dezelfde regel als productie en
+         zou een leesfout hier meteen opvallen. */
+      targets:[{maand:mnd,aantal:8},{maand:'__default',aantal:10}], _loaded:true, _demo:true
     });
 
     document.getElementById('loginscreen').style.display='none';

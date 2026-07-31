@@ -98,13 +98,25 @@ const isDezeWeek = d => weekKey(d) === weekKey(CRM.todayISO());
 const isCompact = () => localStorage.getItem('crm_rc_compact') === '1';
 function pasDichtheidToe(){ const b = document.querySelector('.rc-bordwrap'); if(b) b.classList.toggle('compact', isCompact()); }
 
+/* Hoort deze kandidaat bij deze vacature? Op vacature_id, met terugval op
+   klant+functie — precies zoals js/hot.js het doet. Zonder die terugval viel
+   de hele import uit het oude ATS (geen vacature_id) buiten élke keuze van het
+   vacaturefilter, terwijl het bord filterde op de functienaam die iedereen wél
+   heeft. */
+function bijVacature(c, vacId){
+  const v = vacById(vacId);
+  if(!v) return false;
+  if(c.vacatureId) return String(c.vacatureId) === String(v.id);
+  return !!v.klant && !!v.functie && c.klant === v.klant && c.functie === v.functie;
+}
+
 /* ─── Filteren ────────────────────────────────────────────────── */
 function kandGefilterd(){
   const q = norm(P.q);
   return CRM.kandidaten().filter(c => {
     if(P.klant && c.klant !== P.klant) return false;
     if(P.rec && c.rec !== P.rec) return false;
-    if(P.vac && String(c.vacatureId) !== P.vac) return false;
+    if(P.vac && !bijVacature(c, P.vac)) return false;
     if(P.type && (c.type||'') !== P.type) return false;
     if(P.mijn && c.rec !== CRM.me()) return false;
     if(q && !norm([c.naam, c.functie, c.klant, c.woonplaats].join(' ')).includes(q)) return false;
@@ -192,8 +204,12 @@ function tekenActies(acties){
 function tekenBalk(){
   const el = document.getElementById('pp_bar'); if(!el) return;
   const K = CRM.kandidaten();
-  /* c.fase truthy: golden candidates zonder fase horen niet op het bord. */
-  const lopend = K.filter(c => c.fase && !CRM.DONE.includes(c.fase));
+  /* "Op het bord" moet exact zijn wat je in de kolommen ziet. Golden candidates
+     zonder fase staan er niet op (c.fase truthy), en een kandidaat met een fase
+     die niet meer bestaat evenmin — die kreeg hier eerder wél een plek in het
+     getal, waardoor de KPI hoger stond dan de som van de kolomtellers. Hij valt
+     niet weg: de melding onder de filters noemt hem apart. */
+  const lopend = K.filter(c => c.fase && CRM.faseIdx(c.fase) >= 0 && !CRM.DONE.includes(c.fase));
   const gesprek = lopend.filter(c => ['O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag'].includes(c.fase)).length;
   const [ma, zo] = D().weekGrens();
   const startsWeek = K.filter(c => CRM.PLACED.includes(c.fase) && c.start &&
@@ -228,6 +244,12 @@ function kaartHtml(c){
   if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
   else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
   if(c.bron) chips.push(`<span class="chip">${h(c.bron)}</span>`);
+  /* Locatiechip van het bord (locOf): waar de klant zit. Bij twee vestigingen
+     van dezelfde klant is dat het verschil tussen wel en niet reizen, dus die
+     hoort op de kaart te staan. Vacaturelocatie gaat vóór — die is specifieker
+     dan het adres van de klant. */
+  { const loc = (v && v.locatie) || (CRM.klant(c.klant) || {}).locatie || '';
+    if(loc) chips.push(`<span class="chip" title="Locatie">${h(loc)}</span>`); }
   if(c.herstartVan) chips.push(`<span class="chip purple" title="Heraangeboden — de eerdere uitkomst blijft op de oude kaart geregistreerd">herstart</span>`);
   if(c.vervangt) chips.push(`<span class="chip blue" title="Vervanger voor een gestopte plaatsing">vervanger</span>`);
   if(c.noShows) chips.push(`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`);
@@ -310,6 +332,7 @@ function ooKolom(list){
   const sess = d.ooSessies().slice()
     .filter(s => !P.klant || s.klant === P.klant)
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
+  const getoond = new Set(sess.map(s => String(s.id)));
   let uit = '', cw = null;
   sess.forEach(s => {
     if(geldigDatum(s.datum)){
@@ -322,7 +345,12 @@ function ooKolom(list){
       <b class="num">${n}/4</b></button>`;
     uit += list.filter(c => String(c.ooId) === String(s.id)).map(kaartHtml).join('');
   });
-  const wees = list.filter(c => !c.ooId || !d.ooSessie(c.ooId));
+  /* Alles wat hierboven géén sessiekop kreeg, komt onderaan te staan. Eerder
+     was dit `!c.ooId || !ooSessie(c.ooId)`: een kandidaat wiens sessie op een
+     ándere klant staat dan het klantfilter viel dan tussen wal en schip — zijn
+     sessie werd niet getoond én hij gold niet als wees, dus hij verdween uit de
+     kolom terwijl de teller hem wél meetelde. */
+  const wees = list.filter(c => !c.ooId || !getoond.has(String(c.ooId)));
   if(wees.length) uit += `<div class="rc-wdiv">Zonder sessie</div>` + wees.map(kaartHtml).join('');
   return uit;
 }
