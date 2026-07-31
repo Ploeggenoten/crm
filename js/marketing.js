@@ -3,7 +3,7 @@
    Wat levert het marketinggeld op, en wat moet er vandaag gebeuren?
    Zes rustige weergaven:
      1. Prestatie — Meta-advertenties + waakhond-adviezen
-     2. Keten     — uitgegeven → leads → kandidaten → plaatsingen
+     2. Rendement — cohorten: wat leverden de leads van maand X op?
      3. Content   — gepland, gepubliceerd, geleerd + het werk dat openstaat
      4. Kanalen   — waar posten we, met welk weekdoel, en werkt dat
      5. Ideeën    — weekthema's, de ideeënbank en wat elders viraal gaat
@@ -32,6 +32,10 @@
     metaFout:null, postsFout:null, kanalenFout:null, takenFout:null, isDemo:false,
     tab:'prestatie', periode:30,
     open:new Set(),                 // uitgeklapte campagnes/advertentiesets
+    /* Rendement-tab: welk cohort staat er open, hoe staan de tabellen
+       gesorteerd, en de lijstjes achter de doorklikknoppen. */
+    cohort:'', kSort:{k:'spend', dir:-1}, vSort:{k:'spend', dir:-1},
+    drill:new Map(), uitleg:false,
     lbQ:'', lbK:'',                 // zoek + kanaalfilter in de learnings-bibliotheek
     ideeSet:[], afkSet:[],          // de nu getoonde greep uit de inspiratiebanken
     badge:0, mount:null, actiesEl:null
@@ -221,7 +225,10 @@
       }
       const s7   = stat(rows.filter(r => (r.datum||'') >= d7));
       const sVor = stat(rows.filter(r => (r.datum||'') >= d14 && (r.datum||'') < d7));
-      const s30  = stat(rows);
+      /* Expliciet dertig dagen. `rows` bevat de hele historie die we van Meta
+         inlazen (tot 3000 dagregels); daarmee vergelijken zou de CPC van deze
+         week afzetten tegen een gemiddelde van vorig kwartaal. */
+      const s30  = stat(rows.filter(r => (r.datum||'') >= isoT(30)));
       if(s7.spend < 20) continue;                        // te weinig om over te oordelen
       const cijfers = `7 dagen: ${CRM.euro(s7.spend)} · ${s7.leads} ${s7.leads===1?'lead':'leads'}`
         + (s7.cpl ? ` · ${CRM.euro(s7.cpl,2)} per lead` : '')
@@ -298,23 +305,306 @@
     telBadge(); teken();
   }
 
-  /* ═══ 3. KETEN marketing → recruitment ═══════════════════════ */
+  /* ═══ 3. RENDEMENT — van advertentiegeld tot plaatsing ═══════════
+     Dit scherm rekent in COHORTEN en dat is geen detail.
+
+     De verleiding is om de uitgaven van deze maand naast de plaatsingen
+     van deze maand te zetten. Dat zijn twee verschillende groepen mensen:
+     wie deze maand tekende kwam vaak in mei binnen, en de leads van deze
+     maand zitten grotendeels nog in de pijplijn. Zo'n vergelijking leidt
+     tot de duurste denkfout die er is — "veel uitgegeven, weinig
+     plaatsingen, dus Meta werkt niet" — terwijl die leads gewoon nog
+     lopen.
+
+     Daarom groeperen we op de maand waarin de lead BINNENKWAM en volgen
+     we díé groep tot het einde, hoe lang dat ook duurt. De uitgaven van
+     maand X horen bij wat de leads ván maand X uiteindelijk opleverden.
+     Zolang er van een cohort nog leads in behandeling zijn, noemen we de
+     uitkomst voorlopig: een halve uitkomst mag nooit als eindstand ogen.
+
+     Advertentiekosten zijn niet vertrouwelijk — geen rechtenpoort hier.
+     Fee, marge en omzet (fin_*) komen op dit scherm niet voor.          */
+
   const FASE_VOORGESTELD = ['Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag',
                             'In de wacht','Offer','Contract ondertekenen','Contract getekend','Gestart'];
   const bereikteVoorstel = c =>
-    FASE_VOORGESTELD.includes(c.fase) || (c.historie||[]).some(x => FASE_VOORGESTELD.includes(x.fase));
+    CRM.faseIn(c.fase, FASE_VOORGESTELD) || (c.historie||[]).some(x => CRM.faseIn(x.fase, FASE_VOORGESTELD));
+  /* Geplaatst blijft geplaatst: wie later stopte is wél geplaatst geweest.
+     Anders zou een campagne zijn rendement verliezen door iets dat maanden
+     later op de werkvloer gebeurde. Een gestopte kaart telt alleen mee als er
+     ook echt een plaatsingsdatum staat — dezelfde eis die CRM.plaatsingenMaand
+     in js/data.js stelt, zodat dit scherm niet meer plaatsingen telt dan het
+     bord. De uitzondering voor vervangers die daar geldt, geldt hier bewust
+     niet: die gaat over dubbel aftrekken van één plek in het maandtarget, en
+     hier is de vraag alleen of déze lead ooit tot een plaatsing leidde. */
+  const isGeplaatst = c => CRM.faseIn(c.fase, CRM.PLACED)
+    || (CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp);
 
-  function keten(){
-    const cut   = isoT(M.periode);
-    const spend = stat(binnenPeriode()).spend;
-    const leads = (CRM.state.leads||[]).filter(l => l.bron === 'Meta' && (l.binnen_op||'').slice(0,10) >= cut);
-    const cands = CRM.kandidaten().filter(c => c.bron === 'Meta' && (c.since||'') >= cut);
-    const voorg = cands.filter(bereikteVoorstel);
-    const plaats = CRM.kandidaten().filter(c => c.bron === 'Meta' && (c.geplaatstOp||'') >= cut
-                   && (CRM.PLACED.includes(c.fase) || c.fase === 'Gestopt'));
-    return {spend, leads:leads.length, kandidaten:cands.length,
-            voorgesteld:voorg.length, geplaatst:plaats.length};
+  const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','Intake gepland','Doorgeschoten'];
+  const AFGEVALLEN_TEL = ['Geen interesse','Niet geschikt'];
+  const NIET_BEREIKT   = 'Gebeld — geen gehoor';
+  const STATUS_NAMEN   = CRM.LEAD_STATUS.map(s => s.k);
+
+  /* Maandsleutel uit een datum of tijdstempel. binnen_op is een timestamptz
+     (UTC); we rekenen in lokale tijd, zodat een lead van 1 juli 00:30 in juli
+     valt en niet in juni. */
+  function maandVan(waarde){
+    const s = String(waarde||'').trim();
+    if(!s) return '';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0,7);
+    const d = new Date(s);
+    return isNaN(d) ? '' : d.toLocaleDateString('sv-SE').slice(0,7);
   }
+  function maandLabel(mk){
+    if(!/^\d{4}-\d{2}$/.test(mk)) return 'zonder datum';
+    const d = new Date(mk + '-01T12:00');
+    const t = d.toLocaleDateString('nl-NL',{month:'long', year:'numeric'});
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  const dezeMaand = () => CRM.todayISO().slice(0,7);
+
+  /* Sleutels om klant- en functienamen te vergelijken die door verschillende
+     mensen (en door Meta) met de hand getypt zijn. */
+  const kKey = s => CRM.normKlant(s);
+  const fKey = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+                     .replace(/[^a-z0-9]/g,'');
+
+  /* Delen zonder ongelukken: geen NaN, geen Infinity, geen deling door nul.
+     null betekent "niet te berekenen" en wordt op het scherm een streepje. */
+  const deel = (a,b) => (b > 0 && a != null && isFinite(a)) ? a/b : null;
+  /* Kostprijs per stap. Zonder toegerekende uitgaven is er géén kostprijs:
+     "€ 0,00 per lead" leest als "die leads waren gratis", terwijl het
+     betekent dat we het geld niet aan deze groep konden koppelen. */
+  const kost = (bedrag, aantal) => deel(bedrag > 0 ? bedrag : null, aantal);
+  const eur  = (v,dec=0) => v == null ? '—' : CRM.euro(v, dec);
+  const pctV = (a,b) => b > 0 ? Math.round(a/b*100) + '%' : '—';
+
+  /* ─── De index: één keer per render door alle data ───────────────
+     ~350 kandidaten, ~200 leads en duizenden statistiekregels. Alles wordt
+     hier in één pass tot handzame lijstjes verwerkt; de tabellen eronder
+     filteren alleen nog. */
+  function ketenData(){
+    /* 1. Kandidaten en vacatures indexeren. */
+    const cands = CRM.kandidaten();
+    const candById = new Map(), candByLead = new Map();
+    for(const c of cands){
+      candById.set(String(c.id), c);
+      if(c.leadId) candByLead.set(String(c.leadId), c);
+    }
+    const vacById = new Map(), vacsPerKlant = new Map();
+    for(const v of (CRM.state.vacs||[])){
+      vacById.set(String(v.id), v);
+      const k = kKey(v.klant);
+      if(!k) continue;
+      if(!vacsPerKlant.has(k)) vacsPerKlant.set(k, []);
+      vacsPerKlant.get(k).push(v);
+    }
+
+    /* 2. Meta-leads verrijken met hun kandidaat, klant en vacature. */
+    const gaten = {zonderDatum:[], zonderStatus:[], vreemdeStatus:[], zonderKlant:[],
+                   zonderVacature:[], kandidaatWeg:[], doorZonderKandidaat:[]};
+    const leads = [];
+    const gekoppeld = new Set();
+    const klantNaam = new Map();                 // kkey → nette schrijfwijze
+    const onthou = n => { const k = kKey(n); if(k.length >= 4 && !klantNaam.has(k)) klantNaam.set(k, String(n).trim()); };
+    for(const c of (CRM.state.clients||[])) if(c.naam) onthou(c.naam);
+    for(const v of (CRM.state.vacs||[]))    if(v.klant) onthou(v.klant);
+
+    for(const l of (CRM.state.leads||[])){
+      if(String(l.bron||'') !== 'Meta') continue;
+      const vac     = l.vacature_id ? vacById.get(String(l.vacature_id)) : null;
+      const klant   = String(vac?.klant   || l.klant   || '').trim();
+      const functie = String(vac?.functie || l.functie || '').trim();
+      const status  = String(l.status||'').trim();
+      const kandId  = String(l.kandidaat_id||'').trim();
+      /* Twee wegen naar dezelfde kandidaat: de lead wijst vooruit
+         (kandidaat_id) of de kandidaat wijst terug (lead_id). Eén van de
+         twee is genoeg om de keten heel te houden. */
+      const cand = (kandId ? candById.get(kandId) : null) || candByLead.get(String(l.id)) || null;
+      if(cand) gekoppeld.add(String(cand.id));
+      if(klant) onthou(klant);
+      const r = {
+        lead:l, id:String(l.id), naam:String(l.naam||''), mk:maandVan(l.binnen_op),
+        klant, functie, status, cand,
+        kkey:kKey(klant), fkey:fKey(functie), viaVacature:!!vac,
+        nieuw:       status === 'Nieuw',
+        nietBereikt: status === NIET_BEREIKT,
+        afgeteld:    AFGEVALLEN_TEL.includes(status),
+        gekwal:      GEKWALIFICEERD.includes(status),
+        door:        !!(kandId || cand),
+        voorgesteld: !!(cand && bereikteVoorstel(cand)),
+        geplaatst:   !!(cand && isGeplaatst(cand)),
+        gestopt:     !!(cand && CRM.faseIs(cand.fase, 'Gestopt'))
+      };
+      /* Loopt hij nog? Mét kandidaat kijken we naar de pijplijnfase, zonder
+         kandidaat naar de leadstatus. Weten we het niet, dan telt hij als
+         "loopt nog" — liever een cohort te lang voorlopig noemen dan een
+         halve uitkomst als eindstand tonen. */
+      r.loopt = r.cand ? (!r.cand.fase || !CRM.faseIn(r.cand.fase, CRM.DONE))
+                       : !r.afgeteld;
+      leads.push(r);
+
+      if(!r.mk)                       gaten.zonderDatum.push(r);
+      if(!status)                     gaten.zonderStatus.push(r);
+      else if(!STATUS_NAMEN.includes(status)) gaten.vreemdeStatus.push(r);
+      if(!klant)                      gaten.zonderKlant.push(r);
+      if(!vac)                        gaten.zonderVacature.push(r);
+      if(kandId && !candById.get(kandId)) gaten.kandidaatWeg.push(r);
+      if(status === 'Doorgeschoten' && !cand) gaten.doorZonderKandidaat.push(r);
+    }
+
+    /* Kandidaten die uit Meta kwamen maar aan geen enkele lead hangen: daar
+       breekt de keten. Hun plaatsingen kunnen we aan geen maand en aan geen
+       campagne toerekenen. */
+    const losseKand = cands.filter(c => String(c.bron||'') === 'Meta' && !gekoppeld.has(String(c.id)));
+    const lossePlaatsingen = losseKand.filter(isGeplaatst);
+
+    /* 3. Campagne → klant. In het Meta-account is een campagne een klant en
+       een advertentieset een functie, maar die namen zijn met de hand
+       getypt. Twee wegen:
+         a. de campagnenaam bevat een klantnaam die wij kennen — dat is de
+            afspraak, dus die telt het zwaarst;
+         b. anders: de leads die zelf deze campagnenaam dragen. Dan eisen we
+            minstens twee leads en een duidelijke meerderheid, anders zou één
+            verkeerd ingevulde lead een hele campagne aan de verkeerde klant
+            hangen. Dat is precies het soort stille fout waar niemand meer
+            achter komt.
+       Lukt geen van beide, dan blijven de uitgaven expliciet
+       "niet toegewezen". Liever een zichtbaar gat dan een gokje. */
+    const perCampLead = new Map();
+    for(const r of leads){
+      const ck = fKey(r.lead.campagne);
+      if(!ck || !r.kkey) continue;
+      if(!perCampLead.has(ck)) perCampLead.set(ck, new Map());
+      const m = perCampLead.get(ck);
+      m.set(r.kkey, (m.get(r.kkey)||0) + 1);
+    }
+    const klantKeys = new Set(klantNaam.keys());
+    /* Een klantnaam herkennen in een campagnenaam doen we op hele woorden,
+       niet op letterreeksen: anders zou een klant "Land" oplichten in
+       "Zuid-Holland" en zouden de uitgaven van een hele campagne bij de
+       verkeerde klant belanden. We plakken opeenvolgende woorden aan elkaar
+       en kijken of die combinatie een klantsleutel is; de langste treffer
+       wint, zodat "Van Vliet" niet wint van "Van Vliet Zoetwaren". */
+    const woorden = naam => String(naam||'').toLowerCase().normalize('NFD')
+      .replace(/[̀-ͯ]/g,'').split(/[^a-z0-9]+/).filter(Boolean);
+    const klantInNaam = naam => {
+      const w = woorden(naam);
+      let best = '';
+      for(let i = 0; i < w.length; i++){
+        let reeks = '';
+        for(let j = i; j < w.length; j++){
+          reeks += w[j];
+          if(klantKeys.has(reeks) && reeks.length > best.length) best = reeks;
+        }
+      }
+      return best;
+    };
+    const campCache = new Map();
+    const koppelCampagne = naam => {
+      if(campCache.has(naam)) return campCache.get(naam);
+      const ck = fKey(naam);
+      let uit = {naam, kkey:'', klant:'', hoe:'niet'};
+      const treffer = klantInNaam(naam);
+      if(treffer){
+        uit = {naam, kkey:treffer, klant:klantNaam.get(treffer), hoe:'naam'};
+      }else{
+        const viaLead = perCampLead.get(ck);
+        if(viaLead && viaLead.size){
+          const op = [...viaLead].sort((a,b) => b[1] - a[1]);
+          const totaal = op.reduce((s2,x) => s2 + x[1], 0);
+          if(op[0][1] >= 2 && op[0][1] > totaal/2)
+            uit = {naam, kkey:op[0][0], klant:klantNaam.get(op[0][0]) || op[0][0], hoe:'lead'};
+        }
+      }
+      campCache.set(naam, uit);
+      return uit;
+    };
+    /* Advertentieset → vacature van diezelfde klant. Langste treffer wint,
+       zodat "Operator" niet wint van "Senior Operator". */
+    const setCache = new Map();
+    const zoekFunctie = (kkey, setNaam) => {
+      const sleutel = kkey + '|' + setNaam;
+      if(setCache.has(sleutel)) return setCache.get(sleutel);
+      const s = fKey(setNaam);
+      let best = '';
+      if(s){
+        const vacs = vacsPerKlant.get(kkey) || [];
+        /* Eerst een exacte functienaam. Anders zou een advertentieset
+           "Operator" bij een klant met zowel Operator als Senior Operator de
+           langste naam pakken, en dat is de verkeerde vacature. */
+        const exact = vacs.find(v => fKey(v.functie) === s);
+        if(exact) best = exact.functie;
+        else for(const v of vacs){
+          const f = fKey(v.functie);
+          if(f.length >= 4 && (s.includes(f) || f.includes(s)) && f.length > fKey(best).length) best = v.functie;
+        }
+      }
+      setCache.set(sleutel, best);
+      return best;
+    };
+
+    /* 4. Uitgaven optellen per maand × campagne × advertentieset. Duizenden
+       dagregels worden hier een handvol rijen; alles daarna is filteren. */
+    const uitMap = new Map();
+    let uitZonderDatum = 0;
+    for(const r of M.meta){
+      const mk = String(r.datum||'').slice(0,7);
+      if(!/^\d{4}-\d{2}$/.test(mk)){ uitZonderDatum += N(r.uitgegeven); continue; }
+      const camp = String(r.campagne||'').trim() || '(campagne zonder naam)';
+      const set  = String(r.advertentieset||'').trim();
+      const sleutel = mk + '|' + camp + '|' + set;
+      let rij = uitMap.get(sleutel);
+      if(!rij){
+        const k = koppelCampagne(camp);
+        const functie = k.kkey ? zoekFunctie(k.kkey, set) : '';
+        rij = {mk, campagne:camp, set, kkey:k.kkey, klant:k.klant, hoe:k.hoe,
+               functie, fkey:fKey(functie), bedrag:0, formulieren:0};
+        uitMap.set(sleutel, rij);
+      }
+      rij.bedrag      += N(r.uitgegeven);
+      rij.formulieren += N(r.leads);
+    }
+    const uitRijen = [...uitMap.values()];
+
+    /* 5. Maanden waarover we iets te zeggen hebben: er is geld uitgegeven,
+       of er zijn leads binnengekomen. */
+    const maanden = [...new Set([...uitRijen.map(r => r.mk), ...leads.map(r => r.mk).filter(Boolean)])]
+      .sort().reverse();
+
+    /* Campagnes die we niet aan een klant konden koppelen — met bedrag, want
+       zonder bedrag weet je niet hoe erg het is. */
+    const campagnes = [...campCache.values()].map(c => {
+      const bedrag = uitRijen.filter(r => r.campagne === c.naam).reduce((s,r) => s + r.bedrag, 0);
+      return {...c, bedrag};
+    }).sort((a,b) => b.bedrag - a.bedrag);
+
+    return {leads, uitRijen, maanden, gaten, losseKand, lossePlaatsingen,
+            campagnes, klantNaam, uitZonderDatum, aantalKand:cands.length};
+  }
+
+  /* De trechter over een groep leads. Bewust twee soorten stappen: wat er
+     mét de lead gebeurde (opgepakt, bereikt, gekwalificeerd) en wat er dáárna
+     met de kandidaat gebeurde (voorgesteld, geplaatst). */
+  function trechter(rijen){
+    const t = {binnen:rijen.length, nieuw:0, nietBereikt:0, afgeteld:0, gekwal:0,
+               door:0, voorgesteld:0, geplaatst:0, gestopt:0, loopt:0, anders:0};
+    for(const r of rijen){
+      if(r.nieuw)       t.nieuw++;
+      if(r.nietBereikt) t.nietBereikt++;
+      if(r.afgeteld)    t.afgeteld++;
+      if(r.gekwal)      t.gekwal++;
+      if(r.door)        t.door++;
+      if(r.voorgesteld) t.voorgesteld++;
+      if(r.geplaatst)   t.geplaatst++;
+      if(r.gestopt)     t.gestopt++;
+      if(r.loopt)       t.loopt++;
+      if(!r.nieuw && !r.nietBereikt && !r.afgeteld && !r.gekwal) t.anders++;
+    }
+    t.uitgewerkt = t.binnen > 0 && t.loopt === 0;
+    return t;
+  }
+  const somBedrag = rijen => rijen.reduce((s,r) => s + r.bedrag, 0);
 
   /* ═══ 4. CONTENT ═════════════════════════════════════════════ */
   const GEPUBLICEERD = p => p.fase === 'Gepubliceerd' || p.fase === 'Learnings';
@@ -684,7 +974,7 @@
     const adv = adviezen(), nag = nagPosts(), gaten = radar(), werk = openTaken();
     const TABS = [
       {k:'prestatie', t:'Prestatie', n:adv.length + agentAdviezen().length},
-      {k:'keten',     t:'Keten',     n:0},
+      {k:'keten',     t:'Rendement', n:0},
       {k:'content',   t:'Content',   n:nag.length + werk.length},
       {k:'kanalen',   t:'Kanalen',   n:0},
       {k:'ideeen',    t:'Ideeën',    n:0},
@@ -708,7 +998,10 @@
   function kopActies(){
     const el = M.actiesEl || document.getElementById('pageacties');
     if(!el) return;
-    const perKiezer = (M.tab==='prestatie' || M.tab==='keten') ? `
+    /* De dagenkiezer hoort alleen bij Prestatie. Rendement rekent in
+       cohorten (hele maanden) — een venster van 7 of 14 dagen zou daar een
+       halve maand afsnijden en precies de verkeerde vergelijking maken. */
+    const perKiezer = (M.tab==='prestatie') ? `
       <div class="seg" id="mkt_per">${[7,14,30].map(d =>
         `<button data-per="${d}" class="${M.periode===d?'on':''}">${d} dagen</button>`).join('')}</div>` : '';
     el.innerHTML = perKiezer +
@@ -730,6 +1023,26 @@
       if(tbl){ tbl.innerHTML = campagneRijen(); bindActies(tbl); }
       else teken();
     });
+
+    /* Rendement: cohortkeuze, doorklikken, sorteren en de uitleg. */
+    CRM.$$('[data-cohort]', root).forEach(el => el.onclick = () => {
+      M.cohort = el.dataset.cohort; teken();
+    });
+    CRM.$$('[data-drill]', root).forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const rijen = M.drill.get(b.dataset.drill);
+      if(rijen && rijen.length) drillPaneel(b.dataset.drilltitel || 'Leads', rijen);
+    });
+    const sorteer = (attr, staat) => CRM.$$(`[${attr}]`, root).forEach(th => th.onclick = () => {
+      const k = th.getAttribute(attr);
+      if(staat.k === k) staat.dir = -staat.dir;
+      else { staat.k = k; staat.dir = k === 'label' ? 1 : -1; }
+      teken();
+    });
+    sorteer('data-ks', M.kSort);
+    sorteer('data-vs', M.vSort);
+    const uitlegKnop = root.querySelector('#mkt_uitleg');
+    if(uitlegKnop) uitlegKnop.onclick = () => { M.uitleg = !M.uitleg; teken(); };
 
     /* Taken */
     CRM.$$('[data-tvink]', root).forEach(c => c.onclick = () => {
@@ -1006,50 +1319,467 @@
     <div class="row" style="margin-top:12px"><span class="meta">Staafhoogte = uitgegeven per dag · getal boven de staaf = leads</span></div>`;
   }
 
-  /* ── 6b. Keten ── */
+  /* ── 6b. Rendement (cohorten) ── */
+  /* Doorklikken: elk lijstje krijgt een sleutel in M.drill, de knop draagt
+     alleen die sleutel. Zo staan er geen id's in de HTML die geëscaped
+     moeten worden en blijft de lijst precies wat er geteld is. */
+  function drill(sleutel, rijen){ M.drill.set(sleutel, rijen); return sleutel; }
+
   function ketenHtml(){
-    const k = keten();
-    const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '—';
-    const stap = (label, waarde, detail) =>
-      `<div class="mkt-stap"><div class="label">${h(label)}</div>
-        <div class="big num">${waarde}</div><div class="meta">${h(detail||'')}</div></div>`;
-    const pijl = tekst => `<div class="mkt-pijl">→<span class="num">${h(tekst)}</span></div>`;
-    const kpl = k.geplaatst ? CRM.euro(k.spend / k.geplaatst) : '—';
-    const metaLeads = stat(binnenPeriode()).leads;
-    const verschil = metaLeads - k.leads;
+    if(!M.meta.length && M.metaFout) return foutBlok('De Meta-cijfers', M.metaFout);
+    M.drill = new Map();
+    const D = ketenData();
+    if(!D.maanden.length) return `${M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : ''}
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Nog niets te meten',
+        'Er zijn geen Meta-uitgaven en geen leads met bron Meta. Zodra de dagelijkse synchronisatie draait of de eerste Meta-lead binnenkomt, staat hier per maand wat het geld heeft opgeleverd.',
+        `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`)}</div></div>`;
+
+    /* Cohortkeuze geldig houden: standaard de nieuwste maand met leads,
+       anders de nieuwste maand met uitgaven. */
+    const metLeads = D.maanden.filter(mk => D.leads.some(r => r.mk === mk));
+    if(M.cohort !== 'alles' && !D.maanden.includes(M.cohort)) M.cohort = metLeads[0] || D.maanden[0];
+    const mks = M.cohort === 'alles' ? D.maanden : [M.cohort];
+    const inCohort = new Set(mks);
+    const cLeads = D.leads.filter(r => inCohort.has(r.mk));
+    const cUit   = D.uitRijen.filter(r => inCohort.has(r.mk));
+
     return `
-      <div class="card" style="margin-bottom:18px">
-        <div class="card-h"><div class="h2">Van advertentie tot plaatsing</div>
-          <span class="meta">Meta · laatste ${M.periode} dagen</span></div>
-        <div class="card-b">
-          <div class="mkt-keten">
-            ${stap('Uitgegeven', CRM.euro(k.spend), 'Meta-advertenties')}
-            ${pijl(k.spend && k.leads ? CRM.euro(k.spend/k.leads, 2) + ' p/l' : '—')}
-            ${stap('Leads in CRM', fmtN(k.leads), 'bron Meta')}
-            ${pijl(pct(k.kandidaten, k.leads))}
-            ${stap('Kandidaten', fmtN(k.kandidaten), 'op het bord')}
-            ${pijl(pct(k.voorgesteld, k.kandidaten))}
-            ${stap('Voorgesteld', fmtN(k.voorgesteld), 'bij een klant')}
-            ${pijl(pct(k.geplaatst, k.voorgesteld))}
-            ${stap('Geplaatst', fmtN(k.geplaatst), 'contract getekend')}
-          </div>
-        </div>
-        <div class="card-f"><span class="meta">Leads en kandidaten geteld op binnenkomst in de periode, plaatsingen op de datum van tekenen.</span></div>
+      ${uitlegHtml()}
+      ${maandTabelHtml(D)}
+      ${cohortKopHtml(D, cLeads, cUit)}
+      ${trechterHtml(cLeads)}
+      ${groepTabelHtml(D, cLeads, cUit, 'klant')}
+      ${groepTabelHtml(D, cLeads, cUit, 'vac')}
+      ${gatenHtml(D, cLeads, cUit)}`;
+  }
+
+  /* De meetdefinities horen op het scherm te staan, niet in iemands hoofd.
+     Over drie maanden moet na te gaan zijn wat "gekwalificeerd" betekende. */
+  function uitlegHtml(){
+    const regel = (w, t) => `<div class="mkt-def"><b>${h(w)}</b><span>${h(t)}</span></div>`;
+    return `<div class="vlak mkt-uitleg">
+      <div class="row">
+        <span class="label" style="margin:0">Hoe we dit tellen</span>
+        <div class="spacer"></div>
+        <button class="btn sm ghost" id="mkt_uitleg">${M.uitleg ? 'Uitleg verbergen' : 'Uitleg tonen'}</button>
       </div>
+      <p class="sub" style="margin:8px 0 0;max-width:78ch">Een cohort is een <b>maand van binnenkomst</b>.
+        De leads van juni blijven bij juni horen, ook als ze pas in september geplaatst worden. Zo vergelijk je
+        de uitgaven van een maand met wat díé leads opleverden — en niet met plaatsingen van mensen die maanden
+        eerder binnenkwamen.</p>
+      ${M.uitleg ? `<div class="mkt-defs">
+        ${regel('Cohort', 'De maand waarin de lead binnenkwam (veld binnen_op, lokale tijd). Niet de maand van de plaatsing.')}
+        ${regel('Binnengekomen', 'Alle leads in crm_leads met bron Meta en een binnenkomstdatum in die maand.')}
+        ${regel('Nog niet opgepakt', 'Status "Nieuw" — er is nog niemand mee bezig geweest. Dit is werk dat blijft liggen.')}
+        ${regel('Niet bereikt', 'Status "Gebeld — geen gehoor". Wel gebeld, geen contact. Iets anders dan blijven liggen: dit vraagt om een tweede poging of een appje.')}
+        ${regel('Afgevallen aan de telefoon', 'Status "Geen interesse" of "Niet geschikt" — beoordeeld en afgevallen.')}
+        ${regel('Gekwalificeerd', 'Status "Potentieel", "Potentieel — andere vacature", "Intake gepland" of "Doorgeschoten".')}
+        ${regel('Doorgeschoten naar kandidaat', 'De lead heeft een kandidaat_id, óf er staat een kandidaat met deze lead_id. Eén van beide is genoeg.')}
+        ${regel('Voorgesteld', 'Die kandidaat staat nu op Voorgesteld of verder, of stond daar ooit volgens zijn historie.')}
+        ${regel('Geplaatst', 'Die kandidaat heeft getekend (Contract getekend of Gestart) of is daarna gestopt. Een latere stop maakt de plaatsing niet ongedaan.')}
+        ${regel('Nog in behandeling', 'De lead of zijn kandidaat is nog niet klaar: leadstatus nog open, of de kandidaat staat nog in de pijplijn. Zolang dat zo is heet het cohort "nog niet uitgewerkt" en zijn de uitkomsten voorlopig.')}
+        ${regel('Uitgaven per klant', 'Een Meta-campagne is een klant. We herkennen de klant aan de klantnaam in de campagnenaam; lukt dat niet, dan aan de leads die diezelfde campagnenaam dragen (minstens twee, en een duidelijke meerderheid). Lukt geen van beide, dan staan de uitgaven apart als "niet toegewezen" — ze worden nooit stilzwijgend over de andere klanten verdeeld.')}
+        ${regel('Uitgaven per vacature', 'Een advertentieset is een functie. We zoeken bij de klant een vacature met die functienaam; vinden we die niet, dan blijft de advertentieset als eigen regel staan.')}
+        ${regel('Kosten per plaatsing', 'Uitgaven van het cohort gedeeld door de plaatsingen uit dat cohort. Bij een cohort dat nog loopt staat er "voorlopig" bij: dat getal kan alleen nog dalen.')}
+      </div>` : ''}
+    </div>`;
+  }
 
-      ${verschil > 0 ? `<div class="note warn" style="margin-bottom:18px">
-        Meta telt zelf <b class="num">${fmtN(metaLeads)}</b> ingevulde formulieren in deze periode, terwijl er
-        <b class="num">${fmtN(k.leads)}</b> met bron Meta in het CRM staan — <b class="num">${fmtN(verschil)}</b> zijn er niet doorgezet.
-        Alles hieronder rekent met de leads die daadwerkelijk in het CRM staan.</div>` : ''}
+  /* De maandvergelijking. Dit is het blok dat de vraag beantwoordt:
+     is deze maand écht slechter, of gewoon nog niet klaar? */
+  function maandTabelHtml(D){
+    const rijen = D.maanden.slice(0, 15).map(mk => {
+      const lds = D.leads.filter(r => r.mk === mk);
+      const uit = D.uitRijen.filter(r => r.mk === mk);
+      const t = trechter(lds);
+      const spend = somBedrag(uit);
+      return {mk, t, spend, lds,
+              niet: somBedrag(uit.filter(r => !r.kkey)),
+              formulieren: uit.reduce((s,r) => s + r.formulieren, 0)};
+    });
+    const nu = dezeMaand();
+    const cel = r => {
+      const kpp = kost(r.spend, r.t.geplaatst);
+      const voorlopig = !r.t.uitgewerkt && r.t.binnen > 0;
+      const status = !r.t.binnen
+        ? `<span class="meta">geen leads uit dit cohort</span>`
+        : r.t.uitgewerkt
+          ? `<span class="chip green">uitgewerkt</span>`
+          : `<span class="chip amber">nog niet uitgewerkt</span>
+             <div class="rowsub"><span class="num">${fmtN(r.t.loopt)}</span> van <span class="num">${fmtN(r.t.binnen)}</span> nog in behandeling</div>`;
+      const sleutel = drill('maand:'+r.mk, r.lds);
+      return `<tr class="clickable ${M.cohort===r.mk?'mkt-op':''}" data-cohort="${h(r.mk)}">
+        <td><b>${h(maandLabel(r.mk))}</b>${r.mk===nu?` <span class="chip">loopt nog</span>`:''}
+          ${r.niet > 0 ? `<div class="rowsub">${eur(r.niet)} niet aan een klant toegewezen</div>` : ''}</td>
+        <td class="n num">${eur(r.spend)}</td>
+        <td class="n num">${r.t.binnen ? `<button class="btn sub sm" data-drill="${h(sleutel)}" data-drilltitel="Leads van ${h(maandLabel(r.mk))}">${fmtN(r.t.binnen)}</button>` : '<span class="meta">0</span>'}</td>
+        <td class="n num">${fmtN(r.t.gekwal)}<div class="rowsub">${pctV(r.t.gekwal, r.t.binnen)}</div></td>
+        <td class="n num">${fmtN(r.t.geplaatst)}</td>
+        <td class="n num">${eur(kost(r.spend, r.t.binnen), 2)}</td>
+        <td class="n num">${kpp == null ? '<span class="meta">—</span>' : eur(kpp)}
+          ${kpp != null && voorlopig ? `<div class="rowsub">voorlopig</div>` : ''}</td>
+        <td>${status}</td>
+      </tr>`;
+    };
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Per maand: wat leverden de leads van die maand op?</div>
+        <span class="meta">cohort = maand van binnenkomst</span>
+        <div class="spacer"></div>
+        <button class="btn sm ${M.cohort==='alles'?'':'ghost'}" data-cohort="alles">Alle maanden samen</button></div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl"><thead><tr>
+          <th>Cohort</th><th class="n">Uitgegeven</th><th class="n">Leads</th>
+          <th class="n">Gekwalificeerd</th><th class="n">Geplaatst</th>
+          <th class="n">€ per lead</th><th class="n">€ per plaatsing</th><th>Rijpheid</th>
+        </tr></thead><tbody>${rijen.map(cel).join('')}</tbody></table>
+      </div>
+      <div class="card-f"><span class="meta">Klik een maand om hem hieronder uit te splitsen. Uitgaven zijn de Meta-uitgaven ván die maand;
+        plaatsingen zijn de plaatsingen die uit de leads van die maand zijn voortgekomen, ongeacht wanneer ze getekend hebben.</span></div>
+    </div>`;
+  }
 
-      <div class="grid c3">
-        ${CRM.ui.kpi('Kosten per lead', `<span class="num">${k.leads?CRM.euro(k.spend/k.leads,2):'—'}</span>`,
-            `${fmtN(k.leads)} CRM-leads uit ${CRM.euro(k.spend)}`)}
-        ${CRM.ui.kpi('Kosten per kandidaat', `<span class="num">${k.kandidaten?CRM.euro(k.spend/k.kandidaten):'—'}</span>`,
-            `${fmtN(k.kandidaten)} kandidaten op het bord`)}
-        ${CRM.ui.kpi('Kosten per plaatsing', `<span class="num">${kpl}</span>`,
-            k.geplaatst ? `${fmtN(k.geplaatst)} plaatsing${k.geplaatst===1?'':'en'} in de periode` : 'nog geen plaatsing', 'accent')}
+  /* Kop van het gekozen cohort: de vijf cijfers waar het om draait. */
+  function cohortKopHtml(D, cLeads, cUit){
+    const t = trechter(cLeads);
+    const spend = somBedrag(cUit);
+    const niet  = somBedrag(cUit.filter(r => !r.kkey));
+    const kpp   = kost(spend, t.geplaatst);
+    const titel = M.cohort === 'alles' ? 'Alle maanden samen' : maandLabel(M.cohort);
+    const rijp = !t.binnen ? '' : t.uitgewerkt
+      ? `<span class="chip green">cohort uitgewerkt</span>`
+      : `<span class="chip amber">nog niet uitgewerkt — <span class="num">${fmtN(t.loopt)}</span> van <span class="num">${fmtN(t.binnen)}</span> in behandeling</span>`;
+    return `<div class="mkt-cohortkop">
+      <div class="row"><div class="h2">${h(titel)}</div>${rijp}</div>
+      <div class="grid c4" style="margin-top:12px">
+        ${CRM.ui.kpi('Uitgegeven aan Meta', `<span class="num">${eur(spend)}</span>`,
+          niet > 0 ? `waarvan ${eur(niet)} niet aan een klant toe te wijzen` : 'volledig aan een klant toegewezen', 'accent')}
+        ${CRM.ui.kpi('Leads binnengekomen', `<span class="num">${fmtN(t.binnen)}</span>`,
+          t.binnen ? `${eur(kost(spend, t.binnen), 2)} per lead` : 'geen leads in dit cohort')}
+        ${CRM.ui.kpi('Gekwalificeerd', `<span class="num">${fmtN(t.gekwal)}</span>`,
+          t.binnen ? `${pctV(t.gekwal, t.binnen)} van de leads${spend > 0 ? ` · ${eur(kost(spend, t.gekwal), 2)} per stuk` : ''}` : '—')}
+        ${CRM.ui.kpi('Kosten per plaatsing', `<span class="num">${kpp == null ? '—' : eur(kpp)}</span>`,
+          t.geplaatst
+            ? `${fmtN(t.geplaatst)} plaatsing${t.geplaatst===1?'':'en'}${t.gestopt?` · ${fmtN(t.gestopt)} inmiddels gestopt`:''}${t.uitgewerkt?'':' — voorlopig'}`
+            : (t.loopt ? `nog geen plaatsing, ${fmtN(t.loopt)} lopen nog` : 'nog geen plaatsing'), 'accent')}
+      </div>
+    </div>`;
+  }
+
+  /* De trechter van het gekozen cohort. Eerst wat er mét de lead gebeurde,
+     daarna de weg naar de plaatsing. Per stap het aantal, het percentage van
+     de vorige stap, en de grootste weglek expliciet benoemd. */
+  function trechterHtml(cLeads){
+    const t = trechter(cLeads);
+    if(!t.binnen) return `<div class="card mkt-kaart"><div class="card-h"><div class="h2">De trechter</div></div>
+      <div class="card-b">${CRM.ui.leeg('Geen leads in dit cohort',
+        'In deze maand kwam er geen enkele lead met bron Meta binnen. Er viel dus ook niets af — en er is niets te verdelen over klanten of vacatures. Kies hierboven een andere maand.')}</div></div>`;
+
+    const L = test => cLeads.filter(test);
+    const stappen = [
+      {k:'binnen',   lbl:'Binnengekomen',               n:t.binnen,      basis:t.binnen,      basisLbl:'',               rijen:cLeads,               uitleg:'alle Meta-leads van dit cohort'},
+      {k:'nieuw',    lbl:'Nog niet opgepakt',           n:t.nieuw,       basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nieuw),      uitleg:'status Nieuw — hier ligt werk', waarsch:true},
+      {k:'onbereikt',lbl:'Niet bereikt',                n:t.nietBereikt, basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nietBereikt),uitleg:'gebeld, geen gehoor'},
+      {k:'afgeteld', lbl:'Afgevallen aan de telefoon',  n:t.afgeteld,    basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.afgeteld),   uitleg:'geen interesse of niet geschikt'},
+      {k:'gekwal',   lbl:'Gekwalificeerd',              n:t.gekwal,      basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.gekwal),     uitleg:'potentieel, intake gepland of doorgeschoten', goed:true},
+      {k:'door',     lbl:'Doorgeschoten naar kandidaat',n:t.door,        basis:t.gekwal,      basisLbl:'gekwalificeerd', rijen:L(r => r.door),       uitleg:'staat als kandidaat op het bord'},
+      {k:'voorg',    lbl:'Voorgesteld',                 n:t.voorgesteld, basis:t.door,        basisLbl:'doorgeschoten',  rijen:L(r => r.voorgesteld),uitleg:'bij een klant voorgesteld'},
+      {k:'plaats',   lbl:'Geplaatst',                   n:t.geplaatst,   basis:t.voorgesteld, basisLbl:'voorgesteld',    rijen:L(r => r.geplaatst),  uitleg:'contract getekend', goed:true}
+    ];
+    /* Waar lekt het hardst? We kijken naar de ketenstappen (niet naar de drie
+       zijwegen apart) en nemen het grootste absolute verlies. */
+    const ketens = [
+      {van:'binnengekomen', naar:'gekwalificeerd', verlies:t.binnen - t.gekwal, basis:t.binnen},
+      {van:'gekwalificeerd', naar:'doorgeschoten', verlies:Math.max(0, t.gekwal - t.door), basis:t.gekwal},
+      {van:'doorgeschoten', naar:'voorgesteld',    verlies:Math.max(0, t.door - t.voorgesteld), basis:t.door},
+      {van:'voorgesteld',   naar:'geplaatst',      verlies:Math.max(0, t.voorgesteld - t.geplaatst), basis:t.voorgesteld}
+    ].filter(x => x.basis > 0 && x.verlies > 0).sort((a,b) => b.verlies - a.verlies);
+    const lek = ketens[0] || null;
+    let lekTekst = '';
+    if(lek){
+      let extra = '';
+      if(lek.van === 'binnengekomen'){
+        const grootste = [[t.nieuw,'nooit opgepakt'],[t.nietBereikt,'namen de telefoon niet op'],[t.afgeteld,'afgevallen aan de telefoon']]
+          .sort((a,b) => b[0] - a[0])[0];
+        if(grootste[0] > 0) extra = ` Daarvan: <span class="num">${fmtN(grootste[0])}</span> ${grootste[1]}.`;
+      }
+      lekTekst = `<div class="note ${lek.van==='binnengekomen'&&t.nieuw>=t.binnen*0.25 ? 'warn' : 'info'}" style="margin-top:14px">
+        <b>Grootste weglek:</b> tussen ${h(lek.van)} en ${h(lek.naar)} —
+        <span class="num">${fmtN(lek.verlies)}</span> van de <span class="num">${fmtN(lek.basis)}</span>
+        (<span class="num">${pctV(lek.verlies, lek.basis)}</span>) valt daar af.${extra}</div>`;
+    }
+
+    const max = Math.max(1, t.binnen);
+    const rij = s => {
+      const sleutel = drill('stap:'+s.k, s.rijen);
+      /* Nul is een lege balk, geen streepje: een sliver bij 0 leest als "een
+         beetje", en dat is precies het verschil dat je hier wilt zien. */
+      const breedte = s.n ? Math.max(1, Math.round(s.n / max * 100)) : 0;
+      return `<div class="mkt-tr-r${s.n===0?' leeg':''}">
+        <div class="mkt-tr-l"><b>${h(s.lbl)}</b><span class="meta">${h(s.uitleg)}</span></div>
+        <div class="mkt-tr-b"><i class="${s.goed?'goed':s.waarsch?'let':''}" style="width:${breedte}%"></i></div>
+        <div class="mkt-tr-n">
+          ${s.n ? `<button class="btn sub sm num" data-drill="${h(sleutel)}" data-drilltitel="${h(s.lbl)}">${fmtN(s.n)}</button>`
+                : `<span class="num meta">0</span>`}
+          <span class="meta">${s.basisLbl ? `${pctV(s.n, s.basis)} van ${h(s.basisLbl)}` : '100%'}</span>
+        </div>
       </div>`;
+    };
+    return `<div class="card mkt-kaart mkt-trechter">
+      <div class="card-h"><div class="h2">De trechter van dit cohort</div>
+        <span class="meta">${h(M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort))}</span></div>
+      <div class="card-b">
+        <div class="mkt-tr">${stappen.map(rij).join('')}</div>
+        ${lekTekst}
+        ${t.anders ? `<p class="meta" style="margin:12px 0 0"><span class="num">${fmtN(t.anders)}</span>
+          lead${t.anders===1?'':'s'} valt in geen van de vier statusgroepen — zie het blok onderaan.</p>` : ''}
+      </div>
+      <div class="card-f"><span class="meta">Klik een aantal om de onderliggende leads te zien. De balk toont het aandeel van alle binnengekomen leads;
+        het percentage ernaast is het aandeel van de vorige stap.</span></div>
+    </div>`;
+  }
+
+  /* Per klant en per vacature — dezelfde kolommen, zodat je van "waar gaat het
+     geld heen" naar "waar rendeert het" kunt lezen zonder om te schakelen. */
+  function groepTabelHtml(D, cLeads, cUit, soort){
+    const perKlant = soort === 'klant';
+    const sort = perKlant ? M.kSort : M.vSort;
+    const groepen = new Map();
+    const zorg = (key, label, sub) => {
+      if(!groepen.has(key)) groepen.set(key, {key, label, sub:sub||'', spend:0, rijen:[],
+        campagnes:new Set(), losseSet:false, geenKlant:false, leadZonderKlant:false});
+      return groepen.get(key);
+    };
+    for(const r of cLeads){
+      const key = perKlant ? ('k:' + (r.kkey || '__leeg__'))
+                           : ('v:' + (r.kkey || '__leeg__') + '§f:' + r.fkey);
+      const g = zorg(key, r.klant || 'Klant onbekend', perKlant ? '' : (r.functie || 'vacature onbekend'));
+      if(!r.klant) g.leadZonderKlant = true;
+      g.rijen.push(r);
+    }
+    for(const u of cUit){
+      const key = perKlant
+        ? ('k:' + (u.kkey || '__niet__'))
+        : ('v:' + (u.kkey || '__niet__') + (u.fkey ? '§f:' + u.fkey : '§s:' + fKey(u.set)));
+      const label = u.kkey ? (u.klant || 'Klant onbekend') : 'Niet aan een klant toegewezen';
+      const sub   = perKlant ? '' : (u.functie || u.set || 'zonder advertentieset');
+      const g = zorg(key, label, sub);
+      g.spend += u.bedrag;
+      g.campagnes.add(u.campagne);
+      if(!u.kkey) g.geenKlant = true;
+      if(u.kkey && !u.fkey) g.losseSet = true;
+    }
+    const rijen = [...groepen.values()].map(g => {
+      const t = trechter(g.rijen);
+      /* Geen uitgaven toegewezen ⇒ geen kostprijs, ook niet "€ 0,00". Nul zou
+         lezen als "deze leads waren gratis", terwijl het betekent dat we de
+         campagne niet aan deze klant of vacature konden koppelen. */
+      const s = g.spend > 0 ? g.spend : null;
+      return {...g, t,
+        leads:t.binnen, gekwal:t.gekwal, geplaatst:t.geplaatst, loopt:t.loopt,
+        cpl:kost(s, t.binnen), cpq:kost(s, t.gekwal), cpp:kost(s, t.geplaatst)};
+    });
+    if(!rijen.length) return '';
+
+    const waarde = r => {
+      const v = r[sort.k];
+      if(sort.k === 'label') return (r.label + ' ' + r.sub).toLowerCase();
+      return (v == null || isNaN(v)) ? -Infinity : v;
+    };
+    rijen.sort((a,b) => {
+      const x = waarde(a), y = waarde(b);
+      if(typeof x === 'string') return sort.dir * String(x).localeCompare(String(y));
+      /* "Niet te berekenen" hoort onderaan, welke kant je ook sorteert.
+         Anders staan bij oplopend sorteren de regels zónder kostprijs
+         bovenaan alsof ze het goedkoopst waren. */
+      if(x === -Infinity && y === -Infinity) return 0;
+      if(x === -Infinity) return 1;
+      if(y === -Infinity) return -1;
+      return sort.dir * (x - y);
+    });
+    const attr = perKlant ? 'data-ks' : 'data-vs';
+    const kop = (k, lbl, cls='') =>
+      `<th class="sortable ${cls}" ${attr}="${k}">${h(lbl)}${sort.k===k?(sort.dir<0?' ↓':' ↑'):''}</th>`;
+    const totSpend = rijen.reduce((s,r) => s + r.spend, 0);
+    const totLeads = rijen.reduce((s,r) => s + r.leads, 0);
+    const totGekw  = rijen.reduce((s,r) => s + r.gekwal, 0);
+    const totPl    = rijen.reduce((s,r) => s + r.geplaatst, 0);
+
+    const cel = r => {
+      const sleutel = drill('grp:' + soort + ':' + r.key, r.rijen);
+      return `<tr>
+        <td>
+          <b>${h(perKlant ? r.label : (r.sub || r.label))}</b>
+          ${r.geenKlant ? `<span class="chip amber" style="margin-left:6px">uitgaven niet toegewezen</span>` : ''}
+          ${r.leadZonderKlant ? `<span class="chip amber" style="margin-left:6px">lead zonder klant</span>` : ''}
+          ${!perKlant && r.losseSet ? `<span class="chip" style="margin-left:6px">advertentieset zonder vacature</span>` : ''}
+          ${(() => {
+            const onder = perKlant
+              ? (r.campagnes.size ? [...r.campagnes].join(' · ') : 'geen campagne gevonden')
+              : r.label;
+            /* Niet twee keer hetzelfde: bij een regel zonder klant is de
+               vetgedrukte tekst al de hele mededeling. */
+            return onder && onder !== (perKlant ? r.label : (r.sub || r.label))
+              ? `<div class="rowsub">${h(onder)}</div>` : '';
+          })()}
+        </td>
+        <td class="n num">${eur(r.spend)}</td>
+        <td class="n num">${r.leads ? `<button class="btn sub sm num" data-drill="${h(sleutel)}" data-drilltitel="${h(r.label)}">${fmtN(r.leads)}</button>` : '<span class="meta">0</span>'}</td>
+        <td class="n num">${fmtN(r.gekwal)}</td>
+        <td class="n num">${fmtN(r.geplaatst)}</td>
+        <td class="n num">${r.loopt ? fmtN(r.loopt) : '<span class="meta">0</span>'}</td>
+        <td class="n num">${eur(r.cpl, 2)}</td>
+        <td class="n num">${eur(r.cpq, 2)}</td>
+        <td class="n num">${r.cpp == null ? '<span class="meta">—</span>' : eur(r.cpp)}
+          ${r.cpp != null && r.loopt ? '<div class="rowsub">voorlopig</div>' : ''}</td>
+      </tr>`;
+    };
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">${perKlant ? 'Per klant' : 'Per vacature'}</div>
+        <span class="meta">${h(M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort))} · klik een kolomkop om te sorteren</span></div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl"><thead><tr>
+          ${kop('label', perKlant ? 'Klant' : 'Vacature')}
+          ${kop('spend','Uitgegeven','n')}
+          ${kop('leads','Leads','n')}
+          ${kop('gekwal','Gekwalificeerd','n')}
+          ${kop('geplaatst','Geplaatst','n')}
+          ${kop('loopt','Loopt nog','n')}
+          ${kop('cpl','€ / lead','n')}
+          ${kop('cpq','€ / gekwalificeerd','n')}
+          ${kop('cpp','€ / plaatsing','n')}
+        </tr></thead>
+        <tbody>${rijen.map(cel).join('')}</tbody>
+        <tfoot><tr>
+          <td><b>Alles bij elkaar</b></td>
+          <td class="n num">${eur(totSpend)}</td>
+          <td class="n num">${fmtN(totLeads)}</td>
+          <td class="n num">${fmtN(totGekw)}</td>
+          <td class="n num">${fmtN(totPl)}</td>
+          <td class="n num">${fmtN(rijen.reduce((s,r) => s + r.loopt, 0))}</td>
+          <td class="n num">${eur(kost(totSpend, totLeads), 2)}</td>
+          <td class="n num">${eur(kost(totSpend, totGekw), 2)}</td>
+          <td class="n num">${totPl ? eur(kost(totSpend, totPl)) : '<span class="meta">—</span>'}</td>
+        </tr></tfoot>
+      </table></div>
+      <div class="card-f"><span class="meta">${perKlant
+        ? 'Kosten per plaatsing per klant is het cijfer om op te sturen: dát is wat een campagne écht waard was. Bij een cohort dat nog loopt kan het alleen nog dalen.'
+        : 'Een advertentieset die we niet aan een vacature konden koppelen blijft als eigen regel staan — met uitgaven maar zonder leads. Dat is een naamgevingsprobleem in Ads Manager, geen slechte set.'}</span></div>
+    </div>`;
+  }
+
+  /* Wat we niet konden meten, en waarom. Rustig blok, geen alarm — maar wel
+     zichtbaar, want een net getal op halve data stuurt verkeerd. */
+  function gatenHtml(D, cLeads, cUit){
+    const g = D.gaten;
+    const periode = M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort);
+    /* Alles in dit blok gaat over hetzelfde cohort als de tabellen erboven —
+       twee maatstaven door elkaar is precies hoe een dashboard gaat liegen. */
+    const losseCamp = [...new Set(cUit.filter(r => !r.kkey).map(r => r.campagne))];
+    const bedragNiet = somBedrag(cUit.filter(r => !r.kkey));
+    const totaalUit  = somBedrag(cUit);
+    const formulieren = cUit.reduce((s,r) => s + r.formulieren, 0);
+    const verschil = formulieren - cLeads.length;
+    const items = [];
+    const P = (titel, tekst, sleutel, rijen) => items.push({titel, tekst, sleutel, rijen});
+
+    if(bedragNiet > 0)
+      P(`${eur(bedragNiet)} uitgaven zonder herkenbare klant`,
+        `${losseCamp.length} campagne${losseCamp.length===1?'':'s'} in ${periode.toLowerCase()} (${losseCamp.join(' · ')}) — `
+        + `${pctV(bedragNiet, totaalUit)} van de Meta-uitgaven in dit cohort. In de tabellen hierboven staan die apart, ze zijn dus niet stilzwijgend weggelaten. `
+        + `Zet de klantnaam in de campagnenaam, dan valt dit vanzelf op zijn plek.`);
+    if(D.uitZonderDatum > 0)
+      P(`${eur(D.uitZonderDatum)} uitgaven zonder leesbare datum`,
+        'Deze regels konden aan geen enkele maand worden toegerekend en zitten in geen enkel cohort.');
+    /* Leadgaten binnen dit cohort houden — behalve leads zonder datum, die
+       zitten per definitie in geen enkel cohort. */
+    const inCohort = new Set(cLeads.map(r => r.id));
+    const bij = lijst => lijst.filter(r => inCohort.has(r.id));
+    if(verschil > 0)
+      P(`${fmtN(verschil)} Meta-formulieren die niet in het CRM staan`,
+        `Meta telt zelf ${fmtN(formulieren)} ingevulde formulieren in dit cohort, in het CRM staan ${fmtN(cLeads.length)} leads met bron Meta. `
+        + 'Alles op dit scherm rekent met de leads die daadwerkelijk in het CRM staan — het echte rendement is dus hooguit beter dan hier staat.');
+    if(g.zonderDatum.length)
+      P(`${fmtN(g.zonderDatum.length)} leads zonder binnenkomstdatum`,
+        'Zonder datum hoort een lead bij geen enkele maand en telt hij nergens mee.', 'gat:datum', g.zonderDatum);
+    const zStatus = bij(g.zonderStatus), zVreemd = bij(g.vreemdeStatus), zKlant = bij(g.zonderKlant),
+          zVac = bij(g.zonderVacature), zKandWeg = bij(g.kandidaatWeg), zDoor = bij(g.doorZonderKandidaat);
+    if(zStatus.length)
+      P(`${fmtN(zStatus.length)} leads zonder status`,
+        'Niet te zeggen of ze zijn opgepakt. Ze tellen wel mee als binnengekomen en als "nog in behandeling".', 'gat:status', zStatus);
+    if(zVreemd.length)
+      P(`${fmtN(zVreemd.length)} leads met een onbekende status`,
+        'De status staat niet in de lijst die het CRM kent — ze vallen daardoor in geen enkele trechterstap.', 'gat:vreemd', zVreemd);
+    if(zKlant.length)
+      P(`${fmtN(zKlant.length)} leads zonder klant`,
+        'Die staan in de klanttabel op één regel "Klant onbekend" — er is dus geen kosten-per-plaatsing per klant van te maken.', 'gat:klant', zKlant);
+    if(zVac.length)
+      P(`${fmtN(zVac.length)} leads zonder vacature`,
+        'Geen vacature_id; we vallen dan terug op het functieveld van de lead zelf. Staat dat er ook niet in, dan is de vacature-uitsplitsing onvolledig.', 'gat:vac', zVac);
+    if(zKandWeg.length)
+      P(`${fmtN(zKandWeg.length)} leads verwijzen naar een kandidaat die niet bestaat`,
+        'Het kandidaat_id staat gevuld, maar die kandidaat staat niet (meer) op het bord. Ze tellen als doorgeschoten, maar hun voorstel en plaatsing kunnen we niet volgen.', 'gat:kandweg', zKandWeg);
+    if(zDoor.length)
+      P(`${fmtN(zDoor.length)} leads staan op "Doorgeschoten" zonder kandidaat`,
+        'De status zegt doorgeschoten, maar er hangt geen kandidaat aan. Hier breekt de keten meteen na de kwalificatie.', 'gat:doorleeg', zDoor);
+    if(D.losseKand.length)
+      P(`${fmtN(D.losseKand.length)} kandidaten met bron Meta hangen aan geen enkele lead`,
+        `Waarvan ${fmtN(D.lossePlaatsingen.length)} geplaatst. Die plaatsingen zijn wél van Meta gekomen, maar we kunnen ze aan geen maand en aan geen campagne toerekenen — `
+        + 'ze ontbreken dus in élk cohort hierboven. Dit is het grootste gat in deze analyse: het maakt Meta systematisch slechter dan het is.');
+
+    if(!items.length) return `<div class="note ok" style="margin-top:18px">
+      Alle Meta-uitgaven zijn aan een klant toegewezen en elke lead heeft een datum, een status en een klant.
+      De cijfers hierboven rusten op complete gegevens.</div>`;
+
+    return `<div class="card mkt-kaart mkt-gaten">
+      <div class="card-h"><div class="h2">Wat we niet konden meten, en waarom</div>
+        <span class="meta">${items.length} punt${items.length===1?'':'en'}</span></div>
+      <div class="card-b">
+        <p class="sub" style="margin:0 0 14px;max-width:78ch">Dit blok hoort erbij. Een dashboard dat 80% van het budget toont
+          alsof het 100% is, stuurt verkeerd — dus staat hier wat er buiten de telling viel.</p>
+        ${items.map(i => `<div class="mkt-gat">
+          <b>${h(i.titel)}</b>
+          <span class="meta">${h(i.tekst)}</span>
+          ${i.rijen && i.rijen.length ? `<div><button class="btn sub sm" data-drill="${h(drill(i.sleutel, i.rijen))}" data-drilltitel="${h(i.titel)}">Bekijk de leads</button></div>` : ''}
+        </div>`).join('')}
+      </div>
+      <div class="card-f"><span class="meta">Elk punt hier is een invoerafspraak die scherper kan. Dat levert meer op dan een extra grafiek.</span></div>
+    </div>`;
+  }
+
+  /* Doorklikken naar de onderliggende leads en kandidaten. */
+  function drillPaneel(titel, rijen){
+    const lijst = rijen.slice().sort((a,b) =>
+      String(b.lead.binnen_op||'').localeCompare(String(a.lead.binnen_op||'')));
+    const regel = r => `<tr>
+      <td><b>${h(r.naam || 'zonder naam')}</b>
+        ${r.cand ? `<div class="rowsub">kandidaat: ${h(CRM.faseNorm(r.cand.fase) || 'geen fase')}</div>` : ''}</td>
+      <td><span class="chip">${h(CRM.leadIco(r.status))} ${h(r.status || 'zonder status')}</span></td>
+      <td>${h(r.klant || '—')}${r.functie ? `<div class="rowsub">${h(r.functie)}</div>` : ''}</td>
+      <td class="num meta">${h(r.mk ? CRM.fmtDateShort(r.lead.binnen_op) : 'geen datum')}</td>
+      <td class="n"><div class="row tight" style="justify-content:flex-end">
+        <button class="btn sm ghost" data-ganaar="lead|${h(r.id)}">Lead</button>
+        ${r.cand ? `<button class="btn sm ghost" data-ganaar="kand|${h(r.cand.id)}">Kandidaat</button>` : ''}
+      </div></td>
+    </tr>`;
+    CRM.drawer.open(`
+      <div class="drawer-h">
+        <div><div class="h2">${h(titel)}</div>
+          <div class="meta"><span class="num">${fmtN(lijst.length)}</span> lead${lijst.length===1?'':'s'} ·
+            ${h(M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort))}</div></div>
+        <button class="btn sub x" data-close aria-label="Sluiten">✕</button>
+      </div>
+      <div class="drawer-b">
+        <div class="tblwrap"><table class="tbl"><thead><tr>
+          <th>Naam</th><th>Status</th><th>Klant / vacature</th><th>Binnen</th><th></th>
+        </tr></thead><tbody>${lijst.map(regel).join('')}</tbody></table></div>
+      </div>`, {onOpen(dr){
+        CRM.$$('[data-ganaar]', dr).forEach(b => b.onclick = () => {
+          const s = b.dataset.ganaar, i = s.indexOf('|');
+          const soort = s.slice(0, i), id = s.slice(i + 1);
+          CRM.drawer.close();
+          CRM.ga(soort === 'lead' ? 'recruitment' : 'kandidaten', {id});
+        });
+      }});
   }
 
   /* ── 6c1. Marketingtaken ── */
@@ -1410,19 +2140,25 @@
     let seed = 20260730;
     const rnd = () => { seed = (seed*1664525 + 1013904223) >>> 0; return seed/4294967296; };
     /* Elke advertentie heeft een eigen profiel; 'recent' geldt voor de laatste
-       7 dagen zodat de waakhond herkenbare signalen te pakken krijgt. */
+       7 dagen zodat de waakhond herkenbare signalen te pakken krijgt.
+       De namen volgen de afspraak in het Meta-account: campagne = klant,
+       advertentieset = functie, advertentie = hook. Eén campagne wijkt daar
+       bewust van af ('Regio Zuid-Holland — algemeen'), zodat je op het
+       Rendement-tabblad ziet hoe niet-toewijsbare uitgaven getoond worden. */
     const ADS = [
-      {c:'Productie & Inpak — Zuid-Holland', s:'Bodegraven 25 km',   a:'Salaris in beeld — € 2.750 + toeslag', sp:12,  cpc:0.32, ctr:0.021, lr:0.030},
-      {c:'Productie & Inpak — Zuid-Holland', s:'Bodegraven 25 km',   a:'Video van de werkvloer',              sp:9,   cpc:0.29, ctr:0.026, lr:0.055},
-      {c:'Productie & Inpak — Zuid-Holland', s:'Rotterdam-Zuid 20 km', a:'Direct starten, wekelijks betaald', sp:8,   cpc:0.35, ctr:0.018, lr:0.026},
-      {c:'Heftruck & Magazijn — Rijnmond',   s:'Heftruckchauffeurs',  a:'Carrousel — machines en shifts',      sp:6.5, cpc:0.38, ctr:0.016, lr:0.022, rl:0},
-      {c:'Heftruck & Magazijn — Rijnmond',   s:'Heftruckchauffeurs',  a:'Foto — heftruck in de hal',           sp:8,   cpc:0.33, ctr:0.019, lr:0.032, rb:0.42},
-      {c:'Heftruck & Magazijn — Rijnmond',   s:'Orderpickers',        a:'Ploegentoeslag van 25%',              sp:7.5, cpc:0.30, ctr:0.020, lr:0.045, rc:2.2},
-      {c:'Operators & Techniek',             s:'Procesoperators',     a:'Testimonial — Marek, operator',       sp:7,   cpc:0.34, ctr:0.007, lr:0.035},
-      {c:'Operators & Techniek',             s:'Technische dienst',   a:'Doorgroeien naar TD-monteur',         sp:11,  cpc:0.36, ctr:0.014, lr:0.030, rl:0.25}
+      {c:'Starcuisine — Bodegraven',      s:'Productiemedewerker', a:'Salaris in beeld — € 2.750 + toeslag', sp:12,  cpc:0.32, ctr:0.021, lr:0.030},
+      {c:'Starcuisine — Bodegraven',      s:'Productiemedewerker', a:'Video van de werkvloer',              sp:9,   cpc:0.29, ctr:0.026, lr:0.055},
+      {c:'Starcuisine — Bodegraven',      s:'Heftruckchauffeur',   a:'Direct starten, wekelijks betaald',   sp:8,   cpc:0.35, ctr:0.018, lr:0.026},
+      {c:'Proponent — Rotterdam',         s:'Orderpicker',         a:'Carrousel — machines en shifts',      sp:6.5, cpc:0.38, ctr:0.016, lr:0.022, rl:0},
+      {c:'Proponent — Rotterdam',         s:'Orderpicker',         a:'Foto — heftruck in de hal',           sp:8,   cpc:0.33, ctr:0.019, lr:0.032, rb:0.42},
+      {c:'Whisk Food',                    s:'Senior Operator',     a:'Ploegentoeslag van 25%',              sp:7.5, cpc:0.30, ctr:0.020, lr:0.045, rc:2.2},
+      {c:'Good Life Foods',               s:'Operator',            a:'Testimonial — Marek, operator',       sp:7,   cpc:0.34, ctr:0.007, lr:0.035},
+      {c:'Regio Zuid-Holland — algemeen', s:'Technische dienst',   a:'Doorgroeien naar TD-monteur',         sp:11,  cpc:0.36, ctr:0.014, lr:0.030, rl:0.25}
     ];
     const rijen = [];
-    for(let d=29; d>=0; d--){
+    /* Vier maanden historie: zonder meerdere maanden valt er niets te
+       vergelijken en zou het Rendement-tabblad één cohort tonen. */
+    for(let d=104; d>=0; d--){
       const datum = isoT(d), recent = d < 7;
       const wknd  = [0,6].includes(new Date(datum+'T12:00').getDay());
       ADS.forEach((x,i) => {
@@ -1443,12 +2179,12 @@
        stopbesluit waar nog geld doorheen loopt (de bewaking moet aanslaan) en
        één advies van de agent dat nog gelezen moet worden. */
     M.besluiten = [
-      {id:1, advertentie:'Foto — heftruck in de hal', campagne:'Heftruck & Magazijn — Rijnmond',
+      {id:1, advertentie:'Foto — heftruck in de hal', campagne:'Proponent — Rotterdam',
        besluit:'negeer', status:'open', door:'Bryan', note:'', created_at:new Date(Date.now()-2*864e5).toISOString()},
-      {id:2, advertentie:'Carrousel — machines en shifts', campagne:'Heftruck & Magazijn — Rijnmond',
+      {id:2, advertentie:'Carrousel — machines en shifts', campagne:'Proponent — Rotterdam',
        besluit:'stop', status:'open', door:'Claude-agent', note:'Zeven dagen zonder lead.',
        created_at:new Date(Date.now()-3*864e5).toISOString()},
-      {id:3, advertentie:'Testimonial — Marek, operator', campagne:'Operators & Techniek',
+      {id:3, advertentie:'Testimonial — Marek, operator', campagne:'Good Life Foods',
        besluit:'budget', status:'open', door:'Claude-agent',
        note:'Deze set krijgt 60% van het campagnebudget maar levert de duurste leads. Verschuif een deel naar Orderpickers.',
        created_at:new Date(Date.now()-1*864e5).toISOString()}

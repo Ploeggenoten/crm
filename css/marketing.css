@@ -52,16 +52,45 @@ table.tbl tbody tr.clickable.mkt-r1:hover{background:var(--well)}
 .mkt-daglbl{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.25}
 .mkt-daglbl b{display:block;font-weight:600;color:var(--txt-2)}
 
-/* ─── Keten: uitgegeven → leads → kandidaten → plaatsing ─────── */
-.mkt-keten{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
-.mkt-stap{flex:1 1 120px;min-width:112px;padding:2px 4px}
-.mkt-stap .big{font-size:24px;color:var(--ink);margin-top:4px}
-.mkt-stap .meta{margin-top:2px}
-.mkt-pijl{
-  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;
-  color:var(--line-2);font-size:15px;padding:0 8px;
-}
-.mkt-pijl span{font-size:11px;color:var(--muted);white-space:nowrap}
+/* ─── Rendement: cohorten van lead tot plaatsing ─────────────── */
+/* Elk blok is een eigen kaart onder elkaar; alleen de tussenruimte staat
+   hier, zodat de HTML geen losse style-attributen hoeft te dragen. */
+.mkt-kaart{margin-bottom:18px}
+.mkt-uitleg{margin-bottom:18px}
+.mkt-defs{display:grid;grid-template-columns:1fr;gap:8px;margin-top:14px;
+  border-top:1px solid var(--line);padding-top:14px}
+.mkt-def{display:flex;gap:12px;align-items:baseline;font-size:13px;line-height:1.5}
+.mkt-def b{flex:0 0 190px;font-weight:600;color:var(--ink)}
+.mkt-def span{flex:1;min-width:0;color:var(--txt-2);max-width:72ch}
+
+/* De gekozen maand in de cohorttabel: één rustige markering, geen kleurvlak. */
+table.tbl tbody tr.mkt-op > td{background:var(--card-2)}
+table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)}
+
+.mkt-cohortkop{margin-bottom:18px}
+.mkt-cohortkop .h2{font-size:16px}
+
+/* Trechter: label links, balk in het midden, aantal rechts. Onder elkaar
+   leest een trechter van acht stappen beter dan pijltjes naast elkaar. */
+.mkt-tr{display:flex;flex-direction:column;gap:2px}
+.mkt-tr-r{display:flex;align-items:center;gap:16px;padding:7px 0;border-bottom:1px solid var(--line)}
+.mkt-tr-r:last-child{border-bottom:none}
+.mkt-tr-l{flex:0 0 240px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.mkt-tr-l b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.mkt-tr-b{flex:1;min-width:60px;height:10px;background:var(--card-2);border-radius:99px;overflow:hidden}
+.mkt-tr-b > i{display:block;height:100%;background:var(--line-2);border-radius:99px}
+.mkt-tr-b > i.goed{background:var(--olive-l)}
+.mkt-tr-b > i.let{background:var(--amber)}
+.mkt-tr-n{flex:0 0 172px;display:flex;align-items:baseline;justify-content:flex-end;gap:8px;text-align:right}
+.mkt-tr-n .btn.sub{font-size:15px;padding:2px 8px;color:var(--ink)}
+.mkt-tr-r.leeg .mkt-tr-l b{color:var(--txt-2);font-weight:500}
+
+/* Datakwaliteit — rustig blok, geen alarmkleuren. */
+.mkt-gat{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-bottom:1px solid var(--line)}
+.mkt-gat:last-child{border-bottom:none}
+.mkt-gat b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.mkt-gat .meta{line-height:1.5;max-width:82ch}
+.mkt-gat .btn{align-self:flex-start;margin-top:2px}
 
 /* ─── Kanaalkleur ────────────────────────────────────────────── */
 /* De kleur zelf komt uit mkt_kanalen en wordt inline gezet — dat is data,
@@ -124,8 +153,31 @@ table.tbl tbody tr.clickable.mkt-r1:hover{background:var(--well)}
 .mkt-idee b{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.4}
 .mkt-idee-h{font-size:12.5px;color:var(--txt-2);line-height:1.5}
 
+/* Breed scherm (zie de ladder in base.css): het team staat om één groot
+   scherm. Extra breedte vullen we met méér inhoud naast elkaar — de
+   begrippenlijst in twee kolommen, de datagaten in twee kolommen — nooit
+   met dezelfde inhoud uitgerekt. Lopende tekst houdt zijn eigen ch-rem. */
+@media (min-width:1500px){
+  .mkt-defs{grid-template-columns:1fr 1fr;gap:8px 32px}
+  .mkt-gaten .card-b{column-count:2;column-gap:34px}
+  .mkt-gat{break-inside:avoid}
+  /* De trechter zou op een teamscherm één uitgerekte balk per regel worden.
+     In plaats daarvan zetten we de duiding ernaast: zelfde hoogte, meer
+     inhoud, geen uitgerekte balken. */
+  .mkt-trechter .card-b{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);
+    gap:26px;align-items:start}
+  .mkt-trechter .card-b > .note{margin-top:0}
+}
+
 @media (max-width:900px){
   .mkt-advies{flex-wrap:wrap}
+  /* Onder 900px is de trechter twee regels: label boven, balk en aantal
+     eronder. De balk mag nooit onder de 60px komen, anders zegt hij niets. */
+  .mkt-tr-r{flex-wrap:wrap;gap:6px 12px}
+  .mkt-tr-l{flex-basis:100%}
+  .mkt-tr-n{flex:0 0 auto;margin-left:auto}
+  .mkt-def{flex-direction:column;gap:1px}
+  .mkt-def b{flex-basis:auto}
   .mkt-a-k{width:100%;padding-left:19px}
   .mkt-dagen{gap:4px}
   .mkt-daglbl span{display:none}
