@@ -1,3 +1,10 @@
+> **Let op — dit document is openbaar.** De app staat op GitHub Pages vanaf een
+> publieke repository, dus alles wat hier staat is voor iedereen te downloaden.
+> Zet hier dus nooit een sleutel of wachtwoord in. Hier stond tot 31 juli 2026
+> de letterlijke CRON_SECRET, naast de anon-sleutel — samen genoeg om de
+> lead-radar-functie aan te roepen, die met de service-role draait en dus
+> langs alle beveiliging in de database gaat. Die sleutel moet vervangen zijn.
+
 # Leadradar activeren — alle stappen op een rij
 
 Doel: de Leadradar in *Sales* vult zichzelf elke ochtend met bedrijven die nú
@@ -53,7 +60,7 @@ zijn er waarschijnlijk al (die gebruikt de marketing-sync ook, zelfde project).
 Staat `CRON_SECRET` er niet? Voeg hem dan toe met waarde:
 
 ```
-VERWIJDERD-GEROTEERD-31JUL2026
+<JOUW CRON_SECRET — zie Supabase → Edge Functions → Secrets>
 ```
 
 ### 3c. Testen (optioneel maar aan te raden)
@@ -61,7 +68,7 @@ Open een terminal en draai:
 
 ```bash
 curl -X POST "https://gyhrwjdlwamyjhxtdypw.supabase.co/functions/v1/lead-radar" \
-  -H "x-cron-key: VERWIJDERD-GEROTEERD-31JUL2026" \
+  -H "x-cron-key: <JOUW CRON_SECRET — zie Supabase → Edge Functions → Secrets>" \
   -H "Content-Type: application/json" -d '{}'
 ```
 
@@ -82,7 +89,7 @@ select cron.schedule(
       url:='https://gyhrwjdlwamyjhxtdypw.supabase.co/functions/v1/lead-radar',
       headers:=jsonb_build_object(
         'Content-Type','application/json',
-        'x-cron-key','VERWIJDERD-GEROTEERD-31JUL2026',
+        'x-cron-key','<JOUW CRON_SECRET — zie Supabase → Edge Functions → Secrets>',
         'Authorization','Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5aHJ3amRsd2FteWpoeHRkeXB3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3ODgwMzUsImV4cCI6MjA5NzM2NDAzNX0.M2huzUfbYtcOqimYIkcuGW-6BCion4HqJVn7TxtkZ9c'),
       body:='{}'::jsonb) $$
 );

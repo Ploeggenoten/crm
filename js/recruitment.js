@@ -588,12 +588,25 @@ function tekenNieuwbalk(){
     else groep.telang.push(l);
   });
   if(!nieuw.length){
+    /* Deze zin stond er als absolute stand van zaken, terwijl hij op de
+       GEFILTERDE lijst rekende. Met een zoekterm nog actief zei hij "niets
+       staat meer op Nieuw" terwijl de teller ernaast 9 aangaf — en dat is
+       precies het bericht waarop een recruiter stopt met werken. Negen
+       mensen wachten dan een dag langer. Nu telt hij er altijd bij hoeveel
+       er buiten je filters vallen. */
     const totaal = leads().length;
-    el.innerHTML = totaal
-      ? `<div class="rc-nieuw klaar"><span class="rc-nieuwop">✓</span>
+    const alleNieuw = leads().filter(l => l.status === 'Nieuw').length;
+    if(!totaal) return void (el.innerHTML = '');
+    el.innerHTML = alleNieuw
+      ? `<div class="rc-nieuw"><span class="rc-nieuwop">•</span>
+           <div><b>Binnen je filters staat niets op Nieuw</b>
+             <span class="meta">Daarbuiten nog wel: ${alleNieuw} sollicitant${alleNieuw===1?'':'en'}.
+               <button class="lnk" id="rc_filterweg">Filters wissen</button></span></div></div>`
+      : `<div class="rc-nieuw klaar"><span class="rc-nieuwop">✓</span>
            <div><b>Niets staat meer op Nieuw</b>
-             <span class="meta">Elke binnengekomen reactie heeft een volgende status gekregen.</span></div></div>`
-      : '';
+             <span class="meta">Elke binnengekomen reactie heeft een volgende status gekregen.</span></div></div>`;
+    const wis = el.querySelector('#rc_filterweg');
+    if(wis) wis.onclick = () => { wisFilters(); alles(); };
     return;
   }
   const pct = n => Math.round(n / nieuw.length * 100);

@@ -665,8 +665,15 @@ function opvolgingRijen(){
   /* Werk dat uit de pijplijn zelf komt: nieuwe sollicitanten die nog niet
      gebeld zijn en kandidaat-acties die over datum staan. Stond eerst als
      "ruimte:"-blok in de dagbaan. */
+  /* VAN MIJ, niet van iedereen. Dit stond ongefilterd, dus Tjeerd, Tjerk en
+     Rajesh kregen 's ochtends alle drie exact dezelfde vijf namen te zien en
+     belden ze alle drie. Wie het eerst belde wist niet dat hij de tweede was.
+     Een sollicitant zonder eigenaar hoort wél bij iedereen — die ligt anders
+     bij niemand, en dat is erger dan dubbel bellen. */
+  const vanMij = e => !e || e === mij;
   const leads = (CRM.state.leads||[])
     .filter(l => CRM.LEAD_OPEN.includes(l.status))
+    .filter(l => vanMij(l.eigenaar))
     .filter(l => (kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
               || (l.status === 'Nieuw' && (CRM.dagenGeleden(l.binnen_op)||0) >= 2));
   if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,
@@ -674,6 +681,7 @@ function opvolgingRijen(){
     sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') });
 
   const acties = CRM.kandidaten()
+    .filter(c => vanMij(c.rec))
     .filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
     .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)));
   if(acties.length) uit.nu.push({ sleutel:'acties', mod:'kandidaten', urgent:true,
@@ -1475,7 +1483,13 @@ function hotTelDoel(v){
 
 function hotBlok(){
   const mij = CRM.me();
-  const hot = (CRM.state.vacs||[]).filter(v => v.hot && v.eigenaar === mij)
+  /* Andersom dan de belstapel: hier stond het filter juist té strak. Alle
+     vacatures staan op naam van de accountmanager, dus een recruiter zag
+     er nul — terwijl dat precies de vacatures zijn waar hij vandaag mensen
+     voor moet vinden. Een hot vacature is teamwerk: die van jou eerst, de
+     rest eronder. */
+  const hot = (CRM.state.vacs||[]).filter(v => v.hot)
+    .sort((a,b) => (a.eigenaar === mij ? 0 : 1) - (b.eigenaar === mij ? 0 : 1))
     .sort((a,b)=>(a.hot_prio||999)-(b.hot_prio||999)).slice(0,4);
   if(!hot.length) return '';
   const rijen = hot.map(v => {

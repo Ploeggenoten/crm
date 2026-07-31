@@ -685,7 +685,10 @@ function open(opts = {}){
     const drop = $('#int_drop'), file = $('#int_file');
     $('#int_kies').onclick = () => file.click();
     drop.onclick = e => { if(e.target === drop || e.target.classList.contains('int-drop-t')) file.click(); };
-    file.onchange = e => { const f = e.target.files[0]; if(f) verwerkBestand(f); };
+    /* Het veld daarna leegmaken, anders komt er bij het opnieuw kiezen van
+       hetzelfde bestand geen change meer — en dat is precies wat je doet
+       nadat het één keer misging. */
+    file.onchange = e => { const f = e.target.files[0]; e.target.value = ''; if(f) verwerkBestand(f); };
     ['dragenter','dragover'].forEach(n => drop.addEventListener(n, e => {
       e.preventDefault(); drop.classList.add('over');
     }));
