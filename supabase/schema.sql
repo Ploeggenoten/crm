@@ -295,6 +295,39 @@ create table if not exists crm_afspraken (
 );
 create index if not exists crm_afspraken_klant on crm_afspraken(klant, actief);
 
+-- ─── 7d. Wat er werkelijk aan Meta betaald is ─────────────────
+-- Meta rapporteert zijn eigen uitgaven. Wat er daadwerkelijk van de rekening
+-- is gegaan staat in fin_bank_tx — maar die tabel is afgeschermd op Tjeerds
+-- e-mailadres, en dat moet zo blijven: daar staat élke banktransactie in.
+--
+-- Daarom deze tussenlaag. Tjeerd laat het CRM de banktransacties op Meta en
+-- Facebook doorzoeken; alleen het MAANDTOTAAL komt hier terecht. Het team ziet
+-- dus wel of Meta's cijfers kloppen met wat er betaald is, en niet waar de
+-- rest van het geld heen ging. Besluit Tjeerd, 31 juli 2026.
+create table if not exists mkt_meta_betaald (
+  maand      date primary key,              -- altijd de 1e van de maand
+  bedrag     numeric not null default 0,
+  bron       text default 'bank',           -- bank | yuki | handmatig
+  regels     int  default 0,                -- hoeveel transacties erachter zitten
+  bijgewerkt timestamptz default now(),
+  door       text default ''
+);
+
+-- Lezen: het hele team. Schrijven: alleen Tjeerd, want het getal komt uit
+-- zijn bankgegevens en mag niet door een ander overschreven worden.
+do $$
+begin
+  execute 'alter table mkt_meta_betaald enable row level security';
+  execute 'drop policy if exists meta_betaald_lezen on mkt_meta_betaald';
+  execute 'create policy meta_betaald_lezen on mkt_meta_betaald
+           for select to authenticated using (true)';
+  execute 'drop policy if exists meta_betaald_schrijven on mkt_meta_betaald';
+  execute 'create policy meta_betaald_schrijven on mkt_meta_betaald
+           for all to authenticated
+           using (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')
+           with check (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')';
+end $$;
+
 -- ─── 8. RLS: team mag alles in crm_* lezen/schrijven ──────────
 -- (Financiële cijfers zitten in fin_*-tabellen; die houden hun eigen,
 --  striktere policies waardoor alleen Tjeerd erbij kan.)
