@@ -536,7 +536,12 @@ function yukiBewaking(f){
    de finance-app en de teller op het pijplijnbord.                       */
 function boardPlaatsingen(mk7){
   const cs = cands();
-  const gross = cs.filter(c => String(c.geplaatst_op||'').slice(0,7) === mk7);
+  /* Een garantievervanger telde hier als plaatsing (alleen op geplaatst_op)
+     terwijl hij bij de stops wél werd uitgesloten. Elke kosteloze vervanging
+     verhoogde het cijfer daardoor structureel met 1, en Finance kwam op −3
+     waar het bord −4 zei. Dezelfde uitsluiting als hieronder bij stopM. */
+  const gross = cs.filter(c => String(c.geplaatst_op||'').slice(0,7) === mk7
+    && !(c.vervangt||''));
   const ws   = gross.filter(c => c.type === 'W&S').length;
   const flex = gross.filter(c => isFlexType(c.type)).length;
   const onb  = gross.length - ws - flex;

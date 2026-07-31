@@ -124,7 +124,10 @@
   border-radius:var(--r-s);padding:4px 12px;background:var(--card)}
 .int-zlijst p{margin:10px 0;font-size:13px;line-height:1.55;word-break:break-word}
 .int-zlijst p + p{border-top:1px solid var(--line);padding-top:10px}
-.int-zlijst mark{background:var(--lime);color:#171d08;border-radius:3px;padding:0 2px}
+/* Geen lime: dat mag alleen op donkere vlakken. Een rustige vulling met
+   een streep eronder valt genoeg op om een treffer terug te vinden. */
+.int-zlijst mark{background:var(--well-2);color:var(--txt);border-radius:3px;padding:0 2px;
+  box-shadow:inset 0 -2px 0 var(--olive-l)}
 
 /* ─── Smal scherm ─────────────────────────────────────────────────
    Onder de 720px past de vergelijking niet meer naast elkaar. Dan wordt

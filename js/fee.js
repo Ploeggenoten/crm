@@ -362,6 +362,31 @@ function watMist(kandidaat, afspraak){
    ═══════════════════════════════════════════════════════════════ */
 function bereken(kandidaat, afspraak){
   const c = kandidaat || {};
+
+  /* TWEE PLAATSINGEN DIE GEEN FEE OPLEVEREN.
+     Dit stond alleen in js/performance.js, waardoor de kandidatenkaart en
+     het feestscherm er wél een bedrag bij zetten. Gevolg: een Flex-plaatsing
+     kreeg een W&S-fee van € 8.087 op de kaart, en het feestscherm stuurde dat
+     bedrag naar het hele team — voor geld dat nooit gefactureerd wordt.
+     Het hoort hier, in de gedeelde rekenregel, zodat elke aanroeper het
+     meekrijgt in plaats van dat iedereen het opnieuw moet bedenken.
+
+     Flex     — de opbrengst loopt via gewerkte uren, niet via een fee.
+     Vervangt — een kosteloze vervanging binnen de garantie; de fee is al
+                gefactureerd op de voorganger. */
+  const geenFeeReden =
+      (String(c.type || 'W&S') === 'Flex')
+        ? 'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee.'
+    : (c.vervangt)
+        ? 'Kosteloze vervanging binnen de garantie — de fee is al gefactureerd op de voorganger.'
+    : '';
+  if(geenFeeReden){
+    const gr0 = grondslag(c, afspraak);
+    return {fee:null, pct:null, bron:'nvt', uitleg:geenFeeReden, reden:geenFeeReden,
+            grondslag:gr0, waarschuwingen:[], factuurdatum:'', vervaldatum:'',
+            garantieTot:'', geenFee:true};
+  }
+
   const a = normaliseer(afspraak);
   const gr = grondslag(c, afspraak);
   const p  = pctVoor(c, afspraak);

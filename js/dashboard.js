@@ -1498,12 +1498,22 @@ function hotBlok(){
 
 function maandBlok(){
   const mij = CRM.me(), mk = VANDAAG().slice(0,7), cs = CRM.kandidaten();
-  const get  = cs.filter(c => c.rec===mij && CRM.PLACED.includes(c.fase) && kort(c.geplaatstOp).slice(0,7)===mk).length;
-  const stop = cs.filter(c => c.rec===mij && c.fase==='Gestopt' && kort(c.gestoptOp).slice(0,7)===mk).length;
+  /* Dezelfde twee regels als het bord en Performance: een Gestopt-kaart mét
+     plaatsingsdatum telt gewoon als getekend, en een gestopte vervanger
+     trekt niet nóg eens af. Zonder die regels zei dit blok iets anders over
+     dezelfde persoon dan de band erboven. */
+  const teltAlsStop = c => c.fase==='Gestopt' && !!c.geplaatstOp && !c.vervangt;
+  const get  = cs.filter(c => c.rec===mij && kort(c.geplaatstOp).slice(0,7)===mk
+    && (CRM.PLACED.includes(c.fase) || teltAlsStop(c))).length;
+  const stop = cs.filter(c => c.rec===mij && teltAlsStop(c) && kort(c.gestoptOp).slice(0,7)===mk).length;
   const netto = get - stop;
   const target = CRM.maandTarget();
   const ams = (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
-  const aandeel = Math.max(1, Math.round(target/ams));
+  /* Naar boven afronden zou 3 × 3 = 9 geven bij een teamtarget van 8:
+     iedereen haalt zijn doel en het team niet. Naar beneden geeft 3 × 2 = 6
+     en dan is het team klaar terwijl er nog twee te gaan zijn. Daarom geen
+     afronding maar één decimaal — het is een aandeel, geen aantal mensen. */
+  const aandeel = Math.max(1, Math.round(target / ams * 10) / 10);
   const pct = Math.max(0, Math.min(100, Math.round(netto/aandeel*100)));
   /* Sparkline: eigen plaatsingen per maand, laatste 6 — richting, geen grafiek. */
   const nu = new Date(), perMnd = [];

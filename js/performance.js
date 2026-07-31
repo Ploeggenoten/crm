@@ -153,8 +153,24 @@ const inPijplijn = c => CRM.faseIdx(c.fase) >= 0 && !CRM.faseIn(c.fase, CRM.DONE
 /* ─── Basisverzamelingen voor de gekozen periode ─────────────── */
 function cijfers(p){
   const cs = CRM.kandidaten();
-  const getekend = cs.filter(c => inP(c.geplaatstOp,p) && CRM.faseIn(c.fase, CRM.PLACED));
-  const gestopt  = cs.filter(c => CRM.faseIs(c.fase,'Gestopt') && inP(c.gestoptOp,p));
+  /* DEZELFDE DEFINITIE ALS HET BORD — en dat was hier niet zo.
+     Dit scherm zei "Netto volgt exact de definitie van het bord", maar
+     rekende anders: het liet een Gestopt-kaart mét plaatsingsdatum weg bij
+     'getekend', en trok élke stop af, ook die van een garantievervanger en
+     van iemand zonder plaatsingsdatum. Uitkomst voor juli: dit scherm −7,
+     het bord −4, Finance −3, "Jouw maand" −5. Vier antwoorden op dezelfde
+     vraag, en het scherm beweerde erbij dat ze gelijk waren.
+
+     Twee regels van het bord, nu ook hier (js/data.js):
+     1. Tekenen is een gebeurtenis die heeft plaatsgevonden — een latere
+        stop maakt dat niet ongedaan, dus een Gestopt-kaart mét
+        plaatsingsdatum telt gewoon mee als getekend.
+     2. Een gestopte vervanger telt niet nog eens af: zijn voorganger is al
+        als stop geteld, anders trek je dezelfde plek twee keer af. */
+  const teltAlsStop = c => CRM.faseIs(c.fase,'Gestopt') && !!c.geplaatstOp && !c.vervangt;
+  const getekend = cs.filter(c => inP(c.geplaatstOp,p) &&
+    (CRM.faseIn(c.fase, CRM.PLACED) || teltAlsStop(c)));
+  const gestopt  = cs.filter(c => teltAlsStop(c) && inP(c.gestoptOp,p));
   /* Cohort voor duurzaamheid: iedereen die in deze periode getekend heeft,
      inclusief wie later gestopt is. */
   const cohort = cs.filter(c => inP(c.geplaatstOp,p) && (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt')));
