@@ -2201,7 +2201,7 @@ CRM.registerModule('kandidaten', {
        de gebruiker op het overzicht laten landen zonder filter. */
     if(params && params.status){
       const sleutel = params.status === 'klaar' ? 'gekwalificeerd' : String(params.status);
-      if(STATUS_SLEUTELS.includes(sleutel)) zet('status', sleutel);
+      if(STATUS_OPTS.some(o => o.k === sleutel)) zet('status', sleutel);
     }
     if(params && params.id) kaart(mount, acties, String(params.id));
     else overzicht(mount, acties);

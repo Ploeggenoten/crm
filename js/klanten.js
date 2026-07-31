@@ -134,7 +134,15 @@ function zorgAfspraken(){
   _afsprGeladen = true;
   /* In demo bestaat de tabel nog niet — dan lokaal, zodat opslaan en
      teruglezen wél te testen is. */
-  if(CRM.demo){ CRM.state.afspraken = P.get('afspraken', []); return; }
+  /* In demo: alleen aanvullen als er nog niets staat. js/demo.js zet hier
+     voorbeeldafspraken neer, en die mogen niet overschreven worden door een
+     lege lijst uit localStorage — dan toont de fee overal een streepje. */
+  if(CRM.demo){
+    const bewaard = P.get('afspraken', null);
+    if(Array.isArray(bewaard) && bewaard.length) CRM.state.afspraken = bewaard;
+    else if(!CRM.state.afspraken.length) CRM.state.afspraken = [];
+    return;
+  }
   CRM.sb.from('crm_afspraken').select('*').then(r => {
     if(r.error){
       if(TABEL_WEG(r.error)) _afsprTabelMist = true;

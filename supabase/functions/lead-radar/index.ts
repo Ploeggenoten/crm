@@ -186,7 +186,7 @@ out center tags 600;`;
     for (const ep of endpoints) {
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 45000);   // max 45s per server
+        const timer = setTimeout(() => ctrl.abort(), 60000);   // max 60s per server
         const r = await fetch(ep, { method: "POST", headers: osmHeaders, body: "data=" + encodeURIComponent(ql), signal: ctrl.signal });
         clearTimeout(timer);
         laatst = r.status;

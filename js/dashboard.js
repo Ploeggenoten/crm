@@ -1151,7 +1151,13 @@ function looptRegel(){
   const kansen  = (CRM.state.kansen||[]).filter(k => (k.status||'open')==='open').length;
   const traject = (CRM.state.clients||[]).filter(k => CRM.SALES_ACTIEF.includes(k.fase)).length;
   const openLeads = (CRM.state.leads||[]).filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
-  const pijp = cs.filter(c => actief(c) && !CRM.PLACED.includes(c.fase)).length;
+  /* Twee pijplijnen, dus twee tellingen. De sollicitanten staan in de
+     recruitmentpijplijn (crm_leads); wie op een klanttraject loopt is een
+     kandidaat mét bordpositie. Die twee stonden in één zin onder de kop
+     "Recruitment" en linkten allebei naar Recruitment — waar je de
+     klanttrajecten niet vindt. Zelfde definitie als inPijplijn() in
+     js/performance.js, zodat beide schermen hetzelfde getal noemen. */
+  const klantTraject = cs.filter(c => CRM.faseIdx(c.fase) >= 0 && !CRM.faseIn(c.fase, CRM.DONE)).length;
   const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
   const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
   const leadsWeek = (CRM.state.leads||[]).filter(l => inBereik(l.binnen_op, wk.van, wk.tot)).length;
@@ -1163,10 +1169,14 @@ function looptRegel(){
   const seg = (mod, txt, kl='') => `<button type="button" class="loopt-i${kl}" data-mod="${h(mod)}">${h(txt)} →</button>`;
   return `<div class="loopt meta">
     ${seg('sales', `Sales: ${kansen} open kansen, ${traject} klanten in traject`)}
-    ${seg('recruitment', `Recruitment: ${openLeads} sollicitanten, ${pijp} in de pijplijn`)}
+    ${seg('recruitment', `Recruitment: ${openLeads} sollicitanten`)}
+    ${seg('pijplijn', `Klanttrajecten: ${klantTraject} lopend`)}
     ${seg('hot', `Vacatures: ${vacs.length} open (${posities} posities)`)}
     ${seg('marketing', `Marketing: ${leadsWeek} leads deze week`)}
-    ${vroeg < 3 ? seg('recruitment', `Let op: maar ${vroeg} in voorselectie of voorgesteld`, ' sig') : ''}
+    ${/* 'voorselectie' bestaat niet meer als fase; het zijn intake en
+          voorgesteld. En dit signaal telt kándidaten, dus het hoort naar
+          Kandidaten te wijzen en niet naar de leads in Recruitment. */''}
+    ${vroeg < 3 ? seg('kandidaten', `Let op: maar ${vroeg} met intake of voorgesteld`, ' sig') : ''}
   </div>`;
 }
 

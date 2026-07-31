@@ -1,0 +1,316 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLOEGGENOTEN CRM — FEEST
+   Wat je ziet als er getekend wordt. Hoort bij js/feest.js.
+
+   Twee lagen over het scherm:
+     .feest-canvas — de confetti. Vangt NOOIT een klik op.
+     .feest-laag   — het bericht. Alleen de kaart zelf is klikbaar,
+                     de rest van de laag laat klikken door.
+
+   Waarom een DONKERE kaart: de huisstijl zegt dat donkere vlakken en
+   lime spaarzaam gebruikt worden. Dertig keer per jaar is spaarzaam.
+   Op een scherm dat verder crème is springt dit er meteen uit, en het
+   is onmiskenbaar Ploeggenoten in plaats van algemene feestkleuren.
+
+   TWEE STANDEN, en dat is met opzet:
+
+   1. FEEST (de eerste ~6 seconden) — de mededeling staat MIDDEN in beeld
+      en Peter groot onderaan het midden. Een plaatsing mag het scherm
+      even overnemen; dat is het punt. Dertig keer per jaar.
+
+   2. RUST (daarna, tot iemand het wegklikt) — de mededeling glijdt naar
+      rechtsboven en wordt kleiner van aanwezigheid. Want zodra de
+      confetti is uitgeregend en Peter klaar is, is dit geen moment meer
+      maar iets wat blijft staan, en dan mag het niet over de knoppen
+      liggen waarmee gewerkt wordt. Het glijdt (met een FLIP-truc in
+      js/feest.js) in plaats van te verspringen, zodat je ziet dát het
+      hetzelfde bericht is en het niet lijkt of er iets nieuws opduikt.
+
+   Wegklikken kan in beide standen.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Boven de drawer (41) en de toast (60): het feest hoort niet half
+   achter een geopend paneel te verdwijnen. Klikken blijft mogelijk
+   omdat er geen scrim is en de canvas geen muis vangt. */
+.feest-canvas{
+  position:fixed; inset:0; z-index:90;
+  pointer-events:none;                 /* essentieel: het werk gaat door */
+  display:block;
+}
+
+/* Peter is onderaan het midden even hoog als deze waarde. De laag houdt
+   in de feeststand net zoveel onderruimte vrij, zodat de mededeling
+   erbóven staat en niet over zijn gezicht. Eén getal, twee plekken. */
+:root{ --feest-peter-h: min(48vh, 430px); }
+
+.feest-laag{
+  position:fixed; inset:0; z-index:91;
+  pointer-events:none;                 /* alleen de kaart hieronder vangt klikken */
+  display:flex; flex-direction:column; gap:12px;
+  overflow:hidden;                     /* nooit een scrollbalk over de app heen */
+  /* Feeststand: midden in beeld, met Peter zijn ruimte eronder vrij. */
+  align-items:center;
+  justify-content:center;
+  /* `safe` zorgt dat een stapel die niet pást aan de bovenkant heel
+     blijft in plaats van symmetrisch weg te lopen — anders verdwijnt de
+     kop van de bovenste kaart buiten beeld. Browsers die het niet
+     kennen negeren deze regel en houden de gewone `center`. */
+  justify-content:safe center;
+  padding:76px 20px calc(var(--feest-peter-h) + 16px);
+}
+/* --feest-peter-h wordt door js/feest.js opnieuw gezet zodra er een kaart
+   bij komt: Peter krijgt wat er onder de mededeling overblijft. Past er
+   te weinig, dan zet het script hem op 0 en verdwijnt hij; de padding
+   hierboven krimpt dan vanzelf mee. De waarde in :root is alleen de
+   startwaarde voor het eerste beeld. */
+/* Ruststand: rechtsboven, nét onder de paginakop. */
+.feest-laag.rust{
+  align-items:flex-end; justify-content:flex-start;
+  padding:76px 20px 20px;
+}
+
+/* ─── De kaart ─────────────────────────────────────────────────── */
+.feest-kaart{
+  pointer-events:auto;
+  position:relative;
+  flex:0 0 auto;        /* nooit laten krimpen: dan schuift de inhoud over elkaar heen */
+  width:min(400px, calc(100vw - 32px));
+  background:var(--dark-card);
+  color:var(--dark-txt);
+  border:1px solid var(--dark-line);
+  border-radius:var(--r-l);
+  box-shadow:var(--sh-3);
+  padding:28px 32px 24px;
+  text-align:center;
+  overflow:hidden;
+  opacity:0;
+  transform:translateY(14px) scale(.97);
+  transition:opacity .42s ease, transform .42s cubic-bezier(.16,1,.3,1);
+}
+.feest-kaart.in{ opacity:1; transform:none; }
+.feest-kaart.uit{ opacity:0; transform:translateY(-8px) scale(.99); transition-duration:.35s; }
+
+/* ─── Meer dan één bericht: één volle kaart, de rest als regel ──────
+   Drie volle kaarten onder elkaar besloegen op een 1440px-scherm bijna
+   een derde van het beeld en bleven staan tot ze stuk voor stuk waren
+   weggeklikt. Dat blokkeert het werk in plaats van het op te vrolijken.
+
+   Nu krijgt alleen de ONDERSTE (de nieuwste) de volle kaart; alles wat
+   daarboven staat vouwt samen tot één regel met de naam, de
+   accountmanager en een kruisje. Niemand raakt daarmee een plaatsing
+   kwijt — ze staan er allemaal, met naam, en ze gaan nog steeds pas weg
+   als je ze wegklikt. Klik je de volle kaart weg, dan klapt de regel
+   eronder vanzelf open tot volle kaart. Zo werk je de stapel af zonder
+   dat hij ooit een kwart scherm kost. */
+.feest-kaart:not(:last-child){
+  display:flex; align-items:center; gap:10px;
+  padding:9px 36px 9px 13px;
+  text-align:left;
+}
+.feest-kaart:not(:last-child)::before{ height:2px; }
+.feest-kaart:not(:last-child) .feest-over,
+.feest-kaart:not(:last-child) .feest-bij,
+.feest-kaart:not(:last-child) .feest-tellers,
+.feest-kaart:not(:last-child) .feest-fee,
+.feest-kaart:not(:last-child) .feest-sluit,
+.feest-kaart:not(:last-child) .feest-hand,
+.feest-kaart:not(:last-child) .feest-am-t span{ display:none; }
+.feest-kaart:not(:last-child) .feest-naam{
+  font-family:var(--body); font-weight:700; font-size:13.5px; line-height:1.25;
+  margin:0; flex:1 1 auto; min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.feest-kaart:not(:last-child) .feest-am{
+  margin:0; padding:0; border:0; gap:7px; flex:0 0 auto;
+}
+.feest-kaart:not(:last-child) .feest-am .ava{ flex:0 0 22px; width:22px; height:22px; font-size:9px; }
+.feest-kaart:not(:last-child) .feest-am-t b{ font-size:12px; font-weight:600; color:var(--dark-muted); }
+.feest-kaart:not(:last-child) .feest-x{ top:50%; right:8px; margin-top:-13px; width:26px; height:26px; font-size:15px; }
+
+/* Limestreep bovenlangs — het enige felle in de kaart, op donker dus
+   toegestaan. Kleur is hier betekenis: dít is de goede afloop. */
+.feest-kaart::before{
+  content:''; position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg, var(--olive-l), var(--lime) 55%, var(--olive-l));
+}
+
+.feest-over{
+  font-family:var(--body); font-weight:700; font-size:11px;
+  letter-spacing:1.6px; text-transform:uppercase;
+  color:var(--lime); margin-bottom:10px;
+}
+
+/* Anton, want dit is het kerncijfer van de dag. clamp + anywhere zodat
+   "Krzysztof Wiśniewski-van der Meulen" niet uit de kaart loopt. */
+.feest-naam{
+  font-family:var(--disp); font-weight:400;
+  font-size:clamp(24px, 6.2vw, 38px); line-height:1.06; letter-spacing:.4px;
+  color:#fff;
+  overflow-wrap:anywhere; hyphens:auto;
+  margin-bottom:8px;
+}
+.feest-naam.lang{ font-size:clamp(20px, 4.6vw, 27px); }
+
+.feest-bij{
+  font-family:var(--body); font-size:14.5px; line-height:1.45;
+  color:var(--dark-muted);
+}
+.feest-bij b{ color:var(--dark-txt); font-weight:600; }
+
+/* ─── De accountmanager ────────────────────────────────────────────
+   Geen voetnoot maar de tweede kop van de kaart. Dit is een compliment
+   aan een persoon: wie het feest van een collega ziet moet in één blik
+   weten wie hij moet feliciteren. */
+.feest-am{
+  display:flex; align-items:center; justify-content:center; gap:11px;
+  margin-top:18px; padding-top:16px;
+  border-top:1px solid var(--dark-line);
+  text-align:left;
+}
+.feest-am .ava{ flex:0 0 38px; width:38px; height:38px; font-size:14px; }
+.feest-am-t{ display:flex; flex-direction:column; line-height:1.2; min-width:0; }
+.feest-am-t span{
+  font-family:var(--body); font-weight:700; font-size:10px;
+  letter-spacing:1.2px; text-transform:uppercase; color:var(--dark-muted);
+}
+.feest-am-t b{
+  font-family:var(--body); font-weight:700; font-size:17px; color:#fff;
+  overflow-wrap:anywhere; margin-top:2px;
+}
+
+/* ─── De tellers ───────────────────────────────────────────────────
+   Twee getallen die oplopen naar hun eindwaarde. Bewust náást elkaar en
+   met "waarvan door <naam>" eronder: dat leest als een aandeel in wat
+   het team samen heeft staan, niet als een ranglijst. Er staat maar één
+   naam op de kaart en dat is die van de gevierde — er valt niets te
+   vergelijken. */
+.feest-tellers{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  margin-top:14px; padding-top:14px;
+  border-top:1px solid var(--dark-line);
+}
+.feest-tellers.een{ grid-template-columns:1fr; }
+.feest-tel{
+  background:rgba(255,255,255,.05); border:1px solid var(--dark-line);
+  border-radius:var(--r); padding:10px 8px 9px;
+}
+/* Anton: dit is een kerncijfer, en daar is het displaylettertype voor.
+   Vaste hoogte + tabulaire cijfers, anders springt de kaart tijdens het
+   optellen op elke cijferwissel een pixel heen en weer. */
+.feest-tel-n{
+  font-family:var(--disp); font-weight:400; font-size:30px; line-height:1.05;
+  color:var(--lime); font-variant-numeric:tabular-nums;
+}
+.feest-tel span{
+  display:block; margin-top:4px;
+  font-family:var(--body); font-size:11px; line-height:1.3; color:var(--dark-muted);
+}
+
+/* ─── De fee ───────────────────────────────────────────────────────
+   Iedereen die het feest ziet mag het bedrag zien. Kon de afzender het
+   niet berekenen, dan laat js/feest.js dit blok helemaal weg — geen
+   streepje, geen nul, geen lege plek. Bewust ingetogen: geen lime, geen
+   displaylettertype. Het feest gaat over de kandidaat en de
+   accountmanager; het bedrag is een gegeven erbij, geen kop. */
+.feest-fee{
+  margin-top:12px; padding-top:12px;
+  border-top:1px solid var(--dark-line);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.feest-fee span{
+  font-family:var(--body); font-weight:700; font-size:10px;
+  letter-spacing:1.2px; text-transform:uppercase; color:var(--dark-muted);
+}
+.feest-fee b{
+  font-family:var(--body); font-weight:700; font-size:20px; color:var(--dark-txt);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Handschrift-accent: precies één per kaart, zoals de huisstijl vraagt.
+   Links onderin, want rechtsonder zit nu de sluitknop. */
+.feest-hand{
+  position:absolute; left:18px; bottom:12px;
+  font-family:var(--hand); font-weight:600; font-size:20px;
+  color:var(--lime); opacity:.7; transform:rotate(-6deg);
+  pointer-events:none;
+}
+
+/* ─── Wegklikken ───────────────────────────────────────────────────
+   Het bericht verdwijnt niet vanzelf, dus dit is de énige manier om
+   ervan af te komen (naast Escape en een klik op de kaart zelf). Het
+   moet dus opvallen en met een vinger te raken zijn: een pill in lime
+   op donker — precies waar de huisstijl lime voor bedoeld heeft — met
+   een raakvlak van 40px hoog, ook op 375px. */
+.feest-sluit{
+  display:inline-flex; align-items:center; justify-content:center;
+  margin-top:16px; min-height:40px; padding:0 22px;
+  background:var(--lime); color:#171d08; border:0; border-radius:999px;
+  font-family:var(--body); font-weight:700; font-size:13.5px; cursor:pointer;
+  transition:filter .15s ease;
+}
+.feest-sluit:hover{ filter:brightness(1.08); }
+.feest-sluit:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+
+/* Het kruisje blijft als snelle uitweg voor de muis. Groter dan een
+   gewoon icoontje en met een zichtbare ring, zodat het als knop leest
+   en niet als versiering. */
+.feest-x{
+  position:absolute; top:10px; right:10px;
+  width:32px; height:32px; padding:0;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.06); border:1px solid var(--dark-line);
+  border-radius:999px; cursor:pointer;
+  color:var(--dark-muted); font-size:17px; line-height:1;
+  transition:background .15s ease, color .15s ease;
+}
+.feest-x:hover{ background:rgba(255,255,255,.14); color:var(--dark-txt); }
+.feest-x:focus-visible{ outline:2px solid var(--lime); outline-offset:2px; }
+
+/* ─── Peter Ploeg met het confettikanon ────────────────────────────
+   Onderaan het MIDDEN en groot: hij staat op de onderrand van het
+   scherm en schiet zijn kanon af richting de mededeling erboven. Dat is
+   het moment waar het om gaat. Als de video klaar is verdwijnt hij
+   vanzelf en glijdt de mededeling naar de hoek — dan is het scherm weer
+   van het werk.
+
+   Geen mix-blend-mode meer en geen masker om de randen te verdoezelen:
+   js/feest.js sleutelt de achtergrond er per beeld uit en tekent het
+   resultaat met een echt alfakanaal in deze canvas. Wat hier nog nodig
+   is, is alleen de plek en het formaat.
+
+   Vangt geen klikken op: er kan werk onder zitten. */
+.feest-peter{
+  position:fixed; left:50%; bottom:0; z-index:89;
+  pointer-events:none;
+  height:var(--feest-peter-h); aspect-ratio:360/482;
+  opacity:0; transform:translate(-50%, 26px);
+  transition:opacity .5s ease, transform .7s cubic-bezier(.16,1,.3,1);
+}
+.feest-peter.in{ opacity:1; transform:translate(-50%, 0); }
+.feest-peter canvas{ width:100%; height:100%; display:block; }
+
+/* ─── Smal scherm ──────────────────────────────────────────────── */
+@media (max-width:520px){
+  /* Peter kleiner: op een telefoon staat het bericht over de volle
+     breedte, en boven hem moet die kaart nog ergens kunnen staan. */
+  :root{ --feest-peter-h: min(34vh, 300px); }
+  .feest-laag{ padding:68px 12px calc(var(--feest-peter-h) + 12px); align-items:stretch; }
+  .feest-laag.rust{ padding:68px 12px 12px; }
+  .feest-kaart{ padding:24px 18px 18px; }
+  .feest-hand{ display:none; }        /* te weinig ruimte, dan liever niets */
+  .feest-sluit{ width:100%; min-height:44px; }   /* volle duimbreedte */
+  .feest-am .ava{ flex:0 0 34px; width:34px; height:34px; }
+  .feest-am-t b{ font-size:16px; }
+}
+
+/* ─── Minder beweging ──────────────────────────────────────────────
+   Wie dit aan heeft krijgt geen confetti en geen Peter (js/feest.js
+   maakt de canvas en het videovak dan niet eens aan, dus die 4,5 MB
+   wordt ook niet opgehaald) maar wél het bericht mét de cijfers — een
+   plaatsing mag je niet missen omdat je beweging hebt uitgezet. De
+   tellers staan dan meteen op hun eindwaarde. Alleen een rustige fade. */
+@media (prefers-reduced-motion: reduce){
+  .feest-kaart{ transform:none; transition:opacity .3s linear; }
+  .feest-kaart.in{ transform:none; }
+  .feest-kaart.uit{ transform:none; }
+}

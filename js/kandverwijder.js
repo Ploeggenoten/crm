@@ -118,8 +118,8 @@ function loopendeplaatsing(c){
   if(c.gestoptOp) return null;
   if(!CRM.faseIn(c.fase, PLACED_NAMEN)) return null;
   if(CRM.faseIs(c.fase, 'Contract getekend'))
-    return 'Deze kandidaat heeft getekend maar is nog niet gestart. De klant verwacht hem op de startdatum en de factuur moet nog de deur uit — zonder naam wordt dat lastig.';
-  return 'Deze kandidaat is nog aan het werk. Nazorg, de verjaardag en een eventuele vervanging binnen de garantie lopen op zijn naam; die vallen hierna stil.';
+    return 'Deze kandidaat heeft getekend maar is nog niet gestart. De klant verwacht deze persoon op de startdatum en de factuur moet nog de deur uit — zonder naam wordt dat lastig.';
+  return 'Deze kandidaat is nog aan het werk. Nazorg, de verjaardag en een eventuele vervanging binnen de garantie lopen op naam van deze kandidaat; die vallen hierna stil.';
 }
 
 const BEWAARPLICHT =

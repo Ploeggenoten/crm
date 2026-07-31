@@ -94,14 +94,6 @@ tr.rc-telang > td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
 .rc-oud-red{color:var(--red);font-weight:700}
 .rc-dub{color:var(--purple);font-weight:600}
 
-/* Eén klik en door: de vier gangbare uitkomsten na een belpoging, direct
-   onder de statuslijst. Klein en tekstueel — het zijn er vier per rij en
-   ze mogen de tabel niet domineren. */
-.rc-snel{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.rc-snelb{border:1px solid var(--line);background:var(--card-2);border-radius:999px;
-  padding:2px 9px;font-family:var(--body);font-size:11px;font-weight:600;color:var(--txt-2);cursor:pointer}
-.rc-snelb:hover{border-color:var(--olive-l);color:var(--olive);background:var(--card)}
-.bcard .rc-snel{margin-top:8px}
 .bcard .rc-koppel,.bcard .rc-move{margin-top:6px;width:100%;justify-content:center;
   padding:3px 8px;font-size:11px}
 

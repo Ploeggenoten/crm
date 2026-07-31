@@ -594,14 +594,17 @@ function tekenBuitenBord(){
   const waar = filterActief ? 'in je selectie' : 'in het systeem';
 
   if(klaarEl){
+    /* Eén regel, geen kader. Dit stond eerst als knop over de volle breedte;
+       dat las als een grijze doos in plaats van als informatie, en het week af
+       van de regel eronder die precies hetzelfde soort mededeling doet.
+       Een zin met een link erin valt genoeg op en houdt de kop rustig. */
     klaarEl.innerHTML = klaar.length ? `
-      <button class="pp-klaarknop" id="pp_klaarknop">
-        <span class="pp-klaarn num">${klaar.length}</span>
-        <span class="pp-klaart"><b>${klaar.length===1?'kandidaat is':'kandidaten zijn'} klaar om voor te stellen</b>
-          <small>Intake gehad, nog aan geen klant gekoppeld — daarom nog niet op dit bord${
-            golden ? `. Waarvan ${golden} met een gouden ster` : ''}. ${h(waar[0].toUpperCase()+waar.slice(1))}.</small></span>
-        <span class="pp-klaarga">Bekijken en filteren bij Kandidaten →</span>
-      </button>` : '';
+      <p class="pp-klaarregel">
+        <b class="num">${klaar.length}</b> ${klaar.length===1?'kandidaat is':'kandidaten zijn'}
+        <b>klaar om voor te stellen</b> — intake gehad, nog aan geen klant gekoppeld${
+          golden ? `, waarvan ${golden} met een gouden ster` : ''}.
+        <button class="lnk" id="pp_klaarknop">Bekijk ze bij Kandidaten →</button>
+      </p>` : '';
     const knop = klaarEl.querySelector('#pp_klaarknop');
     /* Meegegeven filterstand, zodat Kandidaten meteen op deze groep kan
        openen. Kent die module de sleutel (nog) niet, dan land je gewoon op

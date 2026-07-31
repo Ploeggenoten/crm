@@ -88,7 +88,14 @@
     const v = VACS[i % VACS.length];
     const geplaatst = ['Contract getekend','Gestart'].includes(fase) ? d(-(i%25)) : (fase==='Gestopt'? d(-90-i) : '');
     return {
-      id:'demo'+i, naam:rnd(VN,i)+' '+rnd(AN,i*3+1), klant:v.klant, functie:v.functie,
+      /* De achternaam schuift één plek op per blok van 25, anders leveren i en
+         i+25 dezelfde volledige naam op — er stonden zo 25 dubbele namen in de
+         demo. Gevolg: dezelfde persoon telde als juli-plaatsing én als
+         april-plaatsing die in juli stopte, waardoor de maandteller op "-3 / 8"
+         in het rood stond. Geen rekenfout, wel demodata die eruitzag als een
+         kapot scherm. */
+      id:'demo'+i, naam:VN[i%VN.length]+' '+AN[(i*7 + Math.floor(i/VN.length)) % AN.length],
+      klant:v.klant, functie:v.functie,
       type: i%9===0 ? 'Flex':'W&S', fase, datum: i%3===0 ? d(i%7) : '', tijd: i%3===0?'10:00':'',
       start: ['Contract getekend','Gestart'].includes(fase)? d(7+(i%20)) : '',
       since:d(-(10+i)), bron: rnd(['Meta','Indeed','Referral','WhatsApp'],i),
@@ -173,7 +180,10 @@
                 'Geen interesse','Videocall gepland','CV binnen','Videocall gehad',
                 'Potentieel — andere vacature','Niet geschikt'][i%12];
     return {
-      id:'lead'+i, naam:rnd(VN,i*5)+' '+rnd(AN,i*7), telefoon:'06 8765 43'+(10+i%80),
+      /* Zelfde valkuil als bij de kandidaten: i en i+25 leverden dezelfde
+         volledige naam op, waardoor "Marek Nowak" twee keer in dezelfde
+         openstaande lijst stond en het als een fout las. */
+      id:'lead'+i, naam:VN[(i*5)%VN.length]+' '+AN[(i*7 + Math.floor(i/VN.length)) % AN.length], telefoon:'06 8765 43'+(10+i%80),
       email:'', woonplaats:rnd(PL,i*3), bron:rnd(['Meta','Indeed','WhatsApp'],i), campagne:'Productie NL – juli',
       vacature_id:v.id, klant:v.klant, functie:v.functie, status:st,
       prioriteit:['Hoog','Midden','Laag'][i%3],
@@ -250,6 +260,18 @@
       cands:CANDS, clients:KLANTEN, vacs:VACS, leads:LEADS, activiteiten:ACTS,
       taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN, meldingen:MELDINGEN,
       ooSessions:OO,
+      /* Commerciële afspraken per klant. Zonder deze lijst geeft CRM.fee overal
+         `fee: null` en blijft het bedrag op de kandidaatkaart, de klantkaart en
+         Performance in de demo leeg — terwijl dat juist het cijfer is waar het
+         om draait. Percentages als HEEL getal (23 = 23%), zoals crm_afspraken. */
+      afspraken: KLANTEN.slice(0, 8).map((k, i) => ({
+        id:'afs'+i, klant:k.naam, soort:'ws',
+        fee_regels:[], fee_standaard:[23,22,25,20,23,24,22,25][i%8],
+        grondslag:{maanden:12, vt_pct:8, eju:0, toeslag:true, overig:false},
+        betaaltermijn:30, factuurmoment:'contract',
+        garantie_mnd:2, garantie_soort:'vervanging',
+        ingang:'2026-01-01', actief:true, door:'Tjeerd'
+      })),
       /* Bryan hoort erbij: ?demo=team logt als hem in. Zonder profiel bleef
    "Mijn klanten" altijd leeg, stond hij niet in de keuzelijst van het
    taakvenster en toonde "Jouw maand" per definitie 0 — precies de rol

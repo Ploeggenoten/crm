@@ -41,19 +41,11 @@
    zichtbaar en klikbaar. Bewust een rustige kaart en geen alarm: het is
    werkvoorraad, geen fout. Eén accent (olijf) op het getal. */
 .pp-klaar:not(:empty){margin-top:2px}
-.pp-klaarknop{
-  display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
-  border:1px solid var(--line);border-left:3px solid var(--olive);border-radius:var(--r);
-  background:var(--card);padding:10px 14px;font-family:var(--body);
-  transition:border-color .12s,background .12s;
-}
-.pp-klaarknop:hover{border-color:var(--olive-l);background:var(--well-2)}
-.pp-klaarn{font-family:var(--disp);font-weight:400;font-size:26px;letter-spacing:.5px;
-  color:var(--olive);line-height:1;flex:0 0 auto;min-width:34px}
-.pp-klaart{min-width:0;flex:1}
-.pp-klaart b{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
-.pp-klaart small{display:block;font-size:11.5px;font-weight:500;color:var(--muted);margin-top:2px;line-height:1.45}
-.pp-klaarga{flex:0 0 auto;font-size:12px;font-weight:600;color:var(--olive)}
+/* Eén regel tekst met een link, dezelfde vorm als de hint eronder. Geen
+   kader: het is werkvoorraad om te weten, geen knop om op te drukken. */
+.pp-klaarregel{margin:0;font-size:12.5px;line-height:1.5;color:var(--txt-2)}
+.pp-klaarregel b{color:var(--ink);font-weight:600}
+.pp-klaarregel b.num{color:var(--olive)}
 
 /* ─── Lijstweergave ───────────────────────────────────────────────
    Dezelfde selectie als het bord, maar sorteerbaar. Bewust géén
@@ -162,10 +154,6 @@
   .rc-uit{flex:1 1 auto;width:auto;padding:0 14px 24px;flex-direction:row}
   .rc-uit .label{display:none}
   .rc-uitzone{flex:1}
-  /* De "klaar om voor te stellen"-regel wordt op smal een stapel: het getal
-     en de tekst naast elkaar, de doorklik eronder. */
-  .pp-klaarknop{flex-wrap:wrap}
-  .pp-klaarga{width:100%;padding-left:48px}
   /* De tabel schuift horizontaal in .tblwrap; de kolommen die het smalst
      dragen (woonplaats-subregel, AM) mogen dan gewoon meeschuiven. */
   .pp-lijstwrap{padding-bottom:24px}

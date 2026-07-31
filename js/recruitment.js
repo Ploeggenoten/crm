@@ -587,7 +587,6 @@ function rijHtml(l){
           ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${l.status===s.k?'selected':''}>${h(s.k)}</option>`).join('')}
         </select>
       </div>
-      ${nieuw ? snelKnoppenHtml(l) : ''}
     </td>
     <td>${l.eigenaar ? `<span class="chip">${h(l.eigenaar)}</span>` : '<span class="meta">—</span>'}</td>
     <td class="n"><span class="num ${nieuw && ouderdomKlas(dg) ? 'rc-oud-'+ouderdomKlas(dg) : stil?'rc-stil':''}"
@@ -606,22 +605,14 @@ function vacCelHtml(l, v){
     <button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Koppel vacature</button>`;
 }
 
-/* Eén klik en door: de vier uitkomsten die na een belpoging in negen van de
-   tien gevallen aan de beurt zijn. De rest gaat via de statuslijst ernaast. */
-const SNEL = [
-  {s:'Gebeld — geen gehoor', lbl:'geen gehoor'},
-  {s:'Potentieel',           lbl:'potentieel'},
-  {s:'Geen interesse',       lbl:'geen interesse'},
-  {s:'Niet geschikt',        lbl:'niet geschikt'}
-];
-const snelKnoppenHtml = l => `<div class="rc-snel">${SNEL.map(k =>
-  `<button class="rc-snelb" data-snel="${h(l.id)}" data-status="${h(k.s)}" title="Zet direct op ${h(k.s)}">${h(k.lbl)}</button>`).join('')}</div>`;
+/* Hier stonden vier snelknoppen (geen gehoor / potentieel / geen interesse /
+   niet geschikt) onder elke lead op Nieuw. Eruit gehaald op 31 jul 2026: ze
+   deden precies wat de statuslijst ernaast al doet, namen twee regels in een
+   smalle kolom en braken af over twee regels. Snel wegwerken hoort in de
+   wegwerkmodus (knop "Wegwerken →"), waar één toets per lead genoeg is —
+   dat is sneller dan klikken in een lijst, en het houdt de lijst leesbaar. */
 
 function bindLeadActies(wrap){
-  CRM.$$('[data-snel]', wrap).forEach(b => b.onclick = e => {
-    e.stopPropagation();
-    zetStatus(leadById(b.dataset.snel), b.dataset.status);
-  });
   CRM.$$('[data-koppel]', wrap).forEach(b => b.onclick = e => {
     e.stopPropagation();
     koppelVacature(leadById(b.dataset.koppel));
@@ -837,7 +828,6 @@ function leadKaartHtml(l){
       ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>${
           wa?`<a class="rc-tel rc-wa" href="${h(wa)}" target="_blank" rel="noopener" title="WhatsApp">wa</a>`:''}`
       : `<span class="meta">geen telefoonnummer</span>`}</div>
-    ${nieuw ? snelKnoppenHtml(l) : ''}
     ${!v ? `<button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Koppel vacature</button>` : ''}
     <button class="btn ghost sm rc-move" data-lstat="${h(l.id)}">Verplaatsen naar status…</button>
   </div>`;
@@ -2132,6 +2122,20 @@ async function bewaarFase(c, fase, extra){
   const ok = await bewaarKand(c.id, patch);
   if(!ok) return;
   await CRM.logActiviteit('kandidaat', c.id, 'fase', `${c.fase} → ${fase}`);
+  /* Een plaatsing is feest, voor iedereen die nu ingelogd is — en voor wie
+     later inlogt (js/feest.js). Hier en nergens anders: élke fasewissel komt
+     langs deze functie, of hij nu van het bord komt (slepen), uit de
+     fase-picker of uit het formulier. Eén regel dekt alle ingangen, ook een
+     die er later bij komt.
+
+     De toets is "PLACED in, PLACED niet uit" en niet `fase === 'Contract
+     getekend'`: een getekend contract met een startdatum van vandaag of
+     eerder gaat meteen door naar Gestart, en dát is ook de plaatsing.
+     Andersom viert Contract getekend → Gestart niet nog een keer.
+     `c` is hier nog de kandidaat van vóór de wissel, dus c.fase is de oude. */
+  if(CRM.PLACED.includes(fase) && !CRM.PLACED.includes(c.fase) && CRM.feest)
+    CRM.feest.getekend({id:c.id, kandidaat:c.naam, klant:c.klant,
+                        functie:c.functie, door:CRM.me()});
   CRM.toast(`${c.naam}: ${fase}`,'ok');
   alles();
 }

@@ -427,7 +427,12 @@
   const isGeplaatst = c => CRM.faseIn(c.fase, CRM.PLACED)
     || (CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp);
 
-  const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','Intake gepland','Doorgeschoten'];
+  /* De recruitmentpijplijn is op 31 jul 2026 uitgebreid: 'Intake gepland' is
+   vervallen en er kwamen vier tussenstappen bij. Zonder die stappen telde
+   Marketing structureel te weinig gekwalificeerde leads per campagne — een
+   lead die op 'CV binnen' stond was in deze telling onzichtbaar. */
+const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevraagd',
+                        'CV binnen','Videocall gepland','Videocall gehad','Doorgeschoten'];
   const AFGEVALLEN_TEL = ['Geen interesse','Niet geschikt'];
   const NIET_BEREIKT   = 'Gebeld — geen gehoor';
   const STATUS_NAMEN   = CRM.LEAD_STATUS.map(s => s.k);
