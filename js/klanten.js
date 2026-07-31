@@ -235,16 +235,19 @@ function zorgFee(){
 }
 
 /* ─── Commerciële afspraken (crm_afspraken) ───────────────────────
-   PRIVACY — hier ligt de grens. Deze tabel bevat fee-percentages en
-   is in Supabase afgeschermd tot Tjeerd (policy afspraken_owner_only,
-   net als de fin_*-tabellen). Zonder CRM.canSeeMoney() vragen we hem
-   dus niet eens op: een mislukte query die een lege lijst oplevert is
-   verwarrender dan helemaal niets tonen. */
+   PRIVACY — de grens ligt hier sinds 31 jul 2026 anders. Deze tabel
+   bevat de fee-percentages per klant, en die mag het hele team LEZEN
+   (besluit Tjeerd: "de fee mag zichtbaar zijn voor iedereen, omzet per
+   klant ook prima"). WIJZIGEN blijft aan de eigenaar: een percentage is
+   een onderhandelingsresultaat, geen veld dat je even bijwerkt.
+   In de database volgt het dezelfde lijn (policy afspraken_team).
+   Winst, marge, cashflow en banksaldo zitten in de fin_*-tabellen en
+   blijven wél volledig afgeschermd. */
 let _afsprGeladen = false, _afsprTabelMist = false;
 const TABEL_WEG = e => /does not exist|schema cache|relation/i.test(e && e.message || '');
 function zorgAfspraken(){
   if(!Array.isArray(CRM.state.afspraken)) CRM.state.afspraken = [];
-  if(!CRM.canSeeMoney() || _afsprGeladen) return;
+  if(!CRM.magOpbrengstZien() || _afsprGeladen) return;
   _afsprGeladen = true;
   /* In demo bestaat de tabel nog niet — dan lokaal, zodat opslaan en
      teruglezen wél te testen is. */
@@ -392,6 +395,8 @@ async function verwijderRij(tabel, veld, id){
 /* Afspraken apart: eigen tabel, eigen afscherming, en in demo geen
    database maar localStorage (de tabel bestaat daar niet). */
 async function bewaarAfspraak(rij, bestaat){
+  /* Lezen mag het team, schrijven niet — zie de toelichting bij
+     zorgAfspraken(). De database weigert het ook. */
   if(!CRM.canSeeMoney()) return;
   const lijst = CRM.state.afspraken || (CRM.state.afspraken = []);
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
@@ -877,7 +882,7 @@ function gegevensHtml(k){
    zien (welke velden er nog ontbreken) komt uit
    CRM.fee.watMist(), en dat is bewust bedrag- en percentageloos.
    ═══════════════════════════════════════════════════════════════ */
-const feeAan = () => CRM.canSeeMoney() && !!CRM.fee;
+const feeAan = () => CRM.magOpbrengstZien() && !!CRM.fee;
 
 function afspraakBlokHtml(){
   if(!feeAan()) return '';

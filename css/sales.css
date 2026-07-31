@@ -65,6 +65,75 @@
 table.tbl tbody tr.s-dicht td{color:var(--muted)}
 table.tbl tbody tr.s-dicht td:first-child{font-weight:500}
 
+/* ─── Activiteit: stuurcijfers over wat er gedaan is ────────── */
+/* Kaarten onder elkaar met dezelfde tussenruimte, zodat de HTML geen
+   losse style-attributen hoeft te dragen. */
+.s-meting .s-kaart{margin-top:18px}
+.s-perbar{margin-bottom:16px}
+.s-tegeluitleg{margin-top:10px;max-width:680px}
+.s-noot{margin-top:14px}
+.s-noot div + div{margin-top:4px}
+
+/* Zes tegels: drie naast elkaar op een laptop, zes op een breed scherm,
+   twee op een telefoon. Altijd een deler van zes, zodat er nooit één
+   losse tegel onder de rij bungelt. */
+.grid.c3.s-kpi.s-kpi6{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (min-width:1500px){ .grid.c3.s-kpi.s-kpi6{grid-template-columns:repeat(6,minmax(0,1fr))} }
+
+/* Weekgrafiek — staafjes van HTML, geen bibliotheek. Boven elke staaf
+   staat het getal; een balk zonder getal is een plaatje. */
+.s-strook{overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+.s-kolommen{display:flex;gap:8px;align-items:flex-end;min-width:100%}
+.s-gkol{flex:1 1 0;min-width:34px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.s-gtop{font-size:11.5px;color:var(--txt-2);height:16px;line-height:16px}
+.s-gtop.nul{color:var(--muted);opacity:.45}
+.s-gbar{width:100%;height:96px;background:var(--card-2);border-radius:5px;display:flex;align-items:flex-end;overflow:hidden}
+.s-gbar > i{display:block;width:100%;background:var(--olive-l);border-radius:5px 5px 0 0}
+/* De lopende week is nog niet vol — gestreept, zodat je hem niet als
+   een dip leest. */
+.s-gkol.loopt .s-gbar > i{
+  background:repeating-linear-gradient(135deg,var(--olive-l) 0 5px,var(--card-2) 5px 10px);
+}
+.s-glbl{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.25}
+.s-glbl b{display:block;font-weight:600;color:var(--txt-2)}
+/* Vijf maten passen op een telefoon niet naast elkaar. De pil zelf mag niet
+   omvallen (dan verspringt de actieve knop), dus schuift hij binnen een
+   eigen strookje in plaats van de kaart breder te maken. */
+.s-maatwrap{max-width:100%;min-width:0;overflow-x:auto;padding-bottom:2px}
+.s-maat{flex-wrap:nowrap}
+.s-maat button{white-space:nowrap}
+
+/* Balkkolom in een tabel: krijgt de rek, de getallen blijven smal. */
+table.tbl th.s-balkkop{width:34%}
+table.tbl td.s-balk{padding-left:10px;padding-right:16px}
+table.tbl td.s-balk .bar{height:6px;min-width:40px}
+
+/* Trechter en "blijft liggen" naast elkaar (.grid.c2 vouwt zelf om). */
+.s-onder{margin-top:18px}
+.s-onder .s-kaart{margin-top:0}
+
+/* Blijft liggen: drie groepen met elk hooguit zes regels. Een regel is
+   een knop, want klikken opent de kaart — dan moet je er ook met Tab bij. */
+.s-lig{display:flex;flex-direction:column;gap:16px}
+.s-liglok + .s-liglok{border-top:1px solid var(--line);padding-top:14px}
+.s-ligrij{
+  display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;
+  background:none;border:none;border-bottom:1px solid var(--line);
+  padding:8px 2px;cursor:pointer;font-family:var(--body);font-size:13.5px;color:var(--txt);
+}
+.s-ligrij:last-of-type{border-bottom:none}
+.s-ligrij:hover{background:var(--card-2)}
+.s-ligrij b{font-weight:600;flex:0 1 auto;min-width:0}
+.s-ligrij .meta{flex:1 1 auto;min-width:0;text-align:right}
+
+@media (max-width:900px){
+  .grid.c3.s-kpi.s-kpi6{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .s-glbl span{display:none}
+  .s-kolommen{gap:5px}
+  .s-ligrij{flex-direction:column;gap:2px}
+  .s-ligrij .meta{text-align:left}
+}
+
 /* ─── Leadradar ─────────────────────────────────────────────── */
 /* Filterbalk: statuschips links, bron en zoekveld rechts. */
 .r-bar{margin:18px 0 12px}

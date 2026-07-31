@@ -31,7 +31,7 @@
    `crm_afspraken` bevat fee-percentages en is in Supabase afgeschermd
    tot Tjeerd (policy `afspraken_owner_only`). Alles in dit bestand dat
    een bedrag of een percentage teruggeeft is dus alleen zinvol achter
-   `CRM.canSeeMoney()`. ÉÉN functie is bewust de uitzondering:
+   `CRM.magOpbrengstZien()`. ÉÉN functie is bewust de uitzondering:
    `watMist()` — die vertelt de accountmanager welke velden nog ontbreken
    en geeft daarom nooit een bedrag of percentage terug.
    ═══════════════════════════════════════════════════════════════ */
@@ -323,8 +323,8 @@ function watMist(kandidaat, afspraak){
   /* Weet deze gebruiker überhaupt of er een afspraak is? Zo niet, dan
      rekenen we met de standaardgrondslag uit de overeenkomst en zwijgen
      we over de afspraak — anders krijgt elke AM een vals alarm. */
-  const magAfspraakZien = typeof CRM !== 'undefined' && typeof CRM.canSeeMoney === 'function'
-    ? CRM.canSeeMoney() : false;
+  const magAfspraakZien = typeof CRM !== 'undefined' && typeof CRM.magOpbrengstZien === 'function'
+    ? CRM.magOpbrengstZien() : false;
   const a = normaliseer(magAfspraakZien ? afspraak : null);
   const g = a.er ? a.grondslag : STANDAARD_GRONDSLAG;
 
@@ -414,12 +414,13 @@ function bereken(kandidaat, afspraak){
 
 /* ═══════════════════════════════════════════════════════════════
    5. DE JUISTE AFSPRAAK ERBIJ ZOEKEN
-   Leest alleen uit `CRM.state.afspraken`. Die lijst wordt uitsluitend
-   gevuld als `CRM.canSeeMoney()` waar is (zie js/klanten.js), en deze
-   functie controleert dat nog een keer: geen rechten → altijd null.
+   Leest alleen uit `CRM.state.afspraken`. Die lijst is sinds 31 jul 2026
+   voor het hele team leesbaar (besluit Tjeerd: de fee mag iedereen zien,
+   alleen winst en cashflow niet), zowel in de database als hier. De
+   controle blijft staan voor wie niet is ingelogd.
    ═══════════════════════════════════════════════════════════════ */
 function voorKlant(klant, op){
-  if(typeof CRM === 'undefined' || typeof CRM.canSeeMoney !== 'function' || !CRM.canSeeMoney()) return null;
+  if(typeof CRM === 'undefined' || typeof CRM.magOpbrengstZien !== 'function' || !CRM.magOpbrengstZien()) return null;
   const naam = String(klant || '').trim().toLowerCase();
   if(!naam) return null;
   const alle = (CRM.state && Array.isArray(CRM.state.afspraken) ? CRM.state.afspraken : [])

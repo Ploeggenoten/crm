@@ -122,6 +122,142 @@
 .pf-naam.neg em{color:var(--red)}
 .pf-naam.nu em{color:var(--amber);font-weight:600}
 
+/* ═══ HET JAAR — burn-up naar het jaardoel ═════════════════════════
+   Zelfde staafidioom als de maandtrend hierboven (kolom, streepje voor het
+   tempo, cijfer eronder), zodat het als hetzelfde systeem leest. Verschil:
+   de staaf is hier CUMULATIEF, dus hij loopt op naar het jaardoel, en de
+   maanden die nog moeten komen hebben alleen een streepje.               */
+.pf-jrkols{display:flex;align-items:flex-end;gap:6px}
+.pf-jrkol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:7px}
+.pf-jrarea{position:relative;display:flex;align-items:flex-end;justify-content:center;width:100%}
+.pf-jrarea > i{display:block;width:22px;max-width:70%;border-radius:3px 3px 0 0;background:var(--olive-l)}
+.pf-jrarea .pf-tick{position:absolute;left:6%;right:6%;height:0;border-top:1px dashed var(--line-2)}
+.pf-jrn{font-size:12.5px;color:var(--ink);white-space:nowrap}
+/* Maanden die nog moeten komen: het cijfer is dáár het tempo, niet een
+   resultaat. Gedempt, zodat je die twee nooit door elkaar haalt. */
+.pf-jrn.toek{color:var(--muted);font-weight:500}
+.pf-jrklant{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.pf-jrklant .meta{flex:1;min-width:220px;line-height:1.5}
+.pf-jrklant b{color:var(--ink)}
+
+/* Deze twee stappen staan hier en niet bij de media queries hierboven: die
+   komen in dit bestand vóór de regels die ze moeten overschrijven, en dan
+   wint bij gelijke specificiteit de laatste — het overschrijven deed dus
+   niets. Bij twaalf kolommen op een telefoon is dat meteen zichtbaar. */
+@media (max-width:760px){
+  .pf-jrkols{gap:3px}
+  .pf-jrn{font-size:11px}
+  .pf-jrkol .pf-mnd{font-size:10px}
+}
+/* Een jaardoel van drie cijfers (100+) past bij 11px net niet meer in een
+   kolom van 22px; dan schuiven de maanden uit elkaar. */
+@media (max-width:420px){
+  .pf-jrkols{gap:2px}
+  .pf-jrn{font-size:10px}
+}
+
+/* ═══ PER KLANT — omzet en plaatsingen per klant ═══════════════════
+   Geen grafiekbibliotheek in dit project (en die komt er ook niet), dus
+   alles hier is HTML met een breedte in procenten. Voordeel: het werkt
+   zonder JavaScript-animatie, schaalt mee met de kolom en is met
+   ctrl-F te doorzoeken. Elke staaf heeft zijn waarde als tekst ernaast —
+   een balk zonder getal is een plaatje, geen cijfer.                   */
+
+.pf-klant .pf-kseg{margin-left:4px}
+/* De bronregel is uitleg, geen alarm: een blauw infovlak zou een tweede
+   accent op een scherm zijn dat er al één heeft (olijf). Daarom neutraal. */
+.note.info.pf-bron{background:var(--well);border-color:var(--line);color:var(--txt-2);max-width:900px}
+.pf-bron b{color:var(--ink)}
+
+/* Onder 1500px staat alles onder elkaar: de rangschikking is de lange lijst
+   waar het om draait, concentratie en ontwikkeling erna. Vanaf 1500px komen
+   die twee náást de rangschikking te staan in plaats van dat de staven
+   worden uitgerekt — zie de breedteladder onderaan dit bestand. */
+.pf-klantgrid{display:flex;flex-direction:column;gap:16px}
+.pf-klantzij{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+
+/* ─── Rangschikking ─────────────────────────────────────────────── */
+.pf-rang{display:flex;flex-direction:column}
+.pf-rr{display:grid;width:100%;text-align:left;cursor:pointer;
+  grid-template-columns:24px minmax(90px,1.2fr) minmax(60px,2fr) auto;
+  grid-template-areas:"nr naam bar waarde" ". sub sub sub";
+  align-items:center;gap:2px 12px;padding:10px 2px;
+  background:none;border:none;border-bottom:1px solid var(--line);font-family:var(--body)}
+.pf-rang .pf-rr:last-child{border-bottom:none}
+.pf-rr:hover .pf-rnaam{color:var(--olive)}
+.pf-rnr{grid-area:nr;font-size:11.5px;color:var(--muted);text-align:right}
+.pf-rnaam{grid-area:naam;font-size:13.5px;font-weight:600;color:var(--txt);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-rbar{grid-area:bar;height:9px;background:var(--well-2);border-radius:99px;overflow:hidden}
+.pf-rbar > i{display:block;height:100%;background:var(--olive-l);border-radius:99px}
+.pf-rw{grid-area:waarde;font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;text-align:right}
+.pf-rsub{grid-area:sub;font-size:11.5px}
+.pf-rsub .pf-let{color:var(--amber)}
+.pf-meer{align-self:flex-start;margin-top:14px}
+.pf-nul{margin:14px 0 0}
+
+/* Klanten zonder berekenbare fee. Zichtbaar en met reden, maar buiten de
+   optelling — als € 0 in de rangschikking zouden ze onterecht onderaan
+   belanden en dan lijkt een goede klant een slechte. */
+.pf-onbekend{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.pf-onbekend .label{margin-bottom:8px}
+.pf-onbekend > p{margin:10px 0 0;line-height:1.5;max-width:760px}
+.pf-onb{display:flex;align-items:baseline;justify-content:space-between;gap:12px;width:100%;
+  background:none;border:none;border-bottom:1px solid var(--line);padding:7px 2px;cursor:pointer;
+  font-family:var(--body);font-size:13px;font-weight:600;color:var(--txt-2);text-align:left}
+.pf-onb:last-of-type{border-bottom:none}
+.pf-onb:hover{color:var(--olive)}
+.pf-onb em{font-style:normal;font-weight:500;font-size:11.5px;color:var(--muted);text-align:right}
+
+/* ─── Concentratie: één balk, vier groepen, één accent in vier sterktes.
+   Vier verschillende kleuren zouden hier betekenis suggereren die er niet
+   is: het is één grootheid, opgedeeld naar rangorde. Dus dezelfde olijf,
+   steeds lichter. ────────────────────────────────────────────────── */
+.pf-concbar{display:flex;height:26px;border-radius:var(--r-s);overflow:hidden;background:var(--well-2)}
+.pf-concbar > i{display:block;height:100%;background:var(--olive-l);border-right:1px solid var(--card)}
+.pf-concbar > i:last-child{border-right:none}
+.pf-concbar > i.s1{background:var(--olive)}
+.pf-concbar > i.s3{opacity:.62}
+.pf-concbar > i.s4{opacity:.34}
+.pf-conclegend{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:9px}
+.pf-conclegend li{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--txt-2)}
+.pf-conclegend li > span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-conclegend li > b{font-size:13px;color:var(--ink);min-width:38px;text-align:right}
+.pf-conclegend li > em{font-style:normal;min-width:78px;text-align:right}
+.pf-conclegend i{flex:0 0 auto;width:10px;height:10px;border-radius:3px;background:var(--olive-l)}
+.pf-conclegend i.s1{background:var(--olive)}
+.pf-conclegend i.s3{opacity:.62}
+.pf-conclegend i.s4{opacity:.34}
+.pf-risico{margin-top:18px}
+
+/* ─── Groei en terugloop ────────────────────────────────────────── */
+.pf-ontw2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px}
+.pf-ontwkol .label{margin-bottom:6px}
+.pf-ontw{display:grid;grid-template-columns:1fr auto;grid-template-areas:"naam delta" "sub delta";
+  align-items:center;gap:0 12px;width:100%;background:none;border:none;
+  border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer;
+  font-family:var(--body);text-align:left}
+.pf-ontw:last-child{border-bottom:none}
+.pf-ontw > span{grid-area:naam;font-size:13px;font-weight:600;color:var(--txt);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-ontw > em{grid-area:sub;font-style:normal;font-size:11.5px;color:var(--muted)}
+.pf-ontw > .num{grid-area:delta;font-size:13.5px;white-space:nowrap}
+.pf-ontw:hover > span{color:var(--olive)}
+
+/* De klanttabel heeft elf kolommen; op smalle schermen scrolt .tblwrap al
+   horizontaal. Zonder deze rem wordt de klantnaam samengeperst tot twee
+   letters per regel terwijl er rechts nog ruimte is. */
+.pf-klant table.tbl th:first-child,.pf-klant table.tbl td:first-child{min-width:150px}
+
+@media (max-width:620px){
+  /* Naam en bedrag boven elkaar met de balk eronder: op 375px is er geen
+     kolom over voor een balk náást een bedrag van acht tekens. */
+  .pf-rr{grid-template-columns:24px 1fr auto;
+         grid-template-areas:"nr naam waarde" ". bar bar" ". sub sub";gap:5px 10px}
+  .pf-conclegend li > em{display:none}
+}
+
 /* ─── Breed scherm ───────────────────────────────────────────────
    De rem van 1240px verdwijnt vanaf 1500px. Anders dan bij het dashboard is
    uitrekken hier wél winst: elk blok is een grid dat kolommen bijzet
@@ -139,6 +275,13 @@
   .pf-area > i{width:18px}
   .pf-funnel{max-width:1000px}
   .pf-fl{flex:0 0 190px}
+  /* Een rangschikkingsbalk van anderhalve meter zegt niets meer dan een van
+     zevenhonderd pixels. De winst van extra breedte zit dus niet in langere
+     staven maar in méér naast elkaar: de rangschikking links, concentratie
+     en ontwikkeling rechts. Zo blijft er ook rechts geen strook leeg. */
+  .pf-klantgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);
+    align-items:start;gap:16px}
+  .pf-klantzij{grid-template-columns:1fr}
 }
 /* ≥1900px (teamscherm) heeft Performance geen eigen stap nodig: elk blok is
    al een auto-fit-grid of een tabel, die zetten er vanzelf kolommen bij.

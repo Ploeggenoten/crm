@@ -1,24 +1,44 @@
 /* ═══════════════════════════════════════════════════════════════
    MODULE: MARKETING
    Wat levert het marketinggeld op, en wat moet er vandaag gebeuren?
-   Zes rustige weergaven:
+   Vijf rustige weergaven:
      1. Prestatie — Meta-advertenties + waakhond-adviezen
      2. Rendement — cohorten: wat leverden de leads van maand X op?
      3. Content   — gepland, gepubliceerd, geleerd + het werk dat openstaat
      4. Kanalen   — waar posten we, met welk weekdoel, en werkt dat
-     5. Ideeën    — weekthema's, de ideeënbank en wat elders viraal gaat
-     6. Radar     — open vacatures zonder content of advertentie
+     5. Vacatures — wat moet er nog online, en wat krijgt geen instroom?
    Bron: de bestaande mkt_*-tabellen, dezelfde database als het
    marketingbord. Schrijven doen we alleen waar dat het werk echt
-   vooruit helpt: besluiten, kanalen, weekthema's, taken en een idee
-   op het bord zetten. De composer, media-upload, automatisch
-   publiceren en de AI-prompts blijven in het marketingbord — die
-   dupliceren we hier bewust niet.
+   vooruit helpt: besluiten, kanalen en taken. De composer,
+   media-upload, automatisch publiceren en de AI-prompts blijven in het
+   marketingbord — die dupliceren we hier bewust niet.
+
+   WAT ER OP 31 JUL 2026 AF IS GEGAAN, en waarom (Tjeerd: "als je iets
+   toevoegt, moet er iets af"):
+   · Het tabblad Ideeën — weekthema's, ideeënbank, afkijkbank en de
+     spieklijst. Dat was vaste, met de hand geschreven inspiratie die
+     nooit meebewoog met de data; de afkijkbank noemde zichzelf zelfs
+     "trend van nú" en verouderde dus vanzelf. Bedenken en schrijven
+     hoort in het marketingbord, sturen hoort hier. De weekthema's
+     staan als configregel in mkt_ad_besluiten en worden daar beheerd.
+   · De tabel "Per klant" op Prestatie. Rendement heeft ook een tabel
+     "Per klant", met betere cijfers (echte CRM-leads en plaatsingen in
+     plaats van Meta's leadacties). Twee tabellen met dezelfde naam en
+     andere uitkomsten is precies hoe een dashboard ongeloofwaardig
+     wordt. Filteren op klant kan nog steeds, via de filterbalk.
+   · Kliks, CPC, CTR en impressies uit de tabellen. Die cijfers zijn
+     bekend onbetrouwbaar (de synchronisatie rekent met álle kliks in
+     plaats van doorkliks) en stonden vier keer op één scherm. Ze staan
+     nu nog op één plek: het kengetal bovenaan, met de kanttekening
+     eronder. De waakhond blijft er wél mee signaleren — daar is het
+     een signaal, geen stuurgetal.
+   · De regel "grootste weglek" onder de trechter. Vervangen door
+     "Advertentie of opvolging?", dat dezelfde vraag beter beantwoordt.
 
    Advertentiekosten zijn niet vertrouwelijk: het hele team ziet de
-   uitgaven, budgetten en de kosten per lead en per klik. Eén weergave
-   dus, geen rechtenpoort. Fee, marge, omzet en factuurbedragen komen uit
-   de fin_*-tabellen, worden hier niet gelezen, en blijven in Finance en
+   uitgaven, budgetten en de kosten per lead. Eén weergave dus, geen
+   rechtenpoort. Fee, marge, omzet en factuurbedragen komen uit de
+   fin_*-tabellen, worden hier niet gelezen, en blijven in Finance en
    Performance achter CRM.canSeeMoney() staan.
    ═══════════════════════════════════════════════════════════════ */
 (function(){
@@ -42,7 +62,7 @@
     cohort:'', kSort:{k:'spend', dir:-1}, vSort:{k:'spend', dir:-1},
     drill:new Map(), uitleg:false,
     lbQ:'', lbK:'',                 // zoek + kanaalfilter in de learnings-bibliotheek
-    ideeSet:[], afkSet:[],          // de nu getoonde greep uit de inspiratiebanken
+    vacAlles:false,                 // Vacatures: ook de vacatures tonen die alles hebben
     badge:0, mount:null, actiesEl:null
   };
 
@@ -59,11 +79,12 @@
   const DAGKORT = ['zo','ma','di','wo','do','vr','za'];
   const DAGNAAM = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 
-  /* Adressen uit de database zijn gebruikersinvoer. Alleen http(s) mag in een
-     href; alles anders (javascript:, data:) wordt een lege string en dus geen
-     link. Zelfde poort als in kandidaten.js en klanten.js. */
-  const veiligeUrl = u => { const s = String(u||'').trim(); return /^https?:\/\//i.test(s) ? s : ''; };
-  /* Kanaalkleuren zijn ook gebruikersinvoer — ze komen uit een kleurkiezer in
+  /* veiligeUrl() stond hier voor de spieklijst op het tabblad Ideeën. Dat
+     tabblad is weg en er gaat op dit scherm geen adres uit de database meer in
+     een href, dus de poort is met de deur mee verdwenen. Komt er ooit weer een
+     link uit gebruikersinvoer, zet hem dan terug (zie kandidaten.js).
+
+     Kanaalkleuren zijn wél gebruikersinvoer — ze komen uit een kleurkiezer in
      het marketingbord en gaan als inline stijl het scherm op. Alleen een echte
      hexkleur mag erdoor; de rest valt terug op een token uit base.css, zodat
      niemand via de database eigen CSS de app in schrijft. */
@@ -232,8 +253,16 @@
         : ' Herlaad de pagina. Blijft dit staan, dan mag dit account de marketingtabellen niet lezen en moet dat in Supabase goedgezet worden.'}
       ${m ? `<span class="meta" style="display:block;margin-top:5px">Technische melding: ${h(m)}</span>` : ''}</div>`;
   }
+  /* De teller in de zijbalk telt alleen werk dat op déze persoon wacht:
+     advertentie-adviezen, posts zonder resultaat, open taken en de vacatures
+     die nog op de website moeten. Vacatures zonder content of advertentie
+     staan er bewust níét bij — dat is een afleiding op namen (zie
+     vacatureWerk) en te zwak om iemand elke dag een cijfer voor te geven. */
   function telBadge(){
-    try{ M.badge = adviezen().length + agentAdviezen().length + nagPosts().length + openTaken().length; }
+    try{
+      M.badge = adviezen().length + agentAdviezen().length + nagPosts().length
+              + openTaken().length + vacatureWerk().online.length;
+    }
     catch(e){ M.badge = 0; }
     CRM.navBadges();
   }
@@ -724,29 +753,96 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
                           && CRM.dagenGeleden(p.datum) >= 2);
   }
 
-  /* ═══ 5. VACATURE-RADAR ══════════════════════════════════════ */
+  /* ═══ 5. VACATURES: WAT VRAAGT OM WERK VAN DE MARKETEER? ═════
+     Dit verving de oude "vacature-radar". Die liet alleen zien welke open
+     vacature géén content en géén advertentie had — een aftreksom, en het
+     antwoord op maar één van de drie vragen die Bryan 's ochtends heeft.
+
+     Sinds 31 jul 2026 staat er in de database ook bij of een vacature op de
+     website staat (vacatures.web_status) en welke informatie de AM daarvoor
+     heeft aangeleverd. Daar hing nog geen lijst aan: de melding kwam binnen,
+     en daarna moest je hem terugzoeken. Deze weergave is die lijst — per open
+     vacature de drie kanalen waarlangs instroom kan komen:
+       website · content · advertentie
+     Het websitedeel is werk dat Bryan zélf doet, dus dat staat vooraan.
+
+     De koppeling van content en advertenties aan een vacature is een
+     AFLEIDING op namen, geen vastgelegde verwijzing: een post draagt de tekst
+     "klant — functie" en een advertentieset heet naar de functie. Dat staat
+     ook onder de tabel, want een afleiding die als feit wordt gelezen is
+     erger dan geen cijfer. */
   const norm = s => String(s||'').toLowerCase();
-  function radar(dagen = 14){
+
+  /* Wat er in de vacature moet staan voordat er een tekst van te maken valt.
+     Deze lijst is een KOPIE van VAC_INFOVELDEN in js/klanten.js — dat bestand
+     is van een andere module, dus we kunnen hem niet delen. Zolang dat zo is
+     moeten beide lijsten bij een wijziging mee; zie het verzoek onderaan dit
+     bestand om hem naar js/data.js te verhuizen. */
+  const VAC_INFOVELDEN = [
+    {k:'werktijden',     lbl:'werktijden'},
+    {k:'ploegendienst',  lbl:'ploegendienst'},
+    {k:'contractvorm',   lbl:'contractvorm'},
+    {k:'eisen',          lbl:'ervaring en certificaten'},
+    {k:'bereikbaarheid', lbl:'bereikbaarheid'},
+    {k:'over_bedrijf',   lbl:'over het bedrijf'},
+    {k:'waarom_hier',    lbl:'waarom hier werken'},
+    {k:'salaris',        lbl:'salarisindicatie', vul:v => v.sal_min != null || v.sal_max != null}
+  ];
+  const vacInfo = v => {
+    const r = v || {};
+    const mist = VAC_INFOVELDEN.filter(f => f.vul ? !f.vul(r) : !String(r[f.k]||'').trim());
+    return {mist, klaar:VAC_INFOVELDEN.length - mist.length, totaal:VAC_INFOVELDEN.length};
+  };
+  /* Acht labels achter elkaar leest niemand. Noem er hooguit drie en tel de
+     rest op — zelfde regel als op de klantkaart. */
+  const mistTekst = (info, max = 3) => info.mist.length <= max
+    ? info.mist.map(x => x.lbl).join(', ')
+    : info.mist.slice(0, max).map(x => x.lbl).join(', ') + ` en nog ${info.mist.length - max}`;
+
+  /* De websitekolommen komen pas in de database als de wijziging in
+     supabase/nog-te-draaien.sql gedraaid is. Zolang ze er niet zijn laten we
+     de websitekolom weg en zeggen we dat erbij — een lege kolom die "nog niet
+     online" suggereert zou werk verzinnen dat er niet is. */
+  const heeftWebVelden = () => CRM.demo
+    || (CRM.state.vacs||[]).some(v => v && 'web_status' in v);
+
+  const VAC_DAGEN = 14;             // venster waarin content en advertenties meetellen
+  function vacatureWerk(dagen = VAC_DAGEN){
     const cut = vanaf(dagen);
+    const web = heeftWebVelden();
     /* De advertentiestructuur is campagne = klant, advertentieset = functie,
        advertentie = hook. Zo matchen we ook: functie op de set, klant op de campagne. */
     const advRijen = M.meta.filter(r => (r.datum||'') >= cut)
       .map(r => ({fn: norm((r.advertentieset||'') + ' ' + (r.advertentie||'')),
                   kl: norm((r.campagne||'') + ' ' + (r.advertentieset||''))}));
-    return (CRM.state.vacs||[])
+    const rijen = (CRM.state.vacs||[])
       .filter(v => !v.status || v.status === 'Open')
       .map(v => {
         const sleutel = `${v.klant} — ${v.functie}`;
         const content = M.posts.filter(p => p.vacature === sleutel &&
-          ((p.datum||'') >= cut || ['Script klaar','Ingepland'].includes(p.fase)));
+          ((p.datum||'') >= cut || ['Script klaar','Ingepland'].includes(p.fase))).length;
         const woorden = norm(v.functie).split(/[^a-z]+/).filter(w => w.length >= 5).map(w => w.slice(0,5));
         const adv = advRijen.some(t => woorden.some(w => t.fn.includes(w))
                                     || (v.klant && t.kl.includes(norm(v.klant))));
-        return {v, sleutel, content:content.length, adv,
+        /* Drie standen uit klanten.js: 'Nog niet online', 'Staat online',
+           'Niet nodig'. Alleen de eerste is werk. */
+        const stand = web ? (v.web_status || 'Nog niet online') : '';
+        const webGat = web && stand === 'Nog niet online';
+        const info = vacInfo(v);
+        return {v, sleutel, content, adv, stand, webGat, info,
+                /* Klaar om te schrijven, of wacht deze vacature nog op de AM? */
+                wacht: webGat && info.mist.length > 0,
+                gaten: (webGat?1:0) + (content?0:1) + (adv?0:1),
                 dagenOpen: v.aangemaakt ? CRM.dagenGeleden(v.aangemaakt) : null};
-      })
-      .filter(x => !x.content && !x.adv)
-      .sort((a,b) => (b.dagenOpen||0) - (a.dagenOpen||0));
+      });
+    /* Website eerst — dat is het eigen werk van de marketeer. Daarna de
+       vacature die het langst openstaat: die kost de meeste tijd. */
+    rijen.sort((a,b) => (b.webGat?1:0) - (a.webGat?1:0)
+                     || b.gaten - a.gaten
+                     || (b.dagenOpen||0) - (a.dagenOpen||0));
+    return {rijen, web, open:rijen.length,
+            metGat:  rijen.filter(r => r.gaten > 0),
+            online:  rijen.filter(r => r.webGat)};
   }
 
   /* ═══ 5b. MARKETINGTAKEN ═════════════════════════════════════ */
@@ -881,135 +977,7 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     teken();
   }
 
-  /* ═══ 5d. WEEKTHEMA'S EN INSPIRATIE ══════════════════════════ */
-  /* De zeven weekthema's staan in mkt_ad_besluiten als configregel
-     '__themas__' — geen aparte tabel, zo heeft het marketingbord het
-     opgezet. De nieuwste regel wint (besluiten staan op created_at aflopend). */
-  const THEMA_DEFAULT = [
-    'Zondag — rust of vooruitblik op de week',
-    'Werkvloer-maandag — achter de schermen bij een klant of op kantoor',
-    'Team-dinsdag — collega, recruiter of Peter Ploeg uitgelicht',
-    'Wist-je-dat-woensdag — feit of mythe over werken in productie/logistiek',
-    'Verhaal-donderdag — kandidaat of plaatsing in de spotlight',
-    'Vrijdag-win — succes van de week, weekend in',
-    'Zaterdag — luchtig / community (optioneel)'
-  ];
-  function themas(){
-    const c = M.besluiten.find(b => b.advertentie === '__themas__' && b.note);
-    if(c){ try{ const t = JSON.parse(c.note); if(Array.isArray(t) && t.length === 7) return t; }catch(e){} }
-    return THEMA_DEFAULT;
-  }
-  const themaVandaag = () => themas()[new Date().getDay()];
-
-  async function themasOpslaan(tekst){
-    const regels = String(tekst||'').split('\n').map(r => r.trim()).filter(Boolean);
-    if(regels.length !== 7){
-      CRM.toast(`Zeven regels nodig, één per dag — je hebt er ${regels.length}`, 'err');
-      return false;
-    }
-    const rij = {id:CRM.uid(), advertentie:'__themas__', campagne:'', besluit:'config',
-                 status:'config', door:CRM.me(), note:JSON.stringify(regels),
-                 created_at:new Date().toISOString()};
-    M.besluiten.unshift(rij);
-    if(!CRM.demo){
-      const {error} = await CRM.sb.from('mkt_ad_besluiten').insert({
-        advertentie:'__themas__', campagne:'', besluit:'config', status:'config',
-        door:CRM.me(), note:JSON.stringify(regels)});
-      if(error){
-        M.besluiten = M.besluiten.filter(b => b !== rij);
-        CRM.fout('Weekthema\'s opslaan mislukt', error); return false;
-      }
-    }
-    CRM.toast('Weekthema\'s opgeslagen voor het hele team', 'ok');
-    return true;
-  }
-  function themaModal(){
-    CRM.modal.open(`
-      <div class="modal-h"><div class="h2">Weekthema's</div>
-        <div class="meta" style="margin-top:2px">Zeven regels, één per dag — zondag tot en met zaterdag</div></div>
-      <div class="modal-b">
-        <div class="f-row"><label for="mkt_th">Het ritme dat het hele team ziet</label>
-          <textarea id="mkt_th" style="min-height:190px">${h(themas().join('\n'))}</textarea>
-          <div class="hint">Vaste rubrieken maken het merk herkenbaar en het posten makkelijker: je hoeft niet elke dag te bedenken wáár het over gaat.</div></div>
-      </div>
-      <div class="modal-f">
-        <button class="btn ghost" data-mclose>Annuleren</button>
-        <button class="btn" id="mkt_thsave">Opslaan voor het team</button>
-      </div>`, {onOpen(m){
-        m.querySelector('#mkt_thsave').onclick = async () => {
-          if(await themasOpslaan(m.querySelector('#mkt_th').value)){ CRM.modal.close(); teken(); }
-        };
-      }});
-  }
-
-  /* Bewezen blue-collar contentformats. {K} = klant, {F} = functie.
-     Onderbouwd door het eigen onderzoek: salaris expliciet, video, kort,
-     solliciteren via WhatsApp, meningsvragen mogen van Meta, en LinkedIn
-     alleen voor klanten en B2B. */
-  const IDEEENBANK = [
-    {t:'Dag uit het leven: {F}', f:'Reel / video', d:'Kandidaten werven', k:'04:45. De wekker gaat. Dit is mijn dag als {F}.'},
-    {t:'Salaris-transparantie: wat verdien je écht als {F}?', f:'Reel / video', d:'Kandidaten werven', k:'€X.XXX bruto + XX% toeslag. Zwart op wit.'},
-    {t:'Solliciteren zonder cv — app ons gewoon', f:'Foto + tekst', d:'Kandidaten werven', k:'Geen cv? Geen brief? Eén appje is genoeg.'},
-    {t:'Meningsvraag: nachtdienst of dagdienst?', f:'Tekstpost', d:'Employer branding', k:'Wat vind jij: nachtdienst met toeslag of gewoon overdag?'},
-    {t:'Van sollicitatie tot eerste werkdag in 7 dagen', f:'Carousel', d:'Kandidaten werven', k:'Maandag geappt, volgende week maandag gestart.'},
-    {t:'Mythe kapot: "uitzendwerk betaalt slecht"', f:'Reel / video', d:'Employer branding', k:'"Uitzendbureaus pakken de helft van je loon." Echt?'},
-    {t:'De machine die niemand mag aanraken (behalve jij)', f:'Reel / video', d:'Kandidaten werven', k:'Deze machine is €2 miljoen waard. Jij bedient hem.'},
-    {t:'Ploegentoeslag-rekensom: dit levert de nachtploeg op', f:'Carousel', d:'Kandidaten werven', k:'Nachtdienst = +25%. Reken maar mee: €___ extra p/m.'},
-    {t:'Eerste week van een nieuwe kracht bij {K}', f:'Foto + tekst', d:'Employer branding', k:'Week 1 zit erop. Dit vond onze nieuwe collega ervan.'},
-    {t:'Praca w Holandii — post in het Pools', f:'Foto + tekst', d:'Kandidaten werven', k:'Szukamy operatorów. Dobra stawka, praca od zaraz.'},
-    {t:'POV: je eerste meeloopdag bij {K}', f:'Story', d:'Kandidaten werven', k:'Kom mee, we lopen samen een dagje mee.'},
-    {t:'Waarom deze flexkracht na 3 maanden tekende', f:'Foto + tekst', d:'Kandidaten werven', k:'Van flexkracht naar vast. Zo ging dat.'},
-    {t:'Klantcase voor LinkedIn: ploeg compleet bij {K}', f:'Foto + tekst', d:'Klanten / leadgen', k:'6 weken, 4 operators, 0 no-shows. Zo bouwden we de ploeg bij {K}.'},
-    {t:'Achter de schermen: zo ziet de werkvloer er écht uit', f:'Story', d:'Employer branding', k:'Geen stockfoto\'s. Dit is het echt.'},
-    {t:'5 vragen die jij mag stellen in je sollicitatiegesprek', f:'Carousel', d:'Kandidaten werven', k:'Een gesprek is tweerichtingsverkeer.'}
-  ];
-  /* Virale team-formats van andere bedrijven — de formule is bijna altijd
-     dezelfde: trend van de week × echte collega's × zelfspot. */
-  const AFKIJKBANK = [
-    {t:'Jongerentaal-script: de voorman leest voor', v:'Currys (UK) — 1,9 mln views', i:'Jongste collega schrijft de tekst vol internettaal, de oudste leest hem bloedserieus voor tijdens een rondleiding.', k:'Onze voorman (55) legt uit waarom dit magazijn een 10/10 is — in de woorden van onze jongste collega.'},
-    {t:'De baas doet één keer mee met een trend', v:'vanHaren — manager Ferry gaat er steeds mee viraal', i:'Hoe stijver de leidinggevende, hoe beter. Eén take, niet te netjes gefilmd.', k:'We vroegen de ploegbaas om héél even mee te doen. Antwoord: één keer dan.'},
-    {t:'Welke collega ben jij?', v:'TikTok-klassieker — iedereen herkent zichzelf', i:'Vier tot zes herkenbare types, elk 2-3 seconden in beeld. Mensen sturen hem naar elkaar door.', k:'Elke ploeg heeft ze: de heftruck-koning, de scanner-kwijtraker, de klaarstaander om 14:59. Welke ben jij?'},
-    {t:'We luisteren en we oordelen niet', v:'wereldwijde trend, ook mét de baas erbij', i:'Team op een rij, iedereen bekent om de beurt iets kleins, niemand mag reageren.', k:'We luisteren en we oordelen niet — de nachtploeg-editie.'},
-    {t:'POV: jij op de werkvloer', v:'#warehouseworker zit er vol mee', i:'De camera is de kijker. Eén situatie, één grap, tien seconden.', k:'POV: het is je eerste dag en je weet nog niet dat Henk altijd de goede steekwagen inpikt.'},
-    {t:'Dag uit het leven — mét loon', v:'Werken bij Picnic doet dit structureel', i:'Van wekker tot einde dienst. Het loon noemen is dé reactie-magneet.', k:'Meelopen met Kevin (22), orderpicker. Dit is zijn dinsdag — inclusief wat hij verdient.'},
-    {t:'Expres foute reclame (marktkoopman-stijl)', v:'De Beren deed dit voor vacatures', i:'Schreeuwerig, knipperende teksten, zo fout dat het goed is. Valt op tussen gelikte content.', k:'HEFTRUCKCHAUFFEURS!!! €17 PER UUR!!! VANDAAG BELLEN = MORGEN WERKEN!!!'},
-    {t:'Welk geluid maakt die machine?', v:'trend van nú', i:'Collega\'s doen vol overtuiging het geluid na, dan hoor je het echte apparaat.', k:'Wij vroegen de ploeg: welk geluid maakt de heftruck als hij achteruit rijdt?'},
-    {t:'Netflix-documentaire over iets kleins', v:'trend van nú', i:'Interview-opstelling en serieuze muziek, over iets totaal onbenulligs.', k:'AFLEVERING 1: De verdwenen pompwagen. Niemand weet waar pompwagen 3 is gebleven. Tot nu.'},
-    {t:'Trending geluid + jouw werkvloer', v:'de motor achter bijna elke bedrijfsviral', i:'Pak het geluid van deze week en plak er één werksituatie op. Binnen 1-3 dagen posten, anders is de trend voorbij.', k:'Pak het trending geluid van deze week: welke situatie uit ons magazijn past hierop?'},
-    {t:'Voor/na op de beat', v:'werkt al jaren, elke keer weer', i:'Begin van de dienst → einde nachtdienst, precies gecut op de muziek.', k:'06:00 vs 14:30 — wat 8 uur ploegendienst met een mens doet.'},
-    {t:'Bloopers: de mislukte takes', v:'Duits installatiebedrijf haalde er miljoenen views mee', i:'Lachen is besmettelijk en bewijst échte sfeer. Post de nette versie een dag later.', k:'We wilden een serieuze vacaturevideo maken. Dit werd het.'},
-    {t:'Drie ploegen, één dag', v:'trend van nú', i:'Ochtend-, middag- en nachtploeg maken elk uur één foto; naast elkaar gemonteerd.', k:'Zelfde bedrijf, drie totaal verschillende levens. Welke ploeg past bij jou?'},
-    {t:'Eerlijk over het werk — ook de mindere kanten', v:'grote trend sinds begin 2026', i:'Eerlijkheid over de nadelen maakt de voordelen geloofwaardig.', k:'Drie dingen die niemand je vertelt over magazijnwerk — en waarom ik tóch blijf.'},
-    {t:'Microfoon de ploeg in', v:'"I asked my coworkers" — oneindig herhaalbaar', i:'Eén simpele vraag, vijf tot acht snelle antwoorden. Geldvragen scoren het best.', k:'We vroegen de ploeg: wat deed jij met je allereerste loonstrook?'}
-  ];
-  const SPIEKLIJST = [
-    {w:'TikTok Creative Center', u:'https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag', x:'trending hashtags en geluiden, filter op Nederland — dé wekelijkse check'},
-    {w:'Volg een kijk-account', u:'https://www.tiktok.com/@werkenbijpicnic', x:'@werkenbijpicnic, @ryanair, @vanharen_schoenen, @postnl — wat zij posten is je gratis formatkalender'},
-    {w:'Een kwartier per week scrollen', u:'https://www.tiktok.com/tag/werkenbij', x:'#magazijn #heftruck #werkenbij #nachtdienst — bewaar alles met 100k+ views dat jonger is dan twee weken'},
-    {w:'Maandelijkse trendlijst', u:'https://newengen.com/insights/july-tiktok-trends/', x:'elke maand nieuwe formats, uitgelegd met voorbeelden'},
-    {w:'Werf& — Nederlandse recruitmentcases', u:'https://www.werf-en.nl/', x:'welke werken-bij-content het in Nederland doet'}
-  ];
-  const grabbel = (bank, n) => [...bank].sort(() => Math.random() - .5).slice(0, n);
-  function rolIdeeen(){ M.ideeSet = grabbel(IDEEENBANK, 3); }
-  function rolAfkijk(){ M.afkSet  = grabbel(AFKIJKBANK, 4); }
-
-  /* Een idee dat je aanspreekt hoort meteen op het bord te staan, anders ben
-     je het morgen kwijt. Dit schrijft één regel in mkt_posts in de fase Idee —
-     schrijven, script en publiceren blijven in het marketingbord. */
-  async function ideeNaarBord(idee){
-    const rij = {id:'m' + Date.now() + Math.random().toString(36).slice(2,6),
-      titel:idee.t, kanaal:'', format:idee.f||'', doel:idee.d||'', fase:'Idee',
-      hook:idee.k||'', script:'', campagne:'', vacature:''};
-    if(!CRM.demo){
-      const {error} = await CRM.sb.from('mkt_posts').insert(rij);
-      if(error){ CRM.fout('Idee op het bord zetten mislukt', error); return; }
-    }
-    M.posts.push(rowToPost(rij));
-    CRM.toast('Als idee op het bord gezet — uitwerken doe je in het marketingbord', 'ok');
-    telBadge(); teken();
-  }
-
-  /* ═══ 5e. WAT WERKT — leren van je eigen cijfers ══════════════ */
+  /* ═══ 5d. WAT WERKT — leren van je eigen cijfers ══════════════ */
   const gem = a => a.length ? a.reduce((x,y) => x+y, 0) / a.length : 0;
   function watWerkt(){
     const pubs = M.posts.filter(p => GEPUBLICEERD(p) && N(p.resultaat?.bereik) > 0);
@@ -1084,22 +1052,26 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     /* Twee lijsten met opzet: `adv` telt de adviezen van het hele account (dat
        is wat de badge en het tabblad beloven), `advTonen` is wat er ná het
        klantfilter overblijft. */
-    const adv = adviezen(), nag = nagPosts(), gaten = radar(), werk = openTaken();
+    const adv = adviezen(), nag = nagPosts(), vac = vacatureWerk(), werk = openTaken();
     const advTonen = M.klant ? adviezen(klantRijen()) : adv;
+    /* Op het tabblad Vacatures telt alleen het websitewerk mee in de teller.
+       "Geen content of advertentie" is een afleiding op namen; die zou de
+       teller opblazen met werk waarvan we niet zeker zijn. */
     const TABS = [
       {k:'prestatie', t:'Prestatie', n:adv.length + agentAdviezen().length},
       {k:'keten',     t:'Rendement', n:0},
       {k:'content',   t:'Content',   n:nag.length + werk.length},
       {k:'kanalen',   t:'Kanalen',   n:0},
-      {k:'ideeen',    t:'Ideeën',    n:0},
-      {k:'radar',     t:'Vacature-radar', n:gaten.length}
+      {k:'vacatures', t:'Vacatures', n:vac.online.length}
     ];
+    /* Een onbekend tabblad (oude link, oude tab in de browser) valt terug op
+       Prestatie in plaats van op een leeg scherm. */
+    if(!TABS.some(t => t.k === M.tab)) M.tab = 'prestatie';
     const body = M.tab === 'prestatie' ? prestatieHtml(advTonen, adv.length - advTonen.length)
                : M.tab === 'keten'     ? ketenHtml()
                : M.tab === 'content'   ? contentHtml(nag)
                : M.tab === 'kanalen'   ? kanalenHtml()
-               : M.tab === 'ideeen'    ? ideeenHtml()
-               :                         radarHtml(gaten);
+               :                         vacaturesHtml(vac);
     mount.innerHTML = `
       ${M.isDemo ? `<div class="note info" style="margin-bottom:16px">Demo-data — de Meta-cijfers en posts op dit scherm zijn verzonnen, zodat je de weergave kunt beoordelen.</div>` : ''}
       <div class="tabs">${TABS.map(t =>
@@ -1194,10 +1166,6 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     if(klantKies) klantKies.onchange = () => { M.klant = klantKies.value; teken(); };
     const wis = root.querySelector('#mkt_reset');
     if(wis) wis.onclick = () => { M.periode = 30; M.groep = 'dag'; M.klant = ''; teken(); };
-    CRM.$$('[data-klantfilter]', root).forEach(el => el.onclick = () => {
-      M.klant = el.dataset.klantfilter === M.klant ? '' : el.dataset.klantfilter;
-      teken(); window.scrollTo({top:0});
-    });
     const herk = root.querySelector('#mkt_herkomst');
     if(herk) herk.onclick = () => { M.herkomst = !M.herkomst; teken(); };
 
@@ -1268,17 +1236,16 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       root.querySelector('#mkt_knaam').onkeydown = e => { if(e.key === 'Enter') doe(); };
     }
 
-    /* Ideeën */
-    const themaKnop = root.querySelector('#mkt_thema');
-    if(themaKnop) themaKnop.onclick = themaModal;
-    const rolI = root.querySelector('#mkt_rolidee');
-    if(rolI) rolI.onclick = () => { rolIdeeen(); teken(); };
-    const rolA = root.querySelector('#mkt_rolafk');
-    if(rolA) rolA.onclick = () => { rolAfkijk(); teken(); };
-    CRM.$$('[data-idee]', root).forEach(b => b.onclick = () => {
-      const i = M.ideeSet[Number(b.dataset.idee)];
-      if(i) ideeNaarBord(i);
+    /* Vacatures */
+    CRM.$$('[data-vklant]', root).forEach(b => b.onclick = () => {
+      /* De klantkaart opent op het tabblad Vacatures; daar staat het venster
+         waarin de websitestand en de ontbrekende informatie ingevuld worden.
+         Dat scherm is van een andere module — we sturen de gebruiker erheen in
+         plaats van het hier na te bouwen. */
+      CRM.ga('klanten', {id:b.dataset.vklant});
     });
+    const vAlles = root.querySelector('#mkt_vacalles');
+    if(vAlles) vAlles.onclick = () => { M.vacAlles = !M.vacAlles; teken(); };
   }
 
   /* ── 6a. Prestatie ── */
@@ -1372,18 +1339,30 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
      Meta's eigen leadtelling naast het aantal leads dat écht in het CRM staat.
      Lopen die ver uiteen, dan is dat geen detail: dan staat er een getal op het
      scherm waar niemand een budget op mag baseren. We rekenen niets om en
-     verzinnen geen correctiefactor — we laten beide getallen zien. */
-  function leadControleHtml(s, rows){
-    if(!s.leads && !rows.length) return '';
-    const D = index();
+     verzinnen geen correctiefactor — we laten beide getallen zien.
+
+     Het aantal CRM-leads in dezelfde selectie. Aparte functie omdat het
+     Prestatie-tabblad het twee keer nodig heeft: één keer om te bepalen wáár
+     dit blok hoort te staan (bovenaan als waarschuwing, of onderin bij de
+     verantwoording) en één keer om het te tekenen. */
+  function crmLeadsInZicht(){
     const cut = vensterVanaf();
-    const crmLeads = D.leads.filter(r => r.dk && (!cut || r.dk >= cut) && (!M.klant
-      || (M.klant === '__niet__' ? !r.kkey : r.kkey === M.klant)));
-    const n = crmLeads.length, m = s.leads;
-    /* Wanneer is het verschil groot genoeg om iemand lastig mee te vallen?
-       Als er in het CRM niets staat terwijl Meta leads meldt, of als het
-       verschil meer dan de helft van de Meta-telling is. */
-    const scheef = m > 0 && (n === 0 || Math.abs(m - n) > m * 0.5);
+    return index().leads.filter(r => r.dk && (!cut || r.dk >= cut) && (!M.klant
+      || (M.klant === '__niet__' ? !r.kkey : r.kkey === M.klant))).length;
+  }
+  /* Wanneer is het verschil groot genoeg om iemand lastig mee te vallen?
+     Als er in het CRM niets staat terwijl Meta leads meldt, of als het
+     verschil meer dan de helft van de Meta-telling is. */
+  function scheveLeads(s){
+    const m = s.leads;
+    if(!m) return false;
+    const n = crmLeadsInZicht();
+    return n === 0 || Math.abs(m - n) > m * 0.5;
+  }
+  function leadControleHtml(s){
+    const n = crmLeadsInZicht(), m = s.leads;
+    if(!m && !n) return '';
+    const scheef = scheveLeads(s);
     const perKlik = s.kliks ? (m / s.kliks * 100) : null;
 
     const cijfers = `<div class="mkt-week-r" style="margin:10px 0 4px">
@@ -1529,16 +1508,13 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
                   : 'geen leadacties gemeld in deze selectie')}
         ${CRM.ui.kpi('Kosten per leadactie', `<span class="num">${s.cpl?CRM.euro(s.cpl,2):'—'}</span>`,
           s.cpl ? 'uitgegeven ÷ leadacties — te laag zodra leads dubbel geteld worden' : 'geen leadacties om door te delen')}
-        ${CRM.ui.kpi('Kliks (alle)', `<span class="num">${fmtN(s.kliks)}</span>`,
-          `<span class="num">${fmtN(s.imp)}</span> impressies · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span> · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span><br>
-           Meta-veld <span class="num">clicks</span>: inclusief likes, reacties, delen en klikken op de paginanaam`)}
+        ${CRM.ui.kpi('Bereik en kliks', `<span class="num">${fmtN(s.kliks)}</span>`,
+          `kliks · <span class="num">${fmtN(s.imp)}</span> impressies · CPC <span class="num">${s.cpc?CRM.euro(s.cpc,2):'—'}</span> · CTR <span class="num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</span><br>
+           Meta-veld <span class="num">clicks</span>: inclusief likes, reacties en delen, dus geen doorkliks. Daarom
+           staan deze vier alleen hier en niet in de tabellen eronder.`)}
       </div>
-      ${herkomstHtml(s)}
-      <div style="height:18px"></div>
-      ${leadControleHtml(s, rows)}
-      ${betaaldHtml()}
+      ${scheveLeads(s) ? leadControleHtml(s) : ''}
       ${periodeHtml(rows, s)}
-      ${klantTabelHtml(rows, s)}
 
       <div class="card mkt-kaart">
         <div class="card-h"><div class="h2">Per campagne</div>
@@ -1548,14 +1524,26 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
             <thead><tr>
               <th>Campagne</th><th class="n">Uitgegeven</th>
               <th style="width:96px">Aandeel uitgaven</th>
-              <th class="n">Leadacties</th><th class="n">€ / leadactie</th><th class="n">Kliks</th>
-              <th class="n">CPC</th><th class="n">CTR</th>
+              <th class="n">Leadacties</th><th class="n">€ / leadactie</th>
             </tr></thead>
             <tbody id="mkt_camp">${campagneRijen()}</tbody>
             ${totaalRij()}
           </table>
         </div>
-        ${laatst ? `<div class="card-f"><span class="meta">Laatste synchronisatie met Meta: <span class="num">${h(laatst)}</span></span></div>` : ''}
+        <div class="card-f"><span class="meta">Uitgaven, leadacties en de kosten per leadactie — meer niet.
+          Kliks, CPC en CTR stonden hier ook, maar die rekenen met álle kliks in plaats van doorkliks; ze staan nu
+          nog één keer bovenaan, met de kanttekening erbij.${laatst
+            ? ` Laatste synchronisatie met Meta: <span class="num">${h(laatst)}</span>.` : ''}</span></div>
+      </div>
+
+      <div class="mkt-verantwoording">
+        <span class="label">Verantwoording</span>
+        <p class="sub" style="margin:2px 0 14px;max-width:78ch">Deze drie blokken stonden tussen de cijfers in en
+          duwden de grafiek en de campagnes van het scherm af. Ze horen erbij — je moet kunnen nagaan waar een getal
+          vandaan komt — maar ze horen ónder wat ze verantwoorden, niet erboven.</p>
+        ${herkomstHtml(s)}
+        ${scheveLeads(s) ? '' : leadControleHtml(s)}
+        ${betaaldHtml()}
       </div>`}`;
   }
 
@@ -1649,9 +1637,6 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         <td>${CRM.ui.bar(deelP)}</td>
         <td class="n num">${fmtN(s.leads)}</td>
         <td class="n num">${s.cpl?CRM.euro(s.cpl,2):'<span class="meta">—</span>'}</td>
-        <td class="n num">${fmtN(s.kliks)}</td>
-        <td class="n num">${s.cpc?CRM.euro(s.cpc,2):'<span class="meta">—</span>'}</td>
-        <td class="n num">${s.ctr!=null?CRM.pct(s.ctr,2):'<span class="meta">—</span>'}</td>
       </tr>`;
     };
     return `<div class="card mkt-kaart">
@@ -1662,101 +1647,20 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         <table class="tbl mkt-tbl"><thead><tr>
           <th>${h(g.titel.replace('Per ','').replace(/^./, c => c.toUpperCase()))}</th>
           <th class="n">Uitgegeven</th><th style="width:96px">Aandeel</th>
-          <th class="n">Leadacties</th><th class="n">€ / leadactie</th><th class="n">Kliks</th>
-          <th class="n">CPC</th><th class="n">CTR</th>
+          <th class="n">Leadacties</th><th class="n">€ / leadactie</th>
         </tr></thead>
         <tbody>${lijst.slice().reverse().slice(0, 200).map(rij).join('')}</tbody>
         <tfoot><tr><td><b>Hele periode</b></td>
           <td class="n num">${CRM.euro(tot.spend)}</td><td></td>
           <td class="n num">${fmtN(tot.leads)}</td>
           <td class="n num">${tot.cpl?CRM.euro(tot.cpl,2):'<span class="meta">—</span>'}</td>
-          <td class="n num">${fmtN(tot.kliks)}</td>
-          <td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'<span class="meta">—</span>'}</td>
-          <td class="n num">${tot.ctr!=null?CRM.pct(tot.ctr,2):'<span class="meta">—</span>'}</td>
         </tr></tfoot>
       </table></div>
       <div class="card-f"><span class="meta">Optelling van de dagregels uit <span class="num">mkt_meta_stats</span>
-        (<span class="num">${fmtN(tot.rijen)}</span> regels in deze selectie). CPC en CTR worden per ${h(g.enkel)} opnieuw
-        berekend, niet gemiddeld — een gemiddelde van gemiddelden weegt een stille dag even zwaar als een drukke.
+        (<span class="num">${fmtN(tot.rijen)}</span> regels in deze selectie). De kosten per leadactie worden per
+        ${h(g.enkel)} opnieuw berekend, niet gemiddeld — een gemiddelde van gemiddelden weegt een stille dag even zwaar
+        als een drukke.
         ${zonderDatum > 0 ? `<b>${h(CRM.euro(zonderDatum))}</b> aan uitgaven heeft geen leesbare datum en staat in geen enkele ${h(g.enkel)}.` : ''}</span></div>
-    </div>`;
-  }
-
-  /* ── Per klant ──
-     Waar gaat het geld heen. Uitgaven die we aan geen klant kunnen koppelen
-     krijgen hun eigen regel; ze worden nooit over de andere klanten verdeeld.
-     De leads uit het CRM staan er bewust naast: dát is de enige leadtelling op
-     dit tabblad die niet uit Meta komt. */
-  function klantTabelHtml(rows, tot){
-    const D = index();
-    const cut = vensterVanaf();
-    const groepen = new Map();
-    const zorg = (key, label) => {
-      if(!groepen.has(key)) groepen.set(key, {key, label, rows:[], campagnes:new Set(), crm:0, geenKlant:key === '__niet__'});
-      return groepen.get(key);
-    };
-    for(const r of rows){
-      const k = klantVan(r);
-      const g = zorg(k.kkey || '__niet__', k.kkey ? (k.klant || k.kkey) : 'Zonder herkenbare klant');
-      g.rows.push(r);
-      g.campagnes.add(campNaam(r));
-    }
-    /* Leads tellen mee ook als er geen euro aan die klant hangt: een klant met
-       Meta-leads maar zonder campagne is een echte situatie en hoort zichtbaar
-       te zijn, niet weggelaten. */
-    for(const r of D.leads){
-      if(!r.dk || (cut && r.dk < cut)) continue;
-      if(M.klant && (M.klant === '__niet__' ? !!r.kkey : r.kkey !== M.klant)) continue;
-      const g = zorg(r.kkey || '__niet__', r.kkey ? (r.klant || r.kkey) : 'Zonder herkenbare klant');
-      g.crm++;
-    }
-    const rijen = [...groepen.values()].map(g => ({...g, s:stat(g.rows)}))
-      .sort((a,b) => b.s.spend - a.s.spend || b.crm - a.crm || a.label.localeCompare(b.label,'nl'));
-    if(!rijen.length) return '';
-    const crmTot = rijen.reduce((s,r) => s + r.crm, 0);
-
-    const rij = r => `<tr class="clickable${M.klant === r.key ? ' mkt-op' : ''}" data-klantfilter="${h(r.key)}"
-        title="Klik om alleen deze klant te tonen">
-      <td><b>${h(r.label)}</b>
-        ${r.geenKlant ? `<span class="chip amber" style="margin-left:6px">niet toegewezen</span>` : ''}
-        <div class="rowsub">${r.campagnes.size
-          ? h([...r.campagnes].join(' · '))
-          : 'geen campagne in deze periode'}</div></td>
-      <td class="n num">${CRM.euro(r.s.spend)}</td>
-      <td>${CRM.ui.bar(tot.spend ? r.s.spend/tot.spend*100 : 0)}</td>
-      <td class="n num">${fmtN(r.s.leads)}</td>
-      <td class="n num">${r.crm ? fmtN(r.crm) : '<span class="meta">0</span>'}</td>
-      <td class="n num">${r.s.spend > 0 && r.crm ? CRM.euro(r.s.spend/r.crm, 2) : '<span class="meta">—</span>'}</td>
-      <td class="n num">${fmtN(r.s.kliks)}</td>
-      <td class="n num">${r.s.cpc?CRM.euro(r.s.cpc,2):'<span class="meta">—</span>'}</td>
-    </tr>`;
-
-    const nietBedrag = rijen.filter(r => r.geenKlant).reduce((s,r) => s + r.s.spend, 0);
-    return `<div class="card mkt-kaart">
-      <div class="card-h"><div class="h2">Per klant</div>
-        <span class="meta">${h(vensterTekst())} · klik een regel om erop te filteren</span></div>
-      <div class="tblwrap" style="border:none;border-radius:0">
-        <table class="tbl mkt-tbl"><thead><tr>
-          <th>Klant</th><th class="n">Uitgegeven</th><th style="width:96px">Aandeel</th>
-          <th class="n">Meta-leadacties</th><th class="n">Leads in CRM</th>
-          <th class="n">€ / CRM-lead</th><th class="n">Kliks</th><th class="n">CPC</th>
-        </tr></thead>
-        <tbody>${rijen.map(rij).join('')}</tbody>
-        <tfoot><tr><td><b>Alles bij elkaar</b></td>
-          <td class="n num">${CRM.euro(tot.spend)}</td><td></td>
-          <td class="n num">${fmtN(tot.leads)}</td>
-          <td class="n num">${fmtN(crmTot)}</td>
-          <td class="n num">${tot.spend > 0 && crmTot ? CRM.euro(tot.spend/crmTot, 2) : '<span class="meta">—</span>'}</td>
-          <td class="n num">${fmtN(tot.kliks)}</td>
-          <td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'<span class="meta">—</span>'}</td>
-        </tr></tfoot>
-      </table></div>
-      <div class="card-f"><span class="meta">Een campagne is een klant. Herkennen we de klant niet in de campagnenaam
-        en wijzen de leads ook niet duidelijk één kant op, dan staan de uitgaven op de regel
-        <b>Zonder herkenbare klant</b>${nietBedrag > 0 ? ` — nu <span class="num">${h(CRM.euro(nietBedrag))}</span>` : ''};
-        ze worden nooit stilzwijgend over de andere klanten verdeeld. <b>€ / CRM-lead</b> rekent met de leads die
-        werkelijk in het CRM staan, niet met de Meta-telling; staat er een streepje, dan zijn er geen CRM-leads of geen
-        toegewezen uitgaven om mee te delen.</span></div>
     </div>`;
   }
 
@@ -1847,18 +1751,17 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     return camps;
   }
   /* De aandeelbalk zet de uitgaven van deze regel af tegen het totaal van
-     de periode. */
+     de periode. Vier cijfers per regel, niet zeven: kliks, CPC en CTR zijn
+     hier weggehaald omdat ze op álle kliks rekenen. Wie ze nodig heeft vindt
+     ze in het kengetal bovenaan, mét die kanttekening erbij. */
   function cijferCellen(s, tot){
     const deel = tot.spend ? s.spend/tot.spend : 0;
     return `<td class="n num">${CRM.euro(s.spend)}</td>
       <td>${CRM.ui.bar(deel*100)}</td>
       <td class="n num">${fmtN(s.leads)}</td>
-      <td class="n num">${s.cpl?CRM.euro(s.cpl,2):'—'}</td>
-      <td class="n num">${fmtN(s.kliks)}</td>
-      <td class="n num">${s.cpc?CRM.euro(s.cpc,2):'—'}</td>
-      <td class="n num">${s.ctr!=null?CRM.pct(s.ctr,2):'—'}</td>`;
+      <td class="n num">${s.cpl?CRM.euro(s.cpl,2):'—'}</td>`;
   }
-  const KOLOMMEN = 8;                 // campagnenaam + zeven cijferkolommen
+  const KOLOMMEN = 5;                 // campagnenaam + vier cijferkolommen
   function campagneRijen(){
     const camps = [...boom().values()];
     if(!camps.length){
@@ -1898,10 +1801,7 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       <td class="n num">${CRM.euro(tot.spend)}</td>
       <td></td>
       <td class="n num">${fmtN(tot.leads)}</td>
-      <td class="n num">${tot.cpl?CRM.euro(tot.cpl,2):'—'}</td>
-      <td class="n num">${fmtN(tot.kliks)}</td>
-      <td class="n num">${tot.cpc?CRM.euro(tot.cpc,2):'—'}</td>
-      <td class="n num">${tot.ctr!=null?CRM.pct(tot.ctr,2):'—'}</td></tr></tfoot>`;
+      <td class="n num">${tot.cpl?CRM.euro(tot.cpl,2):'—'}</td></tr></tfoot>`;
   }
 
   /* dagStrook() is vervangen door periodeHtml(): dezelfde strook, maar dan
@@ -1961,7 +1861,8 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         ${regel('Nog niet opgepakt', 'Status "Nieuw" — er is nog niemand mee bezig geweest. Dit is werk dat blijft liggen.')}
         ${regel('Niet bereikt', 'Status "Gebeld — geen gehoor". Wel gebeld, geen contact. Iets anders dan blijven liggen: dit vraagt om een tweede poging of een appje.')}
         ${regel('Afgevallen aan de telefoon', 'Status "Geen interesse" of "Niet geschikt" — beoordeeld en afgevallen.')}
-        ${regel('Gekwalificeerd', 'Status "Potentieel", "Potentieel — andere vacature", "Intake gepland" of "Doorgeschoten".')}
+        ${regel('Gekwalificeerd', 'Status "Potentieel", "Potentieel — andere vacature", "CV opgevraagd", "CV binnen", "Videocall gepland", "Videocall gehad" of "Doorgeschoten" — de hele middenmoot van de leadstatussen, zoals die sinds 31 jul 2026 heet.')}
+        ${regel('Advertentie of opvolging', 'Twee kanten van dezelfde uitval. "Blijft liggen bij ons" = status Nieuw of niet bereikt, afgezet tegen alle binnengekomen leads. "Valt af zodra we ze spreken" = geen interesse of niet geschikt, afgezet tegen alleen de leads die beoordeeld zijn. Die tweede noemer is bewust smaller: een cohort waarin niemand gebeld is zou anders lijken alsof de advertentie goed was.')}
         ${regel('Doorgeschoten naar kandidaat', 'De lead heeft een kandidaat_id, óf er staat een kandidaat met deze lead_id. Eén van beide is genoeg.')}
         ${regel('Voorgesteld', 'Die kandidaat staat nu op Voorgesteld of verder, of stond daar ooit volgens de historie.')}
         ${regel('Geplaatst', 'Die kandidaat heeft getekend (Contract getekend of Gestart) of is daarna gestopt. Een latere stop maakt de plaatsing niet ongedaan.')}
@@ -2053,9 +1954,84 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     </div>`;
   }
 
+  /* ── Advertentie of opvolging? ──
+     Tjeerds vraag, letterlijk: "waar vallen ze af, en ligt dat aan de
+     advertentie of aan de opvolging?" Dat is een andere vraag dan waar de
+     trechter het smalst is, en hij is te beantwoorden met wat er al staat.
+
+     Twee kanten, uit de leadstatus:
+     · OPVOLGING — de lead is nooit beoordeeld. Status 'Nieuw' (er is niemand
+       mee bezig geweest) of 'Gebeld — geen gehoor'. Wat de advertentie
+       opleverde weten we van deze mensen simpelweg niet.
+     · ADVERTENTIE — de lead is wél gesproken en viel af op 'Geen interesse'
+       of 'Niet geschikt'. Dan trok de advertentie de verkeerde mensen aan.
+
+     'Gebeld — geen gehoor' zit bewust aan de opvolgingskant, maar met een
+     kanttekening op het scherm: iemand die niet opneemt kan ook een
+     laag-intentie lead uit de advertentie zijn. We doen niet alsof die
+     scheiding scherper is dan hij is.
+
+     De opvolgingskant meet tegen álle binnengekomen leads; de
+     advertentiekant alleen tegen de leads die we hebben gesproken. Anders
+     zou een cohort waarin niemand gebeld is er automatisch uitzien alsof de
+     advertentie goed was. */
+  function kwaliteitHtml(t, cLeads){
+    const beoordeeld = t.gekwal + t.afgeteld;
+    const blijftLiggen = t.nieuw + t.nietBereikt;
+    /* Zonder één beoordeelde lead valt er over de advertentie niets te
+       zeggen. Dan tonen we alleen de opvolgingskant, en zeggen dat erbij. */
+    const opvPct = t.binnen > 0 ? blijftLiggen / t.binnen * 100 : 0;
+    const advPct = beoordeeld > 0 ? t.afgeteld / beoordeeld * 100 : null;
+
+    /* De conclusie in één zin. Welke kant het zwaarst weegt bepaalt waar de
+       winst zit; staan ze dicht bij elkaar, dan zeggen we dát. */
+    let slot;
+    if(advPct == null){
+      slot = `Er is in dit cohort nog geen enkele lead beoordeeld — alles staat op Nieuw of is niet bereikt.
+        Over de advertentie valt daarom nog niets te zeggen; de winst zit nu volledig in het opvolgen.`;
+    }else if(opvPct >= advPct + 10){
+      slot = `Meer leads blijven liggen dan er afvallen op geschiktheid. De winst zit nu in sneller bellen,
+        niet in een andere advertentie — de mensen die je wél sprak vielen namelijk niet massaal af.`;
+    }else if(advPct >= opvPct + 10){
+      slot = `De leads worden wél opgepakt, maar vallen af zodra je ze spreekt. Dat wijst naar de advertentie:
+        de targeting of de tekst trekt mensen die het werk niet willen of niet kunnen. Scherpere eisen in de
+        advertentietekst schelen hier het meest.`;
+    }else{
+      slot = `Beide kanten wegen ongeveer even zwaar. Pak de kleinste eerst: sneller opvolgen is meestal binnen
+        een week te regelen, een nieuwe advertentie kost langer.`;
+    }
+
+    const kant = (lbl, waarde, breedte, onder) => `
+      <div class="mkt-kw-r">
+        <div class="mkt-kw-l"><b>${h(lbl)}</b><span class="meta">${onder}</span></div>
+        <div class="mkt-tr-b"><i style="width:${Math.max(0, Math.min(100, breedte))}%"></i></div>
+        <span class="mkt-kw-n num">${waarde}</span>
+      </div>`;
+
+    return `<div class="mkt-kw">
+      <span class="label">Advertentie of opvolging?</span>
+      ${kant('Blijft liggen bij ons', pctV(blijftLiggen, t.binnen), opvPct,
+        `<span class="num">${fmtN(t.nieuw)}</span> nooit opgepakt en <span class="num">${fmtN(t.nietBereikt)}</span> niet bereikt,
+         van <span class="num">${fmtN(t.binnen)}</span> binnengekomen`)}
+      ${kant('Valt af zodra we ze spreken', advPct == null ? '—' : pctV(t.afgeteld, beoordeeld), advPct || 0,
+        beoordeeld
+          ? `<span class="num">${fmtN(t.afgeteld)}</span> geen interesse of niet geschikt, van
+             <span class="num">${fmtN(beoordeeld)}</span> beoordeelde leads`
+          : 'nog geen enkele lead beoordeeld')}
+      <p class="sub" style="margin:12px 0 0;max-width:74ch">${slot}</p>
+      <span class="meta" style="display:block;margin-top:8px">Leads van de laatste dagen staan terecht nog op Nieuw;
+        bij een cohort dat nog loopt is de linkerkant dus hoger dan hij blijft. "Niet bereikt" telt hier als opvolging,
+        maar wie nooit opneemt kan ook een lead met weinig interesse uit de advertentie zijn — die twee zijn met deze
+        gegevens niet uit elkaar te halen.</span>
+    </div>`;
+  }
+
   /* De trechter van het gekozen cohort. Eerst wat er mét de lead gebeurde,
-     daarna de weg naar de plaatsing. Per stap het aantal, het percentage van
-     de vorige stap, en de grootste weglek expliciet benoemd. */
+     daarna de weg naar de plaatsing. Per stap het aantal en het percentage van
+     de vorige stap. De regel "grootste weglek" die hier stond is vervangen
+     door kwaliteitHtml: die zei wáár het lekt, dit zegt of het aan de
+     advertentie of aan de opvolging ligt — en dat is de vraag die iemand
+     's ochtends stelt. */
   function trechterHtml(cLeads){
     const t = trechter(cLeads);
     if(!t.binnen) return `<div class="card mkt-kaart"><div class="card-h"><div class="h2">De trechter</div></div>
@@ -2068,34 +2044,11 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       {k:'nieuw',    lbl:'Nog niet opgepakt',           n:t.nieuw,       basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nieuw),      uitleg:'status Nieuw — hier ligt werk', waarsch:true},
       {k:'onbereikt',lbl:'Niet bereikt',                n:t.nietBereikt, basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nietBereikt),uitleg:'gebeld, geen gehoor'},
       {k:'afgeteld', lbl:'Afgevallen aan de telefoon',  n:t.afgeteld,    basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.afgeteld),   uitleg:'geen interesse of niet geschikt'},
-      {k:'gekwal',   lbl:'Gekwalificeerd',              n:t.gekwal,      basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.gekwal),     uitleg:'potentieel, intake gepland of doorgeschoten', goed:true},
+      {k:'gekwal',   lbl:'Gekwalificeerd',              n:t.gekwal,      basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.gekwal),     uitleg:'potentieel, cv of videocall, of doorgeschoten', goed:true},
       {k:'door',     lbl:'Doorgeschoten naar kandidaat',n:t.door,        basis:t.gekwal,      basisLbl:'gekwalificeerd', rijen:L(r => r.door),       uitleg:'staat als kandidaat op het bord'},
       {k:'voorg',    lbl:'Voorgesteld',                 n:t.voorgesteld, basis:t.door,        basisLbl:'doorgeschoten',  rijen:L(r => r.voorgesteld),uitleg:'bij een klant voorgesteld'},
       {k:'plaats',   lbl:'Geplaatst',                   n:t.geplaatst,   basis:t.voorgesteld, basisLbl:'voorgesteld',    rijen:L(r => r.geplaatst),  uitleg:'contract getekend', goed:true}
     ];
-    /* Waar lekt het hardst? We kijken naar de ketenstappen (niet naar de drie
-       zijwegen apart) en nemen het grootste absolute verlies. */
-    const ketens = [
-      {van:'binnengekomen', naar:'gekwalificeerd', verlies:t.binnen - t.gekwal, basis:t.binnen},
-      {van:'gekwalificeerd', naar:'doorgeschoten', verlies:Math.max(0, t.gekwal - t.door), basis:t.gekwal},
-      {van:'doorgeschoten', naar:'voorgesteld',    verlies:Math.max(0, t.door - t.voorgesteld), basis:t.door},
-      {van:'voorgesteld',   naar:'geplaatst',      verlies:Math.max(0, t.voorgesteld - t.geplaatst), basis:t.voorgesteld}
-    ].filter(x => x.basis > 0 && x.verlies > 0).sort((a,b) => b.verlies - a.verlies);
-    const lek = ketens[0] || null;
-    let lekTekst = '';
-    if(lek){
-      let extra = '';
-      if(lek.van === 'binnengekomen'){
-        const grootste = [[t.nieuw,'nooit opgepakt'],[t.nietBereikt,'namen de telefoon niet op'],[t.afgeteld,'afgevallen aan de telefoon']]
-          .sort((a,b) => b[0] - a[0])[0];
-        if(grootste[0] > 0) extra = ` Daarvan: <span class="num">${fmtN(grootste[0])}</span> ${grootste[1]}.`;
-      }
-      lekTekst = `<div class="note ${lek.van==='binnengekomen'&&t.nieuw>=t.binnen*0.25 ? 'warn' : 'info'}" style="margin-top:14px">
-        <b>Grootste weglek:</b> tussen ${h(lek.van)} en ${h(lek.naar)} —
-        <span class="num">${fmtN(lek.verlies)}</span> van de <span class="num">${fmtN(lek.basis)}</span>
-        (<span class="num">${pctV(lek.verlies, lek.basis)}</span>) valt daar af.${extra}</div>`;
-    }
-
     const max = Math.max(1, t.binnen);
     const rij = s => {
       const sleutel = drill('stap:'+s.k, s.rijen);
@@ -2117,7 +2070,7 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         <span class="meta">${h(M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort))}</span></div>
       <div class="card-b">
         <div class="mkt-tr">${stappen.map(rij).join('')}</div>
-        ${lekTekst}
+        ${kwaliteitHtml(t, cLeads)}
         ${t.anders ? `<p class="meta" style="margin:12px 0 0"><span class="num">${fmtN(t.anders)}</span>
           lead${t.anders===1?'':'s'} valt in geen van de vier statusgroepen — zie het blok onderaan.</p>` : ''}
       </div>
@@ -2609,117 +2562,93 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       </div>`;
   }
 
-  /* ── 6f. Ideeën ── */
-  function ideeenHtml(){
-    if(!M.ideeSet.length) rolIdeeen();
-    if(!M.afkSet.length)  rolAfkijk();
-    const th = themas(), vandaag = new Date().getDay();
+  /* ── 6e. Vacatures ──
+     Eén tabel, drie kolommen die elk een manier zijn waarop een vacature aan
+     kandidaten komt: staat hij op de website, is er content over gemaakt,
+     loopt er een advertentie op. De vacature die op alle drie leeg staat
+     krijgt vanuit marketing geen enkele instroom.
 
-    const themaRijen = th.map((t,i) => `
-      <div class="mkt-thema${i===vandaag?' nu':''}">
-        <span class="label">${h(DAGNAAM[i])}</span>
-        <span class="mkt-thema-t">${h(t)}</span>
-        ${i===vandaag?`<span class="chip green">vandaag</span>`:''}
-      </div>`).join('');
+     De websitekolom is nieuw en is het antwoord op "welke vacatures moet ik
+     nog online zetten?". Het invullen zelf gebeurt op de klantkaart — daar
+     staat het venster met de websitestand en de informatie die de AM moet
+     aanleveren — dus de knop stuurt je daarheen in plaats van dat we dat
+     scherm hier nog een keer bouwen. */
+  function vacaturesHtml(vac){
+    if(!vac.open) return CRM.ui.leeg('Geen open vacatures',
+      'Er staat op dit moment geen vacature open. Zodra er één bijkomt, staat hier of hij online moet, of er content over gepland is en of er een advertentie op loopt.');
 
-    const ideeKaart = (i,ix) => `
-      <div class="mkt-idee">
-        <b>${h(i.t)}</b>
-        <span class="mkt-idee-h">“${h(i.k)}”</span>
-        <div class="row tight" style="flex-wrap:wrap;margin-top:auto;padding-top:8px">
-          <span class="chip">${h(i.f)}</span><span class="chip blue">${h(i.d)}</span>
-          <div class="spacer"></div>
-          <button class="btn ghost sm" data-idee="${ix}">Op het bord</button>
-        </div>
-      </div>`;
-
-    const afkKaart = a => `
-      <div class="mkt-idee">
-        <b>${h(a.t)}</b>
-        <span class="meta">${h(a.v)}</span>
-        <span class="mkt-idee-h">${h(a.i)}</span>
-        <span class="mkt-idee-h">“${h(a.k)}”</span>
-      </div>`;
-
-    return `
-      <div class="card" style="margin-bottom:18px">
-        <div class="card-h"><div class="h2">Weekthema's</div>
-          <span class="meta">het ritme dat het hele team aanhoudt</span>
-          <div class="spacer"></div>
-          <button class="btn sm ghost" id="mkt_thema">Aanpassen</button></div>
-        <div class="card-b">${themaRijen}</div>
-        <div class="card-f"><span class="meta">Vaste rubrieken maken het merk herkenbaar en het posten makkelijker.
-          Een aanpassing geldt meteen voor iedereen, ook in het marketingbord.</span></div>
-      </div>
-
-      <div class="card" style="margin-bottom:18px">
-        <div class="card-h"><div class="h2">Inspiratie</div>
-          <span class="meta">bewezen formats voor productie en logistiek</span>
-          <div class="spacer"></div>
-          <button class="btn sm ghost" id="mkt_rolidee">Andere drie</button></div>
-        <div class="card-b"><div class="mkt-ideerij">${M.ideeSet.map(ideeKaart).join('')}</div></div>
-        <div class="card-f"><span class="meta">{K} is de klant, {F} de functie — vul die in als je het idee uitwerkt.
-          "Op het bord" zet het als idee in het marketingbord; schrijven en inplannen doe je daar.</span></div>
-      </div>
-
-      <div class="card" style="margin-bottom:18px">
-        <div class="card-h"><div class="h2">Afkijken</div>
-          <span class="meta">wat elders viraal gaat</span>
-          <div class="spacer"></div>
-          <button class="btn sm ghost" id="mkt_rolafk">Andere vier</button></div>
-        <div class="card-b">
-          <p class="sub" style="margin:0 0 12px">De formule achter bijna elke bedrijfsvideo die het goed doet:
-            trend van de week × echte collega's × zelfspot. Gewoon op de telefoon gefilmd is juist goed.</p>
-          <div class="mkt-ideerij">${M.afkSet.map(afkKaart).join('')}</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-h"><div class="h2">Waar je elke week spiekt</div></div>
-        <div class="card-b"><div class="stack">${SPIEKLIJST.map(s => {
-          const u = veiligeUrl(s.u);
-          return `<div><b>${u ? `<a href="${h(u)}" target="_blank" rel="noopener">${h(s.w)} ↗</a>` : h(s.w)}</b>
-            <div class="meta">${h(s.x)}</div></div>`;
-        }).join('')}</div></div>
-      </div>`;
-  }
-
-  /* ── 6d. Vacature-radar ── */
-  function radarHtml(gaten){
-    const open = (CRM.state.vacs||[]).filter(v => !v.status || v.status === 'Open').length;
-    if(!gaten.length){
-      /* Geen gaten kan twee dingen betekenen. "Alles heeft aandacht" is een
-         compliment; bij nul vacatures zou dat een leugentje zijn. */
-      return open
-        ? CRM.ui.leeg('Elke open vacature heeft aandacht',
-            'Voor alle openstaande vacatures liep er de afgelopen 14 dagen content of een advertentie.')
-        : CRM.ui.leeg('Geen open vacatures',
-            'Er staat op dit moment geen vacature open, dus er valt ook niets te missen. Zodra er één bijkomt, controleert dit scherm of er content of een advertentie voor loopt.');
-    }
-    /* Deze lijst is een aftreksom: vacatures min content min advertenties.
-       Ontbreekt één van die twee bronnen, dan is de lijst te lang en dat
-       moet je weten voordat je iemand erop aanspreekt. */
+    const tonen = M.vacAlles ? vac.rijen : vac.metGat;
+    const compleet = vac.open - vac.metGat.length;
+    /* Een lijst die op een aftreksom rust wordt te lang zodra een bron
+       ontbreekt. Dat moet je weten vóórdat je iemand erop aanspreekt. */
     const bronMist = M.postsFout ? 'de contentplanning' : M.metaFout ? 'de Meta-cijfers' : '';
+
+    /* Websitecel. De drie standen komen uit vacatures.web_status; alleen
+       "Nog niet online" is werk. Wat de AM nog moet aanleveren staat eronder,
+       want zonder werktijden en salaris valt er geen tekst te schrijven. */
+    const webCel = r => {
+      if(!vac.web) return `<td class="meta">—</td>`;
+      if(r.stand === 'Staat online') return `<td><span class="chip green">online</span>${
+        r.v.web_online_op ? `<div class="rowsub">sinds ${h(CRM.fmtDateShort(r.v.web_online_op))}</div>` : ''}</td>`;
+      if(r.stand === 'Niet nodig') return `<td><span class="meta">niet nodig</span></td>`;
+      return `<td><span class="chip amber">${r.wacht ? 'wacht op info' : 'klaar om te zetten'}</span>
+        <div class="rowsub">${r.wacht
+          ? `mist nog: ${h(mistTekst(r.info))}`
+          : 'alle informatie staat erin'}</div></td>`;
+    };
+    const jaNee = (aan, tekstAan, tekstUit) => aan
+      ? `<td><span class="chip green">${h(tekstAan)}</span></td>`
+      : `<td><span class="chip amber">${h(tekstUit)}</span></td>`;
+
+    const rij = r => `<tr>
+      <td><b>${h(r.v.functie)}</b>
+        <div class="rowsub">${h(r.v.klant)}${r.v.locatie ? ` · ${h(r.v.locatie)}` : ''}${
+          N(r.v.aantal) > 1 ? ` · <span class="num">${fmtN(r.v.aantal)}</span> plekken` : ''}</div></td>
+      <td class="n num">${r.dagenOpen != null ? r.dagenOpen : '<span class="meta">—</span>'}</td>
+      ${webCel(r)}
+      ${jaNee(r.content > 0, r.content === 1 ? '1 post' : `${r.content} posts`, 'geen')}
+      ${jaNee(r.adv, 'loopt', 'geen')}
+      <td class="n"><button class="btn sub sm" data-vklant="${h(r.v.klant)}">Naar de klant</button></td>
+    </tr>`;
+
+    const lijst = tonen.length
+      ? `<div class="tblwrap" style="border:none;border-radius:0">
+          <table class="tbl mkt-tbl mkt-vac"><thead><tr>
+            <th>Vacature</th><th class="n">Dagen open</th>
+            <th>Website</th><th>Content</th><th>Advertentie</th><th></th>
+          </tr></thead><tbody>${tonen.map(rij).join('')}</tbody></table>
+        </div>`
+      : `<div class="card-b">${CRM.ui.leeg('Elke open vacature heeft aandacht',
+          `Alle ${vac.open} openstaande vacatures staan online of hoeven niet online, en hebben in de afgelopen ${VAC_DAGEN} dagen content of een advertentie gehad.`)}</div>`;
+
     return `${bronMist ? `<div class="note warn" style="margin-bottom:18px">Deze lijst kan te lang zijn:
       ${h(bronMist)} konden niet geladen worden, dus er kan content of een advertentie lopen die hier niet meetelt.</div>` : ''}
-    <div class="card">
-      <div class="card-h"><div class="h2">Zonder content of advertentie</div>
-        <span class="meta">open vacatures, laatste 14 dagen</span>
+    ${!vac.web ? `<div class="note info" style="margin-bottom:18px">
+      <b>De websitestand staat nog niet in de database.</b>
+      <span class="meta" style="display:block;margin-top:4px">De kolom <span class="num">vacatures.web_status</span>
+      bestaat nog niet, dus de kolom Website blijft leeg. De wijziging staat klaar in
+      <span class="num">supabase/nog-te-draaien.sql</span>; zodra die gedraaid is verschijnt hier vanzelf welke
+      vacature nog online moet. We tonen tot die tijd geen "nog niet online" — dat zou werk verzinnen dat er
+      misschien niet is.</span></div>` : ''}
+    <div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Waar krijgt een vacature geen instroom?</div>
+        <span class="meta">${fmtN(vac.open)} open ${vac.open===1?'vacature':'vacatures'}${
+          vac.web && vac.online.length ? ` · ${fmtN(vac.online.length)} nog niet online` : ''}</span>
         <div class="spacer"></div>
         <a class="btn sm ghost" href="${BORD}" target="_blank" rel="noopener">Content plannen ↗</a></div>
-      <div class="tblwrap" style="border:none;border-radius:0">
-        <table class="tbl"><thead><tr>
-          <th>Klant</th><th>Functie</th><th>Locatie</th><th class="n">Plekken</th><th class="n">Dagen open</th>
-        </tr></thead>
-        <tbody>${gaten.map(g => `<tr>
-          <td><b>${h(g.v.klant)}</b></td>
-          <td>${h(g.v.functie)}</td>
-          <td class="meta">${h(g.v.locatie||'—')}</td>
-          <td class="n num">${fmtN(g.v.aantal||1)}</td>
-          <td class="n num">${g.dagenOpen!=null?g.dagenOpen:'—'}</td>
-        </tr>`).join('')}</tbody></table>
+      ${lijst}
+      <div class="card-f">
+        <div class="row" style="width:100%;flex-wrap:wrap;gap:8px 14px">
+          <span class="meta" style="flex:1;min-width:220px">Website komt uit
+            <span class="num">vacatures.web_status</span> en wordt op de klantkaart bijgewerkt. Content en
+            advertentie zijn een <b>afleiding op namen</b>: een post draagt de tekst "klant — functie" en een
+            advertentieset heet naar de functie. Heet de advertentieset anders, dan staat er ten onrechte "geen".
+            Het venster is ${VAC_DAGEN} dagen.</span>
+          ${compleet > 0 ? `<button class="btn ghost sm" id="mkt_vacalles">${M.vacAlles
+            ? `Alleen de ${fmtN(vac.metGat.length)} met een gat`
+            : `Ook de ${fmtN(compleet)} zonder gat tonen`}</button>` : ''}
+        </div>
       </div>
-      <div class="card-f"><span class="meta">Deze vacatures krijgen nu geen instroom vanuit marketing. Eén post of advertentieset per vacature is meestal genoeg.</span></div>
     </div>`;
   }
 

@@ -18,8 +18,8 @@ const V = {
   zet(sleutel, waarde){ try{ localStorage.setItem('crm_sales_'+sleutel, JSON.stringify(waarde)); }catch(e){} }
 };
 
-let tab      = V.get('tab','pijplijn');          // pijplijn | kansen | radar
-if(!['pijplijn','kansen','radar'].includes(tab)) tab = 'pijplijn';
+let tab      = V.get('tab','pijplijn');          // pijplijn | activiteit | kansen | radar
+if(!['pijplijn','activiteit','kansen','radar'].includes(tab)) tab = 'pijplijn';
 let weergave = V.get('weergave','bord');         // bord | lijst
 let zoek     = V.get('zoek','');
 let mijn     = V.get('mijn',false);
@@ -1000,6 +1000,449 @@ function leesLijst(ruw){
   return uit;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ACTIVITEIT — stuurcijfers over wat er gedáán is
+   ───────────────────────────────────────────────────────────────
+   Het bord en de kansen vertellen wat er ligt en wat het waard is.
+   Dat zijn uitkomsten: over drie maanden weet je of je genoeg deed.
+   Dit tabblad telt het wérk — gesprekken, afspraken, voorstellen,
+   opgehaalde vacatures, nieuwe bedrijven — met een datum en een naam
+   erbij, zodat je maandagochtend ziet of het tempo klopt.
+
+   Alles komt uit vastgelegd gedrag: crm_activiteiten en aanmaak-
+   datums. Wat niet is vastgelegd, tellen we niet en verzinnen we
+   niet: dan staat er een streepje mét de reden. Zie ook de
+   VERZOEK AAN COORDINATOR onderaan dit bestand.
+   ═══════════════════════════════════════════════════════════════ */
+
+let pKeuze   = V.get('periode','week');
+let maatKeuze= V.get('maat','contact');
+
+const PERIODEN = [
+  {k:'week',     lbl:'Deze week',    eenh:'week'},
+  {k:'maand',    lbl:'Deze maand',   eenh:'maand'},
+  {k:'kwartaal', lbl:'Dit kwartaal', eenh:'kwartaal'}
+];
+/* De maten die je in de weekgrafiek kunt uitzetten. Zelfde sleutels als
+   de tellers hieronder, zodat er nergens een tweede definitie ontstaat. */
+const MATEN = [
+  {k:'contact',  lbl:'Contact',     eenh:'contactmomenten'},
+  {k:'afspraak', lbl:'Afspraken',   eenh:'ingeplande afspraken'},
+  {k:'voorstel', lbl:'Voorstellen', eenh:'verstuurde voorstellen'},
+  {k:'nieuw',    lbl:'Bedrijven',   eenh:'nieuwe bedrijven'},
+  {k:'vac',      lbl:'Vacatures',   eenh:'opgehaalde vacatures'}
+];
+if(!PERIODEN.some(p=>p.k===pKeuze))  pKeuze   = 'week';
+if(!MATEN.some(m=>m.k===maatKeuze))  maatKeuze = 'contact';
+
+const GRAF_WEKEN    = 12;   // lengte van de weekgrafiek
+const STIL_VOORSTEL = 14;   // dagen dat een voorstel mag liggen
+const STIL_CONTACT  = 21;   // dagen zonder contact bij een lopend traject
+const LOG_LIMIET    = 2000; // CRM.load() haalt maximaal dit aantal activiteiten op
+
+/* ─── Datumrekenwerk ───────────────────────────────────────────── */
+/* Een activiteit heeft een tijdstempel in UTC (toISOString), een
+   aanmaakdatum is al een lokale datum. Zonder omrekenen valt alles wat
+   in de zomer na 22:00 wordt vastgelegd op de dag ervóór, en klopt
+   "deze week" op maandagochtend niet. */
+function lokaleDag(waarde){
+  const s = String(waarde==null?'':waarde).trim();
+  if(!s) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  return isNaN(d) ? '' : d.toLocaleDateString('sv-SE');
+}
+function schuifDag(iso, n){
+  const d = new Date(iso+'T12:00:00');          // middag: geen zomertijdsprong
+  if(isNaN(d)) return iso;
+  d.setDate(d.getDate()+n);
+  return d.toLocaleDateString('sv-SE');
+}
+function dagenTussen(van, tot){
+  const a = new Date(van+'T12:00:00'), b = new Date(tot+'T12:00:00');
+  if(isNaN(a) || isNaN(b)) return 0;
+  return Math.round((b-a)/86400000);
+}
+function maandagVan(iso){
+  const d = new Date(iso+'T12:00:00');
+  if(isNaN(d)) return '';
+  d.setDate(d.getDate() - ((d.getDay()+6)%7));  // zondag (0) telt als dag 6
+  return d.toLocaleDateString('sv-SE');
+}
+const binnen = (dag, van, tot) => !!dag && dag>=van && dag<=tot;
+
+/* De lopende periode loopt tot vandaag en is dus nog niet vol. Vergelijken
+   met een héle vorige week zegt op maandagochtend niets — je zou altijd
+   achterlopen. De vergelijkperiode loopt daarom even veel dagen als er nu
+   verstreken zijn: maandag vergelijk je met maandag. */
+function periode(){
+  const tot = CRM.todayISO();
+  const nu  = new Date(tot+'T12:00:00');
+  let van, vvan;
+  if(pKeuze==='week'){
+    van  = schuifDag(tot, -((nu.getDay()+6)%7));
+    vvan = schuifDag(van, -7);
+  }else if(pKeuze==='maand'){
+    van  = new Date(nu.getFullYear(), nu.getMonth(),   1).toLocaleDateString('sv-SE');
+    vvan = new Date(nu.getFullYear(), nu.getMonth()-1, 1).toLocaleDateString('sv-SE');
+  }else{
+    const q = Math.floor(nu.getMonth()/3)*3;
+    van  = new Date(nu.getFullYear(), q,   1).toLocaleDateString('sv-SE');
+    vvan = new Date(nu.getFullYear(), q-3, 1).toLocaleDateString('sv-SE');
+  }
+  const verstreken = dagenTussen(van, tot);
+  return {van, tot, vvan, vtot: schuifDag(vvan, verstreken), dagen: verstreken+1,
+          eenh: (PERIODEN.find(p=>p.k===pKeuze)||PERIODEN[0]).eenh};
+}
+
+/* Een fasewissel wordt als tekst vastgelegd: "Fase gewijzigd: A → B".
+   Zowel dit bestand als js/klanten.js schrijven precies die vorm, dus de
+   doelfase staat achter de laatste pijl. We accepteren alleen een naam die
+   écht een salesfase is — zo kan er nooit iets anders in de telling
+   sluipen als de tekst ooit verandert. Geen match = niet meegeteld. */
+const FASE_NAAR = /→\s*([^→]+)$/;
+function faseUitTekst(tekst){
+  const m = FASE_NAAR.exec(String(tekst||''));
+  if(!m) return '';
+  const f = m[1].trim();
+  return CRM.SALES_FASES.some(x => x.k === f) ? f : '';
+}
+
+/* ─── Tellen ───────────────────────────────────────────────────── */
+/* Alles in één doorloop over de activiteiten, de klanten en de vacatures.
+   Per klant apart filteren zou 250 × 3.000 vergelijkingen kosten en dat
+   merk je bij het typen in het zoekveld. */
+function stuurcijfers(){
+  const p = periode();
+  const klanten   = gefilterd();
+  const zichtbaar = new Set(klanten.map(k => k.naam));
+  const contactSoort = new Set(CRM.opvolging.CONTACT);   // dezelfde lijst als het dashboard
+
+  const leeg = () => ({contact:0, afspraak:0, voorstel:0, getekend:0, nieuw:0, vac:0});
+  const nu = leeg(), eerder = leeg();
+  const persoon = new Map();          // wie deed het, alleen deze periode
+  const weken   = new Map();          // maandag-ISO → tellers
+  const beweging= new Map();          // fase → aantal binnengekomen deze periode
+  const laatsteContact = new Map();   // klantnaam → laatste dag met écht contact
+
+  const vanaf12 = schuifDag(maandagVan(p.tot), -(GRAF_WEKEN-1)*7);
+  const bak = (m, sleutel) => { let b = m.get(sleutel); if(!b){ b = leeg(); m.set(sleutel, b); } return b; };
+
+  const tel = (veld, dag, wie) => {
+    if(binnen(dag, p.van, p.tot)){ nu[veld]++; bak(persoon, wie || 'onbekend')[veld]++; }
+    else if(binnen(dag, p.vvan, p.vtot)) eerder[veld]++;
+    if(binnen(dag, vanaf12, p.tot)) bak(weken, maandagVan(dag))[veld]++;
+  };
+
+  let oudsteLog = '', faseRegels = 0, afspraakRegels = 0;
+  for(const a of (CRM.state.activiteiten || [])){
+    if(a.entiteit !== 'klant') continue;
+    const dag = lokaleDag(a.op);
+    if(!dag) continue;
+    if(!oudsteLog || dag < oudsteLog) oudsteLog = dag;
+
+    const naam = String(a.ref || '');
+    const isContact  = contactSoort.has(a.soort);
+    const isAfspraak = !!(a.extra && a.extra.afspraak);
+    if(a.soort === 'fase')  faseRegels++;
+    if(isAfspraak)          afspraakRegels++;
+    /* Laatste contact voor élke klant bijhouden, ook buiten het filter:
+       "blijft liggen" kijkt verder terug dan de gekozen periode. */
+    if(isContact){ const v = laatsteContact.get(naam); if(!v || dag > v) laatsteContact.set(naam, dag); }
+
+    if(!zichtbaar.has(naam)) continue;
+    if(isContact)  tel('contact',  dag, a.door);
+    if(isAfspraak) tel('afspraak', dag, a.door);
+    if(a.soort === 'fase'){
+      const naar = faseUitTekst(a.tekst);
+      if(naar === 'Voorstel gedaan' || naar === 'SWO gestuurd') tel('voorstel', dag, a.door);
+      if(naar === 'Afgerond') tel('getekend', dag, a.door);
+      if(naar && binnen(dag, p.van, p.tot)) beweging.set(naar, (beweging.get(naar)||0) + 1);
+    }
+  }
+
+  /* Nieuwe bedrijven: clients.aangemaakt. Rijen uit de oude import hebben
+     dat veld niet — die tellen nergens mee en worden apart gemeld. */
+  let zonderAanmaak = 0;
+  for(const k of klanten){
+    const dag = lokaleDag(k.aangemaakt);
+    if(!dag){ zonderAanmaak++; continue; }
+    tel('nieuw', dag, k.eigenaar);
+  }
+
+  /* Opgehaalde vacatures: vacatures.aangemaakt. Zelfde verhaal. */
+  let vacs = 0, vacZonder = 0;
+  for(const v of (CRM.state.vacs || [])){
+    if(!zichtbaar.has(v.klant)) continue;
+    vacs++;
+    const dag = lokaleDag(v.aangemaakt);
+    if(!dag){ vacZonder++; continue; }
+    tel('vac', dag, v.eigenaar);
+  }
+
+  return {p, nu, eerder, persoon, weken, beweging, laatsteContact, klanten,
+          zonderAanmaak, metAanmaak: klanten.length - zonderAanmaak,
+          vacs, vacZonder, oudsteLog, faseRegels, afspraakRegels};
+}
+
+/* ─── Tegels ───────────────────────────────────────────────────── */
+function vergelijk(nu, eerder, p){
+  const zelfde = p.dagen === 1 ? 'de dag ervoor' : `dezelfde ${p.dagen} dagen ervoor`;
+  if(!nu && !eerder) return `niets, en ${zelfde} ook niet`;
+  return `${CRM.plusMin(nu - eerder)} t.o.v. <span class="num">${eerder}</span> ${zelfde}`;
+}
+
+/* Een tegel die niets kan tonen krijgt een streepje mét de reden. Een
+   nul die "niet gemeten" betekent leest als een slechte week, en daar ga
+   je dan op sturen — dat is erger dan geen cijfer. */
+function tegel(label, waarde, detail, klasse){
+  return CRM.ui.kpi(label, waarde, detail, klasse||'');
+}
+function metingTegels(M){
+  const p = M.p;
+  const t = [];
+
+  t.push(tegel('Contactmomenten', `<span class="num">${M.nu.contact}</span>`,
+    vergelijk(M.nu.contact, M.eerder.contact, p), 'accent'));
+
+  t.push(tegel('Afspraken ingepland', `<span class="num">${M.nu.afspraak}</span>`,
+    M.afspraakRegels ? vergelijk(M.nu.afspraak, M.eerder.afspraak, p)
+                     : 'telt mee zodra je "Inplannen" gebruikt'));
+
+  t.push(tegel('Voorstellen verstuurd', `<span class="num">${M.nu.voorstel}</span>`,
+    M.faseRegels ? vergelijk(M.nu.voorstel, M.eerder.voorstel, p)
+                 : 'nog geen fasewissel vastgelegd'));
+
+  t.push(M.metAanmaak
+    ? tegel('Nieuwe bedrijven', `<span class="num">${M.nu.nieuw}</span>`,
+        vergelijk(M.nu.nieuw, M.eerder.nieuw, p))
+    : tegel('Nieuwe bedrijven', '<span class="meta">—</span>',
+        'geen enkel bedrijf heeft een aanmaakdatum'));
+
+  t.push(M.vacs > M.vacZonder
+    ? tegel('Vacatures opgehaald', `<span class="num">${M.nu.vac}</span>`,
+        vergelijk(M.nu.vac, M.eerder.vac, p))
+    : tegel('Vacatures opgehaald', '<span class="meta">—</span>',
+        M.vacs ? `${M.vacs} vacatures, geen met aanmaakdatum` : 'nog geen vacatures in beeld'));
+
+  t.push(tegel('Nieuwe klanten', `<span class="num">${M.nu.getekend}</span>`,
+    M.faseRegels ? vergelijk(M.nu.getekend, M.eerder.getekend, p)
+                 : 'nog geen fasewissel vastgelegd'));
+
+  return `<div class="grid c3 s-kpi s-kpi6">${t.join('')}</div>`;
+}
+
+/* ─── Weekgrafiek ──────────────────────────────────────────────── */
+/* Staafjes van HTML: geen bibliotheek, en boven elke staaf staat het
+   getal — een balk zonder getal is een plaatje. */
+function weekGrafiek(M){
+  const maat = MATEN.find(m => m.k === maatKeuze) || MATEN[0];
+  const nuWeek = maandagVan(M.p.tot);
+  const kolommen = [];
+  for(let i = GRAF_WEKEN-1; i >= 0; i--){
+    const ma = schuifDag(nuWeek, -i*7);
+    kolommen.push({ma, n: (M.weken.get(ma) || {})[maat.k] || 0});
+  }
+  const max = Math.max(...kolommen.map(k => k.n), 1);
+  const totaal = kolommen.reduce((s,k) => s+k.n, 0);
+
+  const knoppen = MATEN.map(m =>
+    `<button data-maat="${h(m.k)}" class="${maatKeuze===m.k?'on':''}">${h(m.lbl)}</button>`).join('');
+
+  const strook = kolommen.map(k => {
+    const loopt = k.ma === nuWeek;
+    const hoog  = k.n ? Math.max(3, Math.round(k.n / max * 100)) : 0;
+    return `<div class="s-gkol${loopt?' loopt':''}"
+        title="Week van ${h(CRM.fmtDate(k.ma))} — ${k.n} ${h(maat.eenh)}${loopt?' (loopt nog)':''}">
+      <div class="s-gtop num${k.n?'':' nul'}">${k.n}</div>
+      <div class="s-gbar"><i style="height:${hoog}%"></i></div>
+      <div class="s-glbl"><b class="num">${h(String(Number(k.ma.slice(8,10))))}</b><span>${
+        h(new Date(k.ma+'T12:00:00').toLocaleDateString('nl-NL',{month:'short'}))}</span></div>
+    </div>`;
+  }).join('');
+
+  return `<div class="card s-kaart">
+    <div class="card-h"><div class="h2">Per week</div>
+      <div class="s-maatwrap"><div class="seg s-maat">${knoppen}</div></div></div>
+    <div class="card-b">
+      <div class="s-strook"><div class="s-kolommen">${strook}</div></div>
+      <div class="meta" style="margin-top:12px">Staafhoogte en getal = ${h(maat.eenh)} in die week ·
+        het getal onder de staaf is de maandag · <span class="num">${totaal}</span> in ${GRAF_WEKEN} weken ·
+        de laatste week loopt nog en is dus lager dan hij wordt.</div>
+    </div></div>`;
+}
+
+/* ─── Wie doet wat ─────────────────────────────────────────────── */
+function persoonTabel(M){
+  const rijen = [...M.persoon.entries()]
+    .map(([naam, t]) => ({naam, t}))
+    .filter(r => r.t.contact || r.t.afspraak || r.t.voorstel || r.t.nieuw || r.t.vac || r.t.getekend)
+    .sort((a,b) => b.t.contact - a.t.contact || String(a.naam).localeCompare(String(b.naam),'nl'));
+
+  const inhoud = rijen.length ? `<div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Wie</th><th class="n">Contact</th><th class="s-balkkop"></th>
+        <th class="n">Afspraken</th><th class="n">Voorstellen</th>
+        <th class="n">Bedrijven</th><th class="n">Vacatures</th></tr></thead>
+      <tbody>${(() => {
+        const max = Math.max(...rijen.map(r => r.t.contact), 1);
+        return rijen.map(r => `<tr>
+          <td style="font-weight:600">${h(r.naam)}</td>
+          <td class="n num">${r.t.contact}</td>
+          <td class="s-balk">${CRM.ui.bar(r.t.contact / max * 100)}</td>
+          <td class="n num">${r.t.afspraak || '<span class="meta">—</span>'}</td>
+          <td class="n num">${r.t.voorstel || '<span class="meta">—</span>'}</td>
+          <td class="n num">${r.t.nieuw    || '<span class="meta">—</span>'}</td>
+          <td class="n num">${r.t.vac      || '<span class="meta">—</span>'}</td>
+        </tr>`).join('');
+      })()}</tbody></table></div>`
+    : CRM.ui.leeg(`Nog niets vastgelegd in deze ${h(M.p.eenh)}`,
+        'Zodra iemand een gesprek, een mail of een afspraak vastlegt bij een bedrijf, verschijnt die naam hier.');
+
+  return `<div class="card s-kaart"><div class="card-h"><div class="h2">Wie doet wat</div>
+      <span class="meta">deze ${h(M.p.eenh)}</span></div>
+    <div class="card-b">${inhoud}
+      <div class="meta" style="margin-top:12px">Contact, afspraken en voorstellen staan op naam van
+        wie het vastlegde. Bedrijven en vacatures staan op naam van de eigenaar.</div>
+    </div></div>`;
+}
+
+/* ─── Trechter ─────────────────────────────────────────────────── */
+/* Twee getallen naast elkaar: hoeveel bedrijven staan er nú in een fase,
+   en hoeveel zijn er deze periode in binnengekomen. Waar het tweede
+   getal opdroogt terwijl het eerste hoog blijft, zit de trechter dicht. */
+function trechter(M){
+  const nuPer = new Map();
+  M.klanten.forEach(k => { const f = faseVan(k); nuPer.set(f, (nuPer.get(f)||0) + 1); });
+  const maxNu  = Math.max(...CRM.SALES_FASES.map(f => nuPer.get(f.k)||0), 1);
+  const totIn  = [...M.beweging.values()].reduce((s,n) => s+n, 0);
+
+  const rijen = CRM.SALES_FASES.map(f => {
+    const staat = nuPer.get(f.k) || 0;
+    const in_   = M.beweging.get(f.k) || 0;
+    return `<tr${staat||in_?'':' class="s-dicht"'}>
+      <td><span class="s-fase"><i style="background:${CRM.salesKleur(f.k)}"></i>${h(f.k)}</span></td>
+      <td class="n num">${staat || '<span class="meta">—</span>'}</td>
+      <td class="s-balk">${CRM.ui.bar(staat / maxNu * 100)}</td>
+      <td class="n num">${M.faseRegels ? (in_ || '<span class="meta">—</span>') : '<span class="meta">?</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const onder = M.faseRegels
+    ? `<span class="num">${totIn}</span> fasewissels deze ${h(M.p.eenh)}. Een fase waar niemand
+       binnenkomt terwijl er wel bedrijven staan, is de plek waar het stokt.`
+    : `Er is nog geen enkele fasewissel vastgelegd. Zodra je een kaart op het bord verplaatst
+       of de fase in de kaart wijzigt, vult de rechterkolom zich vanzelf.`;
+
+  return `<div class="card s-kaart"><div class="card-h"><div class="h2">Trechter</div>
+      <span class="meta">${M.klanten.length} bedrijven in beeld</span></div>
+    <div class="card-b"><div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Fase</th><th class="n">Staat nu</th><th class="s-balkkop"></th>
+        <th class="n">Erbij deze ${h(M.p.eenh)}</th></tr></thead>
+      <tbody>${rijen}</tbody></table></div>
+      <div class="meta" style="margin-top:12px">${onder}</div>
+    </div></div>`;
+}
+
+/* ─── Wat blijft liggen ────────────────────────────────────────── */
+/* Drie vragen met elk één duidelijke vervolgstap. Klikken opent de kaart. */
+function blijftLiggen(M){
+  const vandaag = M.p.tot;
+  const contactVan = k => {
+    const uitLog = M.laatsteContact.get(k.naam) || '';
+    const uitVeld = lokaleDag(k.laatst_contact);
+    return uitLog > uitVeld ? uitLog : uitVeld;      // lege string verliest van elke datum
+  };
+
+  const voorstellen = [], stil = [], verlopen = [];
+  for(const k of M.klanten){
+    const f = faseVan(k);
+    if(!CRM.SALES_ACTIEF.includes(f)) continue;
+    const inFase = CRM.dagenGeleden(k.fase_sinds);
+    if((f === 'Voorstel gedaan' || f === 'SWO gestuurd') && inFase != null && inFase >= STIL_VOORSTEL)
+      voorstellen.push({k, n:inFase, tekst:`${inFase} dagen in fase ${f}`});
+    /* Leads doen niet mee: 117 geïmporteerde bedrijven waar je nooit mee
+       gesproken hebt zouden deze lijst volledig overspoelen. */
+    if(f === 'Lead') continue;
+    const lc = contactVan(k);
+    const dagen = lc ? dagenTussen(lc, vandaag) : null;
+    if(dagen == null) stil.push({k, n:9999, tekst:'nog nooit contact vastgelegd'});
+    else if(dagen >= STIL_CONTACT) stil.push({k, n:dagen, tekst:`${dagen} dagen niet gesproken`});
+  }
+  for(const o of (CRM.state.kansen || [])){
+    if((o.status||'open') !== 'open') continue;
+    if(!M.klanten.some(k => k.naam === o.klant)) continue;
+    const d = lokaleDag(o.sluit_datum);
+    if(!d || d >= vandaag) continue;
+    verlopen.push({k:{naam:o.klant}, n:dagenTussen(d, vandaag),
+                   tekst:`${o.titel} — sluitdatum ${dagenTussen(d, vandaag)} dagen voorbij`});
+  }
+
+  const blok = (titel, uitleg, lijst) => {
+    if(!lijst.length) return `<div class="s-liglok"><div class="label">${h(titel)}</div>
+      <p class="meta" style="margin:4px 0 0">Niets — ${h(uitleg)}</p></div>`;
+    const top = lijst.sort((a,b) => b.n - a.n).slice(0, 6);
+    return `<div class="s-liglok"><div class="label">${h(titel)} <span class="num">${lijst.length}</span></div>
+      ${top.map(r => `<button type="button" class="s-ligrij" data-ligklant="${h(r.k.naam)}">
+        <b class="trunc">${h(r.k.naam)}</b><span class="meta trunc">${h(r.tekst)}</span></button>`).join('')}
+      ${lijst.length > top.length ? `<div class="meta" style="margin-top:6px">en nog ${lijst.length-top.length}</div>` : ''}</div>`;
+  };
+
+  return `<div class="card s-kaart"><div class="card-h"><div class="h2">Blijft liggen</div></div>
+    <div class="card-b s-lig">
+      ${blok(`Voorstel ligt ${STIL_VOORSTEL}+ dagen`, 'elk voorstel is nog vers', voorstellen)}
+      ${blok(`${STIL_CONTACT}+ dagen niet gesproken`, 'elk lopend traject is recent gesproken', stil)}
+      ${blok('Kans over de sluitdatum', 'geen kans staat over tijd', verlopen)}
+    </div></div>`;
+}
+
+/* ─── Het tabblad ──────────────────────────────────────────────── */
+function activiteitHTML(){
+  const M = stuurcijfers();
+  const p = M.p;
+
+  const seg = `<div class="seg" id="s_per">${PERIODEN.map(x =>
+    `<button data-per="${h(x.k)}" class="${pKeuze===x.k?'on':''}">${h(x.lbl)}</button>`).join('')}</div>`;
+
+  /* Eerlijk zijn over hoe ver de meting terugkijkt. De activiteitenlijst is
+     zo oud als het CRM, niet zo oud als het bedrijf; en er komen maximaal
+     2.000 regels binnen. Zonder deze regels lijkt een lege vorige maand een
+     slechte maand in plaats van een maand zonder metingen. */
+  const noten = [];
+  if(M.oudsteLog && M.oudsteLog > p.vvan)
+    noten.push(`De activiteitenlijst begint op ${CRM.fmtDate(M.oudsteLog)}; over de tijd daarvóór is er niets vastgelegd.`);
+  if((CRM.state.activiteiten||[]).length >= LOG_LIMIET)
+    noten.push(`Er worden maximaal ${LOG_LIMIET} activiteiten ingeladen — oudere regels tellen niet mee.`);
+  if(M.zonderAanmaak)
+    noten.push(`Van de ${M.klanten.length} bedrijven in beeld hebben er ${M.zonderAanmaak} geen aanmaakdatum; die tellen niet mee bij "nieuwe bedrijven".`);
+  if(M.vacZonder)
+    noten.push(`Van de ${M.vacs} vacatures hebben er ${M.vacZonder} geen aanmaakdatum; die tellen niet mee bij "vacatures opgehaald".`);
+
+  return `<div class="s-meting">
+    <div class="row s-perbar">${seg}
+      <div class="spacer"></div>
+      <span class="meta">${h(CRM.fmtDate(p.van))} t/m ${h(CRM.fmtDate(p.tot))} ·
+        dag <span class="num">${p.dagen}</span> van deze ${h(p.eenh)}</span>
+    </div>
+    ${metingTegels(M)}
+    <div class="meta s-tegeluitleg">Een ingeplande afspraak wordt als gesprek vastgelegd en telt dus
+      ook als contactmoment — de zes tegels vormen samen geen totaal.</div>
+    ${noten.length ? `<div class="note info s-noot">${noten.map(n => `<div>${h(n)}</div>`).join('')}</div>` : ''}
+    ${weekGrafiek(M)}
+    ${persoonTabel(M)}
+    <div class="grid c2 s-onder">${trechter(M)}${blijftLiggen(M)}</div>
+  </div>`;
+}
+
+function bindActiviteit(){
+  CRM.$$('[data-per]', mountEl).forEach(b => b.onclick = () => {
+    pKeuze = b.dataset.per; V.zet('periode', pKeuze); tekenInhoud();
+  });
+  CRM.$$('[data-maat]', mountEl).forEach(b => b.onclick = () => {
+    maatKeuze = b.dataset.maat; V.zet('maat', maatKeuze); tekenInhoud();
+  });
+  CRM.$$('[data-ligklant]', mountEl).forEach(b => b.onclick = () => openKlant(b.dataset.ligklant));
+}
+
 /* ─── Hoofdweergave ────────────────────────────────────────────── */
 let mountEl = null, actiesEl = null;
 
@@ -1025,7 +1468,7 @@ function tekenActies(){
       ${eigenaren().map(e=>`<option value="${h(e)}"${eigFilter===e?' selected':''}>${h(e)}</option>`).join('')}
     </select>
     <button type="button" class="chip btn-like${mijn?' on':''}" id="s_mijn" aria-pressed="${mijn}">Mijn klanten</button>
-    <div class="seg" id="s_seg"${tab==='kansen'?' style="display:none"':''}>
+    <div class="seg" id="s_seg"${tab==='kansen'||tab==='activiteit'?' style="display:none"':''}>
       <button data-w="bord" class="${weergave==='bord'?'on':''}">Bord</button>
       <button data-w="lijst" class="${weergave==='lijst'?'on':''}">Lijst</button>
     </div>`;
@@ -1047,6 +1490,7 @@ function tekenInhoud(){
     <div class="s-top">
       <div class="tabs">
         <button class="tab${tab==='pijplijn'?' on':''}" data-tab="pijplijn">Klantpijplijn<span class="cnt num">${klanten.length}</span></button>
+        <button class="tab${tab==='activiteit'?' on':''}" data-tab="activiteit">Activiteit</button>
         <button class="tab${tab==='kansen'?' on':''}" data-tab="kansen">Kansen<span class="cnt num">${kansenN}</span></button>
         <button class="tab${tab==='radar'?' on':''}" data-tab="radar">Leadradar${radarN?`<span class="cnt num">${radarN}</span>`:''}</button>
       </div>
@@ -1058,12 +1502,17 @@ function tekenInhoud(){
            dezelfde weg naast elkaar laat je aarzelen of ze wel hetzelfde
            doen, en hij trok aandacht weg van de enige echte actie op dit
            scherm. De tab blijft; de knop is weg. */
+        /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
+           knop die iets nieuws maakt. */
+        : tab==='activiteit' ? ''
         : `<button class="btn" data-nieuwekans>+ Nieuwe kans</button>`}
       </div>
     </div>`;
 
   if(tab==='radar'){
     mountEl.innerHTML = kop + radarHTML() + '</div>';
+  } else if(tab==='activiteit'){
+    mountEl.innerHTML = kop + activiteitHTML() + '</div>';
   } else if(tab==='kansen'){
     mountEl.innerHTML = kop + kansenHTML() + '</div>';
   } else if(weergave==='lijst'){
@@ -1087,6 +1536,7 @@ function bindInhoud(){
   CRM.$$('[data-radar]', mountEl).forEach(b=>b.onclick=()=>{ tab='radar'; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
   CRM.$$('[data-nieuwekans]', mountEl).forEach(b=>b.onclick=()=>nieuweKans(null));
   bindRadar();
+  if(tab==='activiteit') bindActiviteit();
   CRM.$$('[data-wis]', mountEl).forEach(b=>b.onclick=()=>{
     zoek=''; mijn=false; eigFilter='';
     V.zet('zoek',''); V.zet('mijn',false); V.zet('eigenaar','');
@@ -1182,8 +1632,37 @@ CRM.registerModule('sales', {
       echte doorlooptijden per fase tonen.
    3. `CRM.registerModule` kent geen `group`; de navigatiegroepen staan
       hard in core.js. Prima zo, alleen ter info genoteerd.
+   2b. Het tabblad Activiteit telt "vacatures opgehaald" uit
+      `vacatures.aangemaakt`. Die kolom staat NIET in supabase/schema.sql
+      (alleen js/klanten.js schrijft hem bij nieuwe vacatures) en is leeg
+      bij alles wat geïmporteerd is. Zie de SQL onderaan dit blok. Zolang
+      de kolom leeg is toont het scherm een streepje met de reden, geen 0.
+   2c. `clients.fase_historie` bestaat in het schema maar wordt door
+      niemand geschreven. Sales leidt fase-overgangen daarom af uit de
+      activiteitenregels ("Fase gewijzigd: A → B"). Dat werkt, maar het
+      is tekst. Als `zetFase` in sales.js en klanten.js `fase_historie`
+      zouden aanvullen, kan die tekstlezing weg.
+   2d. `CRM.load()` haalt maximaal 2.000 activiteiten op. Voor "deze week"
+      en "deze maand" is dat ruim genoeg; voor een kwartaalvergelijking
+      op termijn niet. Het scherm meldt de grens zodra hij geraakt wordt.
    4. `crm_leadradar` zit niet in CRM.load()/CRM.state; sales haalt de
       tabel zelf op (met dezelfde nette degradatie als core's veilig()).
       Als meer modules de radar willen tonen (bv. dashboard-teller),
       graag toevoegen aan CRM.load() plus realtime-kanaal.
+
+   ─── SQL VOOR DE COORDINATOR ───────────────────────────────────
+   Nodig voor "vacatures opgehaald" (punt 2b). De kolom bestaat in
+   productie al bij vacatures die via de app zijn aangemaakt, maar
+   staat niet in het schema en ontbreekt bij de import:
+
+     alter table vacatures add column if not exists aangemaakt date;
+     -- Bestaande rijen niet raden: leeg laten is eerlijker dan een
+     -- verzonnen datum. Het scherm meldt hoeveel rijen geen datum hebben.
+     -- Alleen voor nieuwe rijen een standaard:
+     alter table vacatures alter column aangemaakt set default current_date;
+
+   Voor de demo (js/demo.js, niet van sales): KLANTEN krijgen nu geen
+   `aangemaakt` mee, waardoor de tegel "nieuwe bedrijven" in demo altijd
+   een streepje toont. Eén veld erbij in de KLANTEN-map maakt die tegel
+   ook in de demo echt:  aangemaakt: d(-(20 + i*7))
    ═══════════════════════════════════════════════════════════════ */

@@ -1557,14 +1557,15 @@ function uitvalHtml(c){
    Wat er nog ontbreekt voordat de fee uitgerekend kan worden. Het lijstje
    is voor IEDEREEN: de AM moet weten wat er ingevuld moet worden, en dat zijn
    veldnamen, geen bedragen. De uitkomst van de berekening is dat wél, dus
-   die staat achter CRM.canSeeMoney(). Zie js/fee.js. */
+   die staat achter CRM.magOpbrengstZien() — het hele team, sinds 31 jul
+   2026. Zie js/fee.js. */
 function factuurklaarHtml(c){
   if(!CRM.fee || !c.klant) return '';           // zonder klant valt er niets te factureren
   let mist = [], b = null;
   try{
     const afspraak = CRM.fee.voorKlant(c.klant, c.geplaatstOp || null);
     mist = CRM.fee.watMist(c, afspraak) || [];
-    if(CRM.canSeeMoney()) b = CRM.fee.bereken(c, afspraak);
+    if(CRM.magOpbrengstZien()) b = CRM.fee.bereken(c, afspraak);
   }catch(e){ console.warn('feeberekening', e); return ''; }
 
   const klaar = !mist.length;

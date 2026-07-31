@@ -158,25 +158,38 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
 .mkt-learn:last-child{border-bottom:none}
 .mkt-learn b{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.45}
 
-/* ─── Weekthema's ────────────────────────────────────────────── */
-.mkt-thema{
-  display:flex;align-items:baseline;gap:12px;
-  padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px;
-}
-.mkt-thema:last-child{border-bottom:none}
-.mkt-thema > .label{flex:0 0 88px}
-.mkt-thema-t{flex:1;min-width:0;line-height:1.45}
-.mkt-thema.nu{font-weight:600;color:var(--ink)}
-.mkt-thema > .chip{flex:0 0 auto;align-self:center}
+/* De stijl voor de weekthema's en de inspiratiekaarten (.mkt-thema,
+   .mkt-ideerij, .mkt-idee) is op 31 jul 2026 verdwenen samen met het tabblad
+   Ideeën. Bedenken en schrijven hoort in het marketingbord; dit scherm stuurt. */
 
-/* ─── Inspiratie- en afkijkkaarten ───────────────────────────── */
-.mkt-ideerij{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-.mkt-idee{
-  display:flex;flex-direction:column;gap:5px;
-  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;
+/* ─── Advertentie of opvolging? ───────────────────────────────
+   Twee balken onder de trechter, in dezelfde vorm als een trechterregel maar
+   met een eigen kader eromheen: het is een conclusie over de trechter, geen
+   negende stap erin. Geen eigen kleuren — de balk is dezelfde neutrale balk
+   als in .mkt-tr-b, want "hoog" is hier niet goed of slecht op zichzelf. */
+.mkt-kw{
+  margin-top:16px;padding:14px 16px;
+  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r);
 }
-.mkt-idee b{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.4}
-.mkt-idee-h{font-size:12.5px;color:var(--txt-2);line-height:1.5}
+.mkt-kw > .label{display:block;margin:0 0 10px}
+.mkt-kw-r{display:flex;align-items:center;gap:16px;padding:6px 0}
+.mkt-kw-l{flex:0 0 230px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.mkt-kw-l b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.mkt-kw-n{flex:0 0 54px;text-align:right;font-size:15px;font-weight:600;color:var(--ink)}
+
+/* ─── Verantwoording onder aan het Prestatie-tabblad ──────────
+   Herkomst, de leadcontrole en de vergelijking met de bank stonden tussen de
+   cijfers in en duwden de grafiek van het scherm. Ze staan nu onderaan, achter
+   een streep, zodat zichtbaar is dat het een andere soort blok is. */
+.mkt-verantwoording{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}
+.mkt-verantwoording > .label{display:block;margin:0}
+
+/* ─── Vacatures: waar krijgt een vacature geen instroom? ────── */
+/* De drie gatkolommen zijn smal en mogen niet meegroeien met de tabel; de
+   vacaturenaam pakt de ruimte die overblijft. */
+.mkt-vac td:first-child{min-width:180px}
+.mkt-vac th:nth-child(3),.mkt-vac th:nth-child(4),.mkt-vac th:nth-child(5),
+.mkt-vac td:nth-child(3),.mkt-vac td:nth-child(4),.mkt-vac td:nth-child(5){white-space:nowrap}
 
 /* Breed scherm (zie de ladder in base.css): het team staat om één groot
    scherm. Extra breedte vullen we met méér inhoud naast elkaar — de
@@ -191,7 +204,12 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
      inhoud, geen uitgerekte balken. */
   .mkt-trechter .card-b{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);
     gap:26px;align-items:start}
-  .mkt-trechter .card-b > .note{margin-top:0}
+  .mkt-trechter .card-b > .mkt-kw{margin-top:0}
+  /* In twee kolommen is er geen ruimte voor een label van 230px naast de balk;
+     dan zetten we het label boven de balk, net als op een telefoon. */
+  .mkt-trechter .mkt-kw-r{flex-wrap:wrap;gap:4px 12px}
+  .mkt-trechter .mkt-kw-l{flex-basis:100%}
+  .mkt-trechter .mkt-kw-n{flex:0 0 auto;margin-left:auto}
 }
 
 @media (max-width:900px){
@@ -212,9 +230,9 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
   .mkt-dagen{gap:4px}
   .mkt-daglbl span{display:none}
   .mkt-learn{padding-left:16px;padding-right:16px}
-  /* Onder 900px is 88px voor de dagnaam te veel van de regel; dan zetten we
-     de dag boven het thema in plaats van ernaast. */
-  .mkt-thema{flex-wrap:wrap;gap:2px 12px}
-  .mkt-thema > .label{flex-basis:100%}
-  .mkt-ideerij{grid-template-columns:1fr}
+  /* Zelfde ingreep als bij de trechter: label boven, balk en percentage
+     eronder. Onder 900px is 230px voor het label meer dan de halve regel. */
+  .mkt-kw-r{flex-wrap:wrap;gap:4px 12px}
+  .mkt-kw-l{flex-basis:100%}
+  .mkt-kw-n{flex:0 0 auto;margin-left:auto}
 }

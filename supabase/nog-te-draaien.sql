@@ -51,16 +51,21 @@ update candidates
 -- Onderstaande regels verruimen dat naar iedereen die is ingelogd. De
 -- fin_*-tabellen (bank, cashflow, winst) blijven ongemoeid en dicht.
 --
--- NIET GEDRAAID — wacht op akkoord van Tjeerd. Haal het commentaar weg als
--- hij ja zegt.
+-- AKKOORD 31 jul 2026, Tjeerd: "De fee mag iedereen zien, dat is geen
+-- probleem hoor. Alleen niet al mijn bankcijfers etc." Daarom aangezet.
 --
--- do $$
--- begin
---   execute 'drop policy if exists afspraken_owner_only on crm_afspraken';
---   execute 'drop policy if exists afspraken_team on crm_afspraken';
---   execute 'create policy afspraken_team on crm_afspraken
---            for all to authenticated using (true) with check (true)';
--- end $$;
+-- Wat dit WEL doet: het team ziet de fee op de kandidatenkaart, in het
+-- feestscherm bij een plaatsing en in Performance — ook wanneer een AM zelf
+-- de plaatsing afrondt (tot nu toe kon alleen Tjeerds browser die uitrekenen).
+-- Wat dit NIET doet: fin_bank_tx, cashflow, winst en alle andere fin_*-tabellen
+-- blijven onaangeroerd en dicht. Dat zijn andere tabellen met een eigen policy.
+do $$
+begin
+  execute 'drop policy if exists afspraken_owner_only on crm_afspraken';
+  execute 'drop policy if exists afspraken_team on crm_afspraken';
+  execute 'create policy afspraken_team on crm_afspraken
+           for all to authenticated using (true) with check (true)';
+end $$;
 
 
 -- ─── 3. Vacaturevelden voor de marketeer ──────────────────────
@@ -127,3 +132,12 @@ select p.naam, p.email, p.functie, p.rol
   from profiles p
   join auth.users u on u.id = p.id
  order by p.naam;
+
+
+-- ─── 5. Wanneer is een vacature opgehaald? ────────────────────
+-- Sales stuurt op "hoeveel vacatures hebben we deze week opgehaald". Zonder
+-- deze kolom is dat niet te tellen. Bestaande rijen krijgen bewust GEEN
+-- datum: een verzonnen datum is erger dan een streepje, en het scherm meldt
+-- zelf hoeveel rijen niet meetellen.
+alter table vacatures add column if not exists aangemaakt date;
+alter table vacatures alter column aangemaakt set default current_date;

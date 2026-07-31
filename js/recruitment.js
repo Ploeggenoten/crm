@@ -31,9 +31,14 @@ const h = CRM.h;
 /* ─── Modulestatus (blijft bewaard tussen renders) ─────────────── */
 const S = {
   tab:'leads',
-  l:{q:'', status:'', bron:'', vac:'', mijn:false, zvac:false},
-  u:{f:'alles'}
+  l:{q:'', status:'', bron:'', vac:'', mijn:false, zvac:false, stil:false},
+  u:{f:'alles'},
+  /* Aangevinkte sollicitanten in de lijst. Leeg zodra er een filter verandert:
+     een selectie die deels buiten beeld staat en tóch meedoet met "zet alles op
+     Potentieel" is precies het soort verrassing dat je niet wilt. */
+  sel:new Set()
 };
+const wisSelectie = () => { S.sel = new Set(); };
 
 /* ─── Bord of lijst ───────────────────────────────────────────────
    Allebei, omdat het werk twee vormen heeft. Wie een middag afbelt wil
@@ -69,6 +74,74 @@ const NIEUW_LETOP  = 1;
 const NIEUW_TELANG = 3;
 const leadDagen     = l => CRM.dagenGeleden(l && l.binnen_op);
 const ouderdomKlas  = n => n == null ? '' : n >= NIEUW_TELANG ? 'red' : n >= NIEUW_LETOP ? 'amber' : '';
+
+/* ─── Elke status kan een stille wachtkamer worden ────────────────
+   'Nieuw' had als enige een grens. Dat is precies één van de zeven plekken
+   waar iemand kan blijven hangen: een cv dat nooit komt, een videocall die
+   is geweest maar waar niemand meer iets mee deed, een tweede belpoging die
+   er nooit kwam. Wie alleen op 'Nieuw' stuurt, ziet een leeg beginvak en
+   denkt dat het goed gaat terwijl er dertig mensen halverwege stilstaan.
+
+   Per status een eigen grens, want ze betekenen niet hetzelfde. De regel
+   erachter is steeds: hoe lang mag de sollicitant hier op ons wachten
+   zonder dat hij afhaakt of denkt dat hij is vergeten? Bewust streng —
+   dit is de kant van het werk waar snelheid het verschil maakt.
+
+     dagen  = vanaf hier staat het te lang stil (amber)
+     dubbel = het dubbele daarvan is rood: dan is het geen vertraging meer
+     waarom = waaróm die grens; staat in de tooltip, zodat niemand hoeft te
+              raden of een getal ooit ergens op gebaseerd was
+
+   Waar de klok begint verschilt: op 'Nieuw' telt de binnenkomst (er is nog
+   nooit iets mee gedaan), bij een geplande videocall telt de afspraakdatum
+   zelf, en verder telt `laatst_actie` — dat veld wordt bij elke statuswissel
+   en elke notitie bijgewerkt en is dus het moment waarop hier voor het
+   laatst iets aan gedaan is. */
+const STATUS_NORM = {
+  'Nieuw': {dagen:NIEUW_TELANG, doe:'ligt te lang — bel die eerst',
+    waarom:'Er is nog niet gebeld. Na drie dagen is er een weekend overheen en heeft de sollicitant meestal ergens anders iets.'},
+  'Gebeld — geen gehoor': {dagen:1, doe:'wacht op een tweede poging',
+    waarom:'Eén gemiste poging zegt niets. Een tweede hoort dezelfde of de volgende dag te volgen, op een ánder tijdstip — anders bel je eeuwig tijdens dezelfde dienst.'},
+  'Potentieel': {dagen:2, doe:'wacht op een vervolgstap',
+    waarom:'Je hebt iemand aan de lijn gehad die wil. Dan is twee dagen stilte het punt waarop hij denkt dat het niet doorgaat.'},
+  'CV opgevraagd': {dagen:3, doe:'stuurde nog geen cv',
+    waarom:'Een cv dat na drie dagen niet binnen is, komt uit zichzelf niet meer. Eén appje of belletje is genoeg — daarna is het een nee.'},
+  'CV binnen': {dagen:1, doe:'cv ligt klaar — plan de call',
+    waarom:'Je hebt alles wat je nodig hebt om te beoordelen. Er is geen reden om de videocall nog een dag uit te stellen.'},
+  'Videocall gepland': {dagen:1, opAfspraak:true, doe:'call zonder uitkomst of datum',
+    waarom:'De afspraakdatum is voorbij en de uitkomst staat er nog niet bij. Dan weet niemand of het gesprek überhaupt is geweest.',
+    label:d => d === 1 ? 'call was gisteren' : 'call was ' + d + ' dagen geleden'},
+  'Videocall gehad': {dagen:2, doe:'wacht op een kandidaatkaart',
+    waarom:'De call ís de intake. Wie na twee dagen nog geen kandidaatkaart heeft, staat in niemandsland: de recruiter is klaar en de AM weet van niets.'}
+};
+
+/* Waarop wacht deze lead, en hoe lang al? Null als het niet te meten is. */
+function wachtDagen(l){
+  if(!l) return null;
+  if(l.status === 'Nieuw') return leadDagen(l);
+  const norm = STATUS_NORM[l.status];
+  if(norm && norm.opAfspraak && l.opvolgen_op) return CRM.dagenGeleden(l.opvolgen_op);
+  return CRM.dagenGeleden(l.laatst_actie || l.binnen_op);
+}
+
+/* Eén oordeel per lead: staat dit stil, en waarom is dát te lang?
+   Geeft null terug (niets aan de hand) of {dagen, label, waarom, klas}.
+   Wordt op de rij, op de bordkaart, in de belronde én in de wachtkamerregel
+   gebruikt, zodat al die plekken gegarandeerd hetzelfde zeggen. */
+function stilstand(l){
+  if(!l || !CRM.LEAD_OPEN.includes(l.status)) return null;
+  const norm = STATUS_NORM[l.status];
+  if(!norm) return null;
+  /* "Gepland" zonder datum is geen vertraging maar een gat: er ís geen
+     afspraak om na te komen. Meteen melden, ongeacht de klok. */
+  if(norm.opAfspraak && !l.opvolgen_op)
+    return {dagen:null, label:'zonder datum', klas:'red',
+            waarom:'De status zegt dat er een videocall staat, maar nergens staat wanneer. Dan bevestigt niemand die afspraak en komt er ook niemand opdagen.'};
+  const d = wachtDagen(l);
+  if(d == null || d < norm.dagen) return null;
+  return {dagen:d, klas: d >= norm.dagen * 2 ? 'red' : 'amber', waarom:norm.waarom,
+          label: norm.label ? norm.label(d) : d + ' dag' + (d === 1 ? '' : 'en') + ' stil'};
+}
 
 const GESPREK_FASES = ['O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag'];
 const CONTRACT_FASES = ['Contract ondertekenen','Contract getekend','Gestart'];
@@ -116,21 +189,83 @@ const losFunctie  = l => String((l && l.functie) || '').trim();
    elke kolom en elk filter — daarom tellen we ze apart en melden we ze. */
 const statusBestaat = s => CRM.LEAD_STATUS.some(x => x.k === s);
 
-/* Dezelfde persoon die twee keer solliciteert — op een tweede advertentie, of
+/* ─── Kennen we deze persoon al? ──────────────────────────────────
+   Dezelfde persoon die twee keer solliciteert — op een tweede advertentie, of
    een paar weken later opnieuw. We voegen niets samen: welke van de twee de
    goede is, is een beslissing van de recruiter. Maar we laten het wél zien,
    anders belt de een 's ochtends en de ander 's middags dezelfde persoon.
+
+   Sinds 31 juli 2026 kijken we niet alleen naar andere leads maar ook naar de
+   kandidaten. Dat is de duurste vergissing van de twee: iemand die vorige maand
+   is afgevallen bij een klant staat hier gewoon weer als verse reactie, en dan
+   loopt de recruiter dezelfde intake nog een keer — of, erger, de kaart wordt
+   dubbel aangemaakt en dezelfde persoon wordt bij twee klanten voorgesteld.
+   Andersom net zo waardevol: wie destijds op 'recyclebaar' is gezet was gewoon
+   goed, en die wil je juist als eerste terugbellen.
+
+   Twee sleutels. Het telefoonnummer is de betrouwbare; naam + woonplaats vangt
+   het geval waarin iemand een nieuw nummer opgeeft. Alleen naam zou te veel
+   valse treffers geven — er lopen genoeg naamgenoten rond.
    Eén keer per hertekening opgebouwd; per rij opnieuw zoeken werd bij duizenden
    leads onnodig duur. */
-let DUB = new Map();
+let PERS_TEL = new Map(), PERS_NAAM = new Map();
+const naamSleutel = o => {
+  const n = norm(o && o.naam).replace(/\s+/g,' ').trim();
+  const p = norm(o && o.woonplaats).trim();
+  return (n && p) ? n + '|' + p : '';
+};
 function bouwDubbel(){
-  DUB = new Map();
+  PERS_TEL = new Map(); PERS_NAAM = new Map();
+  const zet = (map, sleutel, soort, obj) => {
+    if(!sleutel) return;
+    let e = map.get(sleutel);
+    if(!e){ e = {leads:[], kands:[]}; map.set(sleutel, e); }
+    e[soort].push(obj);
+  };
   leads().forEach(l => {
-    const t = telNorm(l.telefoon);
-    if(t) DUB.set(t, (DUB.get(t) || 0) + 1);
+    zet(PERS_TEL,  telNorm(l.telefoon), 'leads', l);
+    zet(PERS_NAAM, naamSleutel(l),      'leads', l);
+  });
+  CRM.kandidaten().forEach(c => {
+    zet(PERS_TEL,  telNorm(c.telefoon), 'kands', c);
+    zet(PERS_NAAM, naamSleutel(c),      'kands', c);
   });
 }
-const dubbelAantal = l => { const t = telNorm(l && l.telefoon); return t ? (DUB.get(t) || 1) : 1; };
+/* Alles wat op dezelfde persoon lijkt, zonder de lead zelf en zonder de
+   kandidaat die uít deze lead is ontstaan — die twee horen bij elkaar. */
+function bekend(l){
+  if(!l) return {leads:[], kands:[]};
+  /* De index wordt bij elke hertekening opgebouwd, maar deze functie wordt ook
+     aangeroepen vanuit een venster dat los van de lijst opengaat (doorschieten
+     vanaf een andere module). Dan is er nog niets — bouw hem dan alsnog, in
+     plaats van stilzwijgend "niemand bekend" te antwoorden. */
+  if(!PERS_TEL.size && (leads().length || CRM.kandidaten().length)) bouwDubbel();
+  const uit = {leads:[], kands:[]};
+  const gezien = new Set([String(l.id), String(l.kandidaat_id || '')]);
+  [PERS_TEL.get(telNorm(l.telefoon)), PERS_NAAM.get(naamSleutel(l))].forEach(bak => {
+    if(!bak) return;
+    ['leads','kands'].forEach(soort => bak[soort].forEach(x => {
+      if(gezien.has(String(x.id))) return;
+      gezien.add(String(x.id)); uit[soort].push(x);
+    }));
+  });
+  return uit;
+}
+/* Hoeveel keer staat deze persoon in de sollicitantenlijst (zichzelf meegeteld)? */
+const dubbelAantal = l => bekend(l).leads.length + 1;
+
+/* Wat is er eerder met deze persoon gebeurd? Kort, feitelijk, in de volgorde
+   waarin het de recruiter iets kan schelen: een lopend traject eerst, dan een
+   uitkomst uit het verleden. Alleen wat is vastgelegd — nooit een conclusie. */
+function eerderTekst(c){
+  const fase = CRM.faseNorm(c.fase) || 'geen fase';
+  if(c.fase === 'Afgevallen' || c.fase === 'Gestopt'){
+    const reden = c.afvalCat || c.stopCat || '';
+    return `${fase}${c.klant ? ' bij ' + c.klant : ''}${reden ? ' — ' + reden : ''}${
+      c.recyclebaar ? ' · stond op recyclebaar' : ''}`;
+  }
+  return `${fase}${c.klant ? ' bij ' + c.klant : ''}${c.functie ? ' · ' + c.functie : ''}`;
+}
 
 /* Een lead zonder naam komt voor: een formulier dat alleen een nummer
    doorgeeft, of een import met een lege kolom. Zonder deze terugval staat er
@@ -267,7 +402,10 @@ function cijfers(){
 
   const binnenVandaag = L.filter(l => String(l.binnen_op||'').slice(0,10) === vandaag).length;
   const open = L.filter(l => CRM.LEAD_OPEN.includes(l.status));
-  const stil = open.filter(l => (CRM.dagenGeleden(l.laatst_actie || l.binnen_op) || 0) > 2).length;
+  /* Eén vlakke grens van twee dagen voor élke status zei niets: bij 'CV binnen'
+     is dat te laks en bij 'CV opgevraagd' te streng. Nu per status — zie
+     STATUS_NORM. */
+  const stil = open.filter(stilstand).length;
   const zonderVac = open.filter(l => !isGekoppeld(l)).length;
   /* Videocalls: geplande calls bij de leads plus de kandidaten die al zijn
      doorgeschoten en op fase Intake staan met een datum deze week. */
@@ -366,6 +504,7 @@ function leadsGefilterd(negeerStatus){
     if(f.bron && l.bron !== f.bron) return false;
     if(f.vac && String(l.vacature_id) !== f.vac) return false;
     if(f.zvac && isGekoppeld(l)) return false;
+    if(f.stil && !stilstand(l)) return false;
     if(f.mijn && l.eigenaar !== CRM.me()) return false;
     if(q){
       const hooi = [l.naam, l.telefoon, l.email, l.woonplaats, l.klant, l.functie, l.kwalificatie].map(norm).join(' ');
@@ -384,6 +523,7 @@ function tekenLeads(el){
   el.innerHTML = `
     <div class="rc-pad">
       <div id="rc_nieuwbalk"></div>
+      <div id="rc_wacht"></div>
       <div class="rc-fil">
         <div class="searchbox" style="flex:1;max-width:280px">
           <input type="search" id="rc_q" placeholder="Zoek op naam, telefoon of plaats" value="${h(S.l.q)}">
@@ -410,12 +550,13 @@ function tekenLeads(el){
       <div id="rc_lijst"></div>
     </div>`;
 
+  /* Elke filterwijziging wist de selectie — zie de toelichting bij S.sel. */
   const q = el.querySelector('#rc_q');
-  q.oninput = CRM.debounce(() => { S.l.q = q.value; tekenWerk(); }, 200);
-  el.querySelector('#rc_bron').onchange = e => { S.l.bron = e.target.value; tekenWerk(); };
-  el.querySelector('#rc_vac').onchange  = e => { S.l.vac  = e.target.value; tekenWerk(); };
-  el.querySelector('#rc_zvac').onchange = e => { S.l.zvac = e.target.checked; tekenWerk(); };
-  el.querySelector('#rc_mijn').onchange = e => { S.l.mijn = e.target.checked; tekenWerk(); };
+  q.oninput = CRM.debounce(() => { S.l.q = q.value; wisSelectie(); tekenWerk(); }, 200);
+  el.querySelector('#rc_bron').onchange = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_vac').onchange  = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_zvac').onchange = e => { S.l.zvac = e.target.checked; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_mijn').onchange = e => { S.l.mijn = e.target.checked; wisSelectie(); tekenWerk(); };
   CRM.$$('#rc_weer button', el).forEach(b => b.onclick = () => {
     if(weergave() === b.dataset.w) return;
     zetWeergave(b.dataset.w);
@@ -479,6 +620,51 @@ function tekenNieuwbalk(){
   el.querySelector('#rc_werkaf').onclick = () => wegwerkModus();
 }
 
+/* ─── De wachtkamers ──────────────────────────────────────────────
+   'Nieuw' is de zichtbaarste stapel, maar niet de gevaarlijkste. Wat na de
+   eerste actie blijft staan verdwijnt uit het zicht: het heeft immers een
+   status gekregen, dus het lijkt afgehandeld. Deze regel laat per status zien
+   hoeveel er over de grens van STATUS_NORM heen is, met de reden erbij.
+
+   Eén klik zet het filter op precies die groep; daarna staat de knop
+   "Wegwerken" ernaast en kun je hem met de cijfertoetsen afmaken. */
+function tekenWachtkamer(){
+  const el = document.getElementById('rc_wacht'); if(!el) return;
+  /* Op de huidige filters, minus de status — anders zou de regel alleen de
+     kolom tonen waar je toevallig al in kijkt. */
+  const basis = leadsGefilterd(true);
+  const per = CRM.LEAD_OPEN.map(s => {
+    const rijen = basis.filter(l => l.status === s && stilstand(l));
+    return {s, n:rijen.length, waarom:(STATUS_NORM[s]||{}).waarom || ''};
+  }).filter(x => x.n);
+  const totaal = per.reduce((n,x) => n + x.n, 0);
+  if(!totaal){
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <div class="rc-wacht">
+      <div class="rc-wachtkop"><b>Blijft liggen</b>
+        <span class="meta">${totaal} sollicitant${totaal===1?' staat':'en staan'} langer stil dan bij deze stap hoort</span></div>
+      <div class="rc-wachtrij">${per.map(x => `
+        <button class="rc-wachtknop ${S.l.stil && S.l.status === x.s ? 'on' : ''}"
+          data-wacht="${h(x.s)}" title="${h(x.waarom)}">
+          <i class="dot" style="background:${CRM.leadKleur(x.s)}"></i>${h(x.s)}<b class="num">${x.n}</b></button>`).join('')}
+        ${S.l.stil ? `<button class="btn ghost sm" data-wachtuit>Toon weer alles</button>` : ''}
+      </div>
+    </div>`;
+  CRM.$$('[data-wacht]', el).forEach(b => b.onclick = () => {
+    const zelfde = S.l.stil && S.l.status === b.dataset.wacht;
+    S.l.status = zelfde ? '' : b.dataset.wacht;
+    S.l.stil   = !zelfde;
+    wisSelectie();
+    if(weergave() === 'bord') zetWeergave('lijst');   // een gerichte stapel werk je af in een lijst
+    tekenBody();
+  });
+  const uit = el.querySelector('[data-wachtuit]');
+  if(uit) uit.onclick = () => { S.l.stil = false; S.l.status = ''; wisSelectie(); tekenWerk(); };
+}
+
 function tekenStatusChips(){
   const el = document.getElementById('rc_stchips'); if(!el) return;
   /* Op het bord zíjn de kolommen de statussen — dan is een tweede rij met
@@ -487,13 +673,27 @@ function tekenStatusChips(){
   el.style.display = '';
   const basis = leadsGefilterd(true);
   const tel = s => basis.filter(l => l.status === s).length;
+  /* Staat er één werkstatus aan, dan is de belronde één klik weg. Die knop
+     stond eerst alleen boven 'Nieuw'; het werk dat blijft liggen zit juist in
+     de statussen daarna (opnieuw bellen, cv's najagen, calls afronden) en dat
+     ging tot nu toe kaart voor kaart. */
+  const aantal = S.l.status && CRM.LEAD_OPEN.includes(S.l.status) ? tel(S.l.status) : 0;
   el.innerHTML =
     `<button class="chip btn-like ${S.l.status===''?'on':''}" data-s="">Alle <b class="num">${basis.length}</b></button>` +
     CRM.LEAD_STATUS.map(s => `
       <button class="chip btn-like ${S.l.status===s.k?'on':''}" data-s="${h(s.k)}">
         <i class="dot" style="background:${s.c}"></i>${h(s.k)} <b class="num">${tel(s.k)}</b>
-      </button>`).join('');
-  CRM.$$('[data-s]', el).forEach(b => b.onclick = () => { S.l.status = b.dataset.s; tekenWerk(); });
+      </button>`).join('') +
+    (aantal ? `<button class="btn sm" id="rc_werkstatus" style="margin-left:6px">Wegwerken (${aantal}) →</button>` : '');
+  /* Een statuschip toont die status compleet. Zou 'alleen wat blijft liggen'
+     blijven staan, dan wijst de chip 12 aan en zie je er 4 — zonder dat
+     ergens staat waarom. Die beperking hoort bij de wachtkamerregel en gaat
+     hier dus uit. */
+  CRM.$$('[data-s]', el).forEach(b => b.onclick = () => {
+    S.l.status = b.dataset.s; S.l.stil = false; wisSelectie(); tekenWerk();
+  });
+  const ws = el.querySelector('#rc_werkstatus');
+  if(ws) ws.onclick = () => wegwerkModus(S.l.status);
 }
 
 /* Het werkvlak: bord of lijst, met dezelfde filters en dezelfde acties.
@@ -501,6 +701,7 @@ function tekenStatusChips(){
 function tekenWerk(){
   bouwDubbel();
   tekenNieuwbalk();
+  tekenWachtkamer();
   tekenStatusChips();
   /* De meldingen staan boven het werkvlak en niet eronder: ze gelden voor bord
      én lijst, en een lijst van tweehonderd regels duwt een voetnoot buiten beeld. */
@@ -531,11 +732,19 @@ const tekenLijst = () => tekenWerk();
 
 function tekenLeadTabel(wrap, rijen){
   const toon = rijen.slice(0,200);
+  /* Alleen wat in beeld staat kan geselecteerd zijn — een selectie die
+     buiten de eerste 200 valt zou meedoen zonder dat je hem ziet. */
+  const zichtbaar = new Set(toon.map(l => String(l.id)));
+  S.sel.forEach(id => { if(!zichtbaar.has(id)) S.sel.delete(id); });
+  const alleAan = toon.length && toon.every(l => S.sel.has(String(l.id)));
   wrap.className = '';
   wrap.innerHTML = `
+    <div id="rc_bulk"></div>
     <div class="tblwrap">
       <table class="tbl rc-tbl">
         <thead><tr>
+          <th style="width:30px"><input type="checkbox" id="rc_alle" ${alleAan?'checked':''}
+            title="Alles in beeld selecteren"></th>
           <th style="width:24px"></th><th>Sollicitant</th><th>Contact</th><th>Bron</th>
           <th>Reageerde op</th><th>Agent</th><th style="width:236px">Status</th><th>Eigenaar</th><th class="n">Binnen</th>
         </tr></thead>
@@ -545,7 +754,36 @@ function tekenLeadTabel(wrap, rijen){
     ${rijen.length > 200 ? `<p class="meta" style="margin:10px 2px">Eerste 200 van ${rijen.length} getoond — verfijn je filter.</p>` : ''}
     ${klaarRegelHtml()}`;
 
+  tekenBulkbalk();
   bindKlaar(wrap);
+  /* De vinkjes zitten in de rij, dus een klik erop mag de kaart niet openen.
+     Shift maakt er een reeks van — wie dertig regels van dezelfde campagne
+     wil koppelen, klikt de eerste en shift-klikt de laatste. */
+  let laatsteIdx = -1;
+  CRM.$$('input.rc-vink', wrap).forEach((box, idx) => {
+    box.onclick = e => {
+      e.stopPropagation();
+      const aan = box.checked;
+      const van = (e.shiftKey && laatsteIdx >= 0) ? Math.min(laatsteIdx, idx) : idx;
+      const tot = (e.shiftKey && laatsteIdx >= 0) ? Math.max(laatsteIdx, idx) : idx;
+      CRM.$$('input.rc-vink', wrap).forEach((b2, j) => {
+        if(j < van || j > tot) return;
+        b2.checked = aan;
+        if(aan) S.sel.add(b2.dataset.id); else S.sel.delete(b2.dataset.id);
+      });
+      laatsteIdx = idx;
+      tekenBulkbalk();
+      const kop = wrap.querySelector('#rc_alle');
+      if(kop) kop.checked = toon.length && toon.every(l => S.sel.has(String(l.id)));
+    };
+  });
+  const kop = wrap.querySelector('#rc_alle');
+  if(kop) kop.onclick = () => {
+    if(kop.checked) toon.forEach(l => S.sel.add(String(l.id)));
+    else S.sel.clear();
+    CRM.$$('input.rc-vink', wrap).forEach(b => b.checked = kop.checked);
+    tekenBulkbalk();
+  };
   CRM.$$('tr.clickable', wrap).forEach(tr => tr.onclick = () => openLead(tr.dataset.id));
   CRM.$$('select.rc-stsel', wrap).forEach(sel => {
     sel.onclick = e => e.stopPropagation();
@@ -561,13 +799,18 @@ function rijHtml(l){
   const wa = waLink(l.telefoon);
   const dg = leadDagen(l);
   const nieuw = l.status === 'Nieuw';
-  const stil = CRM.LEAD_OPEN.includes(l.status) && (CRM.dagenGeleden(l.laatst_actie || l.binnen_op) || 0) > 2;
-  const dub = dubbelAantal(l);
-  return `<tr class="clickable ${nieuw && dg >= NIEUW_TELANG ? 'rc-telang' : ''}" data-id="${h(l.id)}">
+  const st = stilstand(l);
+  const ken = bekend(l);
+  const dub = ken.leads.length + 1;
+  return `<tr class="clickable ${st ? 'rc-telang' : ''}" data-id="${h(l.id)}">
+    <td><input type="checkbox" class="rc-vink" data-id="${h(l.id)}" ${S.sel.has(String(l.id))?'checked':''}
+      aria-label="Selecteer ${h(leadNaam(l))}"></td>
     <td><span class="rc-prio" title="Prioriteit ${h(l.prioriteit||'onbekend')}" style="background:${prioKleur(l.prioriteit)}"></span></td>
     <td>
       <div class="rc-naam">${h(leadNaam(l))}</div>
-      <div class="rowsub">${h(l.woonplaats||'—')}${l.cv?' · cv':''}${dub > 1 ? ` · <span class="rc-dub" title="Ditzelfde telefoonnummer staat ${dub}× in de lijst — mogelijk twee keer gesolliciteerd">${dub}× in de lijst</span>` : ''}</div>
+      <div class="rowsub">${h(l.woonplaats||'—')}${l.cv?' · cv':''}${
+        dub > 1 ? ` · <span class="rc-dub" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">${dub}× in de lijst</span>` : ''}${
+        ken.kands.length ? ` · <span class="rc-dub" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>` : ''}</div>
     </td>
     <td>
       ${l.telefoon ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>
@@ -587,11 +830,124 @@ function rijHtml(l){
           ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${l.status===s.k?'selected':''}>${h(s.k)}</option>`).join('')}
         </select>
       </div>
+      ${/* Stilstand hoort bij de status, niet bij de binnenkomst — daarom hier
+           en niet in de laatste kolom. Die valt op een normaal scherm buiten
+           beeld, en dan is het signaal er wel maar zie je het nooit.
+           Op 'Nieuw' zegt de gekleurde ouderdom achteraan het al; die twee
+           naast elkaar zou hetzelfde twee keer zeggen. */
+        st && !nieuw ? `<div style="margin-top:5px"><span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span></div>` : ''}
     </td>
     <td>${l.eigenaar ? `<span class="chip">${h(l.eigenaar)}</span>` : '<span class="meta">—</span>'}</td>
-    <td class="n"><span class="num ${nieuw && ouderdomKlas(dg) ? 'rc-oud-'+ouderdomKlas(dg) : stil?'rc-stil':''}"
-      title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op) || '—')}</span></td>
+    <td class="n">
+      <span class="num ${nieuw && ouderdomKlas(dg) ? 'rc-oud-'+ouderdomKlas(dg) : ''}"
+        title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op) || '—')}</span></td>
   </tr>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MEERDERE SOLLICITANTEN TEGELIJK
+   Drie handelingen die je zelden voor één lead doet en bijna altijd voor
+   een hele lichting: een campagne aan de goede vacature hangen, een stapel
+   in één keer op een status zetten, en een lichting onder een collega
+   verdelen. Elk van die drie kostte vier tot vijf klikken per sollicitant.
+
+   Bewust géén verwijderen of doorschieten in bulk. Doorschieten maakt een
+   kandidaatkaart en heeft een poortwachter nodig die per persoon geldt;
+   verwijderen is onomkeerbaar en hoort niet in een knop die twintig rijen
+   tegelijk raakt.
+   ═══════════════════════════════════════════════════════════════ */
+const selectie = () => Array.from(S.sel).map(leadById).filter(Boolean);
+
+function tekenBulkbalk(){
+  const el = document.getElementById('rc_bulk'); if(!el) return;
+  const n = S.sel.size;
+  if(!n){ el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="rc-bulk">
+      <b class="num">${n}</b><span>geselecteerd</span>
+      <button class="btn sm" data-b="status">Status wijzigen…</button>
+      <button class="btn ghost sm" data-b="vac">Vacature koppelen…</button>
+      <button class="btn ghost sm" data-b="eig">Eigenaar toewijzen…</button>
+      <div class="spacer"></div>
+      <button class="btn sub sm" data-b="wis">Selectie wissen</button>
+    </div>`;
+  const doe = {status:bulkStatus, vac:bulkVacature, eig:bulkEigenaar,
+               wis:() => { wisSelectie(); tekenWerk(); }};
+  CRM.$$('[data-b]', el).forEach(b => b.onclick = () => doe[b.dataset.b]());
+}
+
+/* Na een bulkbewerking: opslaan is gedaan, nu het scherm bij. */
+function naBulk(tekst){
+  wisSelectie();
+  CRM.toast(tekst, 'ok');
+  tekenBar(); tekenTabs(); tekenWerk(); CRM.navBadges();
+}
+
+function bulkStatus(){
+  const rijen = selectie(); if(!rijen.length) return;
+  /* 'Doorgeschoten' ontbreekt met opzet: daar hoort een kandidaatkaart bij en
+     die vraagt per persoon om complete gegevens. */
+  const keuzes = CRM.LEAD_STATUS.filter(s => s.k !== 'Doorgeschoten');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${rijen.length} sollicitant${rijen.length===1?'':'en'} verplaatsen</div>
+      <p class="sub" style="margin:6px 0 0">Kies de status. Wie er al op staat blijft ongemoeid.</p></div>
+    <div class="modal-b"><div class="rc-fasepick">
+      ${keuzes.map(s => `<button data-s="${h(s.k)}"><i class="dot" style="background:${s.c}"></i>${h(s.k)}</button>`).join('')}
+    </div>
+    <p class="meta" style="margin:12px 2px 0">Kandidaat maken staat er niet bij — daar hoort een complete kaart bij, en dat gaat per persoon.</p></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
+      CRM.$$('[data-s]', m).forEach(b => b.onclick = async () => {
+        CRM.modal.close();
+        let n = 0;
+        for(const l of rijen){ if(await pasStatusToe(l, b.dataset.s)) n++; }
+        naBulk(`${n} sollicitant${n===1?'':'en'} op ${b.dataset.s} gezet`);
+      });
+    }});
+}
+
+function bulkVacature(){
+  const rijen = selectie(); if(!rijen.length) return;
+  const alle = (CRM.state.vacs||[]).slice().sort((a,b) => vacLabel(a).localeCompare(vacLabel(b)));
+  if(!alle.length) return CRM.toast('Er staan nog geen vacatures in het systeem','err');
+  const alGekoppeld = rijen.filter(isGekoppeld).length;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Vacature koppelen aan ${rijen.length} sollicitant${rijen.length===1?'':'en'}</div>
+      <p class="sub" style="margin:6px 0 0">Hierop rust de meting leads per vacature en per klant.</p></div>
+    <div class="modal-b">
+      ${alGekoppeld ? `<div class="note warn" style="margin-bottom:12px">${alGekoppeld} van deze ${
+        alGekoppeld===1?'sollicitant is':'sollicitanten zijn'} al aan een vacature gekoppeld. Die koppeling wordt overschreven.</div>` : ''}
+      <div class="f-row"><label for="bv_vac">Vacature</label>
+        <select id="bv_vac"><option value="">— kies de vacature —</option>
+          ${alle.map(v=>`<option value="${h(v.id)}">${h(vacLabel(v))}</option>`).join('')}</select></div>
+      <div class="note err" id="bv_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="bv_ok">Koppelen</button></div>`, {onOpen(m){
+      m.querySelector('#bv_ok').onclick = async () => {
+        const v = vacById(m.querySelector('#bv_vac').value);
+        if(!v){ const e = m.querySelector('#bv_err'); e.style.display=''; e.textContent = 'Kies een vacature.'; return; }
+        CRM.modal.close();
+        let n = 0;
+        for(const l of rijen){
+          if(await bewaarLead(l, {vacature_id:v.id, klant:v.klant, functie:v.functie})){
+            await CRM.logActiviteit('lead', l.id, 'systeem', `Gekoppeld aan ${v.functie} · ${v.klant}`);
+            n++;
+          }
+        }
+        naBulk(`${n} sollicitant${n===1?'':'en'} gekoppeld aan ${v.functie} · ${v.klant}`);
+      };
+    }});
+}
+
+async function bulkEigenaar(){
+  const rijen = selectie(); if(!rijen.length) return;
+  const naam = await CRM.vraag(`Eigenaar van ${rijen.length} sollicitant${rijen.length===1?'':'en'}`, {
+    waarde:CRM.me(), knop:'Toewijzen',
+    hint:'Wie deze sollicitanten oppakt. Leeg laten kan niet — dan weet niemand van wie ze zijn.'});
+  if(!naam) return;
+  let n = 0;
+  for(const l of rijen){ if(await bewaarLead(l, {eigenaar:naam})) n++; }
+  naBulk(`${n} sollicitant${n===1?'':'en'} toegewezen aan ${naam}`);
 }
 
 /* De cel "Reageerde op". Drie toestanden die echt verschillen:
@@ -719,17 +1075,16 @@ function tekenLeadBord(wrap, rijen){
       ? oudsteEerst(rijen.filter(l => l.status === k))     // oudste bovenaan: die moet eerst weg
       : rijen.filter(l => l.status === k);
     const toon = kaarten.slice(0, BORD_MAX);
-    let kop = '';
-    if(k === 'Nieuw'){
-      const oud = kaarten.filter(l => (leadDagen(l) || 0) >= NIEUW_TELANG).length;
-      if(oud) kop = `<div class="rc-letnote num">${oud}× ${NIEUW_TELANG} dagen of langer — bel die eerst</div>`;
-    }
-    if(k === 'Videocall gepland'){
-      const geen = kaarten.filter(l => !l.opvolgen_op).length;
-      if(geen) kop = `<div class="rc-letnote num">${geen}× zonder datum</div>`;
-    }
+    /* Eén regel per kolom: hoeveel er over de grens van deze stap heen is.
+       Elke kolom kan een wachtkamer worden, niet alleen 'Nieuw'. */
+    const stil = kaarten.filter(stilstand).length;
+    const norm = STATUS_NORM[k] || {};
+    let kop = stil
+      ? `<div class="rc-letnote num" title="${h(norm.waarom||'')}">${stil}× ${h(norm.doe || 'staat hier te lang')}</div>`
+      : '';
     return `<div class="bcol" data-status="${h(k)}" style="--ph:${st.c}">
-      <div class="bcol-h"><b>${h(k)}</b><span class="cnt num">${kaarten.length}</span></div>
+      <div class="bcol-h"><b>${h(k)}</b><span class="cnt num">${kaarten.length}</span>
+        ${kaarten.length ? `<button class="rc-kolwerk" data-werk="${h(k)}" title="Deze kolom achter elkaar afwerken met de cijfertoetsen">werk af</button>` : ''}</div>
       <div class="bcol-b">${kop}${toon.map(leadKaartHtml).join('') || `<div class="rc-leegkol">${h(leegTekst(k))}</div>`}
         ${kaarten.length > toon.length ? `<div class="rc-meer num">+ ${kaarten.length - toon.length} meer — filter of zoek om ze te zien</div>` : ''}
       </div></div>`;
@@ -780,6 +1135,7 @@ function tekenLeadBord(wrap, rijen){
   });
   bindKlaar(board);
   bindLeadActies(board);
+  CRM.$$('[data-werk]', board).forEach(b => b.onclick = e => { e.stopPropagation(); wegwerkModus(b.dataset.werk); });
   CRM.$$('.bcol[data-status], .rc-uitzone[data-status]', wrap).forEach(zone => {
     zone.ondragover  = e => { e.preventDefault(); zone.classList.add('over'); };
     zone.ondragleave = () => zone.classList.remove('over');
@@ -806,17 +1162,21 @@ function leadKaartHtml(l){
   const dg = leadDagen(l);
   const nieuw = l.status === 'Nieuw';
   const bel = belPogingen(l.id);
-  const dub = dubbelAantal(l);
+  const ken = bekend(l);
+  const dub = ken.leads.length + 1;
+  const st = stilstand(l);
   const wa = waLink(l.telefoon);
   const chips = [];
   if(nieuw && dg != null && dg >= NIEUW_LETOP)
     chips.push(`<span class="chip ${ouderdomKlas(dg)} num" title="Staat sinds ${h(CRM.fmtDate(l.binnen_op)||'?')} op Nieuw">${dg}d op Nieuw</span>`);
+  else if(st) chips.push(`<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`);
   if(l.bron) chips.push(`<span class="chip">${h(l.bron)}</span>`);
   if(l.woonplaats) chips.push(`<span class="chip" title="Woonplaats">${h(l.woonplaats)}</span>`);
   if(!v) chips.push(`<span class="chip amber" title="${vacWeg(l)?'De gekoppelde vacature bestaat niet meer':'Nog niet aan een vacature gekoppeld'}">${vacWeg(l)?'vacature weg':'geen vacature'}</span>`);
   if(l.cv) chips.push(`<span class="chip">cv</span>`);
   if(bel) chips.push(`<span class="chip num" title="Belpogingen">${bel}× gebeld</span>`);
-  if(dub > 1) chips.push(`<span class="chip purple num" title="Ditzelfde telefoonnummer staat ${dub}× in de lijst">${dub}× in de lijst</span>`);
+  if(dub > 1) chips.push(`<span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst">${dub}× in de lijst</span>`);
+  if(ken.kands.length) chips.push(`<span class="chip purple" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>`);
   return `<div class="bcard rc-leadkaart" draggable="true" data-id="${h(l.id)}">
     <div class="bc-t">
       <div class="bc-n">${h(leadNaam(l))}
@@ -920,22 +1280,104 @@ function koppelVacature(lead, naAfloop){
    geen "opslaan"-knop, want die vergeet je bij de dertigste.
    Oudste eerst, want die liggen er het langst.
    ═══════════════════════════════════════════════════════════════ */
-const WW_KEUZES = [
-  {t:'1', s:'Gebeld — geen gehoor',           lbl:'Geen gehoor'},
-  {t:'2', s:'Potentieel',                     lbl:'Potentieel'},
-  {t:'3', s:'CV opgevraagd',                  lbl:'CV opgevraagd'},
-  {t:'4', s:'Videocall gepland',              lbl:'Videocall plannen'},
-  {t:'5', s:'Geen interesse',                 lbl:'Geen interesse'},
-  {t:'6', s:'Niet geschikt',                  lbl:'Niet geschikt'},
-  {t:'7', s:'Potentieel — andere vacature',   lbl:'Andere vacature'}
-];
+/* Sommige uitkomsten zijn geen statuswissel maar wél werk: nóg een keer
+   gebeld, een herinnering voor het cv, een afspraak die is verzet. Die gingen
+   voorheen nergens heen — je moest de kaart openen, een notitie typen en weer
+   sluiten, en dus liet je het zitten. Dan lijkt het alsof er sinds de eerste
+   poging niets is gebeurd, terwijl er drie keer is gebeld.
+   De status blijft staan; alleen de klok en de tijdlijn lopen mee. */
+const WW_BLIJF = {
+  bel:      {soort:'bel',      tekst:p => `Gebeld, geen gehoor (poging ${p})`},
+  gesproken:{soort:'bel',      tekst:p => `Gesproken (poging ${p}) — nog geen vervolgstap`},
+  rappel:   {soort:'whatsapp', tekst:() => 'Herinnering gestuurd voor het cv'},
+  verzet:   {soort:'gesprek',  tekst:() => 'Videocall verzet — nieuwe datum afgesproken'},
+  noshow:   {soort:'gesprek',  tekst:() => 'Niet komen opdagen bij de videocall'}
+};
 
-function wegwerkModus(){
+/* Wat je per status wilt kunnen kiezen, in de volgorde waarin het gebeurt:
+   de gewenste uitkomst op toets 1, de uitzonderingen daarachter. Zo hoeft
+   niemand de toetsen uit zijn hoofd te leren — 1 is bijna altijd goed. */
+const WW_KEUZES = {
+  'Nieuw':[
+    {t:'1', s:'Gebeld — geen gehoor',         lbl:'Geen gehoor'},
+    {t:'2', s:'Potentieel',                   lbl:'Potentieel'},
+    {t:'3', s:'CV opgevraagd',                lbl:'CV opgevraagd'},
+    {t:'4', s:'Videocall gepland',            lbl:'Videocall plannen'},
+    {t:'5', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'6', s:'Niet geschikt',                lbl:'Niet geschikt'},
+    {t:'7', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ],
+  'Gebeld — geen gehoor':[
+    {t:'1', blijf:'bel',                      lbl:'Weer geen gehoor'},
+    {t:'2', s:'Potentieel',                   lbl:'Potentieel'},
+    {t:'3', s:'CV opgevraagd',                lbl:'CV opgevraagd'},
+    {t:'4', s:'Videocall gepland',            lbl:'Videocall plannen'},
+    {t:'5', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'6', s:'Niet geschikt',                lbl:'Niet geschikt'},
+    {t:'7', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ],
+  'Potentieel':[
+    {t:'1', s:'CV opgevraagd',                lbl:'CV opgevraagd'},
+    {t:'2', s:'Videocall gepland',            lbl:'Videocall plannen'},
+    {t:'3', blijf:'gesproken',                lbl:'Gesproken, nog niet zover'},
+    {t:'4', s:'Gebeld — geen gehoor',         lbl:'Geen gehoor'},
+    {t:'5', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'6', s:'Niet geschikt',                lbl:'Niet geschikt'},
+    {t:'7', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ],
+  'CV opgevraagd':[
+    {t:'1', s:'CV binnen',                    lbl:'CV binnen'},
+    {t:'2', blijf:'rappel',                   lbl:'Herinnering gestuurd'},
+    {t:'3', s:'Videocall gepland',            lbl:'Videocall plannen'},
+    {t:'4', s:'Gebeld — geen gehoor',         lbl:'Geen gehoor'},
+    {t:'5', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'6', s:'Niet geschikt',                lbl:'Niet geschikt'},
+    {t:'7', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ],
+  'CV binnen':[
+    {t:'1', s:'Videocall gepland',            lbl:'Videocall plannen'},
+    {t:'2', s:'Niet geschikt',                lbl:'Niet geschikt — cv gezien'},
+    {t:'3', s:'Gebeld — geen gehoor',         lbl:'Geen gehoor'},
+    {t:'4', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'5', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ],
+  'Videocall gepland':[
+    {t:'1', s:'Videocall gehad',              lbl:'Call gehad'},
+    {t:'2', blijf:'verzet',   plan:true,      lbl:'Verzet — nieuwe datum'},
+    {t:'3', blijf:'noshow',   plan:true,      lbl:'Niet opgedaagd'},
+    {t:'4', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'5', s:'Niet geschikt',                lbl:'Niet geschikt'}
+  ],
+  'Videocall gehad':[
+    {t:'1', door:true,                        lbl:'Kandidaat maken'},
+    {t:'2', s:'Niet geschikt',                lbl:'Niet geschikt'},
+    {t:'3', s:'Geen interesse',               lbl:'Geen interesse'},
+    {t:'4', s:'Potentieel — andere vacature', lbl:'Andere vacature'}
+  ]
+};
+
+/* Nog een poging noteren zonder de status te veranderen. */
+async function noteerPoging(lead, sleutel, notitie){
+  const w = WW_BLIJF[sleutel]; if(!w) return false;
+  const poging = (w.soort === 'bel' ? belPogingen(lead.id) + 1 : 0);
+  const patch = {laatst_actie:new Date().toISOString()};
+  if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
+    .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
+  const ok = await bewaarLead(lead, patch);
+  if(!ok) return false;
+  await CRM.logActiviteit('lead', lead.id, w.soort, w.tekst(poging));
+  if(notitie) await CRM.logActiviteit('lead', lead.id, 'notitie', notitie);
+  return true;
+}
+
+function wegwerkModus(status){
+  status = CRM.LEAD_OPEN.includes(status) ? status : 'Nieuw';
   /* Een momentopname van de stapel. Bewust niet meelopen met de filters
      terwijl je bezig bent: als de lijst onder je handen verspringt raak je
      kwijt waar je was. */
-  const stapel = oudsteEerst(leadsGefilterd(true).filter(l => l.status === 'Nieuw'));
-  if(!stapel.length) return CRM.toast('Er staat niets op Nieuw','ok');
+  const stapel = oudsteEerst(leadsGefilterd(true).filter(l => l.status === status));
+  if(!stapel.length) return CRM.toast(`Er staat niets op ${status}`,'ok');
+  const keuzes = WW_KEUZES[status] || WW_KEUZES['Nieuw'];
   let i = 0, gedaan = 0, over = 0;
   let aan = true;
 
@@ -948,8 +1390,8 @@ function wegwerkModus(){
       if(e.key === 'Enter' || e.key === 'Escape'){ e.preventDefault(); el.blur(); }
       return;
     }
-    const k = WW_KEUZES.find(x => x.t === e.key);
-    if(k){ e.preventDefault(); return kies(k.s); }
+    const k = keuzes.find(x => x.t === e.key);
+    if(k){ e.preventDefault(); return kies(k); }
     if(e.key === 'ArrowRight' || e.key === 's'){ e.preventDefault(); return volgende(true); }
     if(e.key === 'b'){ const a = document.querySelector('#ww_bel'); if(a){ e.preventDefault(); a.click(); } }
   };
@@ -958,13 +1400,35 @@ function wegwerkModus(){
     if(overgeslagen) over++;
     i++; teken();
   }
-  async function kies(status){
+  /* Even een ander venster over de belronde heen (koppelen, plannen,
+     doorschieten). Eerst de toetsen loskoppelen — anders zet een 3 in dát
+     venster hier alsnog een status. `hervat` wordt precies één keer
+     aangeroepen, ook bij annuleren, zodat de ronde nooit half open blijft. */
+  function onderbreek(open){
+    aan = false;
+    document.removeEventListener('keydown', opToets);
+    open(() => setTimeout(start, 60));
+  }
+  async function kies(keuze){
     const l = stapel[i]; if(!l) return;
     const inp = document.getElementById('ww_note');
     const notitie = inp ? inp.value.trim() : '';
-    const ok = await pasStatusToe(l, status, notitie);
+    if(keuze.door){
+      /* Kandidaat maken heeft een poortwachter nodig die per persoon geldt.
+         `rond:true` houdt het formulier binnen de belronde: geen sprong naar
+         de kandidatenkaart, wel de volgende sollicitant. */
+      i++;
+      return onderbreek(hervat => doorschietForm(l, {rond:true, naAfloop(gelukt){ if(gelukt) gedaan++; hervat(); }}));
+    }
+    const ok = keuze.blijf ? await noteerPoging(l, keuze.blijf, notitie)
+                           : await pasStatusToe(l, keuze.s, notitie);
     if(ok) gedaan++;
-    i++; teken();
+    i++;
+    /* Een videocall zonder datum is geen afspraak. Wie hem plant of verzet
+       krijgt daarom meteen het datumvenster — daarna gaat de ronde door. */
+    if(ok && (keuze.plan || keuze.s === 'Videocall gepland'))
+      return onderbreek(hervat => videocallPlannen(l, hervat));
+    teken();
   }
 
   function teken(){
@@ -974,8 +1438,8 @@ function wegwerkModus(){
       box.innerHTML = `
         <div class="modal-h"><div class="h2">Stapel weggewerkt</div></div>
         <div class="modal-b">
-          <div class="note ok" style="margin:0">${gedaan} van de ${stapel.length} ${gedaan===1?'sollicitant heeft':'sollicitanten hebben'} een nieuwe status gekregen${
-            over ? `, ${over} ${over===1?'is':'zijn'} overgeslagen en ${over===1?'staat':'staan'} nog op Nieuw` : ''}.</div>
+          <div class="note ok" style="margin:0">${gedaan} van de ${stapel.length} ${gedaan===1?'sollicitant is':'sollicitanten zijn'} verwerkt${
+            over ? `, ${over} ${over===1?'is':'zijn'} overgeslagen en ${over===1?'staat':'staan'} nog op ${h(status)}` : ''}.</div>
         </div>
         <div class="modal-f"><div class="spacer"></div><button class="btn" id="ww_klaar">Sluiten</button></div>`;
       box.querySelector('#ww_klaar').onclick = () => CRM.modal.close();
@@ -985,13 +1449,15 @@ function wegwerkModus(){
     const dg = leadDagen(l);
     const bel = belPogingen(l.id);
     const contact = laatsteContact(l.id);
-    const dub = dubbelAantal(l);
+    const ken = bekend(l);
+    const dub = ken.leads.length + 1;
+    const st = stilstand(l);
     const wa = waLink(l.telefoon);
     const pct = Math.round(i / stapel.length * 100);
     box.innerHTML = `
       <div class="modal-h">
         <div class="row" style="justify-content:space-between;align-items:baseline">
-          <div class="h2">Wegwerken</div>
+          <div class="h2">Wegwerken · ${h(status)}</div>
           <span class="meta num">${i+1} van ${stapel.length}</span>
         </div>
         ${CRM.ui.bar(pct)}
@@ -1003,8 +1469,11 @@ function wegwerkModus(){
             <div class="sub">${h(l.woonplaats || 'woonplaats onbekend')} · ${h(l.bron || 'onbekende bron')}${
               l.campagne ? ' · ' + h(l.campagne) : ''}</div>
           </div>
-          <span class="chip ${ouderdomKlas(dg)} num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${
-            dg == null ? 'datum onbekend' : dg === 0 ? 'vandaag binnen' : dg + ' dag' + (dg===1?'':'en') + ' op Nieuw'}</span>
+          ${status === 'Nieuw'
+            ? `<span class="chip ${ouderdomKlas(dg)} num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${
+                dg == null ? 'datum onbekend' : dg === 0 ? 'vandaag binnen' : dg + ' dag' + (dg===1?'':'en') + ' op Nieuw'}</span>`
+            : st ? `<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`
+            : `<span class="chip num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op)||'—')} in het systeem</span>`}
         </div>
         <div class="rc-wwbel">
           ${l.telefoon
@@ -1023,13 +1492,16 @@ function wegwerkModus(){
           ${bel || contact ? `<div class="rc-kv"><span class="label">Eerder</span><span>${
             bel ? bel + '× gebeld' : ''}${bel && contact ? ' · ' : ''}${
             contact ? 'laatste contact ' + h(CRM.geleden(contact) || CRM.fmtDate(contact)) : ''}</span></div>` : ''}
-          ${dub > 1 ? `<div class="rc-kv"><span class="label">Let op</span><span>Ditzelfde nummer staat ${dub}× in de lijst — mogelijk twee keer gesolliciteerd.</span></div>` : ''}
+          ${(dub > 1 || ken.kands.length) ? `<div class="rc-kv"><span class="label">Al bekend</span><span>${
+            dub > 1 ? `Staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd.` : ''}${
+            ken.kands.length ? `${dub > 1 ? '<br>' : ''}Er is al een kandidaatkaart: ${
+              ken.kands.map(c => h(eerderTekst(c))).join(' · ')}. Ga na of dit dezelfde persoon is voordat je opnieuw begint.` : ''}</span></div>` : ''}
         </div>
         <div class="f-row" style="margin-top:14px"><label for="ww_note">Notitie (optioneel)</label>
           <input type="text" id="ww_note" placeholder="Bijv. belt maandag terug">
           <span class="hint">Terwijl je hier typt werken de cijfertoetsen niet — Enter zet ze weer aan.</span></div>
-        <div class="rc-wwkeuze">${WW_KEUZES.map(k =>
-          `<button data-s="${h(k.s)}"><kbd>${k.t}</kbd>${h(k.lbl)}</button>`).join('')}</div>
+        <div class="rc-wwkeuze">${keuzes.map(k =>
+          `<button data-t="${h(k.t)}"${k.blijf?' class="blijf" title="De status blijft staan; de poging komt wel in de tijdlijn"':''}><kbd>${k.t}</kbd>${h(k.lbl)}</button>`).join('')}</div>
       </div>
       <div class="modal-f">
         <button class="btn ghost" id="ww_over">Overslaan <kbd>→</kbd></button>
@@ -1037,18 +1509,15 @@ function wegwerkModus(){
         <span class="meta">${gedaan} weggewerkt</span>
         <button class="btn ghost" data-mclose>Stoppen</button>
       </div>`;
-    CRM.$$('[data-s]', box).forEach(b => b.onclick = () => kies(b.dataset.s));
+    CRM.$$('[data-t]', box).forEach(b => b.onclick = () => {
+      const k = keuzes.find(x => x.t === b.dataset.t);
+      if(k) kies(k);
+    });
     box.querySelector('#ww_over').onclick = () => volgende(true);
     const kb = box.querySelector('#ww_koppel');
-    if(kb) kb.onclick = () => {
-      /* Koppelen tussendoor: het koppelvenster komt over de belronde heen. Eerst
-         de toetsen loskoppelen — anders zou een 3 in dat venster hier alsnog een
-         status zetten. Daarna komt dezelfde sollicitant terug, nu mét vacature
-         (of ongewijzigd, als er is geannuleerd). */
-      aan = false;
-      document.removeEventListener('keydown', opToets);
-      koppelVacature(l, () => setTimeout(start, 60));
-    };
+    /* Koppelen tussendoor: daarna komt dezelfde sollicitant terug (de teller
+       loopt niet door), nu mét vacature — of ongewijzigd, als er is geannuleerd. */
+    if(kb) kb.onclick = () => onderbreek(hervat => koppelVacature(l, hervat));
     const mc = box.querySelector('[data-mclose]');
     if(mc) mc.onclick = () => CRM.modal.close();
   }
@@ -1120,7 +1589,9 @@ async function zetStatus(lead, nieuw){
 
 /* Bij "Videocall gepland": datum/tijd vastleggen en desgewenst meteen in de
    eigen agenda zetten (Outlook of vooringevulde deeplink). */
-function videocallPlannen(l){
+/* `naAfloop` wordt precies één keer aangeroepen — ook bij overslaan. De
+   belronde hangt daaraan om zichzelf daarna weer op te bouwen. */
+function videocallPlannen(l, naAfloop){
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Videocall plannen</div>
       <p class="sub" style="margin:6px 0 0">${h(leadNaam(l))} — de videocall ís de intake, dus plan er een half uur voor.</p></div>
@@ -1130,13 +1601,17 @@ function videocallPlannen(l){
         <div class="f-row"><label>Tijd</label><input type="time" id="ip_tijd" value="10:00"></div>
       </div>
       <label class="check"><input type="checkbox" id="ip_agenda" checked> Zet ook in mijn agenda</label>
+      <p class="meta" style="margin:10px 0 0">Zonder datum blijft deze sollicitant als "zonder datum" gemeld staan — dan weet niemand of de call er echt komt.</p>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Overslaan</button>
-      <button class="btn" id="ip_ok">Vastleggen</button></div>`, {onOpen(m){
+      <button class="btn" id="ip_ok">Vastleggen</button></div>`, {
+    onClose(){ if(naAfloop) naAfloop(); },
+    onOpen(m){
     m.querySelector('#ip_ok').onclick = async () => {
       const datum = m.querySelector('#ip_datum').value, tijd = m.querySelector('#ip_tijd').value || '10:00';
       if(!datum) return CRM.toast('Kies een datum','err');
       const agenda = m.querySelector('#ip_agenda').checked;
+      CRM.modal._onClose = null;        // het vervolg regelen we hieronder zelf
       CRM.modal.close();
       await bewaarLead(l, {opvolgen_op:datum});
       await CRM.logActiviteit('lead', l.id, 'systeem', `Videocall gepland op ${CRM.fmtDate(datum)} ${tijd}`);
@@ -1153,6 +1628,7 @@ function videocallPlannen(l){
       }
       tekenBar(); tekenLijst();
       if(document.getElementById('drawer')?.classList.contains('on')) openLead(l.id);
+      if(naAfloop) naAfloop();
     };
   }});
 }
@@ -1197,6 +1673,8 @@ function openLead(id){
   const doorgeschoten = l.status === 'Doorgeschoten' && l.kandidaat_id;
   const dg = leadDagen(l);
   bouwDubbel();     // het paneel kan ook via een deeplink openen, vóór de lijst
+  const ken = bekend(l);
+  const st  = stilstand(l);
   const tijdlijn = notities.map(n => ({titel:n.door||'Notitie', wanneer:CRM.fmtDate(n.op), tekst:n.tekst}))
     .concat(CRM.activiteitenVoor('lead', l.id).map(a => ({
       titel:a.door||'Systeem',
@@ -1221,6 +1699,12 @@ function openLead(id){
       <button class="btn sub x" data-close>✕</button>
     </div>
     <div class="drawer-b">
+      ${(ken.leads.length || ken.kands.length) ? `<div class="note warn" style="margin-bottom:16px">
+        <b>Deze persoon komt vaker voor</b> — op telefoonnummer of op naam en woonplaats.
+        ${ken.kands.length ? `Als kandidaat: ${ken.kands.map(c => `<button class="rc-lnk" data-kand="${h(c.id)}">${h(c.naam)}</button> (${h(eerderTekst(c))})`).join(', ')}. ` : ''}
+        ${ken.leads.length ? `Als sollicitant: ${ken.leads.map(x => `<button class="rc-lnk" data-lead="${h(x.id)}">${h(leadNaam(x))}</button> (${h(x.status||'geen status')})`).join(', ')}. ` : ''}
+        We voegen niets samen — welke de goede is, beslis jij.</div>` : ''}
+      ${st ? `<div class="note warn" style="margin-bottom:16px"><b>${h(st.label)}</b> — ${h(st.waarom)}</div>` : ''}
       <div class="grid c2">
         <div class="card"><div class="card-h"><div class="h2">Contact</div></div><div class="card-b">
           <div class="rc-kv"><span class="label">Telefoon</span><span>${l.telefoon
@@ -1304,6 +1788,8 @@ function openLead(id){
         CRM.verwerkTags(t, 'lead', l.id);
         CRM.toast('Notitie opgeslagen','ok'); tekenBar(); tekenLijst(); openLead(l.id);
       };
+      CRM.$$('[data-kand]', dr).forEach(b => b.onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:b.dataset.kand}); });
+      CRM.$$('[data-lead]', dr).forEach(b => b.onclick = () => openLead(b.dataset.lead));
     }});
 }
 /* ─── De overdracht: van lead naar kandidaat ──────────────────────
@@ -1319,9 +1805,20 @@ function openLead(id){
    langer om een nieuwe videocall in te plannen — die heeft al
    plaatsgevonden. In plaats daarvan leggen we vast wanneer de call was
    en gaat de intake-vragenlijst meteen open. */
-function doorschietForm(lead){
+/* opts.rond   — aangeroepen vanuit de belronde: geen sprong naar de
+                 kandidatenkaart en geen intakeformulier, want de ronde loopt door.
+   opts.naAfloop(gelukt) — precies één keer, ook bij annuleren. */
+function doorschietForm(lead, opts){
   if(!lead) return;
+  opts = opts || {};
+  const klaar = gelukt => { const fn = opts.naAfloop; opts.naAfloop = null; if(fn) fn(gelukt); };
   const v = vacById(lead.vacature_id);
+  /* Poortwachter tegen dubbele kaarten: staat deze persoon er al als
+     kandidaat, dan is een tweede kaart bijna nooit de bedoeling. Dezelfde
+     persoon bij twee klanten voorstellen is de fout die je achteraf niet meer
+     rechtzet. We blokkeren niets — soms is het écht een naamgenoot — maar het
+     staat er wel, bovenaan, vóór het invullen. */
+  const ken = bekend(lead);
   const concept = {
     naam:lead.naam||'', telefoon:lead.telefoon||'', woonplaats:lead.woonplaats||'',
     functie:(v && v.functie) || lead.functie || '', bron:lead.bron||''
@@ -1344,6 +1841,11 @@ function doorschietForm(lead){
     <div class="modal-h"><div class="h2">Kandidaat maken van ${h(leadNaam(lead))}</div>
       <p class="sub" style="margin:6px 0 0">De kaart komt op fase <b>Intake</b> en staat daarmee klaar om voorgesteld te worden. Maak de gegevens eerst compleet — half ingevulde kandidaten vervuilen het systeem.</p></div>
     <div class="modal-b">
+      ${ken.kands.length ? `<div class="note warn" style="margin-bottom:12px">
+        <b>Deze persoon heeft al een kandidaatkaart</b> — ${h(ken.kands.map(eerderTekst).join(' · '))}.
+        Is het dezelfde persoon, werk dan die kaart bij in plaats van een tweede aan te maken; twee kaarten betekent dat iemand
+        bij twee klanten kan worden voorgesteld zonder dat je het ziet.
+        <button class="btn ghost sm" id="ds_open" style="margin-left:8px">Open die kaart</button></div>` : ''}
       ${vroeg ? `<div class="note warn" style="margin-bottom:12px">Deze sollicitant staat nog op <b>${h(lead.status||'geen status')}</b>. Normaal komt deze stap ná de videocall — die is immers de intake.</div>` : ''}
       <div class="rc-vol">
         <div class="row" style="justify-content:space-between"><span class="label">Volledigheid</span>
@@ -1373,13 +1875,20 @@ function doorschietForm(lead){
         <div class="f-row"><label for="ds_rec">Recruiter</label>
           <input type="text" id="ds_rec" value="${h(lead.eigenaar || CRM.me())}"></div>
       </div>
-      <label class="check"><input type="checkbox" id="ds_intake" checked> Intakeformulier meteen openen</label>
+      ${opts.rond ? '' : `<label class="check"><input type="checkbox" id="ds_intake" checked> Intakeformulier meteen openen</label>`}
       <div class="note err" id="ds_err" style="display:none"></div>
     </div>
     <div class="modal-f">
       <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="ds_ok">Kandidaat aanmaken</button>
-    </div>`, {onOpen(m){
+    </div>`, {
+      onClose(){ klaar(false); },
+      onOpen(m){
+      const kaartknop = m.querySelector('#ds_open');
+      if(kaartknop) kaartknop.onclick = () => {
+        CRM.modal._onClose = null; CRM.modal.close(); klaar(false);
+        CRM.ga('kandidaten', {id:ken.kands[0].id});
+      };
       const vacSel = m.querySelector('#ds_vac');
       vacSel.onchange = () => {
         const x = vacById(vacSel.value);
@@ -1421,9 +1930,17 @@ function doorschietForm(lead){
         await bewaarLead(lead, {status:'Doorgeschoten', kandidaat_id:cand.id, laatst_actie:new Date().toISOString()});
         await CRM.logActiviteit('lead', lead.id, 'systeem', `Kandidaat aangemaakt — videocall ${CRM.fmtDate(cand.datum)}`);
         await CRM.logActiviteit('kandidaat', cand.id, 'gesprek', `Videocall gehad op ${CRM.fmtDate(cand.datum)} — kandidaat aangemaakt vanuit sollicitant (${cand.bron})`);
-        const nuIntake = m.querySelector('#ds_intake').checked;
+        const intakeVak = m.querySelector('#ds_intake');
+        const nuIntake = intakeVak ? intakeVak.checked : false;
+        CRM.modal._onClose = null;
         CRM.modal.close(); CRM.drawer.close();
         tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges();
+        klaar(true);
+        /* Binnen een belronde blijft de ronde voorgaan: een toast met een link
+           naar de intake, en door naar de volgende. Het formulier openen zou de
+           ronde onderbreken voor werk dat ook straks nog kan. */
+        if(opts.rond)
+          return toastLink(`${cand.naam} staat klaar om voor te stellen`, 'Intake invullen →', () => intakeForm(cand.id));
         CRM.toast(`${cand.naam} staat klaar om voor te stellen`, 'ok');
         /* De intake is wat een kandidaat verkoopbaar maakt. Invullen terwijl
            het gesprek nog vers is levert een beter verhaal op dan een week
@@ -3253,6 +3770,35 @@ CRM._rcDeel = {
    zou sneller zijn zodra er duizenden leads in staan. */
 /* VERZOEK AAN CORE: demo.js heeft geen ooSessions-testdata; O&O-sessies zijn
    in demo pas zichtbaar nadat je er zelf een aanmaakt (blijft in het geheugen). */
+
+/* VERZOEK AAN OPVOLGING/DASHBOARD (31 jul 2026) — de wachtkamers op Mijn dag.
+   Dit bestand weet nu per status wanneer een sollicitant te lang stilstaat
+   (STATUS_NORM + stilstand()). Dat signaal staat alleen op dit scherm; wie 's
+   ochtends op het dashboard begint ziet het niet. CRM.opvolging.registreerBron
+   is er precies voor, maar de bron wordt per dag bevraagd
+   (CRM.opvolging.tussen roept fn(mij, dag) voor élke dag in het bereik aan) en
+   een lead die vijf dagen te lang stilstaat is vijf dagen achter elkaar open.
+   Zonder afspraak over "hoe geef je iets terug dat al te laat is" levert dat
+   vijf regels op in de weekweergave van Performance. Twee opties, allebei
+   buiten dit bestand te regelen:
+     a. de bron geeft alleen de dag terug waarop de grens werd overschreden en
+        openVoor() zoekt zelf terug — dan is één regel genoeg, of
+     b. de bron krijgt een `achterstallig`-vlag mee zodat tussen() hem één keer
+        opneemt.
+   Zodra dat vaststaat is de bron hier drie regels code.                      */
+
+/* VERZOEK AAN CORE: crm_leads mist een kolom `laatst_actie timestamptz`
+   op nieuwe rijen — hij wordt wél geschreven (pasStatusToe, noteerPoging,
+   notities), maar een geïmporteerde of via de agent binnengekomen lead heeft
+   hem niet. stilstand() valt dan terug op `binnen_op`, wat voor een verse lead
+   klopt maar na de eerste statuswissel buiten dit scherm om zou schuiven.
+   Zet hem bij het aanmaken op `binnen_op`, dan klopt de klok altijd.         */
+
+/* VERZOEK AAN COORDINATOR: js/demo.js zet `laatst_actie` op geen enkele lead.
+   De nieuwe "blijft liggen"-regel werkt daardoor in de demo op `binnen_op`, en
+   dat is voor alles ná 'Nieuw' de verkeerde klok — het lijkt of iedereen
+   stilstaat. Een `laatst_actie` van een paar uur tot een paar dagen geleden op
+   de demo-leads maakt het beeld realistisch én testbaar.                     */
 })();
 
 /* VERZOEK AAN COORDINATOR — CV inlezen (31 jul 2026)

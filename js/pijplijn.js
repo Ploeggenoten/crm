@@ -91,6 +91,38 @@ function dagenInFase(c){
   return n == null ? null : Math.max(0, n);
 }
 
+/* ─── Wanneer staat een traject te lang stil? ─────────────────────
+   Hier stond één grens voor alle fases: vier dagen oranje, tien dagen rood.
+   Dat zegt te weinig. Een openstaand aanbod dat vier dagen ligt is een
+   probleem; een O&O-sessie die over anderhalve week staat gepland is dat
+   niet. Eén getal voor allebei betekent dat je het signaal na een week
+   negeert, en dan hangt het er voor niets.
+
+   Per fase dus een eigen grens, met de reden erbij — die staat in de tooltip
+   zodat niemand hoeft te raden waarom vier dagen erg is en drie niet.
+   `null` = deze fase kent geen stilstand. Wachten hoort er dan bij: 'In de
+   wacht' is een bewuste parkeerplek, en tussen een getekend contract en de
+   startdatum zit nu eenmaal een opzegtermijn. */
+const FASE_NORM = {
+  'Voorgesteld':           {let:3,  actie:7,  waarom:'De klant heeft het profiel. Blijft een reactie uit, dan bel jij — wachten kost de kandidaat aan een ander bureau.'},
+  'O&O sessie':            {let:10, actie:21, waarom:'Een sessie wordt vooruit gepland. Pas als iemand er na tien dagen nog geen sessie heeft, staat hij echt stil.'},
+  'Eerste gesprek':        {let:3,  actie:7,  waarom:'Na een eerste gesprek hoort binnen drie dagen een vervolg of een afwijzing te komen. Stilte leest de kandidaat als een nee.'},
+  'Tweede gesprek':        {let:3,  actie:7,  waarom:'Twee gesprekken gehad betekent dat beide kanten het willen weten. Drie dagen zonder besluit is uitstel, geen zorgvuldigheid.'},
+  'Meeloopdag':            {let:2,  actie:5,  waarom:'Na een meeloopdag weten beide partijen het meestal dezelfde dag nog. Twijfel die blijft hangen wordt een afzegging.'},
+  'In de wacht':           null,
+  'Offer':                 {let:2,  actie:4,  waarom:'Een openstaand aanbod koelt af. Elke dag stilte is een dag waarin een tegenbod kan komen.'},
+  'Contract ondertekenen': {let:3,  actie:7,  waarom:'Tekenen is een formaliteit. Blijft de handtekening uit, dan is er iets anders aan de hand — en dat wil je horen vóór de startdatum.'},
+  'Contract getekend':     null,
+  'Gestart':               null
+};
+/* Geeft null terug of {klas, waarom} voor het aantal dagen in de fase. */
+function stilstandFase(fase, dg){
+  if(dg == null) return null;
+  const n = FASE_NORM[CRM.faseNorm(fase)];
+  if(!n || dg < n.let) return null;
+  return {klas: dg >= n.actie ? 'red' : 'amber', waarom:n.waarom};
+}
+
 /* Weekindeling voor de week-view in de kolommen.
    Echte data bevat af en toe een onleesbare datum (import, handmatig
    getypt). Zonder controle levert dat een kolomkop "Week NaN · Invalid
@@ -356,10 +388,12 @@ function kaartHtml(c){
   if(c.herstartVan) chips.push(`<span class="chip purple" title="Heraangeboden — de eerdere uitkomst blijft op de oude kaart geregistreerd">herstart</span>`);
   if(c.vervangt) chips.push(`<span class="chip blue" title="Vervanger voor een gestopte plaatsing">vervanger</span>`);
   if(c.noShows) chips.push(`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`);
-  if(dg != null && dg >= 4 && !CRM.DONE.includes(c.fase)){
-    if(c.fase === 'In de wacht') chips.push(`<span class="chip num" title="In de wacht telt niet als blijven hangen">${dg}d</span>`);
-    else chips.push(`<span class="chip ${dg>=10?'red':'amber'} num" title="Dagen in deze fase">${dg}d in fase</span>`);
-  }
+  { const sf = stilstandFase(c.fase, dg);
+    if(sf) chips.push(`<span class="chip ${sf.klas} num" title="${h(dg + ' dagen in deze fase. ' + sf.waarom)}">${dg}d in fase</span>`);
+    else if(dg != null && dg >= 14 && !CRM.DONE.includes(c.fase) && !FASE_NORM[CRM.faseNorm(c.fase)])
+      /* Fases zonder norm ('In de wacht', na het tekenen) horen niet te
+         kleuren — maar hoe lang iets er staat mag je wel zien. */
+      chips.push(`<span class="chip num" title="Dagen in deze fase — wachten hoort hier bij het werk">${dg}d</span>`); }
   if(d.intakeDone(c)){ const ic = c.intake.cijfer;
     chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+h(ic)+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
   }
@@ -497,6 +531,12 @@ function tekenKolommen(){
        waar een AM op moet sturen, dus het staat bovenaan de kolom.
        (Dezelfde vorm als de oude "zonder geplande videocall"-melding, die bij
        de Intake-kolom hoorde en met die kolom is vertrokken.) */
+    /* Hoeveel er in déze kolom over de grens van deze fase heen is. Elke fase
+       kan een wachtkamer worden en elke fase heeft een eigen grens — zonder
+       deze regel moet je per kolom alle kaarten langs om dat te zien. */
+    { const stil = kaarten.filter(c => stilstandFase(c.fase, dagenInFase(c))).length;
+      const nrm = FASE_NORM[p.k];
+      if(stil) binnen = `<div class="rc-letnote num" title="${h(nrm ? nrm.waarom : '')}">${stil}× staat hier te lang</div>` + binnen; }
     if(p.k === 'Voorgesteld'){
       const wacht = kaarten.filter(c => !c.datum).length;
       if(wacht) binnen = `<div class="rc-letnote num">${wacht}× nog geen afspraak gepland</div>` + binnen;
@@ -671,11 +711,10 @@ function lijstGesorteerd(){
 
 function lijstRij(c){
   const dg = dagenInFase(c);
-  /* Zelfde grenzen als de chip op de kaart, zodat bord en lijst hetzelfde
-     zeggen over stilstand: vanaf 4 dagen opletten, vanaf 10 dagen actie.
-     'In de wacht' is een bewuste keuze en kleurt daarom nooit. */
-  const wacht = CRM.faseIs(c.fase, 'In de wacht');
-  const dgCls = (dg == null || wacht) ? '' : dg >= 10 ? 'pp-stil' : dg >= 4 ? 'pp-let' : '';
+  /* Exact dezelfde norm als de chip op de kaart (FASE_NORM), zodat bord en
+     lijst hetzelfde zeggen over stilstand — inclusief de reden in de tooltip. */
+  const sf = stilstandFase(c.fase, dg);
+  const dgCls = !sf ? '' : sf.klas === 'red' ? 'pp-stil' : 'pp-let';
   const dd = eerstDatum(c);
   const placed = CRM.PLACED.includes(CRM.faseNorm(c.fase));
   let eerst = `<span class="pp-mist">nog te plannen</span>`;
@@ -696,7 +735,7 @@ function lijstRij(c){
     <td>${vacTekst(c) ? h(vacTekst(c)) : leeg('geen vacature')}</td>
     <td><button class="pp-fase" data-move="${h(c.id)}" title="Naar een andere fase verplaatsen">
       <i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(CRM.faseNorm(c.fase))}</button></td>
-    <td class="n"><span class="num ${dgCls}">${dg == null ? '—' : dg + 'd'}</span></td>
+    <td class="n"><span class="num ${dgCls}"${sf?` title="${h(sf.waarom)}"`:''}>${dg == null ? '—' : dg + 'd'}</span></td>
     <td>${eerst}</td>
     <td>${c.rec ? h(c.rec) : leeg('—')}</td>
   </tr>`;
@@ -775,6 +814,13 @@ function tekenLijst(){
 /* De fase-picker zelf woont in recruitment.js, naast faseWissel en de
    poortwachters — bord, lijst en kandidatenkaart gebruiken dezelfde
    (CRM.kandidaatFasePicker). */
+
+/* VERZOEK AAN KANDIDATEN (31 jul 2026): de stilstandnorm staat sinds vandaag
+   per fase in FASE_NORM hierboven, met de reden erbij, in plaats van vlak 4/10
+   dagen voor alles. De kandidatenkaart toont dezelfde "dagen in fase" met de
+   oude vlakke grenzen; zolang dat zo blijft zegt de kaart iets anders dan het
+   bord over dezelfde kandidaat. FASE_NORM is bewust één object — geef een
+   seintje, dan zet ik hem in CRM._rcDeel zodat jullie hem kunnen lezen.      */
 
 /* VERZOEK AAN CORE: de vacatures-tabel heeft in productie voor alle 50 rijen
    een lege `locatie`. Daardoor valt bij CRM.matchScore() de reisafstand altijd

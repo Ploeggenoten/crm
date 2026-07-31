@@ -1150,7 +1150,10 @@
 
   /* ─── Registratie ───────────────────────────────────────────── */
   CRM.registerModule('hot', {
-    title:'Openstaande vacatures', icon:'◆',
+    /* Kort houden: 'Openstaande vacatures' brak over twee regels in de
+       zijbalk. 'Vacatures' dekt de lading nu er een schakelaar naar Hot
+       in zit — de kop van het scherm zelf blijft wél specifiek. */
+    title:'Vacatures', icon:'◆',
     onderschrift:'Alles wat nog te vullen is — met een schakelaar naar hot',
     badge(){
       try{

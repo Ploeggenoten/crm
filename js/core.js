@@ -36,8 +36,29 @@ const CRM = window.CRM = {
 /* ─── Rollen ──────────────────────────────────────────────────── */
 CRM.isAdmin = () => !!(CRM.user && ADMIN_EMAILS.includes((CRM.user.email||'').toLowerCase()))
                     || CRM.profile?.rol === 'admin' && ADMIN_EMAILS.includes((CRM.user?.email||'').toLowerCase());
-/* Financiële cijfers: strikt alleen Tjeerd. */
+/* ─── Twee soorten geld, twee poorten ─────────────────────────
+   Besluit Tjeerd, 31 jul 2026: "fee mag zichtbaar zijn voor iedereen,
+   omzet per klant ook prima. Alleen winst etc en cashflow en allemaal
+   andere cijfers zijn voor finance bij mij."
+
+   OPBRENGST — wat een plaatsing heeft opgeleverd: de fee per plaatsing en
+   de omzet per klant. Dat is het resultaat van het werk van het team, en
+   dat mogen ze zien. Zonder dat cijfer weet een AM niet wat een plaatsing
+   waard is en stuurt hij op aantallen in plaats van op opbrengst.
+
+   BEDRIJFSCIJFERS — winst, marge, cashflow, banksaldo, kostprijs,
+   facturatie: alleen de eigenaar. Dat zijn de fin_*-tabellen, die ook op
+   databaseniveau op zijn e-mailadres zijn afgeschermd.
+
+   Let op het verschil met de vorige situatie: hiervóór verborg één
+   schakelaar álles wat met geld te maken had. Wie hier iets aan verandert,
+   moet weten welke van de twee hij te pakken heeft. */
 CRM.canSeeMoney = () => !!(CRM.user && ADMIN_EMAILS.includes((CRM.user.email||'').toLowerCase()));
+
+/* Mag deze gebruiker de opbrengst van het werk zien (fee, omzet per klant)?
+   Iedereen die is ingelogd. De echte grens ligt in de database: sinds
+   31 jul 2026 is `crm_afspraken` team-leesbaar, `fin_*` niet. */
+CRM.magOpbrengstZien = () => !!(CRM.user || CRM.demo);
 /* Beheerder van instellingen (mag ook een teamlid zijn met rol admin). */
 CRM.canManage = () => CRM.canSeeMoney() || CRM.profile?.rol === 'admin';
 CRM.me = () => CRM.profile?.naam || CRM.user?.email || '';

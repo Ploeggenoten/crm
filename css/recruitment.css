@@ -61,6 +61,47 @@
 .rc-nieuwtxt i.telang{background:var(--amber)}
 .rc-nieuwtxt .op{color:var(--amber);font-weight:600}
 
+/* ─── De wachtkamers ─────────────────────────────────────────────
+   Eén regel onder de werkstapel: waar blijft het ná de eerste actie liggen.
+   Bewust smaller en rustiger dan het blok erboven — dit is een signaal,
+   geen werkvlak. De kleur zit alleen in het getal, want dat is wat te
+   hoog staat; de statusnamen ernaast zijn gewoon namen. */
+.rc-wacht{border:1px solid var(--amber-line);background:var(--card);
+  border-radius:var(--r);padding:10px 14px;margin-bottom:14px}
+.rc-wachtkop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.rc-wachtkop b{font-size:13px;font-weight:600;color:var(--ink)}
+.rc-wachtrij{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rc-wachtknop{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+  background:var(--card-2);border-radius:999px;padding:3px 11px;font-family:var(--body);
+  font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
+.rc-wachtknop:hover{border-color:var(--olive-l)}
+.rc-wachtknop b{color:var(--amber);font-weight:700}
+.rc-wachtknop .dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.rc-wachtknop.on{background:var(--olive);border-color:var(--olive);color:#fff}
+.rc-wachtknop.on b{color:#fff}
+
+/* ─── Meerdere sollicitanten tegelijk ────────────────────────────
+   Verschijnt pas zodra er iets is aangevinkt, en verdwijnt weer. Een lege
+   actiebalk die altijd staat is ruimte die niets doet. */
+.rc-bulk{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--olive-l);background:var(--card-2);
+  border-radius:var(--r);padding:8px 14px;margin-bottom:10px}
+.rc-bulk b{font-family:var(--body);font-size:15px;font-weight:700;color:var(--ink)}
+.rc-bulk > span{font-size:12.5px;color:var(--txt-2);margin-right:4px}
+.rc-tbl input[type=checkbox],.rc-tbl th input[type=checkbox]{cursor:pointer;margin:0}
+
+/* Doorklik in een melding: leest als tekst, gedraagt zich als knop. */
+.rc-lnk{background:none;border:none;padding:0;font-family:var(--body);font-size:inherit;
+  font-weight:600;color:var(--olive);text-decoration:underline;cursor:pointer}
+.rc-lnk:hover{color:var(--olive-d)}
+
+/* Werk-af-knop in een bordkolomkop: alleen zichtbaar als je er bent. */
+.rc-kolwerk{margin-left:auto;background:none;border:1px solid transparent;border-radius:999px;
+  padding:1px 8px;font-family:var(--body);font-size:11px;font-weight:600;
+  color:var(--muted);cursor:pointer;opacity:0}
+.bcol:hover .rc-kolwerk,.rc-kolwerk:focus-visible{opacity:1}
+.rc-kolwerk:hover{border-color:var(--olive-l);color:var(--olive)}
+
 /* ─── Leadtabel ──────────────────────────────────────────────── */
 .rc-tbl td{vertical-align:top;padding-top:11px;padding-bottom:11px}
 .rc-naam{font-weight:600;color:var(--ink)}
@@ -138,6 +179,10 @@ tr.rc-telang > td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
 kbd{font-family:var(--body);font-size:10.5px;font-weight:700;color:var(--txt-2);
   background:var(--card-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
 .rc-wwkeuze button:hover kbd{border-color:var(--olive-l);color:var(--olive)}
+/* Een keuze die de status níét verandert (nog een poging, herinnering,
+   verzet) hoort er anders uit te zien dan een keuze die iemand verderop
+   in de pijplijn zet — anders denk je dat je hem hebt afgehandeld. */
+.rc-wwkeuze button.blijf{border-style:dashed;color:var(--txt-2)}
 
 /* ─── Vacature koppelen: voorgestelde matches ────────────────── */
 .rc-sug{display:flex;flex-direction:column;gap:6px}
@@ -266,6 +311,16 @@ table.rc-qa tr:last-child td{border-bottom:none}
   .rc-fil .seg{margin-left:auto}
   .rc-wwnaam{font-size:20px}
   .rc-wwkeuze button{flex:1 1 46%;justify-content:center}
+  .rc-wacht{padding:10px 12px}
+  /* De bulkbalk moet op 375px leesbaar blijven: knoppen onder elkaar in
+     plaats van vier halve knoppen naast elkaar. */
+  .rc-bulk{gap:8px}
+  .rc-bulk .btn{flex:1 1 100%;justify-content:center}
+  /* Aanraken is grover dan klikken; een vinkje van 13px raak je niet. */
+  .rc-tbl input[type=checkbox]{width:18px;height:18px}
+  /* Op een telefoon is er geen hover, dus de werk-af-knop zou nooit
+     verschijnen. */
+  .rc-kolwerk{opacity:1}
 }
 
 /* Teamscherm (≥1900px, zie de breedteladder in base.css): de extra ruimte

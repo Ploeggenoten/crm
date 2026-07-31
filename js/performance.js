@@ -2,7 +2,8 @@
    MODULE: PERFORMANCE — het cijfermatige overzicht
    Plaatsingen, duurzaamheid, recruiters, trechter, uitval, bron.
    Definities zijn identiek aan het pijplijnbord (CRM.plaatsingenMaand).
-   Euro's staan strikt achter CRM.canSeeMoney().
+   Fee en omzet per klant staan achter CRM.magOpbrengstZien() (het hele
+   team); winst, cashflow en gefactureerde omzet achter CRM.canSeeMoney().
    ═══════════════════════════════════════════════════════════════ */
 (function(){
 'use strict';
@@ -28,7 +29,10 @@ function dagVan(waarde){
 /* ─── Periode ────────────────────────────────────────────────── */
 let periode = 'maand', eigenVan = '', eigenTot = '';
 let recSort   = {k:'plaatsingen', dir:-1};
-let klantSort = {k:'plaatsingen', dir:-1};
+/* 'omzet' is in de klanttabel de kolom van de gekozen bron: bij het team
+   (geen bedragen) staat daar het aantal plaatsingen, dus deze standaard
+   klopt in beide gevallen — grootste bovenaan. */
+let klantSort = {k:'omzet', dir:-1};
 
 const dag = (j,m,d) => new Date(j,m,d).toLocaleDateString('sv-SE');
 function bereik(){
@@ -157,6 +161,108 @@ function cijfers(p){
   const instroom  = cs.filter(c => inP(c.since,p));
   const afgevallen= cs.filter(c => CRM.faseIs(c.fase,'Afgevallen') && inP(laatsteBeweging(c),p));
   return {cs, getekend, gestopt, cohort, instroom, afgevallen, netto:getekend.length-gestopt.length};
+}
+
+/* ═══ 0. HET JAAR — het gedeelde doel van het hele team ══════════
+   Dit is een aantal mensen, geen bedrag: het staat dus bewust NIET achter
+   CRM.canSeeMoney(). Iedereen werkt naar hetzelfde getal toe.
+
+   Gerekend wordt met CRM.plaatsingenJaar() (js/data.js), niet met een
+   eigen telling — het dashboard en dit scherm moeten hetzelfde zeggen.
+   Die telt GETEKEND, niet netto: iemand die in maart begon en in juni
+   stopte, heb je in maart wel degelijk aan het werk geholpen. Netto hoort
+   bij de maandcijfers en staat één blok lager.
+
+   "17 van 75" zegt niets zonder de datum erbij — in januari is dat
+   uitstekend en in november niet. Daarom staat overal het gelijkmatige
+   tempo ernaast: waar je vandaag zou staan als je het jaar netjes
+   verdeelde. Dat is de streep in de grafiek en het cijfer voor/achter. */
+function blokJaar(){
+  const J = CRM.plaatsingenJaar();
+  if(!J.doel)
+    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Het jaar</span></div>
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen jaardoel ingesteld',
+        'Zet een jaardoel bij Instellingen, dan staat hier hoe het hele team ervoor staat.')}</div></div></section>`;
+
+  const jaar = Number(J.jaar);
+  const start = new Date(jaar, 0, 1, 12), eindJaar = new Date(jaar+1, 0, 1, 12);
+  const dagenInJaar = Math.round((eindJaar - start) / 86400000);
+  /* Het gelijkmatige tempo aan het EIND van maand m, in dagen gerekend —
+     dezelfde maatstaf als CRM.plaatsingenJaar().verwacht, zodat de streep
+     in de grafiek en het cijfer voor/achter niet uit elkaar kunnen lopen. */
+  const tempo = m => Math.round(J.doel * Math.round((new Date(jaar, m+1, 1, 12) - start)/86400000) / dagenInJaar);
+
+  const nuMk = CRM.todayISO().slice(0,7);
+  let loop = 0;
+  const kols = [];
+  for(let m=0;m<12;m++){
+    const mk = new Date(jaar, m, 1).toLocaleDateString('sv-SE').slice(0,7);
+    const n = J.getekend.filter(c => kort(c.geplaatstOp).slice(0,7) === mk).length;
+    const toekomst = mk > nuMk;
+    if(!toekomst) loop += n;
+    kols.push({mk, n, cum:loop, toekomst, tempo:tempo(m),
+      lbl:new Date(jaar, m, 1).toLocaleDateString('nl-NL',{month:'short'}),
+      lang:new Date(jaar, m, 1).toLocaleDateString('nl-NL',{month:'long'})});
+  }
+  const H = 132;
+  const max = Math.max(J.doel, J.gedaan, 1);
+  const px = n => Math.max(n > 0 ? 2 : 0, Math.round(n/max*H));
+
+  /* perWeekNodig loopt aan het eind van het jaar hard weg (op 31 december
+     staat er 406 per week). Dat is rekenkundig juist en als stuurgetal
+     waardeloos, dus onder de twee weken tonen we de resterende dagen. */
+  const tempoTegel = J.teGaan === 0
+    ? CRM.ui.kpi('Tempo', '<span class="chip green">Doel gehaald</span>',
+        `<span class="meta num">${J.gedaan} getekend, doel was ${J.doel}</span>`)
+    : J.dagenTeGaan >= 14
+      ? CRM.ui.kpi('Tempo nodig', `<span class="num">${J.perWeekNodig.toLocaleString('nl-NL')}</span><span class="pf-eh"> per week</span>`,
+          `<span class="meta num">${J.teGaan} te gaan in ${J.dagenTeGaan} dagen</span>`)
+      : CRM.ui.kpi('Nog te gaan', `<span class="num">${J.teGaan}</span>`,
+          `<span class="meta num">in de laatste ${J.dagenTeGaan} ${J.dagenTeGaan===1?'dag':'dagen'} van het jaar</span>`);
+
+  const klantenDitJaar = Array.from(new Set(J.getekend.map(c => (c.klant||'').trim()).filter(Boolean)));
+  const grootste = klantenDitJaar
+    .map(k => ({k, n:J.getekend.filter(c => (c.klant||'').trim() === k).length}))
+    .sort((a,b) => b.n - a.n)[0];
+
+  return `<section class="pf-sec pf-jaar">
+    <div class="pf-kop"><span class="label">Het jaar ${h(J.jaar)}</span>
+      <span class="meta">gedeeld doel · t/m 31 december</span></div>
+    <div class="grid c4">
+      ${CRM.ui.kpi('Getekend dit jaar', `<span class="num">${J.gedaan}</span><span class="pf-eh"> van ${J.doel}</span>`,
+        `<span class="meta num">${J.pct}% van het jaardoel</span>`, 'accent')}
+      ${CRM.ui.kpi('Nog te gaan', `<span class="num">${J.teGaan}</span>`,
+        `<span class="meta num">nog ${J.dagenTeGaan} ${J.dagenTeGaan===1?'dag':'dagen'} tot 31 december</span>`)}
+      ${CRM.ui.kpi(J.opSchema ? 'Voor op schema' : 'Achter op schema', CRM.plusMin(J.voorOfAchter),
+        `<span class="meta num">bij een gelijkmatig tempo zou je vandaag op ${J.verwacht} staan</span>`)}
+      ${tempoTegel}
+    </div>
+    <div class="card"><div class="card-h"><div class="h2">Opgeteld door het jaar heen</div>
+      <span class="pf-leg"><i class="get"></i>getekend t/m die maand <i class="tick"></i>gelijkmatig tempo</span></div>
+      <div class="card-b">
+        <div class="pf-jrkols">
+          ${kols.map(k => `<div class="pf-jrkol${k.toekomst?' toek':''}"
+              title="${h(k.lang)}: ${k.toekomst ? `bij een gelijkmatig tempo sta je hier op ${k.tempo}`
+                : `${k.n} getekend, ${k.cum} in totaal dit jaar (gelijkmatig tempo: ${k.tempo})`}">
+            <div class="pf-jrarea" style="height:${H}px">
+              <span class="pf-tick" style="bottom:${px(k.tempo)}px"></span>
+              ${k.toekomst ? '' : `<i style="height:${px(k.cum)}px"></i>`}
+            </div>
+            <div class="pf-jrn num${k.toekomst?' toek':''}">${k.toekomst ? k.tempo : k.cum}</div>
+            <div class="pf-mnd">${h(k.lbl)}</div>
+          </div>`).join('')}
+        </div>
+        <p class="pf-uitleg meta">Elke staaf is het totaal aantal getekende contracten tot en met die maand, dus hij loopt
+          op naar ${J.doel}. Het streepje is waar je zou staan bij een gelijkmatig tempo; de grijze cijfers rechts zijn
+          dat tempo voor de maanden die nog moeten komen. Stoppen telt hier niet af — dat staat in de maandcijfers hieronder.</p>
+        ${grootste ? `<div class="pf-jrklant">
+          <span class="meta">De ${J.gedaan} plaatsingen van dit jaar komen bij
+            <b class="num">${klantenDitJaar.length}</b> ${klantenDitJaar.length===1?'klant':'klanten'} vandaan;
+            de grootste is ${h(grootste.k)} met <b class="num">${grootste.n}</b>.</span>
+          <button class="btn ghost sm" id="pf_jrklant">Verdeling per klant</button>
+        </div>` : ''}
+      </div></div>
+  </section>`;
 }
 
 /* ═══ 1. PLAATSINGEN ═════════════════════════════════════════════ */
@@ -432,81 +538,617 @@ function blokUitval(p, D){
   </section>`;
 }
 
-/* ═══ 6. PER KLANT — de klantcijfers die van de klantkaart kwamen ═
-   Over de hele samenwerking (niet per periode): plaatsingen ooit en
-   actief, aanname-ratio, doorlooptijd, duurzaamheid. Omzet per klant
-   alleen achter CRM.canSeeMoney(). ═══════════════════════════════ */
-function blokKlanten(fin){
+/* ═══ 6. PER KLANT — waar de omzet en de plaatsingen vandaan komen ═
+   De vraag van Tjeerd: wie zijn de topklanten, wie draagt weinig bij,
+   en hoeveel plaatsingen staan er per klant.
+
+   WELKE BRON VOOR OMZET — hier zit de valkuil, dus expliciet:
+   er zijn er twee en ze betekenen niet hetzelfde.
+     1. De berekende fee (js/fee.js): per getekende plaatsing de
+        commerciële afspraak van de klant maal het bruto jaarsalaris van
+        de kandidaat. Dekt élke plaatsing die in het CRM staat en is er
+        dus altijd — ook in demo.
+     2. De gefactureerde termijnen uit het financebord (fin_*): geld dat
+        écht de deur uit is. Maar dat is alleen voor Tjeerd leesbaar,
+        wordt in demo niet geladen, en bevat alleen plaatsingen die
+        daadwerkelijk in het financebord zijn ingevoerd.
+   Standaard staat dit blok op (1), omdat dat compleet is. Welke bron je
+   ziet staat er in tekst bij, en zodra (2) beschikbaar is staat het
+   verschil tussen de twee in dezelfde regel — anders ontdek je pas
+   maanden later dat er getekend maar niet gefactureerd is.
+
+   Een klant zonder afspraak heeft geen berekende fee. Die telt hier
+   NIET als nul mee: dan zou een goede klant er slecht uitzien. Zulke
+   klanten staan apart onder de rangschikking, met hun aantallen.  */
+
+let klantVenster = '12m';        /* '12m' | 'jaar' | 'alles' */
+let klantBron    = 'fee';        /* 'fee' | 'fin' | 'aantal' */
+let klantAlles   = false;        /* rangschikking: top 10 of iedereen */
+const KLANT_TOP  = 10;
+
+const KLANT_VENSTERS = [['12m','Laatste 12 maanden'],['jaar','Dit jaar'],['alles','Alles']];
+
+function plusDagen(iso, n){
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('sv-SE');
+}
+
+/* Het venster van dit blok staat LOS van de periodekiezer bovenaan.
+   "Wie zijn mijn topklanten" is geen vraag over deze maand — met de
+   standaardperiode (deze maand) zou de rangschikking meestal leeg zijn.
+   Elk venster heeft een even lang vorig venster ernaast; dat is wat de
+   kolom Ontwikkeling vergelijkt. Bij 'alles' is er geen vorige periode
+   om mee te vergelijken en dat zeggen we dan ook. */
+function klantVensterInfo(){
+  const vandaag = CRM.todayISO();
+  if(klantVenster === 'jaar'){
+    const j = Number(vandaag.slice(0,4));
+    return {van:j+'-01-01', tot:vandaag, lbl:'1 januari t/m vandaag',
+            vVan:(j-1)+'-01-01', vTot:verschuifMaanden(vandaag,-12),
+            vLbl:'dezelfde periode vorig jaar'};
+  }
+  if(klantVenster === 'alles')
+    return {van:'', tot:vandaag, lbl:'alle plaatsingen t/m vandaag', vVan:'', vTot:'', vLbl:''};
+  const grens = verschuifMaanden(vandaag, -12);
+  return {van:plusDagen(grens,1), tot:vandaag, lbl:'laatste twaalf maanden',
+          vVan:plusDagen(verschuifMaanden(vandaag,-24),1), vTot:grens,
+          vLbl:'de twaalf maanden daarvóór'};
+}
+const inVenster = (waarde, van, tot) => {
+  const s = kort(waarde);
+  return !!s && (!van || s >= van) && (!tot || s <= tot);
+};
+
+/* crm_afspraken staat in CRM.state zodra de klantenmodule is geopend.
+   Kom je rechtstreeks op Performance binnen, dan is die lijst leeg en
+   zou élke fee "onbekend" heten terwijl de afspraken gewoon bestaan.
+   Daarom hier ook één keer ophalen — alleen lezen. Sinds 31 jul 2026 mag
+   het hele team de fee zien (besluit Tjeerd), dus de tabel is team-leesbaar;
+   winst en cashflow zitten in fin_* en blijven wél afgeschermd. */
+let _afsprBezig = false;
+function zorgAfspraken(klaar){
+  if(!CRM.magOpbrengstZien()) return;
+  if(!Array.isArray(CRM.state.afspraken)) CRM.state.afspraken = [];
+  if(CRM.demo || _afsprBezig || CRM.state.afspraken.length) return;
+  _afsprBezig = true;
+  try{
+    CRM.sb.from('crm_afspraken').select('*').then(r => {
+      if(r.error || !r.data || !r.data.length) return;
+      CRM.state.afspraken = r.data;
+      if(klaar) klaar();
+    });
+  }catch(e){ /* geen verbinding: fees blijven onbekend, dat is zichtbaar */ }
+}
+
+/* Een plaatsing: er is getekend én de kaart staat op geplaatst of is
+   later gestopt. Exact de definitie van het bord (CRM.plaatsingenMaand). */
+const isPlaatsing = c => !!kort(c.geplaatstOp) &&
+  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt'));
+
+/* Waaróm een plaatsing geen fee heeft. Vier van de vijf redenen zijn geen
+   fout maar een feit: flex verdient per uur, een vervanger onder garantie
+   is kosteloos. Die apart benoemen scheelt een zoektocht naar een gat dat
+   er niet is. */
+const FEE_REDEN = {
+  flex:         'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee',
+  vervanging:   'Kosteloze vervanging onder de garantie — levert geen nieuwe fee op',
+  geenafspraak: 'Geen commerciële afspraak vastgelegd bij deze klant',
+  geenloon:     'Bruto maandsalaris ontbreekt bij de kandidaat',
+  geenpct:      'De afspraak noemt geen percentage voor deze functie'
+};
+const FEE_KORT = {flex:'flex', vervanging:'vervanging', geenafspraak:'geen afspraak',
+                  geenloon:'geen maandloon', geenpct:'geen percentage'};
+
+/* De fee van één plaatsing, of de reden dat die er niet is.
+   bereken() zoekt de afspraak bewust niet zelf op — die halen we er eerst
+   bij, op de datum van tekenen, zodat een oude plaatsing met de toen
+   geldende afspraak rekent en niet met de afspraak van vandaag. */
+function feeVan(c){
+  if(!CRM.magOpbrengstZien() || !CRM.fee) return {bedrag:null, reden:'geenafspraak'};
+  if((c.type||'W&S') === 'Flex')      return {bedrag:null, reden:'flex'};
+  if(c.vervangt)                      return {bedrag:null, reden:'vervanging'};
+  const a = CRM.fee.voorKlant(c.klant, c.geplaatstOp);
+  if(!a)                              return {bedrag:null, reden:'geenafspraak'};
+  const r = CRM.fee.bereken(c, a);
+  if(r.fee == null)
+    return {bedrag:null, reden: (r.grondslag && !r.grondslag.compleet) ? 'geenloon' : 'geenpct'};
+  return {bedrag:r.fee, reden:''};
+}
+
+/* Wanneer is deze kandidaat bij de klant voorgesteld? Dat staat NIET als
+   veld in de database; we lezen de eerste historieregel van de fase
+   Voorgesteld. Ontbreekt die, dan nemen we de instroomdatum — dat is een
+   aanname en die telt het scherm hieronder ook zichtbaar mee. */
+function voorgesteldOp(c){
+  const op = (c.historie||[]).filter(x => CRM.faseIs(x.fase,'Voorgesteld'))
+    .map(x => kort(x.op)).filter(Boolean).sort();
+  return {datum: op[0] || kort(c.since), afgeleid: !op.length};
+}
+
+/* Gefactureerd per klantnaam uit het financebord. Termijnen dragen zelf
+   geen klantnaam; die hangt aan de plaatsing waar de termijn bij hoort. */
+function finSom(fin, van, tot){
+  const perKlant = {};
+  let zonderKlant = 0;
+  if(!fin || !fin.ok) return {perKlant, zonderKlant};
+  const klantVan = {};
+  (fin.placements||[]).forEach(pl => { klantVan[String(pl.id)] = String(pl.klant||'').trim(); });
+  (fin.termijnen||[]).forEach(t => {
+    if(!['gefactureerd','betaald'].includes(t.status)) return;
+    if(!inVenster(t.factuurdatum || t.geplande_datum, van, tot)) return;
+    const bedrag = Number(t.bedrag_excl)||0;
+    const k = klantVan[String(t.placement_id)] || '';
+    if(!k) zonderKlant += bedrag; else perKlant[k] = (perKlant[k]||0) + bedrag;
+  });
+  return {perKlant, zonderKlant};
+}
+
+/* ─── Alle cijfers per klant, in één keer ─────────────────────────── */
+function klantCijfers(V, fin){
   const cs = CRM.kandidaten();
+  const nu = finSom(fin, V.van, V.tot);
+  const vorig = V.vVan ? finSom(fin, V.vVan, V.vTot) : {perKlant:{}, zonderKlant:0};
+  const gebruikt = new Set();
+  let afgeleideVoorstellen = 0;
+
   const namen = Array.from(new Set(cs.map(c => (c.klant||'').trim()).filter(Boolean)));
-  const geld = CRM.canSeeMoney() && fin && fin.ok && (fin.placements||[]).length;
-
   const rijen = namen.map(naam => {
-    const mijn   = cs.filter(c => (c.klant||'').trim()===naam);
-    const ooit   = mijn.filter(c => CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt') || c.geplaatstOp);
-    const nu     = mijn.filter(c => CRM.faseIn(c.fase, CRM.PLACED));
-    const duurT  = ooit.length, duurN = ooit.filter(duurzaam).length;
-    const voorgesteld = mijn.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
-    const klantWees = mijn.filter(c => CRM.faseIs(c.fase,'Afgevallen') && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
-    const looptijden = ooit.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n=>n!=null && n>=0 && n<400);
-    const omzet = geld ? fin.placements.filter(pl => CRM.zelfdeKlant(pl.klant, naam))
-      .reduce((s,pl)=>s+(Number(pl.fee_excl)||0),0) : null;
-    return {naam, ooit:ooit.length, nu:nu.length, voorgesteld,
-            duurN, duurT, klantWees, looptijd:gem(looptijden), omzet};
-  }).filter(r => r.voorgesteld || r.ooit);
+    const mijn   = cs.filter(c => (c.klant||'').trim() === naam);
+    const alle   = mijn.filter(isPlaatsing);
+    const inWin  = alle.filter(c => inVenster(c.geplaatstOp, V.van, V.tot));
+    const inVorig= V.vVan ? alle.filter(c => inVenster(c.geplaatstOp, V.vVan, V.vTot)) : [];
 
-  if(!rijen.length)
-    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per klant</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Nog geen klantcijfers',
-        'Zodra er kandidaten bij klanten in traject zijn geweest verschijnen hier de cijfers per klant.')}</div></div></section>`;
+    let som = 0, metFee = 0;
+    const zonder = {};
+    inWin.forEach(c => {
+      const f = feeVan(c);
+      if(f.bedrag != null){ som += f.bedrag; metFee++; }
+      else zonder[f.reden] = (zonder[f.reden]||0) + 1;
+    });
+    let somV = 0, metFeeV = 0;
+    inVorig.forEach(c => { const f = feeVan(c); if(f.bedrag != null){ somV += f.bedrag; metFeeV++; } });
+
+    /* Geen plaatsingen = echt nul, niet onbekend. Wél plaatsingen maar
+       geen enkele met fee = onbekend, en dus geen nul in de grafiek.
+       Bij het venster "Alles" is er geen vorige periode: dan is de vorige
+       waarde niet nul maar onbekend, anders leest elke klant als
+       "gegroeid van € 0" terwijl er niets te vergelijken valt. */
+    const omzet  = !inWin.length   ? 0 : (metFee  ? Math.round(som)  : null);
+    const omzetV = !V.vVan ? null : (!inVorig.length ? 0 : (metFeeV ? Math.round(somV) : null));
+
+    const finSleutels  = Object.keys(nu.perKlant).filter(k => CRM.zelfdeKlant(k, naam));
+    finSleutels.forEach(k => gebruikt.add(k));
+    const finNu = finSleutels.length ? Math.round(finSleutels.reduce((s,k)=>s+nu.perKlant[k],0)) : null;
+    const finVorigSleutels = Object.keys(vorig.perKlant).filter(k => CRM.zelfdeKlant(k, naam));
+    const finVorig = finVorigSleutels.length ? Math.round(finVorigSleutels.reduce((s,k)=>s+vorig.perKlant[k],0)) : null;
+
+    const voorg = mijn.filter(c => {
+      if(verste(c) < fIdx('Voorgesteld')) return false;
+      const v = voorgesteldOp(c);
+      if(!inVenster(v.datum, V.van, V.tot)) return false;
+      if(v.afgeleid) afgeleideVoorstellen++;
+      return true;
+    });
+    const klantWees = voorg.filter(c => CRM.faseIs(c.fase,'Afgevallen')
+      && /klant wees af|meeloopdag niet goed/i.test(c.afvalCat||'')).length;
+    const looptijden = inWin.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n => n!=null && n>=0 && n<400);
+
+    return {
+      naam,
+      plaats: inWin.length, plaatsV: V.vVan ? inVorig.length : null,
+      actief: mijn.filter(c => CRM.faseIn(c.fase, CRM.PLACED)).length,
+      omzet, omzetV, metFee, zonder, geenFee: inWin.length - metFee,
+      finOmzet: finNu, finOmzetV: finVorig,
+      voorg: voorg.length, klantWees,
+      duurN: inWin.filter(duurzaam).length, duurT: inWin.length,
+      looptijd: gem(looptijden)
+    };
+  }).filter(r => r.plaats || r.voorg || r.actief || r.finOmzet);
+
+  const restFin = Object.keys(nu.perKlant).filter(k => !gebruikt.has(k))
+    .reduce((s,k)=>s+nu.perKlant[k], 0) + nu.zonderKlant;
+
+  return {rijen, restFin:Math.round(restFin), afgeleideVoorstellen};
+}
+
+/* ─── Presentatiehulpjes ──────────────────────────────────────────── */
+const klantGeld = () => klantBron !== 'aantal';
+const klantWaarde  = r => klantBron === 'aantal' ? r.plaats : klantBron === 'fin' ? r.finOmzet : r.omzet;
+const klantVorige  = r => klantBron === 'aantal' ? r.plaatsV : klantBron === 'fin' ? r.finOmzetV : r.omzetV;
+const klantFmt     = v => v == null ? '—' : (klantGeld() ? CRM.euro(v) : v.toLocaleString('nl-NL'));
+const klantEenheid = () => klantGeld() ? 'de omzet' : 'de plaatsingen';
+
+function deltaTxt(d, geldModus){
+  if(d == null) return '<span class="meta">—</span>';
+  if(!d) return '<span class="num">0</span>';
+  const tekst = geldModus ? CRM.euro(Math.abs(d)) : Math.abs(d).toLocaleString('nl-NL');
+  return `<span class="num ${d>0?'pos':'neg'}">${d>0?'+':'−'}${h(tekst)}</span>`;
+}
+
+/* De bronregel. Dit is het belangrijkste zinnetje van het blok: "omzet"
+   die eigenlijk "berekende fee van getekende plaatsingen" is, is iets
+   anders dan gefactureerde omzet. */
+function klantBronNote(V, C, fin){
+  if(!CRM.magOpbrengstZien())
+    return `<div class="note info pf-bron"><b>Aantallen, geen bedragen.</b>
+      Fee en omzet zijn afgeschermd; je ziet hier hoeveel plaatsingen er per klant staan
+      en hoe die zich ontwikkelen. Dat is dezelfde rangschikking, alleen zonder euro's.</div>`;
+
+  const finBeschikbaar = !!(fin && fin.ok);
+  const berekend = C.rijen.reduce((s,r)=>s+(r.omzet||0), 0);
+  const gefactureerd = C.rijen.reduce((s,r)=>s+(r.finOmzet||0), 0) + Math.max(0, C.restFin);
+  const zonderFee = C.rijen.reduce((s,r)=>s+r.geenFee, 0);
+
+  const vergelijk = finBeschikbaar
+    ? ` Over dezelfde periode staat er in het financebord <b class="num">${h(CRM.euro(gefactureerd))}</b>
+        aan gefactureerde en betaalde termijnen; berekend komt op <b class="num">${h(CRM.euro(berekend))}</b>.
+        Loopt dat uiteen, dan is er getekend zonder dat het gefactureerd is (of andersom).`
+    : CRM.demo
+      ? ` Het financebord (fin_*) wordt in demo bewust niet geladen, dus vergelijken met wat er écht
+          gefactureerd is kan hier niet.`
+      : ` Er is geen gefactureerde omzet uit het financebord om naast te leggen.`;
+
+  const bron = klantBron === 'fin'
+    ? `<b>Omzet = gefactureerd.</b> De termijnen uit het financebord met status gefactureerd of betaald,
+       geteld op factuurdatum. Dit is geld dat de deur uit is — niet wat er getekend is.`
+    : klantBron === 'aantal'
+      ? `<b>Aantal plaatsingen.</b> Een plaatsing telt op de datum waarop het contract getekend is.`
+      : `<b>Omzet = berekende fee, niet gefactureerde omzet.</b> Per getekende plaatsing de W&amp;S-fee uit
+         de commerciële afspraak van de klant maal het bruto jaarsalaris van de kandidaat
+         (dezelfde rekenregel als de kandidaatkaart en het financebord, js/fee.js).`;
+
+  return `<div class="note info pf-bron">${bron}${klantBron === 'aantal' ? '' : vergelijk}
+    ${zonderFee && klantBron === 'fee' ? `<br>Van <span class="num">${zonderFee}</span>
+      ${zonderFee===1?'plaatsing':'plaatsingen'} in deze periode is de fee niet te berekenen.
+      Die tellen nergens als € 0 mee; ze staan onder de rangschikking met de reden erbij.` : ''}</div>`;
+}
+
+/* ─── Rangschikking: staafdiagram voor de vraag "wie is groot" ────── */
+function klantRangschikking(C){
+  const met  = C.rijen.filter(r => klantWaarde(r) != null && klantWaarde(r) > 0)
+    .sort((a,b) => klantWaarde(b) - klantWaarde(a));
+  const nul  = C.rijen.filter(r => klantWaarde(r) === 0 && (r.plaats || r.voorg));
+  const onbekend = C.rijen.filter(r => klantWaarde(r) == null && r.plaats);
+  const totaal = met.reduce((s,r)=>s+klantWaarde(r), 0);
+
+  const toon = klantAlles ? met : met.slice(0, KLANT_TOP);
+  const max  = met.length ? (klantWaarde(met[0]) || 1) : 1;
+
+  const rij = (r, i) => {
+    const w = klantWaarde(r);
+    const aandeel = totaal ? Math.round(w/totaal*100) : 0;
+    const breed = Math.max(1, Math.round(w/max*100));
+    /* Het gemiddelde deelt door de plaatsingen die een fee hébben, niet door
+       alle plaatsingen — anders drukt een flexplaatsing het gemiddelde omlaag
+       terwijl die nooit een W&S-fee had kunnen opleveren. Bij een verschil
+       staat er daarom bij over hoeveel plaatsingen het gaat.
+       Alleen bij de berekende fee: de facturen van deze periode horen niet
+       per se bij de plaatsingen van deze periode, dus bij de gefactureerde
+       omzet zou "per plaatsing" twee verschillende dingen delen. */
+    const gem = (klantBron === 'fee' && r.metFee) ? Math.round(w / r.metFee) : null;
+    /* In de plaatsingen-stand ís de waarde al het aantal plaatsingen; die
+       er nog eens onder herhalen zegt niets. Dan liever wat er nú staat. */
+    const sub = (klantGeld() ? [
+      `${aandeel}% van ${klantEenheid()}`,
+      `${r.plaats} ${r.plaats===1?'plaatsing':'plaatsingen'}`,
+      gem == null ? ''
+        : r.geenFee ? `gemiddeld ${CRM.euro(gem)} over de ${r.metFee} met fee`
+                    : `gemiddeld ${CRM.euro(gem)} per plaatsing`
+    ] : [
+      `${aandeel}% van ${klantEenheid()}`,
+      `${r.actief} nu aan het werk`,
+      r.voorg ? `${r.voorg} voorgesteld` : ''
+    ]).filter(Boolean).join(' · ');
+    return `<button class="pf-rr" data-klant="${h(r.naam)}"
+        title="${h(r.naam)}: ${h(klantFmt(w))}, ${aandeel}% van ${h(klantEenheid())}">
+      <span class="pf-rnr num">${i+1}</span>
+      <span class="pf-rnaam">${h(r.naam)}</span>
+      <span class="pf-rbar"><i style="width:${breed}%"></i></span>
+      <span class="pf-rw num">${h(klantFmt(w))}</span>
+      <span class="pf-rsub meta">${h(sub)}${r.geenFee && klantBron==='fee'
+        ? ` · <span class="pf-let">${r.geenFee} zonder fee</span>` : ''}</span>
+    </button>`;
+  };
+
+  const meer = met.length > KLANT_TOP
+    ? `<button class="btn ghost sm pf-meer" id="pf_klmeer">${klantAlles
+        ? `Alleen de top ${KLANT_TOP} tonen`
+        : `Alle ${met.length} klanten tonen`}</button>` : '';
+
+  /* Klanten zonder berekenbare fee: zichtbaar, met reden, maar buiten de
+     optelling. Ze als € 0 in de rangschikking zetten zou een goede klant
+     onderaan de lijst parkeren. */
+  /* Deze lijst kan lang worden: zijn er nergens afspraken vastgelegd, dan
+     staat élke klant erin. Dat is geen leesbare lijst meer maar een muur,
+     dus de grootste acht plus één regel die de rest samenvat. */
+  const ONB_TOP = 8;
+  const onbGesorteerd = onbekend.slice().sort((a,b)=>b.plaats-a.plaats);
+  const onbRest = onbGesorteerd.slice(ONB_TOP);
+  const onbRestPl = onbRest.reduce((s,r)=>s+r.plaats,0);
+  const onbTxt = onbekend.length ? `<div class="pf-onbekend">
+      <div class="label">Wel plaatsingen, geen berekende ${klantGeld()?'omzet':'waarde'}</div>
+      ${onbGesorteerd.slice(0, ONB_TOP).map(r => {
+        const redenen = Object.entries(r.zonder).map(([k,n]) => `${n}× ${FEE_KORT[k]||k}`).join(', ');
+        return `<button class="pf-onb" data-klant="${h(r.naam)}">
+          <span>${h(r.naam)}</span>
+          <em class="num">${r.plaats} ${r.plaats===1?'plaatsing':'plaatsingen'}${redenen?` · ${h(redenen)}`:''}</em>
+        </button>`;
+      }).join('')}
+      ${onbRest.length ? `<p class="meta">En <span class="num">${onbRest.length}</span> andere klanten met samen
+        <span class="num">${onbRestPl}</span> ${onbRestPl===1?'plaatsing':'plaatsingen'}; die staan in de tabel hieronder.</p>` : ''}
+      <p class="meta">${h(Object.keys(FEE_REDEN).filter(k => onbekend.some(r => r.zonder[k]))
+        .map(k => FEE_REDEN[k]).join('. ') || 'Reden onbekend.')}</p>
+    </div>` : '';
+
+  const nulTxt = nul.length ? `<p class="meta pf-nul"><span class="num">${nul.length}</span>
+    ${nul.length===1?'klant heeft':'klanten hebben'} in deze periode geen enkele plaatsing —
+    ${nul.length===1?'die staat':'die staan'} wel in de tabel hieronder.</p>` : '';
+
+  /* Valt er niets te rangschikken, dan is de lege staat niet het hele
+     verhaal: als élke klant een plaatsing zonder berekenbare fee heeft, is
+     dat juist wat je wilt zien staan. De lijst met redenen blijft dus. */
+  const lijst = met.length
+    ? `<div class="pf-rang">${toon.map(rij).join('')}</div>${meer}`
+    : CRM.ui.leeg('Niets te rangschikken in deze periode',
+        klantGeld() ? 'Er is in deze periode geen omzet aan een klant toe te rekenen. Kies een langer venster of leg de commerciële afspraken vast.'
+                    : 'Er zijn in deze periode geen plaatsingen. Kies een langer venster.');
+
+  return `${lijst}${nulTxt}${onbTxt}`;
+}
+
+/* ─── Concentratie: hoeveel hangt er aan één klant ────────────────── */
+function klantConcentratie(C){
+  const met = C.rijen.filter(r => klantWaarde(r) != null && klantWaarde(r) > 0)
+    .sort((a,b) => klantWaarde(b) - klantWaarde(a));
+  const totaal = met.reduce((s,r)=>s+klantWaarde(r), 0);
+  if(met.length < 2 || !totaal)
+    return `<div class="card"><div class="card-h"><div class="h2">Concentratie</div></div>
+      <div class="card-b">${CRM.ui.leeg('Te weinig klanten om spreiding te meten',
+        'Zodra er in deze periode bij minstens twee klanten iets te tellen valt, staat hier hoe scheef het verdeeld is.')}</div></div>`;
+
+  const som = (van, tot) => met.slice(van, tot).reduce((s,r)=>s+klantWaarde(r), 0);
+  /* "Klant 4 t/m 4" leest als een fout; bij één klant in de groep gewoon
+     het rangnummer. */
+  const reeks = (van, tot) => van + 1 >= tot ? 'Klant ' + tot : `Klant ${van+1} t/m ${tot}`;
+  const n2 = Math.max(0, Math.min(3, met.length) - 1);
+  const n3 = Math.max(0, Math.min(10, met.length) - 3);
+  const groepen = [
+    {k:'s1', lbl:'Grootste klant — ' + met[0].naam,      v:som(0,1),  n:1},
+    {k:'s2', lbl:reeks(1, Math.min(3, met.length)),      v:som(1,3),  n:n2},
+    {k:'s3', lbl:reeks(3, Math.min(10, met.length)),     v:som(3,10), n:n3},
+    {k:'s4', lbl:'De overige klanten',                   v:som(10),   n:Math.max(0, met.length-10)}
+  ].filter(g => g.n > 0 && g.v > 0);
+
+  const p = v => totaal ? Math.round(v/totaal*100) : 0;
+  const top1 = p(som(0,1)), top3 = p(som(0,3));
+  /* Concentratie is een risico dat nergens anders in de app zichtbaar is:
+     zolang het goed gaat merk je er niets van, en als de klant wegvalt is
+     het te laat om er iets aan te doen. Vandaar een waarschuwing bij de
+     grenzen waarop je nog iets kúnt doen; anders gewoon de twee getallen. */
+  const risico = top1 >= 30
+    ? `<div class="note warn pf-risico">Bijna een derde van ${h(klantEenheid())} komt bij één klant vandaan
+        (${h(met[0].naam)}, ${top1}%). Valt die klant weg, dan valt dat deel in één keer weg —
+        dit is het moment om de tweede en derde klant te laten groeien.</div>`
+    : top3 >= 65
+      ? `<div class="note warn pf-risico">De top drie is samen goed voor ${top3}% van ${h(klantEenheid())}.
+          Dat is een smalle basis; één opzegging is meteen voelbaar.</div>`
+      : `<p class="pf-uitleg meta">De grootste klant is goed voor ${top1}% van ${h(klantEenheid())},
+          de top drie samen voor ${top3}%. Dat is redelijk gespreid.</p>`;
+
+  return `<div class="card"><div class="card-h"><div class="h2">Concentratie</div>
+      <span class="meta">${met.length} ${met.length===1?'klant':'klanten'}</span></div>
+    <div class="card-b">
+      <div class="pf-concbar">${groepen.map(g =>
+        `<i class="${g.k}" style="width:${p(g.v)}%" title="${h(g.lbl)}: ${h(klantFmt(g.v))} (${p(g.v)}%)"></i>`).join('')}</div>
+      <ul class="pf-conclegend">${groepen.map(g => `<li><i class="${g.k}"></i>
+        <span>${h(g.lbl)}</span><b class="num">${p(g.v)}%</b>
+        <em class="meta num">${h(klantFmt(g.v))}</em></li>`).join('')}</ul>
+      ${risico}
+    </div></div>`;
+}
+
+/* ─── Ontwikkeling: wie groeit, wie loopt terug ───────────────────── */
+function klantOntwikkeling(V, C){
+  if(!V.vVan)
+    return `<div class="card"><div class="card-h"><div class="h2">Groei en terugloop</div></div>
+      <div class="card-b">${CRM.ui.leeg('Geen vergelijking bij "Alles"',
+        'Kies "Laatste 12 maanden" of "Dit jaar" — dan zet dit blok elke klant naast dezelfde periode ervoor.')}</div></div>`;
+
+  const lijst = C.rijen.map(r => {
+    const nu = klantWaarde(r), vo = klantVorige(r);
+    if(nu == null || vo == null || (!nu && !vo)) return null;
+    return {naam:r.naam, nu, vo, d:nu-vo};
+  }).filter(Boolean).sort((a,b) => Math.abs(b.d) - Math.abs(a.d));
+
+  const groei = lijst.filter(x => x.d > 0).slice(0,5);
+  const terug = lijst.filter(x => x.d < 0).slice(0,5);
+
+  const kol = (titel, rijen, leeg) => `<div class="pf-ontwkol">
+    <div class="label">${h(titel)}</div>
+    ${rijen.length ? rijen.map(x => `<button class="pf-ontw" data-klant="${h(x.naam)}">
+        <span>${h(x.naam)}</span>
+        <em class="num">${h(klantFmt(x.vo))} → ${h(klantFmt(x.nu))}</em>
+        ${deltaTxt(x.d, klantGeld())}
+      </button>`).join('') : `<div class="meta">${h(leeg)}</div>`}
+  </div>`;
+
+  return `<div class="card"><div class="card-h"><div class="h2">Groei en terugloop</div>
+      <span class="meta">t.o.v. ${h(V.vLbl)}</span></div>
+    <div class="card-b"><div class="pf-ontw2">
+      ${kol('Groeit', groei, 'Geen enkele klant leverde meer dan de vorige periode')}
+      ${kol('Loopt terug', terug, 'Geen enkele klant leverde minder dan de vorige periode')}
+    </div>
+    <p class="pf-uitleg meta">Alleen klanten die in beide periodes te vergelijken zijn.
+      Staat een klant er niet bij, dan is de ${h(klantGeld()?'omzet':'telling')} in één van de twee periodes onbekend.</p>
+    </div></div>`;
+}
+
+/* ─── De tabel: de details achter de rangschikking ────────────────── */
+function klantTabel(V, C){
+  const geld = CRM.magOpbrengstZien();
+  /* Bij "Alles" is er geen vorige periode. Een kolom vol streepjes is dan
+     geen informatie maar ruis, dus die laten we in dat geval weg. */
+  const vergelijk = !!V.vVan;
+  /* Zie de toelichting bij de rangschikking: een gemiddelde per plaatsing
+     hoort alleen bij de berekende fee. En in de plaatsingen-stand zou de
+     omzetkolom letterlijk de kolom Plaatsingen herhalen, met "Omzet" erboven —
+     dan liever geen kolom. */
+  const omzetKolom = geld && klantBron !== 'aantal';
+  const gemKolom = klantBron === 'fee';
+  /* Sorteersleutel 'omzet' betekent "de kolom van de gekozen bron". Staat die
+     kolom er niet, dan is dat dezelfde ordening als op plaatsingen; het pijltje
+     hoort dan wel bij de kolom die je écht ziet. */
+  const sortK = (!omzetKolom && klantSort.k === 'omzet') ? 'plaats' : klantSort.k;
+  const rijen = C.rijen.slice();
 
   const waarde = (r,k) => k==='naam' ? r.naam
-    : k==='aanname' ? (r.voorgesteld ? r.ooit/r.voorgesteld : -1)
-    : k==='duur' ? (r.duurT ? r.duurN/r.duurT : -1)
-    : k==='looptijd' ? (r.looptijd==null ? 9999 : r.looptijd)
-    : k==='omzet' ? (r.omzet==null ? -1 : r.omzet)
+    : k==='omzet'   ? (klantWaarde(r) == null ? -1 : klantWaarde(r))
+    : k==='gem'     ? (r.metFee ? (r.omzet||0)/r.metFee : -1)
+    : k==='delta'   ? ((klantWaarde(r)==null||klantVorige(r)==null) ? -1e9 : klantWaarde(r)-klantVorige(r))
+    : k==='aanname' ? (r.voorg ? r.plaats/r.voorg : -1)
+    : k==='duur'    ? (r.duurT ? r.duurN/r.duurT : -1)
+    : k==='looptijd'? (r.looptijd == null ? 9999 : r.looptijd)
     : r[k];
-  rijen.sort((a,b)=>{
-    const x = waarde(a,klantSort.k), y = waarde(b,klantSort.k);
+  rijen.sort((a,b) => {
+    const x = waarde(a, sortK), y = waarde(b, sortK);
     if(typeof x === 'string') return klantSort.dir * x.localeCompare(y);
     return klantSort.dir * (x - y);
   });
 
-  const kop = (k,lbl,cls='') => `<th class="sortable ${cls}" data-ks="${k}">${h(lbl)}${klantSort.k===k?(klantSort.dir<0?' ↓':' ↑'):''}</th>`;
+  const kop = (k,lbl,cls='') => `<th class="sortable ${cls}" data-ks="${k}">${h(lbl)}${
+    sortK===k ? (klantSort.dir<0?' ↓':' ↑') : ''}</th>`;
 
-  return `<section class="pf-sec">
-    <div class="pf-kop"><span class="label">Per klant</span><span class="meta">hele samenwerking t/m nu</span></div>
-    <div class="tblwrap"><table class="tbl pf-tbl">
-      <thead><tr>
-        ${kop('naam','Klant')}
-        ${kop('voorgesteld','Voorgesteld','n')}
-        ${kop('ooit','Geplaatst ooit','n')}
-        ${kop('nu','Actief nu','n')}
-        ${kop('aanname','Aanname-ratio','n')}
-        ${kop('duur','Duurzaam','n')}
-        ${kop('looptijd','Doorlooptijd','n')}
-        ${geld ? kop('omzet','Omzet (fee)','n') : ''}
-        <th>Let op</th>
-      </tr></thead>
-      <tbody>${rijen.map(r=>{
-        const afwijzend = r.voorgesteld>=5 && r.ooit/r.voorgesteld < 0.2;
-        const vaakWeg   = r.voorgesteld>=4 && r.klantWees/r.voorgesteld >= 0.4;
-        return `<tr class="clickable" data-klant="${h(r.naam)}">
-          <td><b>${h(r.naam)}</b></td>
-          <td class="n num">${r.voorgesteld}</td>
-          <td class="n num">${r.ooit}</td>
-          <td class="n num">${r.nu}</td>
-          <td class="n">${r.voorgesteld ? pctTxt(r.ooit, r.voorgesteld) : '<span class="meta">—</span>'}</td>
-          <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
-          <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>
-          ${geld ? `<td class="n num">${r.omzet ? h(CRM.euro(r.omzet)) : '<span class="meta">—</span>'}</td>` : ''}
-          <td>${vaakWeg ? '<span class="chip amber">wijst vaak af</span>'
-             : afwijzend ? '<span class="chip">lage aanname</span>' : ''}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>
-    <p class="pf-uitleg meta">Deze cijfers stonden eerst op de klantkaart en gelden over de hele samenwerking.
-      Doorlooptijd is van instroom tot getekend contract; duurzaam is niet gestopt of pas gestopt ná de garantie.</p>
+  const tot = {
+    plaats: rijen.reduce((s,r)=>s+r.plaats,0),
+    voorg:  rijen.reduce((s,r)=>s+r.voorg,0),
+    actief: rijen.reduce((s,r)=>s+r.actief,0),
+    omzet:  rijen.reduce((s,r)=>s+(klantWaarde(r)||0),0)
+  };
+
+  return `<div class="tblwrap"><table class="tbl pf-tbl">
+    <thead><tr>
+      ${kop('naam','Klant')}
+      ${kop('voorg','Voorgesteld','n')}
+      ${kop('plaats','Plaatsingen','n')}
+      ${kop('actief','Actief nu','n')}
+      ${omzetKolom ? kop('omzet', klantBron==='fin' ? 'Gefactureerd' : 'Omzet (fee)','n') : ''}
+      ${gemKolom ? kop('gem','Gem. per plaatsing','n') : ''}
+      ${vergelijk ? kop('delta','Ontwikkeling','n') : ''}
+      ${kop('aanname','Aanname','n')}
+      ${kop('duur','Duurzaam','n')}
+      ${kop('looptijd','Doorlooptijd','n')}
+      <th>Let op</th>
+    </tr></thead>
+    <tbody>${rijen.map(r => {
+      const w = klantWaarde(r), vo = klantVorige(r);
+      const gemPl = (r.metFee && r.omzet != null) ? Math.round(r.omzet/r.metFee) : null;
+      const afwijzend = r.voorg >= 5 && r.plaats/r.voorg < 0.2;
+      const vaakWeg   = r.voorg >= 4 && r.klantWees/r.voorg >= 0.4;
+      const chips = [
+        vaakWeg   ? '<span class="chip amber">wijst vaak af</span>' : '',
+        !vaakWeg && afwijzend ? '<span class="chip">veel voorstellen, weinig plaatsingen</span>' : '',
+        (geld && klantBron==='fee' && r.plaats && r.zonder.geenafspraak) ? '<span class="chip">geen afspraak</span>' : ''
+      ].filter(Boolean).join(' ');
+      return `<tr class="clickable" data-klant="${h(r.naam)}">
+        <td><b>${h(r.naam)}</b></td>
+        <td class="n num">${r.voorg}</td>
+        <td class="n num">${r.plaats}</td>
+        <td class="n num">${r.actief}</td>
+        ${omzetKolom ? `<td class="n num">${w == null ? '<span class="meta">onbekend</span>' : h(klantFmt(w))}${
+          r.geenFee && klantBron==='fee' && w != null
+            ? `<div class="rowsub">${r.geenFee} van ${r.plaats} zonder fee</div>` : ''}</td>` : ''}
+        ${gemKolom ? `<td class="n num">${gemPl != null ? h(CRM.euro(gemPl)) : '<span class="meta">—</span>'}</td>` : ''}
+        ${vergelijk ? `<td class="n">${(w == null || vo == null)
+          ? '<span class="meta">—</span>' : deltaTxt(w-vo, klantGeld())}</td>` : ''}
+        <td class="n">${r.voorg ? pctTxt(r.plaats, r.voorg) : '<span class="meta">—</span>'}</td>
+        <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
+        <td class="n num">${r.looptijd != null ? r.looptijd + ' dgn' : '<span class="meta">—</span>'}</td>
+        <td>${chips}</td>
+      </tr>`;
+    }).join('')}
+    <tr class="pf-tot"><td><b>Alle ${rijen.length} klanten</b></td>
+      <td class="n num">${tot.voorg}</td>
+      <td class="n num">${tot.plaats}</td>
+      <td class="n num">${tot.actief}</td>
+      ${omzetKolom ? `<td class="n num">${h(klantFmt(tot.omzet))}</td>` : ''}${gemKolom ? '<td></td>' : ''}
+      <td colspan="${(vergelijk?1:0)+4}"></td></tr>
+    </tbody>
+  </table></div>`;
+}
+
+function blokKlanten(fin){
+  const V = klantVensterInfo();
+  if(!CRM.magOpbrengstZien()) klantBron = 'aantal';
+  else if(klantBron === 'fin' && !(fin && fin.ok)) klantBron = 'fee';
+  const C = klantCijfers(V, fin);
+
+  const kiezer = `<div class="seg pf-kseg">${KLANT_VENSTERS.map(([k,l]) =>
+    `<button data-kv="${k}" class="${klantVenster===k?'on':''}">${h(l)}</button>`).join('')}</div>`;
+
+  if(!C.rijen.length)
+    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per klant</span>${kiezer}</div>
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Nog geen klantcijfers',
+        'Zodra er kandidaten bij klanten in traject zijn geweest of geplaatst zijn, staat hier per klant wat dat oplevert.')}</div></div></section>`;
+
+  const bronnen = [['fee','Omzet (berekend)'], ...(fin && fin.ok ? [['fin','Omzet (gefactureerd)']] : []), ['aantal','Plaatsingen']];
+  const bronSeg = CRM.magOpbrengstZien()
+    ? `<div class="seg">${bronnen.map(([k,l]) =>
+        `<button data-kb="${k}" class="${klantBron===k?'on':''}">${h(l)}</button>`).join('')}</div>` : '';
+
+  const metPlaatsing = C.rijen.filter(r => r.plaats).length;
+  const totPlaats = C.rijen.reduce((s,r)=>s+r.plaats, 0);
+  const met = C.rijen.filter(r => klantWaarde(r) != null && klantWaarde(r) > 0)
+    .sort((a,b) => klantWaarde(b) - klantWaarde(a));
+  const totWaarde = met.reduce((s,r)=>s+klantWaarde(r), 0);
+  const top1 = met.length && totWaarde ? Math.round(klantWaarde(met[0])/totWaarde*100) : null;
+  /* Alleen bij de berekende fee zijn teller en noemer dezelfde plaatsingen;
+     bij gefactureerde omzet zegt "per plaatsing" niets (zie de rangschikking). */
+  const metFeeTot = C.rijen.reduce((s,r)=>s+r.metFee, 0);
+  const gemPerPlaatsing = (klantBron === 'fee' && totWaarde && metFeeTot)
+    ? Math.round(totWaarde / metFeeTot) : null;
+
+  return `<section class="pf-sec pf-klant">
+    <div class="pf-kop"><span class="label">Per klant</span>${kiezer}
+      <span class="meta">${h(V.lbl)}</span></div>
+
+    ${klantBronNote(V, C, fin)}
+
+    <div class="grid c4">
+      ${CRM.ui.kpi('Klanten met plaatsingen', `<span class="num">${metPlaatsing}</span>`,
+        `<span class="meta num">van ${C.rijen.length} met beweging in deze periode</span>`, 'accent')}
+      ${CRM.ui.kpi('Plaatsingen', `<span class="num">${totPlaats}</span>`,
+        metPlaatsing ? `<span class="meta num">gemiddeld ${(totPlaats/metPlaatsing).toFixed(1).replace('.',',')} per klant</span>` : '')}
+      ${klantGeld()
+        ? CRM.ui.kpi(klantBron === 'fin' ? 'Gefactureerd' : 'Berekende fee', `<span class="num">${h(CRM.euro(totWaarde))}</span>`,
+            gemPerPlaatsing ? `<span class="meta num">gemiddeld ${h(CRM.euro(gemPerPlaatsing))} per plaatsing</span>` : '')
+        : CRM.ui.kpi('Actief aan het werk', `<span class="num">${C.rijen.reduce((s,r)=>s+r.actief,0)}</span>`,
+            '<span class="meta">nu geplaatst bij een klant</span>')}
+      ${CRM.ui.kpi('Grootste klant', top1 != null ? `<span class="num">${top1}%</span>` : '<span class="meta">—</span>',
+        met.length ? `<span class="meta">${h(met[0].naam)} · ${klantGeld()
+          ? `${h(klantFmt(klantWaarde(met[0])))} van ${h(klantEenheid())}`
+          : `${klantWaarde(met[0])} van de ${totWaarde} plaatsingen`}</span>` : '')}
+    </div>
+
+    <div class="pf-klantgrid">
+      <div class="card"><div class="card-h"><div class="h2">Rangschikking</div>${bronSeg}</div>
+        <div class="card-b">${klantRangschikking(C)}</div></div>
+      <div class="pf-klantzij">
+        ${klantConcentratie(C)}
+        ${klantOntwikkeling(V, C)}
+      </div>
+    </div>
+
+    ${klantTabel(V, C)}
+
+    <p class="pf-uitleg meta">Een plaatsing telt op de datum waarop het contract getekend is, precies zoals op het bord.
+      Doorlooptijd is van instroom tot getekend contract; duurzaam is niet gestopt, of pas gestopt ná de garantie.
+      ${C.afgeleideVoorstellen ? `De datum van voorstellen staat niet als veld in de database: voor
+        <span class="num">${C.afgeleideVoorstellen}</span> ${C.afgeleideVoorstellen===1?'kandidaat':'kandidaten'}
+        is die afgeleid uit de instroomdatum omdat de historie geen regel "Voorgesteld" bevat.` : ''}
+      ${C.restFin > 0 ? `Er staat daarnaast ${h(CRM.euro(C.restFin))} gefactureerd bij klanten zonder plaatsing in het CRM —
+        die staan niet in de rangschikking.` : ''}</p>
   </section>`;
 }
 
@@ -877,18 +1519,14 @@ function blokOmzet(p, fin){
   const feeTotaal = getekendFee.reduce((s,pl)=>s+(Number(pl.fee_excl)||0),0);
   const gemFee = getekendFee.length ? Math.round(feeTotaal/getekendFee.length) : null;
 
-  /* Een plaatsing zonder klantnaam gaf hier een regel met het woord
-     "undefined" erboven. Liever eerlijk benoemen dat het veld leeg is. */
-  const perKlant = {};
-  getekendFee.forEach(pl => {
-    const k = String(pl.klant||'').trim() || 'Zonder klantnaam';
-    perKlant[k] = (perKlant[k]||0) + (Number(pl.fee_excl)||0);
-  });
-  const top = Object.entries(perKlant).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const maxK = top.length ? top[0][1] : 1;
-
+  /* De top-vijf klanten stond hier ook, maar dan alleen over de gekozen
+     periode en alleen uit het financebord. Dat is nu één blok hoger
+     opgegaan in "Per klant", waar de rangschikking wél de klanten zonder
+     financeboekhouding meeneemt en zegt welke bron ze gebruikt. Twee
+     ranglijstjes met verschillende getallen op één scherm is erger dan
+     geen ranglijstje. */
   return `<section class="pf-sec">
-    <div class="pf-kop"><span class="label">Omzet</span><span class="meta">alleen voor jou · ${h(p.lbl)}</span></div>
+    <div class="pf-kop"><span class="label">Omzet (financebord)</span><span class="meta">alleen voor jou · ${h(p.lbl)}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Gefactureerd', `<span class="num">${h(CRM.euro(omzet))}</span>`,
         `<span class="meta num">${gefactureerd.length} termijn${gefactureerd.length===1?'':'en'}</span>`, 'accent')}
@@ -897,11 +1535,8 @@ function blokOmzet(p, fin){
         `<span class="meta num">${getekendFee.length} plaatsingen</span>`)}
       ${CRM.ui.kpi('Gemiddelde fee', gemFee!=null ? `<span class="num">${h(CRM.euro(gemFee))}</span>` : '<span class="meta">—</span>', '')}
     </div>
-    ${top.length ? `<div class="card"><div class="card-h"><div class="h2">Grootste klanten</div></div>
-      <div class="card-b"><div class="pf-redenen">${top.map(([k,v])=>`
-        <div class="pf-reden"><span class="pf-rl">${h(k)}</span>
-          <span class="pf-rb">${CRM.ui.bar(Math.round(v/maxK*100))}</span>
-          <span class="pf-rn num">${h(CRM.euro(v))}</span></div>`).join('')}</div></div></div>` : ''}
+    <p class="pf-uitleg meta">Dit zijn de bedragen zoals ze in het financebord staan: gefactureerd en betaald in
+      ${h(p.lbl)}. De verdeling over klanten staat hierboven bij Per klant.</p>
   </section>`;
 }
 
@@ -929,15 +1564,16 @@ function teken(mount, acties){
   mount.innerHTML = `<div class="pf">
     ${omgekeerd ? `<div class="note warn">De begindatum (${h(CRM.fmtDate(p.van))}) ligt ná de einddatum
       (${h(CRM.fmtDate(p.tot))}), dus er valt niets binnen deze periode. Draai de datums om.</div>` : ''}
+    ${blokJaar()}
     ${blokDoel(_fin)}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
+    ${blokKlanten(_fin)}
+    ${blokOmzet(p, _fin)}
     ${blokRecruiters(p, D)}
     ${blokTrechter(p, D)}
     ${blokUitval(p, D)}
-    ${blokKlanten(_fin)}
     ${blokBron(p, D)}
-    ${blokOmzet(p, _fin)}
   </div>`;
 
   /* Doel instellen / aanpassen */
@@ -974,11 +1610,37 @@ function teken(mount, acties){
   CRM.$$('[data-klant]', mount).forEach(tr => tr.onclick = () => CRM.ga('klanten', {id:tr.dataset.klant}));
   CRM.$$('[data-pfkand]', mount).forEach(b => b.onclick = () => CRM.ga('kandidaten', {id:b.dataset.pfkand}));
 
+  /* Per klant: eigen venster, eigen bron, en de rangschikking in- of
+     uitklappen. Het venster staat los van de periodekiezer bovenaan —
+     zie de toelichting bij klantVensterInfo(). */
+  CRM.$$('[data-kv]', mount).forEach(b => b.onclick = () => {
+    klantVenster = b.dataset.kv; klantAlles = false; teken(mount, acties);
+  });
+  CRM.$$('[data-kb]', mount).forEach(b => b.onclick = () => {
+    klantBron = b.dataset.kb; klantAlles = false; teken(mount, acties);
+  });
+  const meer = mount.querySelector('#pf_klmeer');
+  if(meer) meer.onclick = () => { klantAlles = !klantAlles; teken(mount, acties); };
+  /* "Hoe staan we ervoor dit jaar" en "welke klanten dragen daaraan bij"
+     zijn dezelfde vraag. Deze knop zet het klantvenster op dit jaar en
+     brengt je erheen, zodat je niet zelf hoeft te schakelen. */
+  const jk = mount.querySelector('#pf_jrklant');
+  if(jk) jk.onclick = () => {
+    klantVenster = 'jaar'; klantAlles = false;
+    teken(mount, acties);
+    const doel = mount.querySelector('.pf-klant');
+    if(doel) doel.scrollIntoView({block:'start'});
+  };
+
   /* Financiële data nalezen — alleen voor Tjeerd. Eén keer laden (cache),
      daarna opnieuw tekenen zodat Doel, Per klant en Omzet gevuld zijn. */
   if(CRM.canSeeMoney() && !_fin){
     finLezen().then(() => { if(CRM.view === 'performance') teken(mount, acties); }).catch(()=>{});
   }
+  /* De commerciële afspraken zijn de helft van elke fee. Staan ze er nog
+     niet (je bent direct op Performance binnengekomen), dan halen we ze
+     alsnog op en tekenen we opnieuw. */
+  zorgAfspraken(() => { if(CRM.view === 'performance') teken(mount, acties); });
 }
 
 CRM.registerModule('performance', {
