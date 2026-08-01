@@ -55,6 +55,9 @@ function zet(k,v){ F[k]=v;
 
 /* Paneel- en tabstand (geen filter, wel handig om te onthouden). */
 let filtersOpen = false, filtersOpenGezet = false;
+/* Het tweede laagje ("Meer verfijnen") onthoudt zichzelf wél over sessies
+   heen: wie op ploegendienst of taal stuurt, doet dat elke dag opnieuw. */
+let meerOpen = (() => { try{ return localStorage.getItem('crm_kand_meer') === '1'; }catch(e){ return false; } })();
 
 const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
 
@@ -535,8 +538,44 @@ function gesprokenMatch(st, k){
   return st.dagen != null && st.dagen >= o.dagen;
 }
 
+/* ─── Meerdere functies tegelijk ────────────────────────────────
+   F.functie was één zoekterm. Dat past niet bij hoe er gezocht wordt: een
+   klant vraagt om "orderpicker of magazijnmedewerker of heftruckchauffeur",
+   en dat zijn bij ons drie functienamen voor grofweg hetzelfde werk. Met één
+   veld moest je drie keer achter elkaar zoeken en zelf onthouden wie je al
+   gezien had. Het blijft één tekstveld in de opslag (komma's ertussen), zodat
+   een bestaande opgeslagen filterstand met één term gewoon blijft werken.
+   Meerdere termen betekent OF, niet EN: iemand die aan één ervan voldoet
+   blijft staan. EN zou hier vrijwel altijd nul opleveren — niemand heeft
+   twee functietitels tegelijk op zijn kaart. */
+const functieTermen = () => String(F.functie||'').split(',').map(s => s.trim()).filter(Boolean);
+function zetFunctieTermen(lijst){
+  const uniekLaag = [];
+  lijst.map(s => String(s).trim()).filter(Boolean).forEach(t => {
+    if(!uniekLaag.some(x => x.toLowerCase() === t.toLowerCase())) uniekLaag.push(t);
+  });
+  zet('functie', uniekLaag.join(', '));
+}
+
 /* Welke filters staan aan (voor teller, chips en wissen)? */
 const PANEEL_FILTERS = ['status','gesproken','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
+/* De acht die achter "Meer verfijnen" zitten. Wat overblijft — functies,
+   radius, status, sterren — staat meteen open. */
+const MEER_FILTERS = ['gesproken','ploegen','taal','vervoer','rijbewijs','rec','klant','fase'];
+
+/* Functienamen die in de kaartenbak voorkomen, als suggestielijst onder het
+   functieveld. Uit de data zelf, niet uit een vaste lijst: het CRM weet beter
+   hoe wij functies noemen dan een lijst die iemand ooit heeft ingetypt. */
+function functieSuggesties(alle){
+  const tel = new Map();
+  alle.forEach(c => {
+    [c.functie, c.cv && c.cv.functie].forEach(f => {
+      const s = String(f||'').trim();
+      if(s) tel.set(s, (tel.get(s)||0) + 1);
+    });
+  });
+  return [...tel.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,60).map(e => e[0]);
+}
 function actieveFilters(){
   const uit = [];
   if(F.status !== F_STD.status) uit.push({k:'status', lbl:statusLbl(F.status)});
@@ -547,7 +586,8 @@ function actieveFilters(){
   if(String(F.taal).trim())      uit.push({k:'taal', lbl:'taal: '+F.taal});
   if(F.vervoer)       uit.push({k:'vervoer', lbl:'vervoer: '+F.vervoer});
   if(String(F.rijbewijs).trim()) uit.push({k:'rijbewijs', lbl:'rijbewijs: '+F.rijbewijs});
-  if(String(F.functie).trim())   uit.push({k:'functie', lbl:'functie: '+F.functie});
+  { const ft = functieTermen();
+    if(ft.length) uit.push({k:'functie', lbl:(ft.length===1?'functie: ':'functie: ')+ft.join(' of ')}); }
   if(F.rec)           uit.push({k:'rec', lbl:F.rec});
   if(F.klant)         uit.push({k:'klant', lbl:F.klant});
   if(F.fase)          uit.push({k:'fase', lbl:F.fase});
@@ -561,6 +601,10 @@ function lijstTab(wrap){
   /* Eén keer: staan er filters aan, verstop het paneel dan niet. Daarna
      respecteren we wat de gebruiker zelf open- of dichtklikte. */
   if(!filtersOpenGezet){ filtersOpen = nFil > 0; filtersOpenGezet = true; }
+  /* Staat er in de verborgen laag iets aan, dan klapt die vanzelf open —
+     anders filter je op iets wat je nergens ziet staan. */
+  const meerAan = actieveFilters().filter(f => MEER_FILTERS.includes(f.k)).length;
+  if(meerAan) meerOpen = true;
   const sel = (f, opts, leeg) => `<select data-f="${f}"><option value="">${h(leeg)}</option>
     ${opts.map(o=>`<option value="${h(o)}"${F[f]===o?' selected':''}>${h(o)}</option>`).join('')}</select>`;
 
@@ -582,7 +626,7 @@ function lijstTab(wrap){
           <div class="searchbox" style="flex:1;max-width:290px">
             <input type="search" id="kd_zoek" autocomplete="off" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
           </div>
-          <button class="btn ghost sm${filtersOpen?' kd-filaan':''}" id="kd_filknop">Filters${nFil?` <span class="num">(${nFil})</span>`:''}</button>
+          <button class="btn ghost sm${filtersOpen?' kd-filaan':''}" id="kd_filknop">Geavanceerd zoeken${nFil?` <span class="num">(${nFil})</span>`:''}</button>
           <select id="kd_sort" style="width:auto" title="Wie eerst bellen: langst niet gesproken bovenaan, bij gelijke stilte de hoogste sterbeoordeling eerst.">
             <option value="gesproken"${F.sort==='gesproken'?' selected':''}>Wie eerst bellen</option>
             <option value="ster"${F.sort==='ster'?' selected':''}>Hoogste sterren</option>
@@ -595,18 +639,18 @@ function lijstTab(wrap){
           <span class="meta num" id="kd_telling"></span>
         </div>
         <div class="kd-fpaneel" id="kd_fpaneel" style="${filtersOpen?'':'display:none'}">
+          <!-- Vier velden waar bijna elke zoekopdracht mee begint: wat voor
+               werk, waar, hoe goed, en waar in het traject. De overige acht
+               staan een klik verderop. Twaalf velden tegelijk lazen als een
+               formulier dat ingevuld moest worden in plaats van als een paar
+               knoppen om aan te draaien. -->
           <div class="kd-fgrid">
-            <div class="f-row"><label>Status</label>${statusSel}</div>
-            <div class="f-row"><label>Laatst gesproken</label>
-              <select data-f="gesproken">
-                ${GESPROKEN_OPTS.map(o=>`<option value="${h(o.k)}"${String(F.gesproken||'')===o.k?' selected':''}>${h(o.lbl)}</option>`).join('')}
-              </select>
-              <div class="hint">Tellen mee: bellen, appen, mailen, een gesprek of een bezoek.</div></div>
-            <div class="f-row"><label>Minimaal sterren</label>
-              <select data-f="ster">
-                <option value="0">Alle</option>
-                ${[1,2,3,4,5].map(n=>`<option value="${n}"${F.ster===n?' selected':''}>${'★'.repeat(n)}${n<5?' of meer':''}</option>`).join('')}
-              </select></div>
+            <div class="f-row kd-fbreed"><label>Functies</label>
+              <div class="kd-fnchips" id="kd_fnchips"></div>
+              <input type="text" id="kd_fnin" list="kd_fnlijst" autocomplete="off"
+                     placeholder="Typ een functie en druk op Enter">
+              <datalist id="kd_fnlijst">${functieSuggesties(alle).map(f=>`<option value="${h(f)}">`).join('')}</datalist>
+              <div class="hint">Meerdere mag. Wie aan één ervan voldoet blijft staan — handig als een klant hetzelfde werk anders noemt.</div></div>
             <div class="f-row"><label>Woont binnen radius</label>
               <div class="row tight" style="flex-wrap:nowrap">
                 <input type="text" data-f="plaats" placeholder="Plaats, bv. Gouda" value="${h(F.plaats)}">
@@ -615,19 +659,33 @@ function lijstTab(wrap){
                 </select>
               </div>
               <div class="hint" id="kd_plaatshint"></div></div>
-            <div class="f-row"><label>Ploegendiensten</label>${sel('ploegen', CRM.PLOEGEN, 'Alle')}</div>
-            <div class="f-row"><label>Taal</label>
-              <input type="text" data-f="taal" placeholder="bv. Pools of NL" value="${h(F.taal)}"></div>
-            <div class="f-row"><label>Vervoer</label>${sel('vervoer', CRM.VERVOER, 'Alle')}</div>
-            <div class="f-row"><label>Rijbewijs</label>
-              <input type="text" data-f="rijbewijs" placeholder="bv. B of heftruck" value="${h(F.rijbewijs)}"></div>
-            <div class="f-row"><label>Functie</label>
-              <input type="text" data-f="functie" placeholder="bv. operator" value="${h(F.functie)}"></div>
-            <div class="f-row"><label>Recruiter</label>${sel('rec', uniek(alle.map(c=>c.rec)), 'Alle')}</div>
-            <div class="f-row"><label>Klant</label>${sel('klant', uniek(alle.map(c=>c.klant)), 'Alle')}</div>
-            <div class="f-row"><label>Fase</label>${sel('fase', CRM.PHASES.map(p=>p.k), 'Alle')}</div>
+            <div class="f-row"><label>Status</label>${statusSel}</div>
+            <div class="f-row"><label>Minimaal sterren</label>
+              <select data-f="ster">
+                <option value="0">Alle</option>
+                ${[1,2,3,4,5].map(n=>`<option value="${n}"${F.ster===n?' selected':''}>${'★'.repeat(n)}${n<5?' of meer':''}</option>`).join('')}
+              </select></div>
+          </div>
+          <div class="kd-fmeer" id="kd_fmeer" style="${meerOpen?'':'display:none'}">
+            <div class="kd-fgrid">
+              <div class="f-row"><label>Laatst gesproken</label>
+                <select data-f="gesproken" title="Tellen mee: bellen, appen, mailen, een gesprek of een bezoek.">
+                  ${GESPROKEN_OPTS.map(o=>`<option value="${h(o.k)}"${String(F.gesproken||'')===o.k?' selected':''}>${h(o.lbl)}</option>`).join('')}
+                </select></div>
+              <div class="f-row"><label>Ploegendiensten</label>${sel('ploegen', CRM.PLOEGEN, 'Alle')}</div>
+              <div class="f-row"><label>Taal</label>
+                <input type="text" data-f="taal" placeholder="bv. Pools of NL" value="${h(F.taal)}"></div>
+              <div class="f-row"><label>Vervoer</label>${sel('vervoer', CRM.VERVOER, 'Alle')}</div>
+              <div class="f-row"><label>Rijbewijs</label>
+                <input type="text" data-f="rijbewijs" placeholder="bv. B of heftruck" value="${h(F.rijbewijs)}"></div>
+              <div class="f-row"><label>Recruiter</label>${sel('rec', uniek(alle.map(c=>c.rec)), 'Alle')}</div>
+              <div class="f-row"><label>Klant</label>${sel('klant', uniek(alle.map(c=>c.klant)), 'Alle')}</div>
+              <div class="f-row"><label>Fase</label>${sel('fase', CRM.PHASES.map(p=>p.k), 'Alle')}</div>
+            </div>
           </div>
           <div class="row" style="margin-top:2px">
+            <button class="lnk" id="kd_fmeerknop">${meerOpen?'Minder velden':'Meer verfijnen'}${meerAan?` <span class="num">(${meerAan})</span>`:''}</button>
+            <span class="spacer"></span>
             <button class="btn sub sm" id="kd_wis">Alle filters wissen</button>
           </div>
         </div>
@@ -649,6 +707,57 @@ function lijstTab(wrap){
     PANEEL_FILTERS.forEach(k => zet(k, F_STD[k])); zet('km', F_STD.km);
     lijstTab(wrap);
   };
+  const meerKnop = wrap.querySelector('#kd_fmeerknop');
+  meerKnop.onclick = () => {
+    meerOpen = !meerOpen;
+    try{ localStorage.setItem('crm_kand_meer', meerOpen ? '1' : '0'); }catch(e){}
+    lijstTab(wrap);
+  };
+
+  /* ── Functiechips ──────────────────────────────────────────────
+     Enter of een komma maakt van wat je typt een chip. Klik op een chip en
+     hij is weg. Wat er nog in het invoerveld staat wanneer je wegklikt telt
+     ook mee — anders zoek je naar iets wat je wél hebt ingetypt maar dat
+     nooit is meegenomen, en dat merk je pas aan een lege lijst. */
+  const fnIn = wrap.querySelector('#kd_fnin');
+  const tekenChips = () => {
+    const el = wrap.querySelector('#kd_fnchips');
+    const ft = functieTermen();
+    el.innerHTML = ft.map(t => `<span class="chip kd-fnchip" data-fnweg="${h(t)}" role="button" tabindex="0"
+      title="Klik om '${h(t)}' uit de selectie te halen">${h(t)}<span aria-hidden="true">×</span></span>`).join('');
+    CRM.$$('[data-fnweg]', el).forEach(chip => {
+      const weg = () => {
+        zetFunctieTermen(functieTermen().filter(x => x !== chip.dataset.fnweg));
+        tekenChips(); lijst(wrap); filterKnopBij(wrap);
+      };
+      chip.onclick = weg;
+      chip.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); weg(); } };
+    });
+  };
+  const voegToe = () => {
+    const v = fnIn.value.trim();
+    if(!v) return false;
+    zetFunctieTermen(functieTermen().concat(v.split(',')));
+    fnIn.value = '';
+    tekenChips(); lijst(wrap); filterKnopBij(wrap);
+    return true;
+  };
+  fnIn.onkeydown = e => {
+    if(e.key === 'Enter' || e.key === ','){ e.preventDefault(); voegToe(); }
+    /* Backspace in een leeg veld haalt de laatste chip weg — zoals overal. */
+    else if(e.key === 'Backspace' && !fnIn.value && functieTermen().length){
+      zetFunctieTermen(functieTermen().slice(0,-1));
+      tekenChips(); lijst(wrap); filterKnopBij(wrap);
+    }
+  };
+  fnIn.onblur = voegToe;
+  /* Kiezen uit de suggestielijst vult het veld zonder Enter; dan hoort het
+     meteen een chip te worden. Alleen bij een keuze uit de lijst — de browser
+     laat `inputType` dan leeg of zet 'insertReplacementText'. Op elke
+     toetsaanslag controleren zou "operator" al vastzetten terwijl je
+     "operator inpak" aan het typen bent. */
+  fnIn.oninput = e => { if(!e.inputType || e.inputType === 'insertReplacementText') voegToe(); };
+  tekenChips();
   wrap.querySelectorAll('[data-f]').forEach(el => {
     const k = el.dataset.f;
     const pas = () => {
@@ -667,7 +776,7 @@ function lijstTab(wrap){
 function filterKnopBij(wrap){
   const knop = wrap.querySelector('#kd_filknop'); if(!knop) return;
   const n = actieveFilters().filter(f => f.k !== 'mijn').length;
-  knop.innerHTML = 'Filters' + (n ? ` <span class="num">(${n})</span>` : '');
+  knop.innerHTML = 'Geavanceerd zoeken' + (n ? ` <span class="num">(${n})</span>` : '');
   knop.classList.toggle('kd-filaan', filtersOpen);
 }
 
@@ -692,7 +801,14 @@ function gefilterd(){
     if(F.taal && !taalMatch(c.talen, F.taal)) return false;
     if(F.vervoer && c.vervoer !== F.vervoer) return false;
     if(F.rijbewijs && !String(c.rijbewijs||'').toLowerCase().includes(F.rijbewijs.trim().toLowerCase())) return false;
-    if(F.functie && !String(c.functie||'').toLowerCase().includes(F.functie.trim().toLowerCase())) return false;
+    /* Meerdere functies = OF. Zoekt ook in de functie uit het cv: bij een
+       verse import staat het veld `functie` vaak leeg terwijl het cv al
+       geparsed is, en zo iemand hoort niet buiten de selectie te vallen. */
+    { const ft = functieTermen();
+      if(ft.length){
+        const hooi = (String(c.functie||'') + ' ' + String((c.cv && c.cv.functie) || '')).toLowerCase();
+        if(!ft.some(t => hooi.includes(t.toLowerCase()))) return false;
+      } }
     if(F.rec   && c.rec   !== F.rec)   return false;
     if(F.klant && c.klant !== F.klant) return false;
     /* faseIs: een kandidaat die nog op de oude waarde 'Voorselectie' staat

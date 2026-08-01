@@ -4,7 +4,13 @@
    zodat beide schermen er identiek uitzien; hieronder staat alles wat
    alleen dit scherm nodig heeft. */
 
-/* ─── Bord + uitvalstrook ────────────────────────────────────── */
+/* ─── Bord ────────────────────────────────────────────────────
+   De uitvalstrook naast het bord is er per 31 juli 2026 uit. Twee getallen
+   in een eigen kolom kostten een zesde van de breedte, en als sleepdoel gaf
+   het uitval de status van een fase waar je iemand naartoe verplaatst. De
+   fase volgt uit wat er bij de klant gebeurt; afvallen leg je vast op de
+   kaart, waar ook de reden wordt gevraagd. Wat overblijft is de regel
+   .pp-uitregel onder het bord: de stand, meer niet. */
 .rc-bordwrap{display:flex;align-items:flex-start;gap:0}
 .rc-bordwrap .board{flex:1;min-width:0;padding:4px 12px 30px 26px}
 /* Kolomhoogte: precies tot onder aan het scherm, zodat je binnen een kolom
@@ -15,19 +21,11 @@
    terugval als dat (nog) niet gebeurd is. max() houdt de kolom bruikbaar op
    een smal scherm, waar het bord ver naar beneden staat. */
 .rc .bcol{max-height:max(280px, var(--bcolmax, calc(100vh - 330px)))}
-.rc-uit{flex:0 0 168px;width:168px;padding:4px 26px 30px 0;display:flex;flex-direction:column;gap:8px}
-.rc-uitzone{
-  border:1px dashed var(--line-2);border-radius:var(--r);background:var(--card-2);
-  padding:12px;display:flex;flex-direction:column;gap:4px;border-left:3px solid var(--ph,var(--muted));
-  transition:background .12s,border-color .12s;
-}
-/* Inter, geen Anton — Anton is alleen voor paginatitels en grote kerncijfers. */
-.rc-uitzone b{font-family:var(--body);font-weight:600;font-size:12px;letter-spacing:.04em;
-  text-transform:uppercase;color:var(--ink)}
-.rc-uitzone .num{font-size:20px;font-weight:600;color:var(--txt-2);line-height:1.1}
-/* Zelfde sleepterugkoppeling als .bcol.over in base.css. */
-.rc-uitzone.over{background:var(--well-2);border-color:var(--olive-l);border-style:solid}
-.rc-uitverv{padding:2px 0}
+/* Uitval onder het bord: dezelfde rustige toon als .pp-klaarregel. */
+.pp-uitregel{margin:0;padding:0 26px 26px;display:flex;align-items:center;gap:10px;
+  font-size:12.5px;line-height:1.5;flex-wrap:wrap}
+.pp-uitregel:empty{display:none}
+.pp-uitregel b.num{color:var(--ink);font-weight:600}
 
 .rc-leegkol{font-size:12px;color:var(--muted);text-align:center;padding:16px 8px;line-height:1.5}
 /* Toelichting onder de filters: kandidaten zonder intake of met een fase die
@@ -151,9 +149,7 @@
      samen (±3000px) en kreeg de héle pagina een horizontale schuifbalk; nu
      schuift alleen het bord zelf, zoals op desktop. */
   .rc-bordwrap .board{padding:4px 14px 16px;align-self:stretch;width:100%}
-  .rc-uit{flex:1 1 auto;width:auto;padding:0 14px 24px;flex-direction:row}
-  .rc-uit .label{display:none}
-  .rc-uitzone{flex:1}
+  .pp-uitregel{padding:0 14px 20px}
   /* De tabel schuift horizontaal in .tblwrap; de kolommen die het smalst
      dragen (woonplaats-subregel, AM) mogen dan gewoon meeschuiven. */
   .pp-lijstwrap{padding-bottom:24px}

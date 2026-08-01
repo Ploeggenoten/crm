@@ -52,6 +52,18 @@
 .kd-fpaneel{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
 .kd-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px}
 .kd-fgrid .f-row{margin-bottom:10px}
+/* Het functieveld mag twee kolommen: er komen chips onder te staan, en met
+   één kolombreedte springt het paneel bij elke toegevoegde functie op. */
+.kd-fbreed{grid-column:span 2}
+@media (max-width:640px){ .kd-fbreed{grid-column:span 1} }
+/* Tweede laag: acht velden die je zelden nodig hebt. Gescheiden door een
+   dunne lijn in plaats van een kader — het is dezelfde filterbalk, geen
+   apart onderdeel. */
+.kd-fmeer{border-top:1px dashed var(--line);padding-top:12px;margin-top:2px}
+.kd-fnchips:not(:empty){display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.kd-fnchip{cursor:pointer;gap:5px;padding-right:6px}
+.kd-fnchip:hover,.kd-fnchip:focus-visible{border-color:var(--olive-l);color:var(--olive)}
+.kd-fnchip span{color:var(--muted);font-size:13px;line-height:1}
 .kd-fchip{padding-right:5px}
 .kd-fx{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;
   padding:0 3px;border-radius:50%;opacity:.65}

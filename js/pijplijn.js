@@ -317,7 +317,8 @@ function tekenWeergave(){
   if(!el) return;
   el.innerHTML = weergave() === 'lijst'
     ? `<div class="rc-pad pp-lijstwrap" id="pp_lijst"></div>`
-    : `<div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div><div class="rc-uit" id="rb_uit"></div></div>`;
+    : `<div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div></div>
+       <p class="pp-uitregel" id="rb_uit"></p>`;
   tekenInhoud();
 }
 function tekenInhoud(){
@@ -550,7 +551,16 @@ function tekenKolommen(){
     </div>`;
   }).join('');
 
-  /* Smalle uitvalstrook naast het bord: cijfers + sleepdoelen. */
+  /* Uitval: één regel onder het bord, geen kolom ernaast meer.
+     Die kolom was een sleepdoel uit het oude pijplijnbord en nam een zesde
+     van de breedte in beslag voor twee getallen. Belangrijker: hij stelde
+     uitval voor als een fase waar je iemand naartoe schuift, terwijl de fase
+     hoort te volgen uit wat de kandidaat bij de klant overkomt. Afvallen doe
+     je nu waar de reden vandaan komt — op de kaart, via de fasekeuze, die om
+     een categorie vraagt. Op het bord blijft alleen de stand staan.
+     (Tjeerd, 31 jul 2026: "het pijplijnbord is meer een visualisatie, maar de
+     fases zijn leidend vanuit de statussen die een kandidaat met een klant
+     krijgt".) */
   const K = CRM.kandidaten();
   const nAfg = K.filter(c => c.fase === 'Afgevallen').length;
   const nStp = K.filter(c => c.fase === 'Gestopt').length;
@@ -559,15 +569,12 @@ function tekenKolommen(){
      werd bij 350 rijen onnodig duur. */
   const vervangt = new Set(K.map(c => c.vervangt).filter(Boolean).map(String));
   const nVerv = K.filter(c => d.owesReplacement(c) && !vervangt.has(String(c.id))).length;
-  uit.innerHTML = `<div class="label" style="padding:0 4px 6px">Uitval</div>` + UITVAL.map(f => {
-    const n = f === 'Afgevallen' ? nAfg : nStp;
-    return `<div class="rc-uitzone" data-fase="${h(f)}" style="--ph:${CRM.faseKleur(f)}">
-      <b>${h(f)}</b><span class="num">${n}</span>
-      <span class="meta">sleep hierheen</span></div>`;
-  }).join('') +
-  (nVerv ? `<div class="rc-uitverv"><span class="chip red num">${nVerv}× vervanging nodig</span></div>` : '') +
-  `<button class="btn ghost sm" id="rb_uitopen" style="width:100%;justify-content:center">Uitval openen →</button>`;
-  uit.querySelector('#rb_uitopen').onclick = () => d.openUitval();
+  if(uit){
+    uit.innerHTML = `<span class="meta">Uitval: <b class="num">${nAfg}</b> afgevallen · <b class="num">${nStp}</b> gestopt</span>
+      ${nVerv ? `<span class="chip red num">${nVerv}× vervanging nodig</span>` : ''}
+      <button class="lnk" id="rb_uitopen">Uitval openen →</button>`;
+    uit.querySelector('#rb_uitopen').onclick = () => d.openUitval();
+  }
 
   CRM.$$('.bcard', board).forEach(k => {
     k.ondragstart = e => { e.dataTransfer.setData('text/plain', k.dataset.id); k.classList.add('drag'); };
@@ -584,7 +591,8 @@ function tekenKolommen(){
   CRM.$$('[data-intake]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.intakeForm(b.dataset.intake); });
   CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); CRM.kandidaatFasePicker(b.dataset.move); });
   CRM.$$('[data-oo]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.ooModal(b.dataset.oo); });
-  CRM.$$('.bcol, .rc-uitzone', board.parentElement).forEach(zone => {
+  /* Alleen nog de kolommen zijn sleepdoel — de uitvalstrook is weg. */
+  CRM.$$('.bcol', board).forEach(zone => {
     zone.ondragover  = e => { e.preventDefault(); zone.classList.add('over'); };
     zone.ondragleave = () => zone.classList.remove('over');
     zone.ondrop = e => {
@@ -615,8 +623,9 @@ function tekenBuitenBord(){
   if(!klaarEl && !hint) return;
 
   const alle = kandGefilterd();
-  /* Buiten het bord = geen positie in CRM.PHASES. Uitval valt hier niet onder
-     (Afgevallen en Gestopt staan wél in PHASES en hebben hun eigen strook). */
+  /* Buiten het bord = geen positie in CRM.PHASES. Uitval valt hier niet onder:
+     Afgevallen en Gestopt stáán in PHASES, ze krijgen alleen geen kolom. Hun
+     stand staat in de regel onder het bord. */
   const buiten = alle.filter(c => CRM.faseIdx(c.fase) < 0);
   /* Een fase die niet meer bestaat is een datafout, geen werkvoorraad — die
      eerst apart zetten, zodat zo iemand niet stilzwijgend als "klaar" wordt
