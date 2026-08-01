@@ -157,6 +157,53 @@
   .pf-jrn{font-size:10px}
 }
 
+/* ═══ OP WEG NAAR HET JAARDOEL ═════════════════════════════════════
+   Vier kaarten die elkaar opvolgen: ratio's → tempo → trechter → omzet.
+   Zelfde cijferidioom als .pf-tempo hierboven (label klein, getal groot in
+   Inter, uitleg eronder), zodat het als hetzelfde systeem leest.        */
+.pf-naargrid{display:grid;gap:16px}
+/* 150px is bewust: binnen een halve kaart (±450px) blijven het er twee, en
+   vanaf 1500px — waar de kaarten meegroeien — staan de drie ratio's netjes
+   naast elkaar in plaats van twee-plus-één. */
+.pf-ncs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px}
+.pf-nc{display:flex;flex-direction:column;gap:4px}
+.pf-nc b{font-size:24px;font-weight:600;color:var(--ink);line-height:1.2}
+.pf-nc .meta{font-size:11.5px;line-height:1.45}
+/* Een cijfer dat op te weinig waarnemingen rust, staat gedempt: het is een
+   richting, geen stuurgetal. De reden staat er in tekst bij. */
+.pf-nc.zwak b{color:var(--txt-2)}
+.pf-nc .chip{align-self:flex-start;margin:2px 0}
+
+/* Het bruto-deel hoort bij hetzelfde cijfer, maar is een andere vraag —
+   vandaar een streep in plaats van een tweede kaart. */
+.pf-nbruto{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.pf-nbruto > .label{display:block;margin-bottom:12px}
+.pf-nbruto > p{margin:0;line-height:1.5}
+
+/* De trechter leest van boven naar beneden: leads bovenaan, plaatsingen
+   onderaan — dezelfde richting als de trechter verderop op deze pagina. */
+.pf-keten{display:flex;flex-direction:column}
+.pf-kr{display:grid;grid-template-columns:minmax(84px,auto) minmax(48px,auto) minmax(120px,1fr);
+  align-items:baseline;gap:4px 14px;padding:10px 2px;border-bottom:1px solid var(--line)}
+.pf-kr:last-child{border-bottom:none}
+.pf-kl{font-size:13px;font-weight:600;color:var(--txt)}
+.pf-kr b{font-size:18px;color:var(--ink);text-align:right}
+.pf-kr .meta{font-size:11.5px;line-height:1.45}
+.pf-kr.zwak b{color:var(--txt-2)}
+/* De onderste regel is het doel waar alles op uitkomt: dat mag je zien. */
+.pf-kr.doel{background:var(--well);border-radius:var(--r-s);padding-left:10px;padding-right:10px;border-bottom:none}
+.pf-kr.doel .pf-kl{color:var(--olive)}
+
+@media (max-width:520px){
+  .pf-kr{grid-template-columns:1fr auto;grid-template-areas:"lbl waarde" "sub sub"}
+  .pf-kr > .pf-kl{grid-area:lbl}
+  .pf-kr > b{grid-area:waarde}
+  .pf-kr > .meta{grid-area:sub}
+}
+@media (min-width:1100px){
+  .pf-naargrid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+}
+
 /* ═══ PER KLANT — omzet en plaatsingen per klant ═══════════════════
    Geen grafiekbibliotheek in dit project (en die komt er ook niet), dus
    alles hier is HTML met een breedte in procenten. Voordeel: het werkt

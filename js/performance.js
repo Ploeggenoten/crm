@@ -281,6 +281,297 @@ function blokJaar(){
   </section>`;
 }
 
+/* ═══ 0b. OP WEG NAAR HET JAARDOEL ═══════════════════════════════
+   Vraag van Tjeerd (1 aug 2026): "met ons plaatsingsratio en stoppersratio,
+   hoeveel moeten we dan plaatsen voor 75 kandidaten? En met alle omzet tot
+   nu toe, wat is dan de omzet van die 75 plaatsingen?"
+
+   Vier onderdelen, in de volgorde waarin je ze nodig hebt:
+     1. de twee ratio's die alles aansturen,
+     2. wat er tot 31 december nog moet gebeuren — netto én bruto,
+     3. wat de trechter daarvoor moet aanleveren,
+     4. wat het oplevert.
+
+   HARDE REGEL VOOR DIT BLOK: elk getal komt uit vastgelegde data of het
+   staat er niet. Geen brancheaannames, geen "reken maar op 1 op 5". En bij
+   minder dan tien waarnemingen staat er expliciet bij dat het te weinig is
+   om op te sturen — een ratio uit vier trajecten verschuift met één extra
+   plaatsing twintig procentpunten en dat is geen stuurgetal maar ruis.  */
+
+const N_GENOEG = 10;                 /* onder dit aantal: waarschuwen, niet sturen */
+const genoegN  = n => n >= N_GENOEG;
+const pctW     = r => r == null ? '—' : Math.round(r * 100) + '%';
+const een      = n => n == null ? '—' : (Math.round(n * 10) / 10).toLocaleString('nl-NL');
+
+/* ─── De twee ratio's ──────────────────────────────────────────────
+   PLAATSINGSRATIO — van de kandidaten die ooit bij een klant zijn
+   voorgesteld, welk deel eindigde met een getekend contract. Alleen
+   AFGERONDE trajecten: iemand die nu op Tweede gesprek staat is nog geen
+   mislukking, en meerekenen zou de ratio kunstmatig omlaag drukken.
+   "Ooit voorgesteld" leest verste() uit de fase-historie; staat die er niet
+   (oudere kaarten), dan telt de huidige fase. Dat is dezelfde meetlat als de
+   conversietrechter verderop, dus de twee kunnen niet uit elkaar lopen.
+   Voor "geplaatst" gebruiken we bewust NIET de historie maar het veld
+   geplaatstOp: er ís een datum van tekenen, en een vastgelegd feit gaat vóór
+   een afgeleide uit de fase-historie. Een kaart die via de historie ooit langs
+   'Contract getekend' kwam maar geen plaatsingsdatum heeft, is geen plaatsing —
+   die telt ook op het bord en in Finance niet mee.
+
+   STOPPERSRATIO — van alle plaatsingen die ooit zijn vastgelegd, welk deel
+   staat inmiddels op Gestopt. Bewust over de héle historie en niet over dit
+   jaar: iemand die in juni tekende heeft nog nauwelijks de kans gehad om te
+   stoppen, dus een venster van een paar maanden meet vooral hoe kort het
+   venster is. Hier telt élke stop mee, ook die van een vervanger — de vraag
+   is niet wat het target doet, maar hoeveel van de mensen die je plaatste
+   uiteindelijk zijn afgehaakt.                                          */
+function ratios(){
+  const cs = CRM.kandidaten();
+
+  const klaar       = cs.filter(c => CRM.faseIn(c.fase, CRM.DONE) || kort(c.geplaatstOp));
+  const voorgesteld = klaar.filter(c => verste(c) >= fIdx('Voorgesteld'));
+  const geplaatst   = voorgesteld.filter(c => !!kort(c.geplaatstOp));
+
+  const plaatsingen = cs.filter(isPlaatsing);
+  const gestopt     = plaatsingen.filter(c => CRM.faseIs(c.fase, 'Gestopt'));
+
+  return {
+    voorgesteld: voorgesteld.length, geplaatst: geplaatst.length,
+    plRatio: voorgesteld.length ? geplaatst.length / voorgesteld.length : null,
+    plaatsingen: plaatsingen.length, gestopt: gestopt.length,
+    stopRatio: plaatsingen.length ? gestopt.length / plaatsingen.length : null
+  };
+}
+
+/* Intake → voorstel. De intake is de laatste stap vóór het bord, dus dit is
+   de enige stap waarmee je van een gesprek naar een voorstel terugrekent.
+   Cohort: elke kandidaat met een vastgelegde intake. */
+function intakeRatio(){
+  const cs  = CRM.kandidaten();
+  const met = cs.filter(c => !!c.intake);
+  const door= met.filter(c => verste(c) >= fIdx('Voorgesteld'));
+  return {n:met.length, door:door.length, ratio: met.length ? door.length / met.length : null};
+}
+
+/* Lead → kandidaatkaart. Alleen te meten als de lead bij het doorschieten
+   aan een kandidaat is gekoppeld (crm_leads.kandidaat_id). Is dat veld
+   nergens gevuld, dan is er geen ratio — dan zeggen we dat, in plaats van
+   twee losse tellingen op elkaar te delen die niets met elkaar te maken
+   hoeven te hebben. */
+function leadRatio(){
+  const leads = CRM.state.leads || [];
+  const door  = leads.filter(l => String(l.kandidaat_id || '').trim());
+  return {n:leads.length, door:door.length, ratio: door.length ? door.length / leads.length : null};
+}
+
+/* De fee van dit jaar. Volgorde is hier wezenlijk: eerst de afspraak van de
+   klant op de datum van tekenen erbij zoeken, dán rekenen — bereken() zoekt
+   die afspraak bewust niet zelf op (zie feeVan). */
+function omzetJaar(J){
+  if(!CRM.magOpbrengstZien()) return null;
+  let som = 0, metFee = 0;
+  const zonder = {};
+  J.getekend.forEach(c => {
+    const f = feeVan(c);
+    if(f.bedrag != null){ som += f.bedrag; metFee++; }
+    else zonder[f.reden] = (zonder[f.reden] || 0) + 1;
+  });
+  return {som:Math.round(som), metFee, zonder, geen:J.getekend.length - metFee,
+          gem: metFee ? Math.round(som / metFee) : null};
+}
+
+const ncijfer = (label, waarde, sub = '', kl = '') => `<div class="pf-nc ${kl}">
+  <span class="label">${h(label)}</span><b class="num">${waarde}</b>
+  ${sub ? `<span class="meta">${sub}</span>` : ''}</div>`;
+
+function blokNaar(){
+  const J = CRM.plaatsingenJaar();
+  if(!J.doel) return '';                 /* blokJaar legt de lege staat al uit */
+
+  const R  = ratios();
+  const IR = intakeRatio();
+  const LR = leadRatio();
+
+  const weken   = J.dagenTeGaan / 7;
+  const maanden = J.dagenTeGaan / 30.44;
+  const perWeek  = J.teGaan / weken;
+  const perMaand = J.teGaan / maanden;
+
+  /* Bruto: wat je moet tekenen om er netto ${doel} aan het werk over te
+     houden. Netto ÷ behoudspercentage = bruto — met 20% stoppers heb je
+     voor 75 aan het werk dus 94 handtekeningen nodig. */
+  const behoud      = R.stopRatio == null ? null : 1 - R.stopRatio;
+  const brutoDoel   = (behoud != null && behoud > 0) ? Math.ceil(J.doel / behoud) : null;
+  const brutoExtra  = brutoDoel != null ? brutoDoel - J.doel : null;
+  const brutoTeGaan = brutoDoel != null ? Math.max(0, brutoDoel - J.gedaan) : null;
+  const brutoPerWeek= brutoTeGaan != null ? brutoTeGaan / weken : null;
+
+  /* Terugrekenen door de trechter, vanaf het tempo dat je écht moet halen. */
+  const basisPW      = brutoPerWeek != null ? brutoPerWeek : perWeek;
+  const voorPerPl    = (R.plRatio && R.plRatio > 0) ? 1 / R.plRatio : null;
+  const voorstellenPW= voorPerPl != null ? basisPW * voorPerPl : null;
+  const intakesPW    = (voorstellenPW != null && IR.ratio) ? voorstellenPW / IR.ratio : null;
+  const leadsPW      = (intakesPW != null && LR.ratio) ? intakesPW / LR.ratio : null;
+
+  const O = omzetJaar(J);
+
+  /* ── 1. Ratio's ───────────────────────────────────────────────── */
+  const zwakPl   = !genoegN(R.voorgesteld);
+  const zwakStop = !genoegN(R.plaatsingen);
+  const zwakke = [
+    zwakPl   ? `de plaatsingsratio rust op <span class="num">${R.voorgesteld}</span> afgeronde voorstellen` : '',
+    zwakStop ? `de stoppersratio rust op <span class="num">${R.plaatsingen}</span> plaatsingen` : ''
+  ].filter(Boolean);
+
+  const kaartRatios = `<div class="card"><div class="card-h"><div class="h2">1 · De twee ratio's</div>
+      <span class="meta">alles wat je hebt vastgelegd</span></div>
+    <div class="card-b">
+      <div class="pf-ncs">
+        ${ncijfer('Plaatsingsratio', pctW(R.plRatio),
+          R.voorgesteld ? `${R.geplaatst} van de ${R.voorgesteld} voorgestelde kandidaten tekende`
+                        : 'nog geen afgerond traject met een voorstel', zwakPl ? 'zwak' : '')}
+        ${ncijfer('Stoppersratio', pctW(R.stopRatio),
+          R.plaatsingen ? `${R.gestopt} van de ${R.plaatsingen} plaatsingen ${R.gestopt === 1 ? 'staat' : 'staan'} op Gestopt`
+                        : 'nog geen plaatsing vastgelegd', zwakStop ? 'zwak' : '')}
+        ${ncijfer('Blijft aan het werk', pctW(behoud),
+          behoud != null ? 'het spiegelbeeld van de stoppersratio — hiermee reken je bruto terug' : '',
+          zwakStop ? 'zwak' : '')}
+      </div>
+      ${zwakke.length ? `<div class="note warn" style="margin-top:18px">Te weinig om op te sturen:
+        ${zwakke.join(' en ')}. Bij zulke aantallen verschuift één extra plaatsing of één extra stop het
+        percentage met tientallen procenten. Lees het als richting, niet als getal — en gebruik het niet
+        om een tempo op af te rekenen.</div>` : ''}
+      <p class="pf-uitleg meta">De plaatsingsratio telt alleen <b>afgeronde</b> trajecten: iemand die nu op
+        Tweede gesprek staat is nog geen gemiste kans. "Ooit voorgesteld" komt uit de fase-historie van de
+        kaart; staat die er niet, dan telt de fase waar de kaart nu op staat. De stoppersratio kijkt naar
+        álle plaatsingen die ooit zijn vastgelegd — over een venster van een paar maanden meet je vooral
+        dat het venster kort is, want wie net getekend heeft kan nog niet gestopt zijn.</p>
+    </div></div>`;
+
+  /* ── 2. Wat er nog moet ───────────────────────────────────────── */
+  const gehaald = J.teGaan === 0;
+  const kaartMoet = `<div class="card"><div class="card-h"><div class="h2">2 · Wat er nog moet</div>
+      <span class="meta">t/m 31 december</span></div>
+    <div class="card-b">
+      <div class="pf-ncs">
+        ${ncijfer('Nog te tekenen', gehaald ? '<span class="chip green">Doel gehaald</span>' : J.teGaan,
+          `${J.gedaan} van ${J.doel} staat · nog ${een(weken)} ${weken < 2 ? 'week' : 'weken'}`)}
+        ${ncijfer('Per week', gehaald ? '0' : een(perWeek), 'om netto op ' + J.doel + ' uit te komen')}
+        ${ncijfer('Per maand', gehaald ? '0' : een(perMaand), `over de resterende ${een(maanden)} maanden`)}
+      </div>
+      <div class="pf-nbruto">
+        <span class="label">En als ${pctW(R.stopRatio)} stopt</span>
+        ${brutoDoel != null ? `<div class="pf-ncs">
+          ${ncijfer('Bruto nodig', brutoDoel,
+            `om er netto ${J.doel} aan het werk over te houden — ${brutoExtra
+              ? `${brutoExtra} meer dan het doel zelf`
+              : 'er is nog niemand gestopt, dus gelijk aan het doel zelf'}`,
+            zwakStop ? 'zwak' : '')}
+          ${ncijfer('Daarvan nog te gaan', brutoTeGaan, `${J.gedaan} getekend, ${brutoTeGaan} te tekenen`,
+            zwakStop ? 'zwak' : '')}
+          ${ncijfer('Bruto per week', een(brutoPerWeek), 'dit is het tempo waar de trechter op moet staan',
+            zwakStop ? 'zwak' : '')}
+        </div>` : `<p class="meta">Er is nog geen enkele plaatsing vastgelegd, dus er valt geen
+          stoppersratio te meten en dus ook geen bruto-aantal te berekenen.</p>`}
+      </div>
+      <p class="pf-uitleg meta">Het jaardoel van ${J.doel} telt getekende contracten, niet netto — precies
+        zoals het blok hierboven en het pijplijnbord. Wil je er aan het einde van het jaar ook echt ${J.doel}
+        áán het werk hebben, dan moet je de stoppers erbij optellen.${brutoDoel != null
+          ? ` Van de ${R.plaatsingen} plaatsingen die er tot nu toe zijn ${R.plaatsingen - R.gestopt === 1
+              ? 'zit er nog 1' : `zitten er nog ${R.plaatsingen - R.gestopt}`}; in diezelfde verhouding
+             kom je uit op ${brutoDoel} handtekeningen voor ${J.doel} mensen aan het werk. Het scherm rekent
+             met de hele verhouding, niet met de afgeronde ${pctW(behoud)} hierboven — reken je het met de
+             hand na, gebruik dan ${J.doel} × ${R.plaatsingen} ÷ ${R.plaatsingen - R.gestopt}.` : ''} Weken en dagen
+        lopen tot en met 31 december; er ${J.dagenTeGaan === 1 ? 'is nog 1 dag' : `zijn nog ${J.dagenTeGaan} dagen`}
+        te gaan.</p>
+    </div></div>`;
+
+  /* ── 3. De trechter ───────────────────────────────────────────── */
+  const ketenRij = (lbl, waarde, sub, kl = '') => `<div class="pf-kr ${kl}">
+    <span class="pf-kl">${h(lbl)}</span><b class="num">${waarde}</b>
+    <span class="meta">${sub}</span></div>`;
+
+  const kaartTrechter = `<div class="card"><div class="card-h"><div class="h2">3 · Wat de trechter moet aanleveren</div>
+      <span class="meta">per week</span></div>
+    <div class="card-b">
+      <div class="pf-keten">
+        ${ketenRij('Leads', leadsPW != null ? een(leadsPW) : '—',
+          LR.ratio != null
+            ? `${pctW(LR.ratio)} van de leads wordt een kandidaatkaart (${LR.door} van ${LR.n})`
+            : 'geen lead is aan een kandidaat gekoppeld, dus deze stap is niet te meten',
+          LR.ratio != null && !genoegN(LR.n) ? 'zwak' : '')}
+        ${ketenRij('Intakes', intakesPW != null ? een(intakesPW) : '—',
+          IR.ratio != null
+            ? `${pctW(IR.ratio)} van de intakes wordt voorgesteld (${IR.door} van ${IR.n})`
+            : 'nog geen intake vastgelegd, dus deze stap is niet te meten',
+          IR.ratio != null && !genoegN(IR.n) ? 'zwak' : '')}
+        ${ketenRij('Voorstellen', voorstellenPW != null ? een(voorstellenPW) : '—',
+          voorPerPl != null
+            ? `${een(voorPerPl)} ${Math.round(voorPerPl*10) === 10 ? 'voorstel' : 'voorstellen'} per plaatsing (plaatsingsratio ${pctW(R.plRatio)})`
+            : 'zonder plaatsingsratio is dit niet terug te rekenen',
+          zwakPl ? 'zwak' : '')}
+        ${ketenRij('Plaatsingen', een(basisPW),
+          brutoPerWeek != null ? 'het bruto tempo uit onderdeel 2' : 'het netto tempo uit onderdeel 2', 'doel')}
+      </div>
+      <p class="pf-uitleg meta">Van onder naar boven teruggerekend: het weektempo uit onderdeel 2 maal het
+        aantal voorstellen dat één plaatsing kost, en dat weer gedeeld door het deel van de intakes dat
+        voorgesteld wordt. Elke stap gebruikt de verhouding uit je eigen kaarten; is een stap nergens
+        vastgelegd, dan staat er een streepje in plaats van een schatting. De leadstap kan alleen gemeten
+        worden als een lead bij het doorschieten aan een kandidaat gekoppeld wordt
+        (${LR.door} van de ${LR.n} leads).</p>
+    </div></div>`;
+
+  /* ── 4. Omzet ─────────────────────────────────────────────────── */
+  const kaartOmzet = (() => {
+    if(!O)
+      return `<div class="card"><div class="card-h"><div class="h2">4 · Wat dat oplevert</div></div>
+        <div class="card-b">${CRM.ui.leeg('Fee niet zichtbaar',
+          'Log in om de opbrengst per plaatsing te zien. Het aantal plaatsingen hierboven klopt sowieso.')}</div></div>`;
+
+    const bijDoel = O.gem != null ? O.gem * J.doel : null;
+    const verschil= bijDoel != null ? bijDoel - O.som : null;
+    const redenen = Object.entries(O.zonder).map(([k,n]) => `${n}× ${FEE_KORT[k] || k}`).join(', ');
+
+    return `<div class="card"><div class="card-h"><div class="h2">4 · Wat dat oplevert</div>
+        <span class="meta">berekende fee · ${h(J.jaar)}</span></div>
+      <div class="card-b">
+        <div class="pf-ncs">
+          ${ncijfer('Omzet tot nu toe', h(CRM.euro(O.som)),
+            `over ${O.metFee} van de ${J.getekend.length} plaatsingen van dit jaar`)}
+          ${ncijfer('Gemiddelde fee', O.gem != null ? h(CRM.euro(O.gem)) : '—',
+            O.metFee ? `per plaatsing met een berekende fee (n=${O.metFee})` : 'nog geen plaatsing met fee',
+            genoegN(O.metFee) ? '' : 'zwak')}
+          ${ncijfer(`Bij ${J.doel} plaatsingen`, bijDoel != null ? h(CRM.euro(bijDoel)) : '—',
+            O.gem != null ? `${J.doel} × de gemiddelde fee` : '', genoegN(O.metFee) ? '' : 'zwak')}
+          ${ncijfer('Verschil', verschil != null ? h(CRM.euro(verschil)) : '—',
+            verschil != null ? 'nog te verdienen tot 31 december' : '', genoegN(O.metFee) ? '' : 'zwak')}
+        </div>
+        ${!genoegN(O.metFee) && O.metFee ? `<div class="note warn" style="margin-top:18px">Het gemiddelde
+          rust op <span class="num">${O.metFee}</span> ${O.metFee === 1 ? 'plaatsing' : 'plaatsingen'} met een
+          berekende fee — te weinig om op te sturen. Eén grote of kleine plaatsing trekt het gemiddelde
+          scheef, en dat werkt in het bedrag bij ${J.doel} plaatsingen ${J.doel}× door.</div>` : ''}
+        <p class="pf-uitleg meta">De fee is per plaatsing berekend uit de commerciële afspraak van die klant
+          op de datum van tekenen, maal het bruto jaarsalaris van de kandidaat (dezelfde rekenregel als de
+          kandidaatkaart en het financebord). Dit is dus getekende, niet gefactureerde omzet.
+          ${O.geen ? `Van ${O.geen} van de ${J.getekend.length} plaatsingen is geen fee te berekenen${
+            redenen ? ` (${h(redenen)})` : ''}; die tellen nergens als € 0 mee.` : ''}
+          Het bedrag bij ${J.doel} plaatsingen rekent alsof elk van die ${J.doel} een W&amp;S-plaatsing met
+          fee is${O.geen ? ' — dit jaar was dat niet zo, dus lees het als bovengrens' : ''}.</p>
+      </div></div>`;
+  })();
+
+  return `<section class="pf-sec pf-naar">
+    <div class="pf-kop"><span class="label">Op weg naar ${J.doel}</span>
+      <span class="meta">van ratio naar tempo naar omzet · ${gehaald ? 'doel gehaald'
+        : `${J.teGaan} te gaan in ${een(weken)} ${weken < 2 ? 'week' : 'weken'}`}</span></div>
+    <div class="pf-naargrid">
+      ${kaartRatios}
+      ${kaartMoet}
+      ${kaartTrechter}
+      ${kaartOmzet}
+    </div>
+  </section>`;
+}
+
 /* ═══ 1. PLAATSINGEN ═════════════════════════════════════════════ */
 function blokPlaatsingen(p, D){
   const ws   = D.getekend.filter(c => (c.type||'W&S')!=='Flex').length;
@@ -1300,7 +1591,15 @@ function conversies(){
   const klaar = cs.filter(c => CRM.faseIn(c.fase, CRM.DONE) || c.geplaatstOp);
   const vg = klaar.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
   const gs = klaar.filter(c => verste(c) >= fIdx('Eerste gesprek')).length;
-  const pl = klaar.filter(c => verste(c) >= fIdx('Contract getekend') || c.geplaatstOp).length;
+  /* Geplaatst = er is een datum van tekenen. NIET verste() >= 'Contract
+     getekend': de fase-historie van een afgevallen kandidaat bevat alle
+     fases waar die ooit langs kwam, dus iedereen die ooit tot een contract
+     kwam en toch afhaakte telde hier als plaatsing. Dat maakte de conversie
+     te gunstig — je zou denken dat er minder voorstellen nodig zijn per
+     plaatsing dan in werkelijkheid. Zelfde meetlat als ratios() hierboven,
+     als het bord en als Finance: een vastgelegd feit gaat vóór een
+     afgeleide. */
+  const pl = klaar.filter(c => !!kort(c.geplaatstOp)).length;
   return {vg, gs, pl,
     voorPerPl:     pl ? vg/pl : null,
     gesprekPerPl:  pl ? gs/pl : null};
@@ -1581,6 +1880,7 @@ function teken(mount, acties){
     ${omgekeerd ? `<div class="note warn">De begindatum (${h(CRM.fmtDate(p.van))}) ligt ná de einddatum
       (${h(CRM.fmtDate(p.tot))}), dus er valt niets binnen deze periode. Draai de datums om.</div>` : ''}
     ${blokJaar()}
+    ${blokNaar()}
     ${blokDoel(_fin)}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
