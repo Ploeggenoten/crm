@@ -134,7 +134,75 @@
 .src2-nietmeten{margin-top:14px;border-top:1px solid var(--line);padding-top:8px}
 .src2-kwaliteit{display:flex;flex-direction:column;gap:2px}
 
+/* ═══════════════════════════════════════════════════════════════
+   ZOEKEN — de kaartenbak doorzoeken
+   Eén zoekkaart boven, daaronder een werklijst. Vier velden meteen
+   zichtbaar, de rest achter "Meer verfijnen": twaalf velden tegelijk
+   is precies wat we bij Kandidaten hebben weggehaald.
+   ═══════════════════════════════════════════════════════════════ */
+.src3-zoek{padding:18px 20px}
+.src3-vrij{min-width:0;margin-bottom:16px}
+.src3-vrij input{font-size:14.5px;padding-top:10px;padding-bottom:10px}
+
+.src3-basis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 16px}
+/* De functiechips groeien met het aantal termen; die krijgt daarom de meeste
+   ruimte zodra het scherm die heeft. */
+@media (min-width:900px){ .src3-basis{grid-template-columns:1.5fr 1.3fr 1fr .9fr} }
+.src3-basis .f-row{margin-bottom:12px}
+.src3-straal{flex-wrap:nowrap;gap:7px}
+.src3-straal select{width:auto;flex:0 0 auto}
+.src3-straal .meta{flex:0 0 auto}
+.src3-straal input{min-width:0}
+
+/* Chips + invoerveld in één vlak, zodat het als één veld leest. */
+.src3-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  border:1px solid var(--line-2);border-radius:var(--r-s);background:#fff;padding:5px 6px;min-height:37px}
+.src3-chips:focus-within{border-color:var(--olive-l);box-shadow:0 0 0 3px rgba(111,160,60,.15)}
+.src3-chips input{border:none;box-shadow:none;padding:2px 4px;flex:1 1 110px;min-width:90px;font-size:13px}
+.src3-chips input:focus{border:none;box-shadow:none}
+.src3-chip{cursor:pointer;font-size:11.5px}
+.src3-chip:hover{border-color:var(--red-line);color:#a4301f}
+.src3-fnc .hint{margin-top:4px;max-width:44ch}
+.src3-fnc .hint:empty{display:none}
+
+.src3-meerbalk{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border-top:1px solid var(--line);margin-top:4px;padding-top:12px}
+.src3-extra{margin-top:14px;border-top:1px dashed var(--line);padding-top:14px}
+.src3-extra .f-row{margin-bottom:10px}
+
+/* ─── Resultaten ──────────────────────────────────────────────── */
+.src3-reskop{row-gap:8px;padding:0 2px}
+.src3-noot{margin:-6px 2px 0;max-width:80ch}
+.src3-noot:empty{display:none}
+.src3-lijst{display:flex;flex-direction:column;gap:10px}
+
+.src3-rij{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px}
+.src3-rij-t{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.src3-rij-t a{color:var(--ink)}
+.src3-rij-t a:hover{color:var(--olive)}
+.src3-rij-t b{font-size:14px}
+.src3-rij-t .chip{font-size:11px;padding:1px 8px}
+.src3-rij-s{font-size:12px;color:var(--txt-2);margin-top:3px}
+.src3-rij-a{margin-top:10px;row-gap:5px}
+.src3-rij-a .btn.sm{padding:4px 10px;font-size:11.5px}
+.src3-rij-a a.btn:hover{text-decoration:none}
+
+/* De beste openstaande vacature. Een streepje links in plaats van een kader:
+   het hoort bij de kandidaat, het is geen tweede kaart. */
+.src3-match{margin-top:9px;padding:8px 0 2px 11px;border-left:2px solid var(--olive-l)}
+.src3-match.zwak{border-left-color:var(--line-2)}
+.src3-match-t{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px}
+.src3-match-t b{color:var(--ink)}
+.src3-match-s{font-size:11.5px;color:var(--txt-2)}
+.src3-plus{margin-top:4px;font-size:11.5px;color:var(--txt-2)}
+.src3-onbekend{margin-top:4px;font-size:11.5px;color:var(--muted)}
+.src3-geenmatch{margin-top:8px;font-size:11.5px;color:var(--muted)}
+.src3-drrij{padding:12px 0;border-bottom:1px solid var(--line)}
+.src3-drrij:last-child{border-bottom:none}
+
 @media (max-width:700px){
+  .src3-zoek{padding:15px 15px}
+  .src3-straal{flex-wrap:wrap}
   .src-kaart{height:46vh;min-height:260px}
   .src-fgrid{grid-template-columns:1fr 1fr}
   .src2-rij{padding:10px 13px}

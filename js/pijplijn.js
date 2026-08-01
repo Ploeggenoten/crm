@@ -59,17 +59,32 @@ function herstelPositie(){
 CRM.pijplijnTerug = id => !!pos && pos.id === String(id);
 
 const UITVAL = ['Afgevallen','Gestopt'];
+/* Waar het bord ophoudt: bij de handtekening.
+   Elke kolom hier gaat over vóóruitgang — iemand staat op Tweede gesprek en
+   de vraag is wat de volgende stap is. Na het tekenen beweegt er niets meer:
+   er is één datum en een aftelling, en dat is geen kanban maar een agenda.
+   'Gestart' liep bovendien nooit leeg, dus hoe beter het ging hoe voller dit
+   bord werd. Die twee fases staan sinds 1 augustus 2026 in de module
+   Plaatsingen, waar de vraag ook een andere is: niet "wat is de volgende
+   stap" maar "is deze persoon klaar voor maandag". De tellers boven het bord
+   (netto deze maand, starts deze week) blijven wél staan — die gaan over de
+   opbrengst van dit bord, niet over werk dat hier nog ligt.
+   (Besluit Tjeerd, 1 aug 2026, na "te chaotisch, het staat allemaal in het
+   bord en in de recruitmentpijplijn".) */
+const NA_BORD = CRM.PLACED;                    // Contract getekend, Gestart
 /* CRM.PHASES begint bij 'Voorgesteld' — Intake is er per 31 juli 2026 uit
-   gehaald en staat in CRM.VOOR_BORD. Hier hoeven we dus alleen de uitval nog
-   weg te filteren; die krijgt een eigen strook naast het bord. De eerste
-   kolom is daarmee Voorgesteld, en nergens in dit bestand mag nog van
+   gehaald en staat in CRM.VOOR_BORD. De eerste kolom is daarmee Voorgesteld
+   en de laatste 'Contract ondertekenen'; nergens in dit bestand mag nog van
    'Intake is de eerste kolom' worden uitgegaan. */
-const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k));
-/* Staat deze kandidaat op het bord? Uitval hoort in de strook, niet in een
-   kolom; faseIdx < 0 betekent 'nog niet voorgesteld' (Intake, geen fase, of
-   een fase die niet meer bestaat). De lijstweergave gebruikt dezelfde regel,
-   zodat bord en lijst gegarandeerd dezelfde kandidaten tonen. */
-const opBord = c => { const f = CRM.faseNorm(c.fase); return CRM.faseIdx(f) >= 0 && !UITVAL.includes(f); };
+const bordFases = () => CRM.PHASES.filter(p => !UITVAL.includes(p.k) && !NA_BORD.includes(p.k));
+/* Staat deze kandidaat op het bord? faseIdx < 0 betekent 'nog niet
+   voorgesteld' (Intake, geen fase, of een fase die niet meer bestaat).
+   Uitval en getekend/gestart hebben wél een fase maar geen kolom meer.
+   De lijstweergave gebruikt dezelfde regel, zodat bord en lijst gegarandeerd
+   dezelfde mensen tonen — anders zou de lijst mensen laten zien die je op het
+   bord nergens kunt terugvinden. */
+const opBord = c => { const f = CRM.faseNorm(c.fase);
+  return CRM.faseIdx(f) >= 0 && !UITVAL.includes(f) && !NA_BORD.includes(f); };
 const vacById   = id => (CRM.state.vacs||[]).find(v => String(v.id) === String(id));
 const vacLabel  = v => v ? (v.functie + ' · ' + v.klant) : '';
 const norm      = s => String(s||'').toLowerCase();
@@ -349,13 +364,19 @@ function tekenBalk(){
   const it = (lbl, waarde, extra='', klasse='') =>
     `<div class="rc-it ${klasse}"><div class="label">${h(lbl)}</div>
        <div class="rc-v num">${waarde}</div>${extra?`<div class="meta">${extra}</div>`:''}</div>`;
+  /* De starts staan sinds 1 aug 2026 niet meer op dit bord maar in
+     Plaatsingen. Het getal blijft hier — het is de opbrengst van dit bord —
+     maar het moet je wel brengen waar die mensen nu wél staan, anders wijst
+     een teller naar een kolom die er niet meer is. */
   el.innerHTML =
     it('In traject', lopend.length, 'vanaf Voorgesteld') +
     it('In gesprek', gesprek, 'O&amp;O t/m meeloopdag') +
-    it('Starts deze week', startsWeek, 'geplande startdatums') +
+    it('Starts deze week', startsWeek, '<button class="lnk" id="pp_naarpl">bekijk bij Plaatsingen →</button>') +
     it('Netto deze maand', `${CRM.plusMin(pm.netto)}<span class="rc-van">/ ${target}</span>`,
        `${pm.getekend.length} getekend${pm.gestopt.length ? ' · ' + CRM.plusMin(-pm.gestopt.length) + ' gestopt' : ''}`,
        pm.netto >= target ? 'goed' : '');
+  const naarPl = el.querySelector('#pp_naarpl');
+  if(naarPl) naarPl.onclick = () => CRM.ga('plaatsingen');
 }
 
 /* ─── Kaart (1-op-1 het bord) ─────────────────────────────────── */
@@ -501,8 +522,9 @@ function tekenKolommen(){
   /* Kolommen met een week-indeling: alles waar een dátum aan hangt, zodat je
      ziet welke gesprekken en starts wanneer staan — en wat er nog helemaal
      niet gepland is, onder "Nog te plannen". 'Intake' stond hier ook in toen
-     dat nog de eerste kolom was; die fase staat niet meer op dit bord. */
-  const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen','Contract getekend','Gestart'];
+     dat nog de eerste kolom was, en 'Contract getekend'/'Gestart' tot 1 aug
+     2026; beide staan niet meer op dit bord. */
+  const WEEKCOLS = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Contract ondertekenen'];
   const nm = c => String(c.naam||'');
   const byDate = (a,b) => {
     const x = a.datum||'', y = b.datum||'';
@@ -514,19 +536,12 @@ function tekenKolommen(){
     /* faseIs i.p.v. ===: een kandidaat kan op een oude fasewaarde staan zolang
        de migratie niet gedraaid is. CRM.faseNorm (data.js) vertaalt die naar de
        huidige naam, zodat zo iemand toch in de goede kolom belandt. */
-    let kaarten = alle.filter(c => CRM.faseIs(c.fase, p.k)).sort(byDate);
-    if(p.k === 'Contract getekend' || p.k === 'Gestart')
-      kaarten = kaarten.slice().sort((a,b) => { const x = a.start||'9999', y = b.start||'9999'; return x<y?-1:x>y?1:nm(a).localeCompare(nm(b)); });
+    const kaarten = alle.filter(c => CRM.faseIs(c.fase, p.k)).sort(byDate);
     let binnen;
     if(p.k === 'O&O sessie') binnen = ooKolom(kaarten);
     else if(P.groep) binnen = klantGroepen(kaarten);
     else if(WEEKCOLS.includes(p.k)) binnen = weekGroepen(kaarten, p.k);
     else binnen = kaarten.map(kaartHtml).join('');
-    if(p.k === 'Gestart'){
-      const [ma, zo] = d.weekGrens();
-      const dz = kaarten.filter(c => c.start && new Date(c.start) >= ma && new Date(c.start) < zo).length;
-      binnen = `<div class="rc-startnote num">Deze week: ${dz} start${dz===1?'':'s'}</div>` + binnen;
-    }
     /* Voorgesteld is sinds de splitsing de eerste kolom. Wie hier nog geen
        afspraak heeft staan, wacht op de klant — dat is precies het signaal
        waar een AM op moet sturen, dus het staat bovenaan de kolom.

@@ -5,7 +5,10 @@
 .rc-pad{padding:18px 26px 0}
 .rc-pad-b{padding-bottom:4px}
 
-/* ─── Dagelijkse cijfers ─────────────────────────────────────── */
+/* ─── Dagelijkse cijfers ───────────────────────────────────────
+   Recruitment zelf gebruikt deze strip sinds 1 augustus 2026 niet meer (zie
+   .rc-doen hieronder), maar de Klanttrajecten lenen hem — js/pijplijn.js zet
+   er zijn eigen cijfers in. Daarom blijft hij staan. */
 .rc-bar{
   display:flex;flex-wrap:wrap;gap:0;background:var(--card);
   border-bottom:1px solid var(--line);padding:0 26px;
@@ -31,54 +34,65 @@
 .rc-chips .chip.on b{color:inherit;opacity:.85}
 .rc-chips .chip.on .dot{box-shadow:0 0 0 1px rgba(255,255,255,.5)}
 
-/* ─── De werkstapel op Nieuw ─────────────────────────────────────
-   Eén blok bovenaan het scherm: hoeveel er ligt, hoe lang het al ligt,
-   en de knop om het weg te werken. De staaf is het enige gekleurde
-   element hier — kleur is betekenis, en de betekenis is "dit ligt te
-   lang". Als er niets op Nieuw staat verdwijnt de kleur helemaal. */
-.rc-nieuw{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+/* ─── De doen-regel ──────────────────────────────────────────────
+   Eén band boven de lijst, en het enige accent op dit scherm. Hier stonden
+   drie blokken onder elkaar (werkstapel met staaf, de kaart "Blijft liggen"
+   met zeven chips, en een rij van elf statuschips) die deels dezelfde getallen
+   herhaalden. Het getal links is groot omdat het er als enige toe doet; de
+   cijfers rechts zijn tekstgrootte, want je leest ze pas als je erom vraagt.
+   Kleur komt alleen als er iets te lang ligt — staat alles bij, dan is de
+   regel volledig neutraal. */
+.rc-doen{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:12px 16px;margin-bottom:14px}
-.rc-nieuw.let{border-color:var(--amber-line)}
-.rc-nieuw.klaar{background:var(--card-2);border-style:dashed;gap:12px}
-.rc-nieuw.klaar b{font-size:13px;color:var(--ink);display:block}
-.rc-nieuwop{font-size:15px;color:var(--green);font-weight:700}
-.rc-nieuwtel{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
-.rc-nieuwtel b{font-family:var(--disp);font-weight:400;font-size:28px;line-height:1;
+  padding:10px 16px;margin-bottom:12px}
+/* Ligt er iets te lang, dan een streep links — dezelfde ingreep als bij een
+   rij in de tabel (tr.rc-telang). Een amberkleurige rand rond het hele blok
+   naast amberkleurige tekst erin is twee keer hetzelfde signaal. */
+.rc-doen.let{box-shadow:inset 3px 0 0 var(--amber)}
+.rc-doentel{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
+.rc-doentel b{font-family:var(--disp);font-weight:400;font-size:26px;line-height:1;
   letter-spacing:.5px;color:var(--ink)}
-.rc-nieuwtel span{font-size:12px;font-weight:600;color:var(--txt-2);
-  text-transform:uppercase;letter-spacing:.05em}
-.rc-nieuwstaafwrap{flex:1;min-width:220px;max-width:520px}
-.rc-nieuwstaaf{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--card-2)}
-.rc-nieuwstaaf i{display:block;height:100%}
-.rc-nieuwstaaf i.vers{background:var(--line-2)}
-.rc-nieuwstaaf i.letop{background:var(--amber-line)}
-.rc-nieuwstaaf i.telang{background:var(--amber)}
-.rc-nieuwtxt{display:flex;flex-wrap:wrap;gap:14px;margin-top:7px;font-size:11.5px;color:var(--muted)}
-.rc-nieuwtxt i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:5px}
-.rc-nieuwtxt i.vers{background:var(--line-2)}
-.rc-nieuwtxt i.letop{background:var(--amber-line)}
-.rc-nieuwtxt i.telang{background:var(--amber)}
-.rc-nieuwtxt .op{color:var(--amber);font-weight:600}
+.rc-doentel span{font-size:12px;font-weight:600;color:var(--txt-2);
+  text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.rc-doenzin{font-size:12.5px;color:var(--muted)}
+.rc-doenzin em{font-style:normal}
+.rc-doenzin em.op{color:var(--amber);font-weight:600}
+.rc-doenklaar{font-size:13px;font-weight:600;color:var(--ink)}
+.rc-doenop{font-size:14px;font-weight:700;color:var(--muted)}
+.rc-doenop.klaar{color:var(--green)}
 
-/* ─── De wachtkamers ─────────────────────────────────────────────
-   Eén regel onder de werkstapel: waar blijft het ná de eerste actie liggen.
-   Bewust smaller en rustiger dan het blok erboven — dit is een signaal,
-   geen werkvlak. De kleur zit alleen in het getal, want dat is wat te
-   hoog staat; de statusnamen ernaast zijn gewoon namen. */
-.rc-wacht{border:1px solid var(--amber-line);background:var(--card);
-  border-radius:var(--r);padding:10px 14px;margin-bottom:14px}
-.rc-wachtkop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
-.rc-wachtkop b{font-size:13px;font-weight:600;color:var(--ink)}
-.rc-wachtrij{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.rc-wachtknop{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
-  background:var(--card-2);border-radius:999px;padding:3px 11px;font-family:var(--body);
-  font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
-.rc-wachtknop:hover{border-color:var(--olive-l)}
-.rc-wachtknop b{color:var(--amber);font-weight:700}
-.rc-wachtknop .dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:0 0 auto}
-.rc-wachtknop.on{background:var(--olive);border-color:var(--olive);color:#fff}
-.rc-wachtknop.on b{color:#fff}
+/* De stille cijfers rechts: wat blijft liggen, wat klaarstaat voor de AM, en
+   de calls van deze week. Twee ervan zijn een doorklik — ze zien er als tekst
+   uit en gedragen zich als knop, want een echte knop naast de wegwerkknop zou
+   om dezelfde aandacht vragen. */
+.rc-doenrest{display:flex;align-items:center;flex-wrap:wrap;gap:16px;
+  font-size:12.5px;color:var(--muted)}
+.rc-doenrest .num{font-weight:700;color:var(--txt-2)}
+.rc-doenfeit{background:none;border:none;padding:0;font-family:var(--body);
+  font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.rc-doenfeit:hover{color:var(--olive)}
+.rc-doenfeit:hover .num{color:var(--olive)}
+.rc-doenfeit.on{color:var(--olive);font-weight:600}
+.rc-doenfeit.on .num{color:var(--olive)}
+
+/* ─── De filterbalk ──────────────────────────────────────────────
+   Eén balk voor álles wat filtert: zoeken, status (met de tellers erin),
+   bron, vacature en de twee knopfilters. De statuschips die hier als aparte
+   band naast stonden deden hetzelfde werk. */
+.rc-zoek{flex:1 1 180px;max-width:224px;min-width:160px}
+/* Telling en weergaveschakelaar horen bij elkaar en schuiven naar rechts. Als
+   groep, niet los: met een losse spacer viel de schakelaar als enige naar een
+   tweede regel en hing daar in zijn eentje onder de balk. */
+.rc-filr{display:flex;align-items:center;gap:10px;margin-left:auto}
+/* Een select met width:auto groeit mee met de langste optie — 'Potentieel —
+   andere vacature (3)' en de langste vacaturenaam duwden de balk dan over twee
+   regels. Afkappen mag: de gekozen waarde staat er nog, en het volledige label
+   staat in de lijst zodra je hem opent. */
+.rc-fil select{width:auto;max-width:196px}
+#rc_status{min-width:186px}
+#rc_bron{min-width:124px}
+#rc_vac{min-width:172px}
+.rc-fil .chip.btn-like{padding:5px 12px}
 
 /* ─── Meerdere sollicitanten tegelijk ────────────────────────────
    Verschijnt pas zodra er iets is aangevinkt, en verdwijnt weer. Een lege
@@ -144,7 +158,10 @@ tr.rc-telang > td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
    wat dit bord extra nodig heeft staat hier. */
 .rc-leadbord{margin:0 -26px}
 .rc-leadbord .rc-bordwrap .board{padding-top:0;min-height:0}
-.rc-leadbord .bcol{max-height:calc(100vh - 400px);min-height:180px}
+/* De kolomhoogte volgt wat er bóven het bord staat. Dat waren zes banden en
+   zijn er nu twee, dus er is ruim honderd pixel bij gekomen — die geven we aan
+   de kaarten, niet aan witruimte onder het bord. */
+.rc-leadbord .bcol{max-height:calc(100vh - 300px);min-height:180px}
 .rc-kaarttel{margin-top:7px;font-size:12px}
 .rc-meer{font-size:11.5px;color:var(--muted);text-align:center;padding:8px 4px 2px}
 /* De afsluitende kolom is geen werkvoorraad maar een overdracht: geen
@@ -323,19 +340,24 @@ table.rc-qa tr:last-child td{border-bottom:none}
   .rc-tabwrap{padding:10px 14px 0}
   .rc-chips .chip{font-size:11.5px;padding:3px 9px}
   .rc-map{grid-template-columns:1fr}
-  /* De werkstapel wordt een blok: teller boven, staaf eronder, knop over
-     de volle breedte. Naast elkaar wordt het op 375px onleesbaar. */
-  .rc-nieuw{gap:10px;padding:12px 14px}
-  .rc-nieuwstaafwrap{flex:1 0 100%;max-width:none;min-width:0}
-  .rc-nieuw .btn{width:100%;justify-content:center}
+  /* De doen-regel wordt een blok: het getal boven, de stille cijfers eronder,
+     de knop over de volle breedte. Naast elkaar wordt het op 375px onleesbaar. */
+  .rc-doen{gap:8px 12px;padding:12px 14px}
+  .rc-doenrest{flex:1 0 100%;gap:12px}
+  .rc-doen .btn{width:100%;justify-content:center}
+  .rc-doen .spacer{display:none}
+  .rc-zoek{max-width:none}
   .rc-leadbord{margin:0 -14px}
   .rc-leadbord .bcol{max-height:none}
-  /* De filterbalk wrapt; de weergaveschakelaar hoort dan bij de telling
-     op één regel te blijven en niet als losse regel onderaan te hangen. */
-  .rc-fil .seg{margin-left:auto}
+  /* Op mobiel wrapt de balk sowieso; telling + schakelaar krijgen dan hun
+     eigen regel over de volle breedte. */
+  .rc-filr{flex:1 0 100%;justify-content:space-between;margin-left:0}
+  /* Op 375px passen er twee filters naast elkaar zodra hun eigen minimumbreedte
+     losgelaten wordt; anders krijgt elke select een eigen regel en is de balk
+     net zo hoog als de banden die we net hebben weggehaald. */
+  .rc-fil select,#rc_status,#rc_bron,#rc_vac{max-width:none;min-width:0;flex:1 1 44%}
   .rc-wwnaam{font-size:20px}
   .rc-wwkeuze button{flex:1 1 46%;justify-content:center}
-  .rc-wacht{padding:10px 12px}
   /* De bulkbalk moet op 375px leesbaar blijven: knoppen onder elkaar in
      plaats van vier halve knoppen naast elkaar. */
   .rc-bulk{gap:8px}
@@ -350,6 +372,5 @@ table.rc-qa tr:last-child td{border-bottom:none}
 /* Teamscherm (≥1900px, zie de breedteladder in base.css): de extra ruimte
    vullen we met méér kolommen tegelijk in beeld, niet met bredere kolommen. */
 @media (min-width:1900px){
-  .rc-nieuwstaafwrap{max-width:760px}
-  .rc-leadbord .bcol{max-height:calc(100vh - 360px)}
+  .rc-leadbord .bcol{max-height:calc(100vh - 270px)}
 }

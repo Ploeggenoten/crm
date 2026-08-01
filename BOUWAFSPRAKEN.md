@@ -15,9 +15,10 @@ Meerdere agents bouwen tegelijk aan deze app. Deze afspraken houden het
 | Marketing | `js/marketing.js`, `css/marketing.css` |
 | Performance | `js/performance.js`, `css/performance.css` |
 | Finance | `js/finance.js`, `css/finance.css` |
-| Pijplijnbord | `js/pijplijn.js`, `css/pijplijn.css` |
-| Hot vacatures | `js/hot.js`, `css/hot.css` |
-| Source | `js/source.js`, `css/source.css` |
+| Klanttrajecten (bord) | `js/pijplijn.js`, `css/pijplijn.css` |
+| Plaatsingen | `js/plaatsingen.js`, `css/plaatsingen.css` |
+| Vacatures | `js/hot.js`, `css/hot.css` |
+| Sourcing | `js/source.js`, `css/source.css` |
 | Instellingen | `js/instellingen.js`, `css/instellingen.css` |
 
 Daarnaast drie bestanden zonder eigen scherm. Ze horen bij niemand in het
@@ -48,6 +49,13 @@ CRM.registerModule('sales', {
 
 `render` krijgt: `mount` (het contentgebied), `acties` (element rechts in de
 paginakop voor knoppen) en `params` (bv. `{id:'...'}` uit de URL `#sales/123`).
+
+**Registreren alleen is niet genoeg om in het menu te komen.** De zijbalk wordt
+gebouwd uit `NAV_GROEPEN` in `js/core.js`; een module die daar in geen enkele
+groep staat, verdwijnt uit de navigatie zónder foutmelding — het scherm bestaat
+dan wel maar is nergens aan te klikken. Dat is één keer gebeurd (Plaatsingen,
+1 aug 2026). Vraag de coördinator je module toe te voegen aan `NAV_GROEPEN` en
+aan `NAV_ICONEN`; zonder icoon krijg je een grijze cirkel.
 
 ## 3. Gebruik het design-system — verzin geen eigen stijl
 
@@ -99,6 +107,20 @@ CRM.fee(kandidaat, klant)          // grondslag + fee, één rekenregel
 CRM.opvolging.openVoor(mij) / .tussen(van, tot) / .registreerBron(fn)
 CRM.faseNorm(f) / CRM.faseIs(c, f) / CRM.faseIn(c, lijst)   // 'Voorselectie' heet nu 'Intake'
 ```
+
+**Waar welke fase thuishoort** (sinds 1 aug 2026 — drie schermen, geen overlap):
+
+| Fase | Scherm |
+|---|---|
+| lead t/m intake | Recruitment |
+| Voorgesteld t/m Contract ondertekenen | Klanttrajecten (het bord) |
+| Contract getekend, Gestart (`CRM.PLACED`) | Plaatsingen |
+| Afgevallen, Gestopt | Uitval-tab van Recruitment |
+
+Het bord houdt op bij de handtekening: daarna is er geen volgende stap meer,
+alleen een startdatum en een aftelling, en dat is geen kanban. Zet dus nooit
+een `PLACED`-kandidaat terug op het bord — hij staat dan op twee plekken en
+niemand weet meer welke de waarheid is.
 
 Zoek je "wie moet ik vandaag bellen", bouw dat dan niet zelf: vraag het aan
 `CRM.opvolging`. Toen elke module dat apart uitrekende zei het dashboard iets

@@ -354,12 +354,11 @@ CRM.registerModule('recruitment', {
     if(!['leads','uitval'].includes(S.tab)) S.tab = 'leads';
     mount.innerHTML = `
       <div class="rc">
-        <div class="rc-bar" id="rc_bar"></div>
         <div class="rc-strook" id="rc_strook"></div>
         <div class="rc-tabwrap"><div class="tabs" id="rc_tabs"></div></div>
         <div id="rc_body"></div>
       </div>`;
-    tekenBar();
+    tekenKop();
     tekenTabs();
     tekenBody();
     tekenActies(acties);
@@ -389,30 +388,20 @@ function weekGrens(){
   const zo = new Date(ma); zo.setDate(ma.getDate() + 7);
   return [ma, zo];
 }
+/* De cijfers die niet van je filters afhangen. De verdeling van 'Nieuw' naar
+   ouderdom en het aantal dat blijft liggen staan hier bewust níét meer bij:
+   die horen in de doen-regel en moeten dáár met de filters meebewegen, anders
+   wijst het getal bovenaan 12 aan terwijl je er in de lijst 4 ziet staan. */
 function cijfers(){
-  const vandaag = CRM.todayISO();
   const L = leads(), K = CRM.kandidaten();
   const [ma, zo] = weekGrens();
   const inWeek = iso => { if(!iso) return false; const d = new Date(iso); return !isNaN(d) && d >= ma && d < zo; };
 
-  /* De werkvoorraad van deze module: alles wat nog een eerste actie nodig heeft. */
-  const nieuwLijst = L.filter(l => l.status === 'Nieuw');
-  const perOuderdom = {vandaag:0, letop:0, telang:0};
-  nieuwLijst.forEach(l => {
-    const n = leadDagen(l);
-    if(n == null || n < NIEUW_LETOP) perOuderdom.vandaag++;
-    else if(n < NIEUW_TELANG) perOuderdom.letop++;
-    else perOuderdom.telang++;
-  });
-  const oudste = nieuwLijst.reduce((m,l) => { const n = leadDagen(l); return n != null && n > m ? n : m; }, 0);
+  /* Hoe lang ligt de oudste reactie er al? Het getal waarop je merkt dat een
+     achterstand geen ochtend maar een week is. */
+  const oudste = L.filter(l => l.status === 'Nieuw')
+    .reduce((m,l) => { const n = leadDagen(l); return n != null && n > m ? n : m; }, 0);
 
-  const binnenVandaag = L.filter(l => String(l.binnen_op||'').slice(0,10) === vandaag).length;
-  const open = L.filter(l => CRM.LEAD_OPEN.includes(l.status));
-  /* Eén vlakke grens van twee dagen voor élke status zei niets: bij 'CV binnen'
-     is dat te laks en bij 'CV opgevraagd' te streng. Nu per status — zie
-     STATUS_NORM. */
-  const stil = open.filter(stilstand).length;
-  const zonderVac = open.filter(l => !isGekoppeld(l)).length;
   /* Videocalls: geplande calls bij de leads plus de kandidaten die al zijn
      doorgeschoten en op fase Intake staan met een datum deze week. */
   const calls = L.filter(l => l.status === 'Videocall gepland' && inWeek(l.opvolgen_op)).length
@@ -423,32 +412,20 @@ function cijfers(){
 
   const startsWeek = K.filter(c => CRM.PLACED.includes(c.fase) && c.start && inWeek(c.start));
   const vroeg = K.filter(c => ['Voorgesteld','O&O sessie','Eerste gesprek'].includes(c.fase)).length;
-  return {nieuwLijst, perOuderdom, oudste, binnenVandaag, stil, zonderVac, calls, klaar,
-          startsWeek, vroeg};
+  return {oudste, calls, klaar, startsWeek, vroeg};
 }
-/* De cijferbalk gaat over déze pijplijn: instroom en doorloop. De
-   plaatsingscijfers (netto deze maand tegen het target) stonden hier ook, maar
-   die horen bij de Klanttrajecten — ze staan boven dat bord én op het
-   dashboard. Twee plekken is genoeg; drie maakt het alleen maar makkelijker om
-   ze uit elkaar te laten lopen. */
-function tekenBar(){
-  const el = document.getElementById('rc_bar'); if(!el) return;
-  const c = cijfers();
-  const it = (lbl, waarde, extra='', klasse='') =>
-    `<div class="rc-it ${klasse}"><div class="label">${h(lbl)}</div>
-       <div class="rc-v num">${waarde}</div>${extra?`<div class="meta">${extra}</div>`:''}</div>`;
-  const nN = c.nieuwLijst.length, nT = c.perOuderdom.telang;
-  el.innerHTML =
-    it('Op Nieuw', nN,
-       nN ? (nT ? `${nT} ligt er ${NIEUW_TELANG} dagen of langer` : `oudste: ${c.oudste === 0 ? 'vandaag binnen' : c.oudste + ' dag' + (c.oudste===1?'':'en')}`)
-          : 'niets blijft liggen',
-       nT ? 'amber' : '') +
-    it('Vandaag binnen', c.binnenVandaag, 'nieuwe reacties') +
-    it('Zonder vacature', c.zonderVac, 'lopend, niet meetbaar per campagne', c.zonderVac ? 'amber' : '') +
-    it('Videocalls deze week', c.calls, 'gepland en gehad') +
-    it('Klaar om voor te stellen', c.klaar.length, 'intake gehad, wacht op de AM', c.klaar.length ? 'goed' : '');
-  tekenStrook(c);
-}
+/* Boven de tabs staat sinds 1 augustus 2026 alleen nog de signaalstrook.
+   Hier stond een rij van vijf KPI-tegels (Op nieuw / Vandaag binnen / Zonder
+   vacature / Videocalls deze week / Klaar om voor te stellen). Samen met de
+   staaf, de wachtkamerkaart en de statuschips daaronder vroegen vier banden om
+   aandacht met deels dezelfde getallen: "op nieuw 11" stond drie keer op het
+   scherm. Als alles opvalt, valt niets meer op.
+
+   De cijfers zijn niet weg, ze staan één laag dieper — in de doen-regel boven
+   de lijst, waar ze meebewegen met je filters. Welke er gebleven zijn en
+   waarom: zie tekenDoenregel. De naam van deze functie is historisch; hij
+   ververst nu alleen nog de strook. */
+function tekenKop(){ tekenStrook(); }
 
 /* Signaalstrook onder de cijfers — bewust compact gehouden (wens Tjeerd):
    alleen wat vandaag actie vraagt. De maandlijsten (getekend/gestopt) en het
@@ -522,36 +499,55 @@ function leadsGefilterd(negeerStatus){
 /* Oudste eerst — de volgorde waarin je ze wegwerkt. */
 const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
 
+/* Terug naar "toon alles". Deze knop stond al in de lege staat van de
+   doen-regel, maar de functie bestond niet — één klik gaf een fout in de
+   console en er gebeurde niets. */
+function wisFilters(){
+  S.l = {q:'', status:'', bron:'', vac:'', mijn:false, zvac:false, stil:false};
+  wisSelectie();
+}
+
+/* ─── Twee banden boven de lijst ──────────────────────────────────
+   Hierboven stonden er zes: KPI-tegels, tabs, een kaart met de werkstapel,
+   een kaart "Blijft liggen" met zeven statuschips, de filterbalk en een rij
+   van elf statuschips. Vier daarvan vertelden elkaars verhaal opnieuw.
+
+   Wat blijft: de tabs, één doen-regel (het enige accent op dit scherm) en
+   één filterbalk waarin de statuschips als dropdown mét tellers zijn
+   opgegaan. De filterbalk wordt één keer gebouwd en daarna alleen bijgewerkt;
+   opnieuw tekenen bij elke toetsaanslag zou de cursor uit het zoekveld halen. */
 function tekenLeads(el){
   const bronnen = Array.from(new Set(leads().map(l => l.bron).filter(Boolean))).sort();
   const vacs = (CRM.state.vacs||[]).slice().sort((a,b) => vacLabel(a).localeCompare(vacLabel(b)));
   const w = weergave();
   el.innerHTML = `
     <div class="rc-pad">
-      <div id="rc_nieuwbalk"></div>
-      <div id="rc_wacht"></div>
+      <div id="rc_doen"></div>
       <div class="rc-fil">
-        <div class="searchbox" style="flex:1;max-width:280px">
+        <div class="searchbox rc-zoek">
           <input type="search" id="rc_q" placeholder="Zoek op naam, telefoon of plaats" value="${h(S.l.q)}">
         </div>
-        <select id="rc_bron" style="width:auto;min-width:130px">
+        <select id="rc_status"></select>
+        <select id="rc_bron">
           <option value="">Alle bronnen</option>
           ${bronnen.map(b=>`<option value="${h(b)}" ${S.l.bron===b?'selected':''}>${h(b)}</option>`).join('')}
         </select>
-        <select id="rc_vac" style="width:auto;min-width:200px">
+        <select id="rc_vac">
           <option value="">Alle vacatures</option>
           ${vacs.map(v=>`<option value="${h(v.id)}" ${S.l.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}
         </select>
-        <label class="check"><input type="checkbox" id="rc_zvac" ${S.l.zvac?'checked':''}> Zonder vacature</label>
-        <label class="check"><input type="checkbox" id="rc_mijn" ${S.l.mijn?'checked':''}> Mijn sollicitanten</label>
-        <div class="spacer"></div>
-        <span class="meta" id="rc_telling"></span>
-        <div class="seg" id="rc_weer">
-          <button data-w="lijst" class="${w==='lijst'?'on':''}">Lijst</button>
-          <button data-w="bord" class="${w==='bord'?'on':''}">Bord</button>
+        <button class="chip btn-like" id="rc_zvac" type="button"
+          title="Alleen lopende sollicitanten die niet aan een vacature hangen">Zonder vacature</button>
+        <button class="chip btn-like" id="rc_mijn" type="button"
+          title="Alleen sollicitanten waar jij eigenaar van bent">Van mij</button>
+        <div class="rc-filr">
+          <span class="meta" id="rc_telling"></span>
+          <div class="seg" id="rc_weer">
+            <button data-w="lijst" class="${w==='lijst'?'on':''}">Lijst</button>
+            <button data-w="bord" class="${w==='bord'?'on':''}">Bord</button>
+          </div>
         </div>
       </div>
-      <div class="rc-chips" id="rc_stchips"></div>
       <div id="rc_waarsch"></div>
       <div id="rc_lijst"></div>
     </div>`;
@@ -559,10 +555,11 @@ function tekenLeads(el){
   /* Elke filterwijziging wist de selectie — zie de toelichting bij S.sel. */
   const q = el.querySelector('#rc_q');
   q.oninput = CRM.debounce(() => { S.l.q = q.value; wisSelectie(); tekenWerk(); }, 200);
-  el.querySelector('#rc_bron').onchange = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_vac').onchange  = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_zvac').onchange = e => { S.l.zvac = e.target.checked; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_mijn').onchange = e => { S.l.mijn = e.target.checked; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_status').onchange = e => { S.l.status = e.target.value; S.l.stil = false; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_vac').onchange    = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_zvac').onclick = () => { S.l.zvac = !S.l.zvac; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_mijn').onclick = () => { S.l.mijn = !S.l.mijn; wisSelectie(); tekenWerk(); };
   CRM.$$('#rc_weer button', el).forEach(b => b.onclick = () => {
     if(weergave() === b.dataset.w) return;
     zetWeergave(b.dataset.w);
@@ -577,151 +574,174 @@ function tekenLeads(el){
   tekenWerk();
 }
 
-/* ─── De werkstapel op Nieuw ──────────────────────────────────────
-   Het hart van dit scherm: wat ligt er, en hoe lang al. De staaf maakt
-   het verschil zichtbaar tussen een ochtend achterstand en een week
-   achterstand — twaalf leads van vandaag is een normale ochtend,
-   twaalf leads van vier dagen oud is een probleem. */
-function tekenNieuwbalk(){
-  const el = document.getElementById('rc_nieuwbalk'); if(!el) return;
-  /* Op de huidige filters, want dat is de stapel die je nú kunt wegwerken. */
-  const nieuw = leadsGefilterd(true).filter(l => l.status === 'Nieuw');
-  const groep = {vandaag:[], letop:[], telang:[]};
-  nieuw.forEach(l => {
-    const n = leadDagen(l);
-    if(n == null || n < NIEUW_LETOP) groep.vandaag.push(l);
-    else if(n < NIEUW_TELANG) groep.letop.push(l);
-    else groep.telang.push(l);
-  });
-  if(!nieuw.length){
-    /* Deze zin stond er als absolute stand van zaken, terwijl hij op de
-       GEFILTERDE lijst rekende. Met een zoekterm nog actief zei hij "niets
-       staat meer op Nieuw" terwijl de teller ernaast 9 aangaf — en dat is
-       precies het bericht waarop een recruiter stopt met werken. Negen
-       mensen wachten dan een dag langer. Nu telt hij er altijd bij hoeveel
-       er buiten je filters vallen. */
-    const totaal = leads().length;
-    const alleNieuw = leads().filter(l => l.status === 'Nieuw').length;
-    if(!totaal) return void (el.innerHTML = '');
-    el.innerHTML = alleNieuw
-      ? `<div class="rc-nieuw"><span class="rc-nieuwop">•</span>
-           <div><b>Binnen je filters staat niets op Nieuw</b>
-             <span class="meta">Daarbuiten nog wel: ${alleNieuw} sollicitant${alleNieuw===1?'':'en'}.
-               <button class="lnk" id="rc_filterweg">Filters wissen</button></span></div></div>`
-      : `<div class="rc-nieuw klaar"><span class="rc-nieuwop">✓</span>
-           <div><b>Niets staat meer op Nieuw</b>
-             <span class="meta">Elke binnengekomen reactie heeft een volgende status gekregen.</span></div></div>`;
-    const wis = el.querySelector('#rc_filterweg');
-    if(wis) wis.onclick = () => { wisFilters(); alles(); };
-    return;
-  }
-  const pct = n => Math.round(n / nieuw.length * 100);
-  const deel = (n, klasse, titel) => n ? `<i class="${klasse}" style="width:${pct(n)}%" title="${h(titel)}"></i>` : '';
-  const telang = groep.telang.length, letop = groep.letop.length, vers = groep.vandaag.length;
-  el.innerHTML = `
-    <div class="rc-nieuw ${telang ? 'let' : ''}">
-      <div class="rc-nieuwtel"><b class="num">${nieuw.length}</b><span>op Nieuw</span></div>
-      <div class="rc-nieuwstaafwrap">
-        <div class="rc-nieuwstaaf">
-          ${deel(vers,  'vers',   vers + ' van vandaag')}
-          ${deel(letop, 'letop',  letop + ' van gisteren of eergisteren')}
-          ${deel(telang,'telang', telang + ' van ' + NIEUW_TELANG + ' dagen of ouder')}
-        </div>
-        <div class="rc-nieuwtxt">
-          <span><i class="vers"></i>${vers} vandaag</span>
-          <span><i class="letop"></i>${letop} 1–${NIEUW_TELANG-1} dagen</span>
-          <span class="${telang ? 'op' : ''}"><i class="telang"></i>${telang} ${NIEUW_TELANG} dagen of langer</span>
-        </div>
-      </div>
-      <div class="spacer"></div>
-      <button class="btn" id="rc_werkaf">Wegwerken →</button>
-    </div>`;
-  el.querySelector('#rc_werkaf').onclick = () => wegwerkModus();
-}
-
-/* ─── De wachtkamers ──────────────────────────────────────────────
-   'Nieuw' is de zichtbaarste stapel, maar niet de gevaarlijkste. Wat na de
-   eerste actie blijft staan verdwijnt uit het zicht: het heeft immers een
-   status gekregen, dus het lijkt afgehandeld. Deze regel laat per status zien
-   hoeveel er over de grens van STATUS_NORM heen is, met de reden erbij.
-
-   Eén klik zet het filter op precies die groep; daarna staat de knop
-   "Wegwerken" ernaast en kun je hem met de cijfertoetsen afmaken. */
-function tekenWachtkamer(){
-  const el = document.getElementById('rc_wacht'); if(!el) return;
-  /* Op de huidige filters, minus de status — anders zou de regel alleen de
-     kolom tonen waar je toevallig al in kijkt. */
-  const basis = leadsGefilterd(true);
-  const per = CRM.LEAD_OPEN.map(s => {
-    const rijen = basis.filter(l => l.status === s && stilstand(l));
-    return {s, n:rijen.length, waarom:(STATUS_NORM[s]||{}).waarom || ''};
-  }).filter(x => x.n);
-  const totaal = per.reduce((n,x) => n + x.n, 0);
-  if(!totaal){
-    el.innerHTML = '';
-    return;
-  }
-  el.innerHTML = `
-    <div class="rc-wacht">
-      <div class="rc-wachtkop"><b>Blijft liggen</b>
-        <span class="meta">${totaal} sollicitant${totaal===1?' staat':'en staan'} langer stil dan bij deze stap hoort</span></div>
-      <div class="rc-wachtrij">${per.map(x => `
-        <button class="rc-wachtknop ${S.l.stil && S.l.status === x.s ? 'on' : ''}"
-          data-wacht="${h(x.s)}" title="${h(x.waarom)}">
-          <i class="dot" style="background:${CRM.leadKleur(x.s)}"></i>${h(x.s)}<b class="num">${x.n}</b></button>`).join('')}
-        ${S.l.stil ? `<button class="btn ghost sm" data-wachtuit>Toon weer alles</button>` : ''}
-      </div>
-    </div>`;
-  CRM.$$('[data-wacht]', el).forEach(b => b.onclick = () => {
-    const zelfde = S.l.stil && S.l.status === b.dataset.wacht;
-    S.l.status = zelfde ? '' : b.dataset.wacht;
-    S.l.stil   = !zelfde;
-    wisSelectie();
-    if(weergave() === 'bord') zetWeergave('lijst');   // een gerichte stapel werk je af in een lijst
-    tekenBody();
-  });
-  const uit = el.querySelector('[data-wachtuit]');
-  if(uit) uit.onclick = () => { S.l.stil = false; S.l.status = ''; wisSelectie(); tekenWerk(); };
-}
-
-function tekenStatusChips(){
-  const el = document.getElementById('rc_stchips'); if(!el) return;
-  /* Op het bord zíjn de kolommen de statussen — dan is een tweede rij met
-     dezelfde tellers alleen maar dubbelop. */
-  if(weergave() === 'bord'){ el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.style.display = '';
-  const basis = leadsGefilterd(true);
+/* De elf statuschips zijn hier ingeklapt. Het aantal per status blijft
+   zichtbaar — daar stuurt het team op — maar het vraagt pas aandacht als je
+   het opent, in plaats van een hele band naast een filterbalk met dezelfde
+   functie. De twee groepen scheiden werk van eindstation: die elf op één hoop
+   lieten 'Nieuw' en 'Niet geschikt' even zwaar wegen. */
+function vulStatusSelect(basis){
+  const sel = document.getElementById('rc_status'); if(!sel) return;
   const tel = s => basis.filter(l => l.status === s).length;
-  /* Staat er één werkstatus aan, dan is de belronde één klik weg. Die knop
-     stond eerst alleen boven 'Nieuw'; het werk dat blijft liggen zit juist in
-     de statussen daarna (opnieuw bellen, cv's najagen, calls afronden) en dat
-     ging tot nu toe kaart voor kaart. */
-  const aantal = S.l.status && CRM.LEAD_OPEN.includes(S.l.status) ? tel(S.l.status) : 0;
-  el.innerHTML =
-    `<button class="chip btn-like ${S.l.status===''?'on':''}" data-s="">Alle <b class="num">${basis.length}</b></button>` +
-    CRM.LEAD_STATUS.map(s => `
-      <button class="chip btn-like ${S.l.status===s.k?'on':''}" data-s="${h(s.k)}">
-        <i class="dot" style="background:${s.c}"></i>${h(s.k)} <b class="num">${tel(s.k)}</b>
-      </button>`).join('') +
-    (aantal ? `<button class="btn sm" id="rc_werkstatus" style="margin-left:6px">Wegwerken (${aantal}) →</button>` : '');
-  /* Een statuschip toont die status compleet. Zou 'alleen wat blijft liggen'
-     blijven staan, dan wijst de chip 12 aan en zie je er 4 — zonder dat
-     ergens staat waarom. Die beperking hoort bij de wachtkamerregel en gaat
-     hier dus uit. */
-  CRM.$$('[data-s]', el).forEach(b => b.onclick = () => {
-    S.l.status = b.dataset.s; S.l.stil = false; wisSelectie(); tekenWerk();
+  const opt = s => `<option value="${h(s)}" ${S.l.status===s?'selected':''}>${h(s)} (${tel(s)})</option>`;
+  sel.innerHTML =
+    `<option value="" ${S.l.status===''?'selected':''}>Alle statussen (${basis.length})</option>` +
+    `<optgroup label="Openstaand werk">${CRM.LEAD_OPEN.map(opt).join('')}</optgroup>` +
+    `<optgroup label="Eindstations">${CRM.LEAD_EIND.map(opt).join('')}</optgroup>`;
+  const bord = weergave() === 'bord';
+  sel.disabled = bord;
+  sel.title = bord ? 'Op het bord zijn de kolommen de statussen — filteren op één status laat de rest leeg' : '';
+}
+
+/* De twee vinkjes zijn knopfilters geworden: even duidelijk, half zo breed,
+   en ze laten zich van buitenaf aanzetten (de melding "niet gekoppeld"
+   hieronder doet dat). Stand komt altijd uit S.l, nooit uit het element zelf. */
+function zetFilterstand(){
+  [['rc_zvac', S.l.zvac], ['rc_mijn', S.l.mijn]].forEach(([id, aan]) => {
+    const b = document.getElementById(id); if(!b) return;
+    b.classList.toggle('on', !!aan);
+    b.setAttribute('aria-pressed', aan ? 'true' : 'false');
   });
-  const ws = el.querySelector('#rc_werkstatus');
-  if(ws) ws.onclick = () => wegwerkModus(S.l.status);
+}
+
+/* ─── De doen-regel ───────────────────────────────────────────────
+   Eén regel, en het enige accent op dit scherm. Hij beantwoordt de vraag
+   waarmee iemand dit scherm opent: wát moet ik nu doen, hoeveel is het, en
+   waar begin ik. Alles wat daar niet aan bijdraagt staat hier niet.
+
+   Waarom deze cijfers en niet de vijf tegels die hier stonden:
+   · Op Nieuw       — de voorraad die de dag bepaalt. Dit is het getal, groot,
+                      met de knop ernaast. De verdeling naar ouderdom (de
+                      gestapelde staaf met drie legendachips) is één zin
+                      geworden; de volledige uitsplitsing staat in de tooltip.
+   · Blijft liggen  — het gevaarlijkste getal, want dit werk heeft al een
+                      status en lijkt dus afgehandeld. Was een eigen kaart met
+                      zeven statuschips; nu één aantal met een doorklik. Welke
+                      status hoeveel bijdraagt staat in de tooltip, en na de
+                      doorklik in de statusdropdown ernaast.
+   · Klaar om voor  — wat deze pijplijn oplevert. Dat de AM erop wacht is
+     te stellen       precies de reden dat het niet mag verdwijnen.
+   · Videocalls     — geen actie op dit scherm, maar wel de weekbelasting.
+     deze week        Als stille tekst mee in de regel.
+   Vervallen als eigen tegel: 'Vandaag binnen' (zit al ín Op Nieuw — het staat
+   nu als bijzin in dezelfde regel) en 'Zonder vacature' (heeft al een melding
+   mét knop boven de lijst én een filter; drie keer hetzelfde is twee keer te
+   veel).
+
+   De regel volgt je statusfilter. Sta je in 'CV opgevraagd', dan is dát je
+   stapel en werkt de knop díé weg. Zo is er één wegwerkknop op het scherm in
+   plaats van twee die verschillende dingen doen. */
+function tekenDoenregel(basis){
+  const el = document.getElementById('rc_doen'); if(!el) return;
+  if(!leads().length){ el.innerHTML = ''; return; }
+  basis = basis || leadsGefilterd(true);
+  const c = cijfers();
+
+  /* Op een eindstation valt niets weg te werken; dan gaat de regel weer over
+     Nieuw, want dát blijft het werk dat wacht. */
+  const status = CRM.LEAD_OPEN.includes(S.l.status) ? S.l.status : 'Nieuw';
+  const stapel = basis.filter(l => l.status === status);
+
+  /* Wat blijft liggen, over álle openstaande statussen binnen je filters — dus
+     niet alleen de kolom waar je toevallig in kijkt. */
+  const perStil = CRM.LEAD_OPEN.map(s => ({s, n:basis.filter(l => l.status === s && stilstand(l)).length}))
+                               .filter(x => x.n);
+  const stilTot = perStil.reduce((n,x) => n + x.n, 0);
+  const stilUitleg = 'Langer stil dan bij die stap hoort:\n' +
+    perStil.map(x => `· ${x.s}: ${x.n} — ${(STATUS_NORM[x.s]||{}).waarom || ''}`).join('\n');
+
+  /* Linkerkant: het getal, waar het op staat, en in één zin hoe erg het is. */
+  let links, knop = '', streep = false;
+  if(stapel.length){
+    let zin, rest = '', dringend = false, tip;
+    if(status === 'Nieuw'){
+      const g = {vandaag:0, letop:0, telang:0};
+      stapel.forEach(l => {
+        const n = leadDagen(l);
+        if(n == null || n < NIEUW_LETOP) g.vandaag++;
+        else if(n < NIEUW_TELANG) g.letop++;
+        else g.telang++;
+      });
+      dringend = g.telang > 0;
+      /* Alleen het deel dat te lang ligt krijgt kleur. 'Vandaag binnen' is geen
+         waarschuwing maar context, en die in dezelfde tint zetten maakt van een
+         normale ochtend een alarm. */
+      zin = (g.telang ? `${g.telang} ${g.telang===1?'ligt':'liggen'} er ${NIEUW_TELANG} dagen of langer`
+                      : `oudste: ${c.oudste === 0 ? 'vandaag binnen' : c.oudste + ' dag' + (c.oudste===1?'':'en')}`);
+      rest = `${g.vandaag} vandaag binnen`;
+      tip = `${g.vandaag} van vandaag · ${g.letop} van 1–${NIEUW_TELANG-1} dagen · ${g.telang} van ${NIEUW_TELANG} dagen of ouder`;
+    } else {
+      const stil = stapel.filter(stilstand).length;
+      const nrm = STATUS_NORM[status] || {};
+      dringend = stil > 0;
+      zin = stil ? `${stil}× ${nrm.doe || 'staat hier te lang'}` : 'niets staat hier te lang';
+      tip = nrm.waarom || '';
+    }
+    links = `<div class="rc-doentel" title="${h(tip)}"><b class="num">${stapel.length}</b>
+        <span>op ${h(status)}</span></div>
+      <span class="rc-doenzin"><em class="${dringend ? 'op' : ''}">${h(zin)}</em>${
+        rest ? ` · ${h(rest)}` : ''}</span>`;
+    knop = `<button class="btn" id="rc_werkaf">Wegwerken →</button>`;
+    streep = dringend;
+  } else {
+    /* "Niets meer op Nieuw" rekende ooit op de gefilterde lijst en zei dus dat
+       je klaar was terwijl er negen mensen buiten je filter zaten te wachten.
+       Daarom telt hij er altijd bij hoeveel er buiten beeld vallen. */
+    const buiten = leads().filter(l => l.status === status).length;
+    links = buiten
+      ? `<span class="rc-doenop">•</span>
+         <b class="rc-doenklaar">Binnen je filters staat niets op ${h(status)}</b>
+         <span class="rc-doenzin">Daarbuiten nog wel: ${buiten} sollicitant${buiten===1?'':'en'}.
+           <button class="rc-lnk" id="rc_filterweg">Filters wissen</button></span>`
+      : `<span class="rc-doenop klaar">✓</span>
+         <b class="rc-doenklaar">Niets staat meer op ${h(status)}</b>
+         <span class="rc-doenzin">${status === 'Nieuw'
+            ? 'Elke binnengekomen reactie heeft een volgende status gekregen.'
+            : 'Deze stap wacht nergens op.'}</span>`;
+  }
+
+  el.innerHTML = `
+    <div class="rc-doen${streep ? ' let' : ''}">
+      ${links}
+      <div class="spacer"></div>
+      <div class="rc-doenrest">
+        ${stilTot ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
+            aria-label="${stilTot} ${stilTot===1?'blijft':'blijven'} liggen — toon alleen die"
+            title="${h(stilUitleg)}"><b class="num">${stilTot}</b> ${
+              S.l.stil ? (stilTot===1?'blijft':'blijven') + ' liggen — toon weer alles'
+                       : (stilTot===1?'blijft':'blijven') + ' liggen'}</button>` : ''}
+        <button class="rc-doenfeit" id="rc_klaarvoor"
+          aria-label="${c.klaar.length} klaar om voor te stellen — open de voorraad"
+          title="Intake gehad, kaart compleet — wacht op een klant. Doorklikken opent de hele voorraad bij Kandidaten."
+          ><b class="num">${c.klaar.length}</b> klaar om voor te stellen →</button>
+        <span class="meta" title="Geplande calls bij de sollicitanten plus intakes die al als kandidaat staan"
+          ><b class="num">${c.calls}</b> videocall${c.calls===1?'':'s'} deze week</span>
+      </div>
+      ${knop}
+    </div>`;
+
+  const wa = el.querySelector('#rc_werkaf');
+  if(wa) wa.onclick = () => wegwerkModus(status);
+  const wis = el.querySelector('#rc_filterweg');
+  if(wis) wis.onclick = () => { wisFilters(); alles(); };
+  const stil = el.querySelector('#rc_stil');
+  /* Doorklik op "blijft liggen": hetzelfde filter als de oude wachtkamerkaart,
+     alleen zonder status erbij — welke stap je daarna wilt zien kies je in de
+     dropdown ernaast, die de tellers per status toont. */
+  if(stil) stil.onclick = () => { S.l.stil = !S.l.stil; wisSelectie(); tekenWerk(); };
+  const kl = el.querySelector('#rc_klaarvoor');
+  if(kl) kl.onclick = () => naarVoorraad();
 }
 
 /* Het werkvlak: bord of lijst, met dezelfde filters en dezelfde acties.
    Heette tekenLijst toen er alleen een lijst was. */
 function tekenWerk(){
   bouwDubbel();
-  tekenNieuwbalk();
-  tekenWachtkamer();
-  tekenStatusChips();
+  /* Eén keer uitrekenen: de doen-regel én de tellers in de statusdropdown
+     rekenen op dezelfde basis — alles behalve het statusfilter zelf. */
+  const basis = leadsGefilterd(true);
+  tekenDoenregel(basis);
+  vulStatusSelect(basis);
+  zetFilterstand();
   /* De meldingen staan boven het werkvlak en niet eronder: ze gelden voor bord
      én lijst, en een lijst van tweehonderd regels duwt een voetnoot buiten beeld. */
   const w = document.getElementById('rc_waarsch');
@@ -729,7 +749,12 @@ function tekenWerk(){
   const wrap = document.getElementById('rc_lijst'); if(!wrap) return;
   const rijen = weergave() === 'bord' ? leadsGefilterd(true) : leadsGefilterd();
   const telling = document.getElementById('rc_telling');
-  if(telling) telling.textContent = rijen.length + ' van ' + leads().length + ' sollicitanten';
+  /* Kort gehouden zodat de telling en de weergaveschakelaar op dezelfde regel
+     als de filters passen; het hele woord staat in de tooltip. */
+  if(telling){
+    telling.textContent = rijen.length + ' van ' + leads().length;
+    telling.title = rijen.length + ' van ' + leads().length + ' sollicitanten in beeld';
+  }
 
   if(!rijen.length){
     /* Onderscheid maken tussen "nog niets binnengekomen" en "je filters
@@ -899,7 +924,7 @@ function tekenBulkbalk(){
 function naBulk(tekst){
   wisSelectie();
   CRM.toast(tekst, 'ok');
-  tekenBar(); tekenTabs(); tekenWerk(); CRM.navBadges();
+  tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
 }
 
 function bulkStatus(){
@@ -1004,8 +1029,9 @@ function bindLeadActies(wrap){
 function koppelStrook(wrap){
   const el = wrap.querySelector('#rc_zondervac'); if(!el) return;
   el.querySelector('button').onclick = () => {
+    /* De stand van het knopfilter komt uit S.l; zetFilterstand() in tekenWerk
+       zet de knop 'aan'. Hier hoeft dus alleen de waarde te veranderen. */
     S.l.zvac = true; S.l.status = '';
-    const box = document.getElementById('rc_zvac'); if(box) box.checked = true;
     tekenWerk();
   };
 }
@@ -1280,7 +1306,7 @@ function koppelVacature(lead, naAfloop){
         if(ok){
           await CRM.logActiviteit('lead', lead.id, 'systeem', `Gekoppeld aan ${v.functie} · ${v.klant}`);
           CRM.toast(`Gekoppeld aan ${v.functie} · ${v.klant}`, 'ok');
-          tekenBar(); tekenWerk();
+          tekenKop(); tekenWerk();
           if(document.getElementById('drawer')?.classList.contains('on')) openLead(lead.id);
         }
         if(naAfloop) naAfloop(ok ? v : null);
@@ -1548,7 +1574,7 @@ function wegwerkModus(status){
       onClose(){
         aan = false;
         document.removeEventListener('keydown', opToets);
-        tekenBar(); tekenTabs(); tekenWerk(); CRM.navBadges();
+        tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
       },
       onOpen(m){
         teken();
@@ -1593,7 +1619,7 @@ async function zetStatus(lead, nieuw){
   const ok = await pasStatusToe(lead, nieuw);
   if(!ok) return;
   CRM.toast(geenGehoor ? `Belpoging ${poging} genoteerd` : 'Status bijgewerkt', 'ok');
-  tekenBar(); tekenTabs(); tekenWerk(); CRM.navBadges();
+  tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
   /* De videocall wil je meteen in de agenda hebben — anders staat er een
      status zonder afspraak en belt niemand meer terug. */
   if(nieuw === 'Videocall gepland') return videocallPlannen(lead);
@@ -1645,7 +1671,7 @@ function videocallPlannen(l, naAfloop){
           else CRM.toast('In je agenda gezet','ok');
         }catch(e){ CRM.fout('Agenda-afspraak mislukt', e); }
       }
-      tekenBar(); tekenLijst();
+      tekenKop(); tekenLijst();
       if(document.getElementById('drawer')?.classList.contains('on')) openLead(l.id);
       if(naAfloop) naAfloop();
     };
@@ -1794,7 +1820,7 @@ function openLead(id){
       const nk   = dr.querySelector('#rc_naarkand');
       if(nk) nk.onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:l.kandidaat_id}); };
       dr.querySelector('#rc_opv').onchange = async e => {
-        await bewaarLead(l, {opvolgen_op:e.target.value || null}); CRM.toast('Opvolgdatum gezet','ok'); tekenBar(); tekenLijst();
+        await bewaarLead(l, {opvolgen_op:e.target.value || null}); CRM.toast('Opvolgdatum gezet','ok'); tekenKop(); tekenLijst();
       };
       dr.querySelector('#rc_eig').onchange = async e => {
         await bewaarLead(l, {eigenaar:e.target.value.trim()}); CRM.toast('Eigenaar bijgewerkt','ok'); tekenLijst();
@@ -1805,7 +1831,7 @@ function openLead(id){
         await bewaarLead(l, {notities:lijst, laatst_actie:new Date().toISOString()});
         await CRM.logActiviteit('lead', l.id, 'notitie', t);
         CRM.verwerkTags(t, 'lead', l.id);
-        CRM.toast('Notitie opgeslagen','ok'); tekenBar(); tekenLijst(); openLead(l.id);
+        CRM.toast('Notitie opgeslagen','ok'); tekenKop(); tekenLijst(); openLead(l.id);
       };
       CRM.$$('[data-kand]', dr).forEach(b => b.onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:b.dataset.kand}); });
       CRM.$$('[data-lead]', dr).forEach(b => b.onclick = () => openLead(b.dataset.lead));
@@ -1953,7 +1979,7 @@ function doorschietForm(lead, opts){
         const nuIntake = intakeVak ? intakeVak.checked : false;
         CRM.modal._onClose = null;
         CRM.modal.close(); CRM.drawer.close();
-        tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges();
+        tekenKop(); tekenTabs(); tekenBody(); CRM.navBadges();
         klaar(true);
         /* Binnen een belronde blijft de ronde voorgaan: een toast met een link
            naar de intake, en door naar de volgende. Het formulier openen zou de
@@ -2645,7 +2671,7 @@ function koppelStap(rijen){
         }
         CRM.modal.close();
         CRM.toast(`${nieuw.length} sollicitant${nieuw.length===1?'':'en'} geïmporteerd${over?` · ${over} dubbele${over===1?'':' rijen'} overgeslagen`:''}`,'ok');
-        S.l.status = ''; tekenBar(); tekenTabs(); tekenLijst(); CRM.navBadges();
+        S.l.status = ''; tekenKop(); tekenTabs(); tekenLijst(); CRM.navBadges();
       };
     }});
 }
@@ -2715,7 +2741,7 @@ const sessLeden = id => CRM.kandidaten().filter(c => String(c.ooId) === String(i
    staan en lijkt het alsof er niets is opgeslagen. */
 function alles(){
   if(CRM.view !== 'recruitment') return CRM.render();
-  tekenBar(); tekenTabs(); tekenBody(); CRM.navBadges();
+  tekenKop(); tekenTabs(); tekenBody(); CRM.navBadges();
 }
 
 /* Contract getekend + startdatum bereikt → automatisch Gestart (zoals het bord). */

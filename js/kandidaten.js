@@ -1,9 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
    MODULE: KANDIDATEN
-   Overzicht van alle kandidaten met krachtige filters (sterren,
-   status, radius, ploegen, taal, vervoer) + de kandidatenkaart:
-   het complete profiel, ster-beoordeling, CV-verrijking met
-   conflictmarkering en de Source-tab (kaart, zie js/source.js).
+   De kaartenbak: bladeren door alle kandidaten (vrij zoeken, status,
+   sortering, mijn kandidaten) + de kandidatenkaart met het complete
+   profiel, ster-beoordeling en CV-verrijking met conflictmarkering.
+   Het uitgebreide zoeken op eigenschappen (ploegendienst, taal, vervoer,
+   rijbewijs, reisafstand, recruiter, klant, fase, meerdere functies) woont
+   sinds 1 aug 2026 in Sourcing — zie js/source.js; dit scherm verwijst
+   ernaar met CRM.ga('source', {modus:'zoek', q:…}).
 
    Sinds 30 jul 2026 is dit ook wat een klik op een bordkaart opent
    (wens Tjeerd) — niet meer het smalle bewerkpaneel van het oude
@@ -21,45 +24,51 @@ const D = () => CRM._rcDeel || {};
 
 /* ─── Filters onthouden (één sleutel: crm_kand_filters) ───────── */
 const FKEY = 'crm_kand_filters';
-/* Status staat standaard op 'alle', en dat is een correctie van vanavond.
-   Hij stond even op 'gekwalificeerd' — de vijf mensen die de hele
-   recruitmentpijplijn door zijn. Dat is een prima wérklijst, maar een
-   slechte begintoestand: in productie staan er 355 kandidaten, waarvan er
-   236 uit het oude ATS komen zonder fase. Wie Kandidaten opende zag er
-   vijf, met als enige aanwijzing de tekst "5 kandidaten" — en concludeerde
-   dat de rest weg was. Dat is precies wat er vanavond gebeurde.
+/* Sinds 1 aug 2026 is dit scherm de rustige kaartenbak: bladeren, iemand
+   vinden, kaart openen. Het samenstellen van een zoekopdracht (ploegendienst,
+   taal, vervoer, rijbewijs, radius, recruiter, klant, fase, meerdere functies)
+   woont in Sourcing — dat gaat óók over kandidaten, en één plek waar je zoekt
+   is beter dan twee die elkaar half overlappen.
 
-   Een lijst die 350 van de 355 verbergt achter een filter dat je niet ziet
-   staan, is erger dan een lange lijst. De gekwalificeerde voorraad blijft
-   één klik weg, en het aantal staat prominent boven de lijst. */
+   Wat hier overblijft kun je allemaal zien staan: vrij zoeken, status,
+   sortering en "mijn kandidaten". Dat is geen opruimactie maar een
+   veiligheidsregel. Gisteren waren 350 van de 355 kandidaten onzichtbaar door
+   een filter dat nergens meer op het scherm stond; wie de lijst opent moet uit
+   het scherm zelf kunnen aflezen waaróm hij niet compleet is. */
 const F_STD = {
-  zoek:'', status:'alle', ster:0, plaats:'', km:20, ploegen:'', taal:'',
-  vervoer:'', rijbewijs:'', functie:'', rec:'', klant:'', fase:'', gesproken:'',
-  mijn:false, sort:'gesproken', splits:'functie'
+  zoek:'', status:'alle', mijn:false, sort:'gesproken', splits:'functie'
 };
+/* Alleen deze sleutels mogen uit de opslag terugkomen. Bij het hele team
+   staan er nog waarden van weggehaalde velden in localStorage (ploegen,
+   functie, plaats, fase…); zonder deze zeef zou zo'n waarde blijven filteren
+   zonder dat er een veld is om hem uit te zetten. Wat je niet kunt zien, mag
+   niet meefilteren. `_eigenKeuze` is geen filter maar hoort er wel bij. */
+const F_TOEGESTAAN = Object.keys(F_STD).concat('_eigenKeuze');
 let F = (() => {
+  const stand = Object.assign({}, F_STD);
   try{
     const bewaard = JSON.parse(localStorage.getItem(FKEY)||'{}');
-    /* De default van vanmiddag is bij iedereen in localStorage beland, ook
-       bij wie hem nooit zelf koos. Die ene waarde eenmalig terugzetten,
-       anders blijft het scherm bij het hele team op vijf kandidaten staan.
-       Een filter dat je zelf hebt gekozen blijft gewoon staan. */
+    /* De oude default 'gekwalificeerd' (vijf mensen) is bij iedereen in
+       localStorage beland, ook bij wie hem nooit zelf koos. Die ene waarde
+       eenmalig terugzetten; een status die je zelf koos blijft staan. */
     if(bewaard.status === 'gekwalificeerd' && !bewaard._eigenKeuze) delete bewaard.status;
-    return Object.assign({}, F_STD, bewaard);
-  }
-  catch(e){ return Object.assign({}, F_STD); }
+    Object.keys(bewaard).forEach(k => { if(F_TOEGESTAAN.includes(k)) stand[k] = bewaard[k]; });
+  }catch(e){}
+  /* Meteen opgeschoond terugschrijven, zodat de oude sleutels ook echt weg
+     zijn en niet bij een volgende wijziging alsnog opduiken. */
+  try{
+    localStorage.setItem(FKEY, JSON.stringify(stand));
+    localStorage.removeItem('crm_kand_meer');   // stand van het verdwenen paneel
+  }catch(e){}
+  return stand;
 })();
 function zet(k,v){ F[k]=v;
   if(k === 'status') F._eigenKeuze = true;   // zie de opmerking hierboven
   try{ localStorage.setItem(FKEY, JSON.stringify(F)); }catch(e){} }
 
-/* Paneel- en tabstand (geen filter, wel handig om te onthouden). */
-let filtersOpen = false, filtersOpenGezet = false;
-/* Het tweede laagje ("Meer verfijnen") onthoudt zichzelf wél over sessies
-   heen: wie op ploegendienst of taal stuurt, doet dat elke dag opnieuw. */
-let meerOpen = (() => { try{ return localStorage.getItem('crm_kand_meer') === '1'; }catch(e){ return false; } })();
-
-const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'nl'));
+/* De uitsplitsing van de voorraad staat dicht: het is achtergrond bij het
+   getal, geen vraag die je elke keer stelt. */
+let uitsplitsingOpen = false;
 
 /* Microsoft-koppeling van déze gebruiker. Staat die uit, dan verschijnen
    de Outlook-onderdelen op de kaart helemaal niet. */
@@ -102,22 +111,6 @@ const waLink  = t => { let n = String(t||'').replace(/[^0-9]/g,''); if(n.startsW
 /* Alleen echte weblinks openen — een `javascript:`-URL in een CV-veld mag
    niet uitgevoerd worden als iemand erop klikt. */
 const veiligeUrl = u => { const s = String(u||'').trim(); return /^(https?:|blob:)/i.test(s) ? s : ''; };
-
-/* Taal-zoekterm matchen op de talen-string van de kandidaat. Kandidaten
-   hebben soms afkortingen ("NL, EN"), de gebruiker typt vaak voluit. */
-const TAALKORT = {nederlands:'nl', engels:'en', duits:'de', frans:'fr', spaans:'es',
-  pools:'pl', roemeens:'ro', bulgaars:'bg', hongaars:'hu', turks:'tr', arabisch:'ar',
-  portugees:'pt', oekraiens:'uk', russisch:'ru', slowaaks:'sk', tsjechisch:'cs'};
-function taalMatch(talen, zoek){
-  const z = String(zoek||'').trim().toLowerCase(); if(!z) return true;
-  const t = String(talen||'').toLowerCase();       if(!t) return false;
-  if(t.includes(z)) return true;
-  const plat = z.normalize('NFD').replace(/[̀-ͯ]/g,'');
-  const kort = TAALKORT[plat];
-  if(kort && new RegExp('\\b'+kort+'\\b').test(t)) return true;
-  const lang = Object.keys(TAALKORT).find(k => TAALKORT[k] === plat);
-  return !!(lang && t.includes(lang));
-}
 
 /* Waaróm past deze kandidaat bij deze vacature? */
 function uitleg(c, v){
@@ -496,15 +489,18 @@ function overzicht(mount, acties){
    — er wordt in de praktijk op alle vijf gefilterd — staan ze nu in drie
    groepen, zodat je in de lijst zelf ziet dat het drie vragen zijn:
    wie is er voorradig, wie loopt er, en wie bewaren we voor later.
-   'Gekwalificeerd' is er als eerste bij gekomen en is de nieuwe default. */
+
+   De labels zijn kort gehouden sinds dit filter in de balk zelf staat: een
+   keuzelijst die op zijn langste optie 320px breed wordt, duwt de rest van
+   de balk naar een tweede regel. De groepskoppen dragen de uitleg. */
 const STATUS_OPTS = [
-  {g:'De voorraad',      k:'gekwalificeerd', lbl:'Gekwalificeerd — klaar om voor te stellen'},
+  {g:'De voorraad',      k:'gekwalificeerd', lbl:'Gekwalificeerd'},
   {g:'In een traject',   k:'lopend',      lbl:'Actief lopend'},
   {g:'In een traject',   k:'geplaatst',   lbl:'Geplaatst'},
   {g:'Bewaard voor later', k:'beschikbaar', lbl:'Beschikbaar'},
-  {g:'Bewaard voor later', k:'recyclebaar', lbl:'Uitval — herbruikbaar'},
+  {g:'Bewaard voor later', k:'recyclebaar', lbl:'Uitval, herbruikbaar'},
   {g:'Bewaard voor later', k:'golden',    lbl:'Golden candidates ★'},
-  {g:'',                 k:'alle',        lbl:'Alles'}
+  {g:'',                 k:'alle',        lbl:'Alle statussen'}
 ];
 const statusLbl = k => (STATUS_OPTS.find(o => o.k === k) || {}).lbl || k;
 
@@ -514,99 +510,30 @@ const statusLbl = k => (STATUS_OPTS.find(o => o.k === k) || {}).lbl || k;
    verzoek gewist zijn is geen voorraad meer, hoe compleet de fase ook is. */
 const gekwalificeerd = c => CRM.klaarOmVoorTeStellen(c) && !geanonimiseerd(c);
 
-/* ─── Filter "hoe lang niet gesproken" ──────────────────────────
-   Tjeerds vraag was letterlijk "twee weken niet gesproken, etc etc", dus
-   dit is een keuzelijst en geen los vinkje. De dagen-opties tellen ook
-   kandidaten mee die nog nóóit gesproken zijn maar al net zo lang wachten —
-   voor een accountmanager is dat dezelfde bellijst. Wie alleen het gat in
-   het proces wil zien kiest de laatste optie. */
-const GESPROKEN_OPTS = [
-  {k:'',      lbl:'Maakt niet uit'},
-  {k:'7',     lbl:'Langer dan 1 week niet gesproken',  chip:'langer dan 1 week niet gesproken',  dagen:7},
-  {k:'14',    lbl:'Langer dan 2 weken niet gesproken', chip:'langer dan 2 weken niet gesproken', dagen:14},
-  {k:'28',    lbl:'Langer dan 4 weken niet gesproken', chip:'langer dan 4 weken niet gesproken', dagen:28},
-  {k:'nooit', lbl:'Nog nooit gesproken',               chip:'nog nooit gesproken'}
-];
-const gesprokenOpt = k => GESPROKEN_OPTS.find(o => o.k === String(k||'')) || GESPROKEN_OPTS[0];
-/* st = het resultaat van stilte(). Een kandidaat zonder contact én zonder
-   datum in beeld heeft geen wachttijd; die valt eerlijk buiten de
-   dagen-opties in plaats van op nul dagen te worden gezet. */
-function gesprokenMatch(st, k){
-  const o = gesprokenOpt(k);
-  if(!o.k) return true;
-  if(o.k === 'nooit') return st.nooit;
-  return st.dagen != null && st.dagen >= o.dagen;
+/* Doorklik naar het uitgebreide zoeken in Sourcing. De huidige zoekterm gaat
+   mee, zodat je niet opnieuw hoeft te typen wat je hier al intypte. */
+function naarSourcing(){
+  const q = String(F.zoek||'').trim();
+  CRM.ga('source', q ? {modus:'zoek', q} : {modus:'zoek'});
 }
 
-/* ─── Meerdere functies tegelijk ────────────────────────────────
-   F.functie was één zoekterm. Dat past niet bij hoe er gezocht wordt: een
-   klant vraagt om "orderpicker of magazijnmedewerker of heftruckchauffeur",
-   en dat zijn bij ons drie functienamen voor grofweg hetzelfde werk. Met één
-   veld moest je drie keer achter elkaar zoeken en zelf onthouden wie je al
-   gezien had. Het blijft één tekstveld in de opslag (komma's ertussen), zodat
-   een bestaande opgeslagen filterstand met één term gewoon blijft werken.
-   Meerdere termen betekent OF, niet EN: iemand die aan één ervan voldoet
-   blijft staan. EN zou hier vrijwel altijd nul opleveren — niemand heeft
-   twee functietitels tegelijk op zijn kaart. */
-const functieTermen = () => String(F.functie||'').split(',').map(s => s.trim()).filter(Boolean);
-function zetFunctieTermen(lijst){
-  const uniekLaag = [];
-  lijst.map(s => String(s).trim()).filter(Boolean).forEach(t => {
-    if(!uniekLaag.some(x => x.toLowerCase() === t.toLowerCase())) uniekLaag.push(t);
-  });
-  zet('functie', uniekLaag.join(', '));
-}
-
-/* Welke filters staan aan (voor teller, chips en wissen)? */
-const PANEEL_FILTERS = ['status','gesproken','ster','plaats','ploegen','taal','vervoer','rijbewijs','functie','rec','klant','fase'];
-/* De acht die achter "Meer verfijnen" zitten. Wat overblijft — functies,
-   radius, status, sterren — staat meteen open. */
-const MEER_FILTERS = ['gesproken','ploegen','taal','vervoer','rijbewijs','rec','klant','fase'];
-
-/* Functienamen die in de kaartenbak voorkomen, als suggestielijst onder het
-   functieveld. Uit de data zelf, niet uit een vaste lijst: het CRM weet beter
-   hoe wij functies noemen dan een lijst die iemand ooit heeft ingetypt. */
-function functieSuggesties(alle){
-  const tel = new Map();
-  alle.forEach(c => {
-    [c.functie, c.cv && c.cv.functie].forEach(f => {
-      const s = String(f||'').trim();
-      if(s) tel.set(s, (tel.get(s)||0) + 1);
-    });
-  });
-  return [...tel.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,60).map(e => e[0]);
-}
+/* Welke van de overgebleven filters staan aan? Alleen nog gebruikt om een
+   lege lijst uit te leggen — de chipsrij eronder is weg, want status en
+   "mijn kandidaten" zijn allebei zichtbare knoppen met een eigen stand. */
 function actieveFilters(){
   const uit = [];
   if(F.status !== F_STD.status) uit.push({k:'status', lbl:statusLbl(F.status)});
-  if(F.gesproken) uit.push({k:'gesproken', lbl:gesprokenOpt(F.gesproken).chip});
-  if(F.ster > 0)      uit.push({k:'ster', lbl:'≥ '+'★'.repeat(F.ster)});
-  if(String(F.plaats).trim()) uit.push({k:'plaats', lbl:'binnen '+F.km+' km van '+F.plaats});
-  if(F.ploegen)       uit.push({k:'ploegen', lbl:F.ploegen});
-  if(String(F.taal).trim())      uit.push({k:'taal', lbl:'taal: '+F.taal});
-  if(F.vervoer)       uit.push({k:'vervoer', lbl:'vervoer: '+F.vervoer});
-  if(String(F.rijbewijs).trim()) uit.push({k:'rijbewijs', lbl:'rijbewijs: '+F.rijbewijs});
-  { const ft = functieTermen();
-    if(ft.length) uit.push({k:'functie', lbl:(ft.length===1?'functie: ':'functie: ')+ft.join(' of ')}); }
-  if(F.rec)           uit.push({k:'rec', lbl:F.rec});
-  if(F.klant)         uit.push({k:'klant', lbl:F.klant});
-  if(F.fase)          uit.push({k:'fase', lbl:F.fase});
-  if(F.mijn)          uit.push({k:'mijn', lbl:'mijn kandidaten'});
+  if(F.mijn)                    uit.push({k:'mijn',   lbl:'mijn kandidaten'});
   return uit;
 }
+/* Terug naar de begintoestand: alles wat de lijst kan inperken in één keer los. */
+function wisFilters(){ zet('status', F_STD.status); zet('zoek', ''); zet('mijn', false); }
 
 function lijstTab(wrap){
-  const alle = CRM.kandidaten();
-  const nFil = actieveFilters().filter(f => f.k !== 'mijn').length;
-  /* Eén keer: staan er filters aan, verstop het paneel dan niet. Daarna
-     respecteren we wat de gebruiker zelf open- of dichtklikte. */
-  if(!filtersOpenGezet){ filtersOpen = nFil > 0; filtersOpenGezet = true; }
-  /* Staat er in de verborgen laag iets aan, dan klapt die vanzelf open —
-     anders filter je op iets wat je nergens ziet staan. */
-  const meerAan = actieveFilters().filter(f => MEER_FILTERS.includes(f.k)).length;
-  if(meerAan) meerOpen = true;
-  const sel = (f, opts, leeg) => `<select data-f="${f}"><option value="">${h(leeg)}</option>
-    ${opts.map(o=>`<option value="${h(o)}"${F[f]===o?' selected':''}>${h(o)}</option>`).join('')}</select>`;
+  /* Een status die niet (meer) in de keuzelijst staat, kun je niet uitzetten.
+     Zo'n waarde — uit een oude opslag of een doorklik van elders — hoort
+     terug naar 'alle' in plaats van stilletjes te blijven filteren. */
+  if(!STATUS_OPTS.some(o => o.k === F.status)) zet('status', F_STD.status);
 
   /* Statusfilter met groepskoppen — zie STATUS_OPTS voor het waarom. */
   const statusSel = (() => {
@@ -615,7 +542,7 @@ function lijstTab(wrap){
       if(o.g !== groep){ if(groep) uit += '</optgroup>'; groep = o.g; if(groep) uit += `<optgroup label="${h(groep)}">`; }
       uit += `<option value="${h(o.k)}"${F.status===o.k?' selected':''}>${h(o.lbl)}</option>`;
     });
-    return `<select data-f="status">${uit}${groep?'</optgroup>':''}</select>`;
+    return `<select id="kd_status" class="kd-statussel" title="Toon alleen kandidaten met deze status">${uit}${groep?'</optgroup>':''}</select>`;
   })();
 
   wrap.innerHTML = `
@@ -626,7 +553,9 @@ function lijstTab(wrap){
           <div class="searchbox" style="flex:1;max-width:290px">
             <input type="search" id="kd_zoek" autocomplete="off" placeholder="Zoek op naam, functie of woonplaats…" value="${h(F.zoek)}">
           </div>
-          <button class="btn ghost sm${filtersOpen?' kd-filaan':''}" id="kd_filknop">Geavanceerd zoeken${nFil?` <span class="num">(${nFil})</span>`:''}</button>
+          <button class="btn ghost sm kd-uitgebreid" id="kd_uitgebreid"
+            title="Zoeken op ploegendienst, taal, vervoer, rijbewijs, reisafstand, recruiter, klant of fase — dat doe je in Sourcing.">Uitgebreid zoeken →</button>
+          ${statusSel}
           <select id="kd_sort" style="width:auto" title="Wie eerst bellen: langst niet gesproken bovenaan, bij gelijke stilte de hoogste sterbeoordeling eerst.">
             <option value="gesproken"${F.sort==='gesproken'?' selected':''}>Wie eerst bellen</option>
             <option value="ster"${F.sort==='ster'?' selected':''}>Hoogste sterren</option>
@@ -638,154 +567,26 @@ function lijstTab(wrap){
           <span class="spacer"></span>
           <span class="meta num" id="kd_telling"></span>
         </div>
-        <div class="kd-fpaneel" id="kd_fpaneel" style="${filtersOpen?'':'display:none'}">
-          <!-- Vier velden waar bijna elke zoekopdracht mee begint: wat voor
-               werk, waar, hoe goed, en waar in het traject. De overige acht
-               staan een klik verderop. Twaalf velden tegelijk lazen als een
-               formulier dat ingevuld moest worden in plaats van als een paar
-               knoppen om aan te draaien. -->
-          <div class="kd-fgrid">
-            <div class="f-row kd-fbreed"><label>Functies</label>
-              <div class="kd-fnchips" id="kd_fnchips"></div>
-              <input type="text" id="kd_fnin" list="kd_fnlijst" autocomplete="off"
-                     placeholder="Typ een functie en druk op Enter">
-              <datalist id="kd_fnlijst">${functieSuggesties(alle).map(f=>`<option value="${h(f)}">`).join('')}</datalist>
-              <div class="hint">Meerdere mag. Wie aan één ervan voldoet blijft staan — handig als een klant hetzelfde werk anders noemt.</div></div>
-            <div class="f-row"><label>Woont binnen radius</label>
-              <div class="row tight" style="flex-wrap:nowrap">
-                <input type="text" data-f="plaats" placeholder="Plaats, bv. Gouda" value="${h(F.plaats)}">
-                <select data-f="km" style="width:auto;flex:0 0 auto">
-                  ${[10,20,30,45].map(k=>`<option value="${k}"${Number(F.km)===k?' selected':''}>${k} km</option>`).join('')}
-                </select>
-              </div>
-              <div class="hint" id="kd_plaatshint"></div></div>
-            <div class="f-row"><label>Status</label>${statusSel}</div>
-            <div class="f-row"><label>Minimaal sterren</label>
-              <select data-f="ster">
-                <option value="0">Alle</option>
-                ${[1,2,3,4,5].map(n=>`<option value="${n}"${F.ster===n?' selected':''}>${'★'.repeat(n)}${n<5?' of meer':''}</option>`).join('')}
-              </select></div>
-          </div>
-          <div class="kd-fmeer" id="kd_fmeer" style="${meerOpen?'':'display:none'}">
-            <div class="kd-fgrid">
-              <div class="f-row"><label>Laatst gesproken</label>
-                <select data-f="gesproken" title="Tellen mee: bellen, appen, mailen, een gesprek of een bezoek.">
-                  ${GESPROKEN_OPTS.map(o=>`<option value="${h(o.k)}"${String(F.gesproken||'')===o.k?' selected':''}>${h(o.lbl)}</option>`).join('')}
-                </select></div>
-              <div class="f-row"><label>Ploegendiensten</label>${sel('ploegen', CRM.PLOEGEN, 'Alle')}</div>
-              <div class="f-row"><label>Taal</label>
-                <input type="text" data-f="taal" placeholder="bv. Pools of NL" value="${h(F.taal)}"></div>
-              <div class="f-row"><label>Vervoer</label>${sel('vervoer', CRM.VERVOER, 'Alle')}</div>
-              <div class="f-row"><label>Rijbewijs</label>
-                <input type="text" data-f="rijbewijs" placeholder="bv. B of heftruck" value="${h(F.rijbewijs)}"></div>
-              <div class="f-row"><label>Recruiter</label>${sel('rec', uniek(alle.map(c=>c.rec)), 'Alle')}</div>
-              <div class="f-row"><label>Klant</label>${sel('klant', uniek(alle.map(c=>c.klant)), 'Alle')}</div>
-              <div class="f-row"><label>Fase</label>${sel('fase', CRM.PHASES.map(p=>p.k), 'Alle')}</div>
-            </div>
-          </div>
-          <div class="row" style="margin-top:2px">
-            <button class="lnk" id="kd_fmeerknop">${meerOpen?'Minder velden':'Meer verfijnen'}${meerAan?` <span class="num">(${meerAan})</span>`:''}</button>
-            <span class="spacer"></span>
-            <button class="btn sub sm" id="kd_wis">Alle filters wissen</button>
-          </div>
-        </div>
       </div>
-      <div class="row tight" id="kd_chips"></div>
       <div id="kd_lijst"></div>
     </div>`;
 
   const zoekEl = wrap.querySelector('#kd_zoek');
   zoekEl.oninput = CRM.debounce(() => { zet('zoek', zoekEl.value); lijst(wrap); }, 200);
+  wrap.querySelector('#kd_uitgebreid').onclick = naarSourcing;
+  wrap.querySelector('#kd_status').onchange = e => { zet('status', e.target.value); lijst(wrap); };
   wrap.querySelector('#kd_sort').onchange = e => { zet('sort', e.target.value); lijst(wrap); };
   wrap.querySelector('#kd_mijn').onclick = e => { zet('mijn', !F.mijn); e.target.classList.toggle('on', F.mijn); lijst(wrap); };
-  wrap.querySelector('#kd_filknop').onclick = () => {
-    filtersOpen = !filtersOpen;
-    wrap.querySelector('#kd_fpaneel').style.display = filtersOpen ? '' : 'none';
-    wrap.querySelector('#kd_filknop').classList.toggle('kd-filaan', filtersOpen);
-  };
-  wrap.querySelector('#kd_wis').onclick = () => {
-    PANEEL_FILTERS.forEach(k => zet(k, F_STD[k])); zet('km', F_STD.km);
-    lijstTab(wrap);
-  };
-  const meerKnop = wrap.querySelector('#kd_fmeerknop');
-  meerKnop.onclick = () => {
-    meerOpen = !meerOpen;
-    try{ localStorage.setItem('crm_kand_meer', meerOpen ? '1' : '0'); }catch(e){}
-    lijstTab(wrap);
-  };
-
-  /* ── Functiechips ──────────────────────────────────────────────
-     Enter of een komma maakt van wat je typt een chip. Klik op een chip en
-     hij is weg. Wat er nog in het invoerveld staat wanneer je wegklikt telt
-     ook mee — anders zoek je naar iets wat je wél hebt ingetypt maar dat
-     nooit is meegenomen, en dat merk je pas aan een lege lijst. */
-  const fnIn = wrap.querySelector('#kd_fnin');
-  const tekenChips = () => {
-    const el = wrap.querySelector('#kd_fnchips');
-    const ft = functieTermen();
-    el.innerHTML = ft.map(t => `<span class="chip kd-fnchip" data-fnweg="${h(t)}" role="button" tabindex="0"
-      title="Klik om '${h(t)}' uit de selectie te halen">${h(t)}<span aria-hidden="true">×</span></span>`).join('');
-    CRM.$$('[data-fnweg]', el).forEach(chip => {
-      const weg = () => {
-        zetFunctieTermen(functieTermen().filter(x => x !== chip.dataset.fnweg));
-        tekenChips(); lijst(wrap); filterKnopBij(wrap);
-      };
-      chip.onclick = weg;
-      chip.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); weg(); } };
-    });
-  };
-  const voegToe = () => {
-    const v = fnIn.value.trim();
-    if(!v) return false;
-    zetFunctieTermen(functieTermen().concat(v.split(',')));
-    fnIn.value = '';
-    tekenChips(); lijst(wrap); filterKnopBij(wrap);
-    return true;
-  };
-  fnIn.onkeydown = e => {
-    if(e.key === 'Enter' || e.key === ','){ e.preventDefault(); voegToe(); }
-    /* Backspace in een leeg veld haalt de laatste chip weg — zoals overal. */
-    else if(e.key === 'Backspace' && !fnIn.value && functieTermen().length){
-      zetFunctieTermen(functieTermen().slice(0,-1));
-      tekenChips(); lijst(wrap); filterKnopBij(wrap);
-    }
-  };
-  fnIn.onblur = voegToe;
-  /* Kiezen uit de suggestielijst vult het veld zonder Enter; dan hoort het
-     meteen een chip te worden. Alleen bij een keuze uit de lijst — de browser
-     laat `inputType` dan leeg of zet 'insertReplacementText'. Op elke
-     toetsaanslag controleren zou "operator" al vastzetten terwijl je
-     "operator inpak" aan het typen bent. */
-  fnIn.oninput = e => { if(!e.inputType || e.inputType === 'insertReplacementText') voegToe(); };
-  tekenChips();
-  wrap.querySelectorAll('[data-f]').forEach(el => {
-    const k = el.dataset.f;
-    const pas = () => {
-      let v = el.value;
-      if(k === 'ster' || k === 'km') v = Number(v)||0;
-      zet(k, v);
-      lijst(wrap);
-      filterKnopBij(wrap);
-    };
-    if(el.tagName === 'SELECT') el.onchange = pas;
-    else el.oninput = CRM.debounce(pas, 250);
-  });
   lijst(wrap);
 }
 
-function filterKnopBij(wrap){
-  const knop = wrap.querySelector('#kd_filknop'); if(!knop) return;
-  const n = actieveFilters().filter(f => f.k !== 'mijn').length;
-  knop.innerHTML = 'Geavanceerd zoeken' + (n ? ` <span class="num">(${n})</span>` : '');
-  knop.classList.toggle('kd-filaan', filtersOpen);
-}
-
+/* Drie dingen kunnen de lijst inperken — status, de zoekbalk en "mijn
+   kandidaten" — en die staan alle drie op het scherm. Wie meer wil verfijnen
+   gaat naar Sourcing; hier is de vuistregel dat je uit de balk kunt aflezen
+   waarom je ziet wat je ziet. */
 function gefilterd(){
   const q = String(F.zoek||'').trim().toLowerCase();
-  const radiusAan    = !!String(F.plaats||'').trim();
-  const radiusBekend = radiusAan && !!CRM.PLAATSEN[CRM.plaatsSleutel(F.plaats)];
   const golden = goldenIds();
-  let zonderPlek = 0;
 
   const rijen = CRM.kandidaten().filter(c => {
     if(F.status === 'gekwalificeerd' && !gekwalificeerd(c))  return false;
@@ -794,37 +595,8 @@ function gefilterd(){
     if(F.status === 'geplaatst'   && !CRM.PLACED.includes(c.fase)) return false;
     if(F.status === 'golden'      && !golden.has(String(c.id))) return false;
     if(F.status === 'recyclebaar' && !(c.fase === 'Afgevallen' && c.recyclebaar !== false)) return false;
-    if(F.ster > 0 && (Number(c.ster)||0) < F.ster) return false;
-    /* Ploegen: 'wisselend' kan elke dienst draaien, dus die telt mee
-       zodra er op een echte ploegendienst gefilterd wordt. */
-    if(F.ploegen && !(c.ploegen === F.ploegen || (F.ploegen !== 'geen' && c.ploegen === 'wisselend'))) return false;
-    if(F.taal && !taalMatch(c.talen, F.taal)) return false;
-    if(F.vervoer && c.vervoer !== F.vervoer) return false;
-    if(F.rijbewijs && !String(c.rijbewijs||'').toLowerCase().includes(F.rijbewijs.trim().toLowerCase())) return false;
-    /* Meerdere functies = OF. Zoekt ook in de functie uit het cv: bij een
-       verse import staat het veld `functie` vaak leeg terwijl het cv al
-       geparsed is, en zo iemand hoort niet buiten de selectie te vallen. */
-    { const ft = functieTermen();
-      if(ft.length){
-        const hooi = (String(c.functie||'') + ' ' + String((c.cv && c.cv.functie) || '')).toLowerCase();
-        if(!ft.some(t => hooi.includes(t.toLowerCase()))) return false;
-      } }
-    if(F.rec   && c.rec   !== F.rec)   return false;
-    if(F.klant && c.klant !== F.klant) return false;
-    /* faseIs: een kandidaat die nog op de oude waarde 'Voorselectie' staat
-       hoort gewoon bij het filter Intake (zie CRM.faseNorm in data.js). */
-    if(F.fase  && !CRM.faseIs(c.fase, F.fase)) return false;
     if(F.mijn  && !CRM.isVanMij(c))    return false;
-    /* Stilte is duurder dan de rest (activiteiten doorlopen), dus pas
-       nadat de goedkope filters hun werk hebben gedaan. */
-    if(F.gesproken && !gesprokenMatch(stilte(c), F.gesproken)) return false;
     if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon,c.talen].join(' ').toLowerCase().includes(q)) return false;
-    /* Radius als laatste: onbekende woonplaats valt er eerlijk buiten,
-       en de teller telt alleen kandidaten die verder wél door de filters kwamen. */
-    if(radiusBekend && !CRM.binnenRadius(c, F.plaats, F.km)){
-      if(!CRM.PLAATSEN[CRM.plaatsSleutel(c.woonplaats)]) zonderPlek++;
-      return false;
-    }
     return true;
   }).map(c => ({c, st:stilte(c), v:CRM.volledigheid(c)}));
 
@@ -854,7 +626,7 @@ function gefilterd(){
     volledigheid: (a,b) => a.v.pct - b.v.pct
   }[F.sort];
   if(srt) rijen.sort(srt);
-  return {rijen, zonderPlek, radiusAan, radiusBekend};
+  return rijen;
 }
 
 /* ═══ De gekwalificeerde voorraad, geteld en uitgesplitst ═════════
@@ -895,10 +667,14 @@ function voorraad(){
   };
 }
 
-/* Het paneel bovenaan het scherm. Staat er altijd, ook als je op iets
-   anders filtert: dit is een stand, geen zoekresultaat. Dat het los van de
-   filters telt staat er met zoveel woorden bij, anders gaan twee getallen op
-   hetzelfde scherm elkaar tegenspreken. */
+/* De regel bovenaan het scherm. Staat er altijd, ook als je op iets anders
+   filtert: dit is een stand, geen zoekresultaat.
+
+   Was tot 1 aug een blok van vier regels hoog met een kerncijfer in Anton,
+   twee rode chips en een uitsplitsing — meer schermruimte dan de lijst
+   eronder, terwijl de lijst het werk is. Nu één regel met de kern (hoeveel,
+   wie er te lang niet gesproken is, doorklik) en de uitsplitsing achter
+   "Uitsplitsen". Niets is weggegooid, alleen opgevouwen. */
 const CHIPS_MAX = 10;
 function voorraadPaneel(wrap){
   const el = wrap.querySelector('#kd_voorraad'); if(!el) return;
@@ -906,10 +682,10 @@ function voorraadPaneel(wrap){
   const aan = F.status === 'gekwalificeerd';
 
   if(!v.n){
-    el.innerHTML = `<div class="card pad kd-vr">
-      <div class="label">Gekwalificeerde voorraad</div>
-      <p class="kd-vrleeg">Er staat op dit moment niemand klaar om voor te stellen. Een kandidaat
-      komt hier zodra de intake op de kaart staat en er nog geen klanttraject loopt.</p></div>`;
+    el.innerHTML = `<div class="card kd-vr kd-vrregel">
+      <span class="label">Gekwalificeerde voorraad</span>
+      <span class="kd-vrtekst">niemand staat klaar om voor te stellen — een kandidaat komt hier zodra
+      de intake op de kaart staat en er nog geen klanttraject loopt</span></div>`;
     return;
   }
 
@@ -923,66 +699,67 @@ function voorraadPaneel(wrap){
         ? 'Deze kandidaten hebben geen gezochte functie op de kaart. Zolang dat leeg is vallen ze buiten elke zoekopdracht op functie.'
         : 'Deze kandidaten hebben geen woonplaats op de kaart, dus geen reisafstand.'
       }"><span class="num">${g.n}</span> ${splits === 'functie' ? 'geen functie ingevuld' : 'geen woonplaats'}</span>`;
-    const tip = splits === 'functie'
-      ? 'Toon de gekwalificeerde kandidaten die ' + g.lbl.toLowerCase() + ' zoeken'
-      : 'Toon de gekwalificeerde kandidaten binnen 10 km van ' + g.lbl + ' — dat kunnen er meer zijn dan de ' + g.n + ' die hier wonen';
+    const tip = 'Zoek in de lijst op "' + g.lbl + '" binnen de gekwalificeerde voorraad';
     return `<button type="button" class="chip btn-like kd-vrchip" data-vr="${h(g.lbl)}" title="${h(tip)}"
       ><span class="num">${g.n}</span> ${h(g.lbl)}</button>`;
   };
 
-  el.innerHTML = `<div class="card pad kd-vr">
-    <div class="kd-vrtop">
-      <div class="kd-vrtel">
-        <div class="label">Gekwalificeerde voorraad</div>
-        <div class="big num">${v.n}</div>
-        <div class="kd-vrsub">${v.n === 1 ? 'kandidaat' : 'kandidaten'} met een intake, nog nergens voorgesteld</div>
-        <div class="kd-vrstil">${
-          v.stil2w
-            ? `<span class="chip amber"><span class="num">${v.stil2w}</span> langer dan twee weken niet gesproken</span>`
-            : '<span class="chip green">Iedereen is de afgelopen twee weken gesproken</span>'
-        }${v.nooit2w ? `<span class="chip red">waarvan <span class="num">${v.nooit2w}</span> nog nooit gesproken</span>` : ''}</div>
-      </div>
-      <div class="kd-vrsplits">
-        <div class="row">
-          <div class="seg" id="kd_splitseg">
-            <button type="button" data-s="functie"${splits==='functie'?' class="on"':''}>Per gezochte functie</button>
-            <button type="button" data-s="woonplaats"${splits==='woonplaats'?' class="on"':''}>Per woonplaats</button>
-          </div>
-          <span class="spacer"></span>
-          ${aan ? '<span class="meta">Je kijkt nu naar deze lijst</span>'
-                : '<button class="btn ghost sm" id="kd_vrtoon">Toon deze lijst</button>'}
+  el.innerHTML = `<div class="card kd-vr">
+    <div class="row kd-vrregel">
+      <span class="label">Gekwalificeerde voorraad</span>
+      <span class="kd-vrn num">${v.n}</span>
+      <span class="kd-vrtekst" title="Een intake op de kaart en nog geen enkele stap in een klanttraject.">klaar om voor te stellen</span>
+      ${v.stil2w
+        ? `<span class="chip amber"><span class="num">${v.stil2w}</span> langer dan 2 weken niet gesproken</span>
+           ${v.nooit2w ? `<span class="meta">waarvan <span class="num">${v.nooit2w}</span> nooit</span>` : ''}`
+        : '<span class="meta">iedereen is de afgelopen twee weken gesproken</span>'}
+      <span class="spacer"></span>
+      ${aan ? '<span class="meta">je kijkt nu naar deze lijst</span>'
+            : '<button class="btn ghost sm" id="kd_vrtoon">Toon deze lijst</button>'}
+      <!-- Zelfde woord open en dicht, alleen het pijltje draait: een knop die
+           van tekst verandert, verspringt van breedte en duwt de regel om. -->
+      <button class="btn sub sm" id="kd_vruitknop" aria-expanded="${uitsplitsingOpen?'true':'false'}"
+        title="Per gezochte functie of per woonplaats — wie staat er precies klaar?"
+        >Uitsplitsen ${uitsplitsingOpen ? '▴' : '▾'}</button>
+    </div>
+    <div class="kd-vruit" id="kd_vruit"${uitsplitsingOpen?'':' hidden'}>
+      <div class="row">
+        <div class="seg" id="kd_splitseg">
+          <button type="button" data-s="functie"${splits==='functie'?' class="on"':''}>Per gezochte functie</button>
+          <button type="button" data-s="woonplaats"${splits==='woonplaats'?' class="on"':''}>Per woonplaats</button>
         </div>
-        <div class="row tight kd-vrchips">${toon.map(chip).join('')}${
-          rest ? `<span class="meta">en <span class="num">${rest}</span> in kleinere groepen</span>` : ''}</div>
-        <p class="meta kd-vrnoot">Geteld over alle kandidaten, los van de filters hieronder — en op wat
-          is vastgelegd, niet op een schatting: een intake op de kaart en nog geen enkele stap in een
-          klanttraject. De videocall zelf staat op de lead in de recruitmentpijplijn, dus de intake is
-          hier het bewijs dat die er is geweest.</p>
       </div>
+      <div class="row tight kd-vrchips">${toon.map(chip).join('')}${
+        rest ? `<span class="meta">en <span class="num">${rest}</span> in kleinere groepen</span>` : ''}</div>
+      <p class="meta kd-vrnoot">Geteld over alle kandidaten, los van de balk hieronder — en op wat
+        is vastgelegd, niet op een schatting: een intake op de kaart en nog geen enkele stap in een
+        klanttraject. De videocall zelf staat op de lead in de recruitmentpijplijn, dus de intake is
+        hier het bewijs dat die er is geweest.</p>
     </div></div>`;
 
+  el.querySelector('#kd_vruitknop').onclick = () => {
+    uitsplitsingOpen = !uitsplitsingOpen; voorraadPaneel(wrap);
+  };
   el.querySelectorAll('#kd_splitseg button').forEach(b => b.onclick = () => {
     zet('splits', b.dataset.s); voorraadPaneel(wrap);
   });
   const toonKnop = el.querySelector('#kd_vrtoon');
   if(toonKnop) toonKnop.onclick = () => { zet('status','gekwalificeerd'); lijstTab(wrap); };
-  /* Een chip betekent "toon mij deze groep", niet "voeg nog een filter toe".
-     Daarom gaat de vorige chipkeuze eerst weg: anders klik je van functie
-     naar woonplaats en houd je een lege lijst over omdat de oude functie er
-     stilletjes nog onder ligt. Handmatig gezette filters (sterren, taal,
-     ploegen) blijven wél staan — die heb je zelf bewust aangezet. */
+  /* Een chip zet de zoekbalk, want dat is het enige filter dat hier nog over
+     is — en meteen het eerlijkste: je ziet de term staan en kunt hem weghalen.
+     Vroeger zette dit een verborgen functie- of radiusfilter; precies het
+     soort onzichtbare inperking waar dit scherm vanaf moest. */
   el.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => {
     zet('status','gekwalificeerd');
-    zet('functie', ''); zet('plaats', '');
-    if(splits === 'functie'){ zet('functie', b.dataset.vr); }
-    else { zet('plaats', b.dataset.vr); zet('km', 10); }
+    zet('zoek', b.dataset.vr);
     lijstTab(wrap);
   });
 }
 
-/* Hoe lang niet gesproken, in de lijst. Zonder dit getal is het filter een
-   black box. Nooit-gesproken krijgt bewust een andere regel dan lang-geleden:
-   het eerste is een gat in het proces, het tweede een belletje waard. */
+/* Hoe lang niet gesproken, in de lijst. Dit is het getal waar de standaard-
+   sortering ("wie eerst bellen") op stuurt, dus het hoort zichtbaar te zijn.
+   Nooit-gesproken krijgt bewust een andere regel dan lang-geleden: het eerste
+   is een gat in het proces, het tweede een belletje waard. */
 function stilteCel(st){
   if(st.anon) return '<span class="sub">gegevens gewist</span>';
   const klas = st.kleur === 'red' ? ' kd-let' : st.kleur === 'amber' ? ' kd-warn' : '';
@@ -994,53 +771,32 @@ function stilteCel(st){
 }
 
 function lijst(wrap){
-  const {rijen, zonderPlek, radiusAan, radiusBekend} = gefilterd();
+  const rijen = gefilterd();
   voorraadPaneel(wrap);
   const lijstEl = wrap.querySelector('#kd_lijst');
   const tel  = wrap.querySelector('#kd_telling');
   const dun  = rijen.filter(r => r.v.pct < 60).length;
   if(tel) tel.textContent = rijen.length + (rijen.length===1?' kandidaat':' kandidaten') + (dun?' · '+dun+' onvolledig':'');
 
-  const hint = wrap.querySelector('#kd_plaatshint');
-  if(hint) hint.textContent = radiusAan && !radiusBekend
-    ? '"'+F.plaats+'" is geen herkende plaats — de radius filtert nu niet.' : '';
-
-  /* Actieve filters als verwijderbare chips. */
-  const chipsEl = wrap.querySelector('#kd_chips');
-  if(chipsEl){
-    const act = actieveFilters();
-    chipsEl.innerHTML = act.map(f =>
-      `<span class="chip kd-fchip">${h(f.lbl)}<button class="kd-fx" data-fx="${h(f.k)}" title="Filter weghalen">×</button></span>`).join('')
-      + (radiusBekend && zonderPlek ? `<span class="meta"><span class="num">${zonderPlek}</span> zonder herkende plaats vallen buiten deze radius</span>` : '');
-    chipsEl.querySelectorAll('[data-fx]').forEach(b => b.onclick = () => {
-      zet(b.dataset.fx, F_STD[b.dataset.fx]);
-      lijstTab(wrap);   // paneel-invoer moet meebewegen met de chip
-    });
-  }
-
   if(!rijen.length){
     /* Een lege lijst zonder reden laat je zoeken naar een fout die er niet
        is. Noem daarom wát er samen op nul uitkomt en bied één klik om het
        weer los te laten. */
-    /* De status staat er altijd bij, ook als hij op de standaardwaarde
-       staat. Hij beperkt de lijst net zo goed, en een lege lijst zonder
-       vermelding van de belangrijkste beperking legt niets uit. */
-    const aan = [statusLbl(F.status)]
-      .concat(actieveFilters().filter(f => f.k !== 'status').map(f => f.lbl));
+    const aan = actieveFilters().map(f => f.lbl);
     if(String(F.zoek||'').trim()) aan.push('zoeken op "' + F.zoek.trim() + '"');
     const leeg = !CRM.kandidaten().length;
     lijstEl.innerHTML = leeg
       ? CRM.ui.leeg('Nog geen kandidaten',
           'Er staat nog geen enkele kandidaat in het systeem. Ze komen hier binnen vanuit de recruitmentpijplijn.')
       : CRM.ui.leeg('Geen kandidaten binnen deze filters',
-          'Samen leveren deze niets op: ' + aan.join(' · ') + '.',
-          '<button class="btn ghost sm" id="kd_leegwis">Filters wissen</button>');
+          (aan.length ? 'Samen leveren deze niets op: ' + aan.join(' · ') + '.'
+                      : 'Er valt hier niets te tonen.'),
+          `<button class="btn ghost sm" id="kd_leegwis">Filters wissen</button>
+           <button class="btn sub sm" id="kd_leegzoek">Uitgebreid zoeken →</button>`);
     const wisKnop = lijstEl.querySelector('#kd_leegwis');
-    if(wisKnop) wisKnop.onclick = () => {
-      PANEEL_FILTERS.forEach(k => zet(k, F_STD[k]));
-      zet('km', F_STD.km); zet('zoek', ''); zet('mijn', false);
-      lijstTab(wrap);
-    };
+    if(wisKnop) wisKnop.onclick = () => { wisFilters(); lijstTab(wrap); };
+    const zoekKnop = lijstEl.querySelector('#kd_leegzoek');
+    if(zoekKnop) zoekKnop.onclick = naarSourcing;
     return;
   }
   const golden = goldenIds();
@@ -1049,7 +805,6 @@ function lijst(wrap){
       <th title="Alleen echt contact telt: bellen, appen, mailen, een gesprek of een bezoek. Een notitie of een fasewissel niet.">Laatst gesproken</th><th>Profiel</th>
     </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
-      const km = radiusBekend ? CRM.afstandKm(c.woonplaats, F.plaats) : null;
       return `<tr class="clickable" data-id="${h(String(c.id))}">
         <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}${
           c.cv && c.cv.werkgever ? ' · '+h(c.cv.werkgever) : ''}${
@@ -1057,7 +812,7 @@ function lijst(wrap){
         <td><span class="kd-ster num" title="${c.ster?c.ster+' van 5':'nog geen beoordeling'}">${h(CRM.sterren(c.ster))}</span></td>
         <td class="sub">${h(c.klant||'—')}</td>
         <td>${faseChip(c.fase)}</td>
-        <td class="sub">${h(c.woonplaats||'—')}${km!=null?` <span class="meta num">· ${km} km</span>`:''}</td>
+        <td class="sub">${h(c.woonplaats||'—')}</td>
         <td class="sub">${h(c.rec||'—')}</td>
         <td class="sub kd-stilte">${stilteCel(st)}</td>
         <td><div class="kd-vol">${CRM.ui.bar(v.pct, kleur)}<span class="meta num">${v.pct}%</span></div></td>
@@ -2329,7 +2084,7 @@ if(CRM.demo){
 
 /* ─── Registratie ─────────────────────────────────────────────── */
 CRM.registerModule('kandidaten', {
-  title:'Kandidaten', icon:'☰', onderschrift:'Kandidatenkaarten en filters',
+  title:'Kandidaten', icon:'☰', onderschrift:'De kaartenbak — bladeren en kaarten openen',
   render(mount, acties, params){
     if(!Array.isArray(CRM.state.taken)) CRM.state.taken = [];
     /* Doorklik vanuit een ander scherm mag het statusfilter zetten. Klanttrajecten
@@ -2356,9 +2111,10 @@ CRM.registerModule('kandidaten', {
 
    1. js/opvolging.js — exporteer de lijst `CONTACT` als
       `CRM.opvolging.CONTACT` (regel 91, ['bel','gesprek','whatsapp','mail',
-      'bezoek']). Dit scherm filtert en sorteert nu op "hoe lang niet
-      gesproken" en moet daarvoor exact dezelfde definitie van contact
-      gebruiken, anders zegt het dashboard iets anders dan deze lijst.
+      'bezoek']). Dit scherm sorteert standaard op "hoe lang niet gesproken"
+      en telt daarmee ook de voorraadregel, en moet daarvoor exact dezelfde
+      definitie van contact gebruiken, anders zegt het dashboard iets anders
+      dan deze lijst.
       Zolang die export er niet is staat er hier een kopie van vijf woorden
       (CONTACT_SOORTEN bovenin dit bestand); die pakt de export vanzelf op
       zodra hij bestaat en kan er dan uit. Nu zijn het twee plekken die
@@ -2382,8 +2138,7 @@ CRM.registerModule('kandidaten', {
 
    4. js/kandverwijder.js — `isGeanonimiseerd` herkent een gewiste kaart aan
       de naam die met 'Gegevens gewist' begint. Dit scherm gebruikt dat om
-      zo iemand uit de voorraad, uit het niet-gesproken-filter en uit de
-      bellijst-sortering te houden. Werkt prima, maar het is een
+      zo iemand uit de voorraad en uit de bellijst-sortering te houden. Werkt prima, maar het is een
       tekstvergelijking op een naam die een gebruiker kan overtypen. Een
       echte vlag op de rij (bv. `candidates.geanonimiseerd_op`) zou dat
       dichttimmeren. */

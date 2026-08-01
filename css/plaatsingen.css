@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLAATSINGEN — opmaak
+
+   Alles komt uit css/base.css: .card, .kpi, .chip, .tblwrap, .btn, .meta.
+   Wat hier staat is uitsluitend indeling — hoe een persoonsregel is
+   opgebouwd en hoeveel lucht ertussen zit. Geen eigen kleuren op één
+   uitzondering na: rood voor een gemist contactmoment. Dat is het enige
+   accent op dit scherm en het staat op het enige dat je nog kunt
+   rechtzetten. Alles wat óók kleur zou krijgen, maakt dat rood zwakker.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Leesbreedte tot 1500px; daarboven mag het scherm zijn ruimte gebruiken.
+   De ladder staat in css/base.css toegelicht — media queries kunnen geen
+   custom properties lezen, dus 1500 en 1900 staan hier letterlijk. */
+.pl-wrap{max-width:1180px}
+@media (min-width:1500px){ .pl-wrap{max-width:none} }
+
+.pl-kpi{margin-bottom:20px}
+
+/* Ruimer dan de standaard .stack: de secties zijn de hoofdindeling van dit
+   scherm en horen als losse blokken te lezen, niet als één lange lijst. */
+#pl_lijsten{gap:18px}
+
+.pl-sec .card-b{padding:16px 22px 20px}
+/* De uitleg onder een sectiekop legt de indelingskeuze uit. Lopende tekst
+   houdt zijn eigen leesbreedte, ook op het teamscherm. */
+.pl-uit{max-width:78ch;margin:0 0 14px}
+.pl-leeg{margin:2px 0 0}
+
+/* ─── Eén persoon ────────────────────────────────────────────── */
+.pl-r{
+  border-top:1px solid var(--line);padding:13px 0 14px;cursor:pointer;
+  transition:background .12s;
+}
+.pl-sec .card-b > .pl-r:first-child{border-top:none;padding-top:2px}
+.pl-r:hover{background:#f7f9f1}
+/* Negatieve marge + padding: de hoverstrook loopt door tot de rand van de
+   kaart, zodat je hem als één rij leest en niet als een blok in het midden. */
+.pl-r{margin:0 -22px;padding-left:22px;padding-right:22px}
+
+.pl-r-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.pl-naam{font-weight:600;font-size:14px;color:var(--ink)}
+.pl-r:hover .pl-naam{color:var(--olive)}
+.pl-sub{font-size:12.5px;color:var(--txt-2);min-width:0}
+.pl-r-meta{margin-top:3px}
+
+/* Startdatum + aftelling. De aftelling is wat je leest, de datum is waar je
+   hem op controleert — vandaar de datum eerst en het aantal dagen gedempt
+   erachter, niet andersom. */
+.pl-start{display:inline-flex;align-items:baseline;gap:7px;white-space:nowrap}
+.pl-start .pl-af{font-size:12px;color:var(--muted)}
+/* Vandaag en de eerstvolgende dagen krijgen gewicht, geen kleur: dit is een
+   feit dat opvalt, geen waarschuwing. */
+.pl-start.nu .num,.pl-start.bijna .num{font-weight:700}
+.pl-start.nu .pl-af{color:var(--txt-2);font-weight:600}
+.pl-geen{font-size:12.5px;color:var(--muted);font-style:italic}
+
+/* ─── Openstaande contactmomenten ────────────────────────────── */
+.pl-taken{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.pl-t{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);
+  padding:6px 8px 6px 12px;
+}
+.pl-t-w{font-size:12.5px;color:var(--txt);flex:1;min-width:140px}
+.pl-t-d{font-size:11.5px;color:var(--muted)}
+.pl-t .btn{margin-left:auto}
+
+/* HET accent. Alleen hier, alleen voor een moment dat voorbij is. */
+.pl-t.mis{background:var(--red-bg);border-color:var(--red-line)}
+.pl-t.mis .pl-t-w{color:#a4301f}
+.pl-t.mis .pl-t-d{color:#a4301f;font-weight:600}
+.pl-mis-t{color:var(--red);font-weight:600;font-size:12.5px;font-variant-numeric:tabular-nums}
+/* Een dun streepje links op de hele regel, zodat een gemiste opvolging ook
+   opvalt als je langs de lijst scant zonder te lezen. */
+.pl-r.mis{box-shadow:inset 2px 0 0 var(--red-line)}
+
+/* ─── Wat er nog ontbreekt ───────────────────────────────────── */
+.pl-blok{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;
+  padding:7px 12px;background:var(--well);border:1px solid var(--line);border-radius:var(--r-s);
+}
+.pl-blok .meta{flex:1;min-width:180px}
+
+/* ─── Weekkop in "Later gepland" ─────────────────────────────── */
+/* Dezelfde vorm als de weekscheiders op het pijplijnbord (.rc-wdiv), zodat
+   een week er hier niet anders uitziet dan daar. */
+.pl-wdiv{
+  display:flex;align-items:center;gap:8px;margin:14px 0 2px;padding:5px 0 5px;
+  border-top:1px solid var(--line);
+  font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--txt-2);
+}
+.pl-sec .card-b > .pl-wdiv:first-child{border-top:none;margin-top:0}
+.pl-wdiv b{margin-left:auto;color:var(--muted);font-size:11.5px;letter-spacing:0;text-transform:none}
+.pl-wdiv + .pl-r{border-top:none}
+
+/* ─── Slotregel: de optelsom ─────────────────────────────────── */
+.pl-tel{text-align:center;padding:4px 0 0;font-weight:500}
+
+@media (max-width:900px){
+  .pl-r{margin:0 -14px;padding-left:14px;padding-right:14px}
+  .pl-sec .card-b{padding:14px}
+  .pl-t .btn{margin-left:0}
+}

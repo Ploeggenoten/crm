@@ -16,28 +16,26 @@
   color:var(--muted);border:1px dashed var(--line);border-radius:999px;
   vertical-align:1px;white-space:nowrap;opacity:.85}
 
-/* ─── Gekwalificeerde voorraad (paneel boven de lijst) ─────────
-   Het kerncijfer links, de uitsplitsing rechts. Eén accent op dit scherm:
-   de olijfrand langs het getal. Bewust geen kleurvlak — het is een stand,
-   geen alarm. */
-.kd-vr{border-left:2px solid var(--olive)}
-.kd-vrtop{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
-.kd-vrtel{flex:0 0 232px;min-width:200px}
-.kd-vrtel .big{line-height:1;margin-top:2px}
-.kd-vrsub{font-size:12.5px;color:var(--txt-2);margin-top:6px;line-height:1.45;max-width:24ch}
-.kd-vrstil{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-/* Rechterkolom mag de hele breedte pakken die overblijft — op een breed
-   scherm staan de chips dan op één regel in plaats van in een smalle kolom. */
-.kd-vrsplits{flex:1 1 360px;min-width:280px;border-left:1px solid var(--line);padding-left:24px}
-.kd-vrchips{margin-top:12px}
+/* ─── Gekwalificeerde voorraad (regel boven de lijst) ──────────
+   Eén rustige regel: hoeveel er klaarstaan, wie er te lang niet gesproken
+   is en de doorklik. Was een blok van vier regels hoog met een cijfer in
+   Anton; dat nam meer ruimte dan de lijst waar het over gaat. De
+   uitsplitsing per functie of woonplaats zit er nog gewoon onder, maar
+   opgevouwen. Eén accent op dit scherm: de olijfrand links. */
+.kd-vr{border-left:2px solid var(--olive);padding:12px 16px}
+.kd-vrregel{gap:8px 10px;align-items:baseline}
+.kd-vrregel > .label{margin:0}
+/* Het kerncijfer blijft Inter (Anton is voor .h1/.big) — het valt op door
+   gewicht en formaat, niet door een tweede lettertype. */
+.kd-vrn{font-size:19px;font-weight:700;color:var(--ink);line-height:1}
+.kd-vrtekst{font-size:12.5px;color:var(--txt-2);line-height:1.45}
+.kd-vruit{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.kd-vruit[hidden]{display:none}
+.kd-vrchips{margin-top:10px}
 .kd-vrchip{font-family:var(--body);font-weight:500}
 .kd-vrchip .num{font-weight:700;margin-right:4px}
 .kd-vrleegchip{border-style:dashed;color:var(--txt-2)}
 .kd-vrnoot{margin:12px 0 0;line-height:1.55;max-width:82ch}
-.kd-vrleeg{margin:8px 0 0;font-size:13px;color:var(--txt-2);line-height:1.55;max-width:70ch}
-@media (max-width:900px){
-  .kd-vrsplits{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:16px}
-}
 
 /* ─── Kolom "Laatst gesproken" ────────────────────────────────
    Nooit gesproken is geen groot getal maar een ander soort regel: gedempt
@@ -47,27 +45,13 @@
 .kd-nooit{font-style:italic}
 .kd-stilte .rowsub{margin-top:2px}
 
-/* ─── Filterpaneel + chips ────────────────────────────────────── */
-.kd-filaan{border-color:var(--olive-l) !important;color:var(--olive)}
-.kd-fpaneel{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
-.kd-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px}
-.kd-fgrid .f-row{margin-bottom:10px}
-/* Het functieveld mag twee kolommen: er komen chips onder te staan, en met
-   één kolombreedte springt het paneel bij elke toegevoegde functie op. */
-.kd-fbreed{grid-column:span 2}
-@media (max-width:640px){ .kd-fbreed{grid-column:span 1} }
-/* Tweede laag: acht velden die je zelden nodig hebt. Gescheiden door een
-   dunne lijn in plaats van een kader — het is dezelfde filterbalk, geen
-   apart onderdeel. */
-.kd-fmeer{border-top:1px dashed var(--line);padding-top:12px;margin-top:2px}
-.kd-fnchips:not(:empty){display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
-.kd-fnchip{cursor:pointer;gap:5px;padding-right:6px}
-.kd-fnchip:hover,.kd-fnchip:focus-visible{border-color:var(--olive-l);color:var(--olive)}
-.kd-fnchip span{color:var(--muted);font-size:13px;line-height:1}
-.kd-fchip{padding-right:5px}
-.kd-fx{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;
-  padding:0 3px;border-radius:50%;opacity:.65}
-.kd-fx:hover{opacity:1}
+/* ─── Doorverwijzing naar het uitgebreide zoeken (Sourcing) ─────
+   Bewust een gewone ghost-knop en geen eigen kleur: het is een zijpad, niet
+   de hoofdactie van dit scherm. Het pijltje zegt al dat je hier weggaat. */
+.kd-uitgebreid{white-space:nowrap}
+/* Een select is zo breed als zijn langste optie. Zonder deze grens duwt het
+   statusfilter de sortering en de telling naar een tweede regel. */
+.kd-statussel{width:auto;max-width:210px}
 
 /* ─── Kaart: kop ──────────────────────────────────────────────── */
 .kd-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
@@ -241,10 +225,10 @@ label.kd-taak input{margin-top:3px}
   .kd-veld{grid-template-columns:1fr}
 }
 
-/* ─── Filterbalk op mobiel ────────────────────────────────────── */
+/* ─── Balk op mobiel ──────────────────────────────────────────── */
 /* Zonder deze regels krijgt elke select zijn eigen breedte en ontstaat er een
-   scheve trap van zes losse regels die het halve scherm vult. Twee kolommen
-   met gelijke randen: drie regels in plaats van zes. */
+   scheve trap van losse regels. Status en sortering delen één regel in twee
+   gelijke kolommen; zoeken pakt de volle breedte. */
 @media (max-width:700px){
   .kd-fil{gap:8px}
   .kd-fil > .searchbox{flex:1 1 100% !important;max-width:none !important;min-width:0}
@@ -252,6 +236,7 @@ label.kd-taak input{margin-top:3px}
   .kd-fil > .spacer{display:none}
   .kd-fil > .chip{flex:0 0 auto}
   .kd-fil > .meta{margin-left:auto}
+  .kd-vrregel > .spacer{display:none}
 }
 
 /* ─── Golden candidates ───────────────────────────────────────── */

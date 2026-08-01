@@ -7,14 +7,17 @@
       js/klanten.js gebruikt: alle klanten als pinnen, kleur per branche,
       grootte naar plaatsingen (of omzet, alleen voor Tjeerd).
 
-   2. De module 'source' — het Sourcing-scherm zelf.
+   2. De module 'source' — het Sourcing-scherm zelf, met vier modi.
 
-   WAAROM DIT SCHERM ANDERS IS DAN DE KANDIDATENLIJST
-   De kandidatenlijst kan al filteren op plaats + straal, ploegen, vervoer,
-   rijbewijs, taal en "lang niet gesproken". Een kaart die hetzelfde toont
-   voegt dus niets toe — dat was precies het probleem met de oude versie.
-   Wat een lijst NIET kan, is de vraag omdraaien en over de hele portefeuille
-   kijken:
+   ZOEKEN is er daar één van, en sinds 1 aug 2026 de belangrijkste: hier
+   doorzoek je de hele kaartenbak op alles wat je van iemand weet, en pak je
+   vanaf de gevonden regel door naar een match met een openstaande vacature.
+   De Kandidaten-tab kan alleen nog op naam, status en sortering; wie meer
+   wil, komt hierheen. Sourcing gaat over kandidaten, dus daar hoort het
+   zoeken ook thuis.
+
+   DE ANDERE DRIE draaien de vraag om en kijken over de hele portefeuille —
+   dat is precies wat een lijst niet kan:
 
      Vraag    → welke openstaande vacature heeft niemand in de buurt wonen?
      Aanbod   → waar wonen groepen beschikbare mensen zonder klant in de
@@ -410,7 +413,8 @@ function buitenLijstHtml(groep, enkel, meervoud){
 /* ─── Filters onthouden ───────────────────────────────────────── */
 const SKEY = 'crm_source_dekking';
 const RADII = [15, 30, 45];
-const S_STD = {modus:'vraag', radius:30, pool:'beide', ster:0, functie:'', cert:'',
+const MODUS_KEYS = ['zoek','vraag','wit','gold'];
+const S_STD = {modus:'zoek', radius:30, pool:'beide', ster:0, functie:'', cert:'',
                taal:'', ploegen:'', vervoer:'', salaris:'', open:true, sort:'match'};
 let S = (() => {
   try{
@@ -418,7 +422,7 @@ let S = (() => {
     /* Nooit blind vertrouwen op wat er in localStorage staat: een oude of
        met de hand aangepaste waarde mag het scherm niet stukmaken. */
     if(!RADII.includes(uit.radius)) uit.radius = S_STD.radius;
-    if(!['vraag','wit','gold'].includes(uit.modus)) uit.modus = 'vraag';
+    if(!MODUS_KEYS.includes(uit.modus)) uit.modus = 'zoek';
     return uit;
   }catch(e){ return Object.assign({}, S_STD); }
 })();
@@ -467,10 +471,11 @@ function taalMatch(talen, zoek){
   const z = String(zoek||'').trim().toLowerCase(); if(!z) return true;
   const t = String(talen||'').toLowerCase();       if(!t) return false;
   if(t.includes(z)) return true;
-  const plat = z.normalize('NFD').replace(/[̀-ͯ]/g,'');
-  const kort = TAALKORT[plat];
+  /* Eigen naam: verderop staat een gedeelde helper die ook `plat` heet. */
+  const zPlat = z.normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const kort = TAALKORT[zPlat];
   if(kort && new RegExp('\\b'+kort+'\\b').test(t)) return true;
-  const lang = Object.keys(TAALKORT).find(k => TAALKORT[k] === plat);
+  const lang = Object.keys(TAALKORT).find(k => TAALKORT[k] === zPlat);
   return !!(lang && t.includes(lang));
 }
 /* Certificaat of rijbewijs: heftruck en VCA staan bij de een in het
@@ -632,6 +637,7 @@ function bouwIndex(){
    DE MODULE
    ═══════════════════════════════════════════════════════════════ */
 const MODI = [
+  {k:'zoek',  lbl:'Zoeken',       titel:'Doorzoek het hele kandidatenbestand en pak door naar een match'},
   {k:'vraag', lbl:'Vraag',        titel:'Openstaande vacatures, minst gedekte eerst'},
   {k:'wit',   lbl:'Witte vlekken', titel:'Groepen kandidaten zonder vraag in de buurt'},
   {k:'gold',  lbl:'Golden',        titel:'Bewaarde kandidaten met een vacature om de hoek'}
@@ -1271,6 +1277,9 @@ function tekenSourcing(mount, acties){
   const modusSeg = acties && acties.querySelector('#s2_modus');
   if(modusSeg) modusSeg.querySelectorAll('button').forEach(b => b.onclick = () => {
     zetS('modus', b.dataset.m);
+    /* Zoeken heeft een heel ander scherm (geen kaart, geen rail), dus dat is
+       een volledige hertekening in plaats van alleen andere inhoud. */
+    if(S.modus === 'zoek'){ tekenModule(mount, acties, {}); return; }
     modusSeg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     toonMeer = 25;
     teken();
@@ -1336,10 +1345,551 @@ function tekenSourcing(mount, acties){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ZOEKEN — DE KAARTENBAK DOORZOEKEN
+   ═══════════════════════════════════════════════════════════════
+   Sinds 1 aug 2026 gebeurt het uitgebreide zoeken op kandidaten hier en
+   nergens anders. De kandidatenlijst is teruggebracht tot naam, status en
+   sortering; wie meer wil weten dan dat, komt hierheen. Reden: sourcing
+   gaat over kandidaten, en zoeken zonder te kunnen doorpakken naar een
+   vacature levert alleen een lijst op. Vandaar dat elke regel hier eindigt
+   bij de beste openstaande vacature mét de reden waarom hij past of niet.
+
+   TWEE DINGEN DIE HIER NOOIT MOGEN GEBEUREN
+   1. Iemand stilzwijgend wegfilteren. Van de 355 kandidaten komen er 236
+      uit een oude ATS-import zonder fase en vaak zonder functie. Een leeg
+      veld is dus normaal en mag nooit een reden zijn om iemand niet te
+      tonen: alleen een ingevuld filter filtert.
+   2. Een score zonder reden tonen. 62% zegt niets; "62%, maar de VCA is
+      verlopen" zegt alles. Daarom staan blokkers en twijfels in de regel
+      zelf en niet achter een tooltip.
+   ═══════════════════════════════════════════════════════════════ */
+const ZKEY = 'crm_source_zoek';
+const STRALEN = [10, 15, 25, 40, 60, 100];
+const ZSORT = [{k:'match', l:'Beste match'}, {k:'afstand', l:'Afstand'},
+               {k:'stil', l:'Langst niet gesproken'}, {k:'naam', l:'Naam'}];
+/* Wat er achter "Meer verfijnen" zit. Staat hier één van deze aan, dan klapt
+   dat blok vanzelf open — anders zoek je met een filter dat je niet ziet. */
+const Z_EXTRA = ['cert','taal','ploegen','vervoer','salaris','rijbewijs','rec','klant','fase','stil'];
+const Z_STD = {vrij:'', functies:[], plaats:'', straal:25, pool:'alle', ster:0,
+               cert:'', taal:'', ploegen:'', vervoer:'', salaris:'', rijbewijs:'',
+               rec:'', klant:'', fase:'', stil:'', sort:'match', meer:false};
+let Z = (() => {
+  try{
+    const uit = Object.assign({}, Z_STD, JSON.parse(localStorage.getItem(ZKEY)||'{}'));
+    /* Wat uit localStorage komt is gebruikersinvoer van gisteren: controleren,
+       niet vertrouwen. Eén rare waarde mag het scherm niet stukmaken. */
+    uit.functies = (Array.isArray(uit.functies) ? uit.functies : [])
+      .map(x => String(x||'').trim()).filter(Boolean).slice(0, 8);
+    uit.straal = STRALEN.includes(Number(uit.straal)) ? Number(uit.straal) : Z_STD.straal;
+    if(!POOLS.some(p => p.k === uit.pool)) uit.pool = Z_STD.pool;
+    if(!ZSORT.some(s => s.k === uit.sort)) uit.sort = Z_STD.sort;
+    uit.ster = Math.max(0, Math.min(5, Number(uit.ster)||0));
+    Object.keys(Z_STD).forEach(k => { if(typeof Z_STD[k] === 'string') uit[k] = String(uit[k]==null?'':uit[k]); });
+    return uit;
+  }catch(e){ return Object.assign({}, Z_STD); }
+})();
+function zetZ(k, v){ Z[k] = v; try{ localStorage.setItem(ZKEY, JSON.stringify(Z)); }catch(e){} }
+let zMeer = 25;
+
+const plat = s => String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const functieTekst = c => plat(String(c.functie||'') + ' ' + String((c.cv && c.cv.functie)||''));
+
+function inPoolZ(c){
+  if(Z.pool === 'alle') return true;
+  const voorraad = CRM.klaarOmVoorTeStellen(c), besch = CRM.isBeschikbaar(c);
+  if(Z.pool === 'voorraad')    return voorraad;
+  if(Z.pool === 'beschikbaar') return besch;
+  return voorraad || besch;
+}
+
+/* ─── Beste openstaande vacature per kandidaat ─────────────────
+   Dit is het dure stuk: elke kandidaat tegen elke open vacature is bij 355
+   mensen en 50 vacatures bijna 18.000 matchberekeningen. Tijdens het typen
+   in een zoekveld gebeurt dat anders bij élke toetsaanslag opnieuw, terwijl
+   het antwoord niet verandert — de vacatures blijven gelijk. Daarom één
+   cache per keer dat het scherm opengaat; filteren wordt dan gratis. */
+let _besteCache = new Map();
+function besteMatchIndex(){
+  const vacs = openVacs();
+  return c => {
+    const k = String(c.id);
+    if(_besteCache.has(k)) return _besteCache.get(k);
+    let beste = null;
+    for(const v of vacs){
+      const m = CRM.match(c, v);
+      if(!beste){ beste = {v, m}; continue; }
+      /* Zelfde rangorde als CRM.besteMatches: eerst wie zonder streep door de
+         rekening komt, dan de score, dan wie we het best kennen. */
+      const oud = beste.m.blokkers.length ? 1 : 0, nieuw = m.blokkers.length ? 1 : 0;
+      if(nieuw < oud || (nieuw === oud && (m.score > beste.m.score
+        || (m.score === beste.m.score && m.onbekend.length < beste.m.onbekend.length)))) beste = {v, m};
+    }
+    _besteCache.set(k, beste);
+    return beste;
+  };
+}
+
+/* ─── Suggestielijsten uit de échte data ──────────────────────── */
+/* Alleen wat er werkelijk in het bestand staat. Een lijst met verzonnen
+   functietitels laat je zoeken naar mensen die er niet zijn. */
+function telWaarden(kands, uitVan){
+  const tel = new Map();
+  kands.forEach(c => uitVan(c).forEach(ruw => {
+    const s = String(ruw||'').trim(); if(!s) return;
+    const k = plat(s), b = tel.get(k);
+    if(b) b.n++; else tel.set(k, {naam:s, n:1});
+  }));
+  return Array.from(tel.values()).sort((a,b) => b.n - a.n || a.naam.localeCompare(b.naam,'nl'));
+}
+const datalistHtml = (id, rijen, max=150) => `<datalist id="${id}">${
+  rijen.slice(0, max).map(r => `<option value="${h(r.naam)}"></option>`).join('')}</datalist>`;
+
+/* ─── Zoeken ──────────────────────────────────────────────────── */
+function zoekResultaat(){
+  const t0 = performance.now();
+  bouwContactIndex();
+  const alle = CRM.kandidaten().filter(c => !geanonimiseerd(c));
+
+  const termen  = Z.functies.map(plat).filter(Boolean);
+  const woorden = plat(Z.vrij).split(/\s+/).filter(Boolean);
+  const basis   = Z.plaats.trim() ? plaatsPunt(Z.plaats) : null;
+  const drempel = Z.stil === '14' ? 14 : Z.stil === '30' ? 30 : 0;
+
+  /* Afstand één keer per woonplaats, niet één keer per kandidaat: in een
+     bestand van 355 mensen staan een paar honderd verschillende plaatsen,
+     maar de meesten wonen in dezelfde tientallen. */
+  const kmCache = new Map();
+  const kmVan = ruw => {
+    const w = String(ruw||'').trim(); if(!w) return null;
+    if(kmCache.has(w)) return kmCache.get(w);
+    const p = plaatsPunt(w);
+    const km = p ? kmTussen(basis.coord, p.coord) : null;
+    kmCache.set(w, km); return km;
+  };
+
+  let buitenStraal = 0, plaatsOnbekend = 0;
+  const rijen = [];
+  alle.forEach(c => {
+    if(!inPoolZ(c)) return;
+    if(Z.ster > 0 && (Number(c.ster)||0) < Z.ster) return;
+    /* Meerdere functies is OF: niemand heeft twee functietitels op zijn kaart
+       staan, dus EN zou altijd nul opleveren. */
+    if(termen.length){ const ft = functieTekst(c); if(!termen.some(t => ft.includes(t))) return; }
+    if(woorden.length){
+      const bak = plat([c.naam, c.functie, c.cv && c.cv.functie, c.woonplaats].filter(Boolean).join(' '));
+      if(!woorden.every(w => bak.includes(w))) return;
+    }
+    if(Z.cert && !certMatch(c, Z.cert)) return;
+    if(Z.taal && !taalMatch(c.talen, Z.taal)) return;
+    if(Z.ploegen && !(c.ploegen === Z.ploegen || (Z.ploegen !== 'geen' && c.ploegen === 'wisselend'))) return;
+    if(Z.vervoer && c.vervoer !== Z.vervoer) return;
+    if(Z.salaris && c.maandloon != null && Number(c.maandloon) > Number(Z.salaris)) return;
+    if(Z.rijbewijs && !plat(c.rijbewijs).includes(plat(Z.rijbewijs))) return;
+    if(Z.rec && c.rec !== Z.rec) return;
+    if(Z.klant && !plat(c.klant).includes(plat(Z.klant))) return;
+    if(Z.fase){
+      /* Een leeg fase-veld is geen fout maar de normale toestand van een
+         ATS-import. Daarom een eigen keuze in plaats van onvindbaar. */
+      if(Z.fase === '_leeg'){ if(String(c.fase||'').trim()) return; }
+      else if(!CRM.faseIs(c.fase, Z.fase)) return;
+    }
+    const st = stilte(c);
+    if(Z.stil === 'nooit' && !st.nooit) return;
+    /* Wie nog nooit gesproken is, is per definitie langer dan een maand niet
+       gesproken — die hoort dus ook in "langer dan" thuis. */
+    if(drempel && !st.nooit && !((st.dagen||0) >= drempel)) return;
+
+    let km = null;
+    if(basis){
+      km = kmVan(c.woonplaats);
+      if(km == null){ plaatsOnbekend++; return; }
+      if(km > Z.straal){ buitenStraal++; return; }
+    }
+    rijen.push({c, km, st});
+  });
+
+  const besteVan = besteMatchIndex();
+  /* Op match sorteren kan alleen als je van iedereen de beste match kent.
+     Dankzij de cache kost dat één keer werk en daarna niets meer. */
+  if(Z.sort === 'match') rijen.forEach(r => { r.beste = besteVan(r.c); });
+
+  const ster = r => Number(r.c.ster)||0;
+  if(Z.sort === 'afstand')     rijen.sort((a,b) => (a.km==null?1e9:a.km) - (b.km==null?1e9:b.km) || ster(b) - ster(a));
+  else if(Z.sort === 'stil')   rijen.sort((a,b) => (b.st.dagen ?? -1) - (a.st.dagen ?? -1));
+  else if(Z.sort === 'naam')   rijen.sort((a,b) => String(a.c.naam||'').localeCompare(String(b.c.naam||''),'nl'));
+  else {
+    const blok  = r => r.beste && r.beste.m.blokkers.length ? 1 : 0;
+    const score = r => r.beste ? r.beste.m.score : -1;
+    rijen.sort((a,b) => blok(a) - blok(b) || score(b) - score(a) || ster(b) - ster(a));
+  }
+
+  return {rijen, totaal:alle.length, buitenStraal, plaatsOnbekend, besteVan,
+          ms:Math.round((performance.now() - t0) * 10) / 10};
+}
+
+/* ─── Het zoekscherm ──────────────────────────────────────────── */
+function tekenZoek(mount, acties){
+  /* Er kan nog een kaart uit de dekkingsmodus in dit mount-punt hangen; die
+     hoort weg te zijn vóór we de boel overschrijven, anders blijft Leaflet
+     aan losse DOM hangen. Het volgnummer stopt bovendien een render die nog
+     op de CDN staat te wachten. */
+  ++renderNr;
+  if(mount._srcMap){ try{ mount._srcMap.remove(); }catch(e){} mount._srcMap = null; }
+  _besteCache = new Map();
+  zMeer = 25;
+
+  const kands = CRM.kandidaten().filter(c => !geanonimiseerd(c));
+  const functies  = telWaarden(kands, c => [c.functie, c.cv && c.cv.functie]);
+  const plaatsen  = telWaarden(kands, c => [c.woonplaats]);
+  const rijbewijs = telWaarden(kands, c => [c.rijbewijs]);
+  const klanten   = telWaarden(kands, c => [c.klant]);
+  const recs      = telWaarden(kands, c => [c.rec]);
+  const extraAan  = () => Z_EXTRA.filter(k => String(Z[k]||'').trim()).length;
+  let extraOpen   = Z.meer || extraAan() > 0;
+
+  if(acties) acties.innerHTML = `<div class="seg" id="s2_modus">${
+    MODI.map(m => `<button data-m="${m.k}" class="${S.modus===m.k?'on':''}" title="${h(m.titel)}">${h(m.lbl)}</button>`).join('')}</div>`;
+
+  const sel2 = (naam, waarde, opties) => `<select data-zf="${naam}">${opties.map(o =>
+    `<option value="${h(o.k)}"${String(waarde) === String(o.k) ? ' selected' : ''}>${h(o.l)}</option>`).join('')}</select>`;
+
+  mount.innerHTML = `
+    <div class="stack src3">
+      <div class="card pad src3-zoek">
+        <div class="searchbox src3-vrij">
+          <input type="text" id="z_vrij" value="${h(Z.vrij)}" autocomplete="off"
+            placeholder="Zoek op naam, functie of woonplaats" aria-label="Vrij zoeken">
+        </div>
+
+        <div class="src3-basis">
+          <div class="f-row src3-fnc">
+            <label for="z_finput">Functies</label>
+            <div class="src3-chips" id="z_chips"></div>
+            <div class="hint" id="z_fhint"></div>
+          </div>
+          <div class="f-row">
+            <label for="z_plaats">Woont binnen</label>
+            <div class="row tight src3-straal">
+              ${sel2('straal', Z.straal, STRALEN.map(k => ({k, l:k + ' km'})))}
+              <span class="meta">van</span>
+              <input type="text" id="z_plaats" list="z_plaatslijst" value="${h(Z.plaats)}"
+                placeholder="plaats" autocomplete="off" aria-label="Plaats om vanaf te meten">
+            </div>
+          </div>
+          <div class="f-row"><label>Welke kandidaten</label>
+            ${sel2('pool', Z.pool, POOLS.map(p => ({k:p.k, l:p.lbl})))}</div>
+          <div class="f-row"><label>Minimaal sterren</label>
+            ${sel2('ster', Z.ster, [{k:0, l:'Alle'}].concat([1,2,3,4,5].map(n =>
+              ({k:n, l:'★'.repeat(n) + (n < 5 ? ' of meer' : '')}))))}</div>
+        </div>
+
+        <div class="src3-meerbalk">
+          <button class="btn ghost sm" id="z_meerknop" aria-expanded="${extraOpen}" aria-controls="z_extra"></button>
+          <span class="meta" id="z_meertel"></span>
+          <span class="spacer"></span>
+          <button class="btn sub sm" id="z_wis">Alles wissen</button>
+        </div>
+        <div class="src3-extra" id="z_extra" style="${extraOpen?'':'display:none'}">
+          <div class="src-fgrid">
+            <div class="f-row"><label>Certificaat of rijbewijs</label>
+              <input type="text" data-zf="cert" value="${h(Z.cert)}" placeholder="bv. heftruck of VCA"></div>
+            <div class="f-row"><label>Taal</label>
+              <input type="text" data-zf="taal" value="${h(Z.taal)}" placeholder="bv. Nederlands of PL"></div>
+            <div class="f-row"><label>Rijbewijs</label>
+              <input type="text" data-zf="rijbewijs" list="z_rblijst" value="${h(Z.rijbewijs)}" placeholder="bv. B"></div>
+            <div class="f-row"><label>Ploegendiensten</label>
+              ${sel2('ploegen', Z.ploegen, [{k:'', l:'Alle'}].concat(CRM.PLOEGEN.map(p => ({k:p, l:p}))))}</div>
+            <div class="f-row"><label>Eigen vervoer</label>
+              ${sel2('vervoer', Z.vervoer, [{k:'', l:'Alle'}].concat(CRM.VERVOER.map(p => ({k:p, l:p}))))}</div>
+            <div class="f-row"><label>Maandloon max.</label>
+              <input type="number" data-zf="salaris" value="${h(Z.salaris)}" placeholder="bv. 3200"></div>
+            <div class="f-row"><label>Laatst gesproken</label>
+              ${sel2('stil', Z.stil, [{k:'', l:'Maakt niet uit'}, {k:'14', l:'Langer dan 2 weken geleden'},
+                {k:'30', l:'Langer dan een maand geleden'}, {k:'nooit', l:'Nog nooit gesproken'}])}</div>
+            <div class="f-row"><label>Recruiter</label>
+              ${sel2('rec', Z.rec, [{k:'', l:'Iedereen'}].concat(recs.map(r => ({k:r.naam, l:r.naam + ' (' + r.n + ')'}))))}</div>
+            <div class="f-row"><label>Klant</label>
+              <input type="text" data-zf="klant" list="z_klantlijst" value="${h(Z.klant)}" placeholder="bedrijfsnaam"></div>
+            <div class="f-row"><label>Fase</label>
+              ${sel2('fase', Z.fase, [{k:'', l:'Alle fases'}, {k:'_leeg', l:'Zonder fase (import)'}]
+                .concat(CRM.ALLE_FASES.map(f => ({k:f.k, l:f.k}))))}</div>
+          </div>
+        </div>
+        ${datalistHtml('z_functielijst', functies)}
+        ${datalistHtml('z_plaatslijst', plaatsen)}
+        ${datalistHtml('z_rblijst', rijbewijs, 40)}
+        ${datalistHtml('z_klantlijst', klanten)}
+      </div>
+
+      <div class="row src3-reskop">
+        <span class="label" id="z_tel"></span>
+        <span class="spacer"></span>
+        <div class="seg" id="z_sort">${ZSORT.map(o =>
+          `<button data-s="${o.k}" class="${Z.sort===o.k?'on':''}">${h(o.l)}</button>`).join('')}</div>
+      </div>
+      <p class="meta src3-noot" id="z_noot"></p>
+      <div id="z_res"></div>
+    </div>`;
+
+  const $ = s => mount.querySelector(s);
+
+  /* ─── Functiechips ─────────────────────────────────────────── */
+  function tekenChips(focus){
+    $('#z_chips').innerHTML = `${Z.functies.map((f, i) =>
+        `<button class="chip btn-like src3-chip" data-fweg="${i}" title="Klik om weg te halen">${h(f)} <span aria-hidden="true">×</span></button>`).join('')}
+      <input type="text" id="z_finput" list="z_functielijst" autocomplete="off"
+        placeholder="${Z.functies.length ? 'nog een functie…' : 'typ een functie en druk op Enter'}"
+        aria-label="Functie toevoegen">`;
+    /* Pas uitleggen dat het OF is zodra er twee staan: daarvóór is het een
+       antwoord op een vraag die niemand gesteld heeft. */
+    $('#z_fhint').textContent = Z.functies.length > 1
+      ? 'We zoeken op elk van deze functies apart — niet op iemand die ze allemaal doet.' : '';
+    const inp = $('#z_finput');
+    const voegToe = ruw => {
+      const v = String(ruw||'').trim();
+      if(!v) return;
+      if(Z.functies.length >= 8){ CRM.toast('Acht functies tegelijk is genoeg', 'err'); return; }
+      if(Z.functies.some(x => plat(x) === plat(v))){ inp.value = ''; return; }
+      zetZ('functies', Z.functies.concat(v));
+      zMeer = 25;
+      tekenChips(true); tekenLijst();
+    };
+    inp.onkeydown = e => {
+      if(e.key === 'Enter'){ e.preventDefault(); voegToe(inp.value); }
+      /* Backspace in een leeg veld haalt de laatste chip weg — dat verwacht
+         iedereen die ooit een mailadres in een to-veld heeft getypt. */
+      else if(e.key === 'Backspace' && !inp.value && Z.functies.length){
+        zetZ('functies', Z.functies.slice(0, -1)); zMeer = 25; tekenChips(true); tekenLijst();
+      }
+    };
+    /* Een suggestie aanklikken geeft geen Enter, wel een change. */
+    inp.onchange = () => voegToe(inp.value);
+    $('#z_chips').querySelectorAll('[data-fweg]').forEach(b => b.onclick = () => {
+      const i = Number(b.dataset.fweg);
+      zetZ('functies', Z.functies.filter((x, j) => j !== i));
+      zMeer = 25; tekenChips(true); tekenLijst();
+    });
+    if(focus){ inp.value = ''; inp.focus(); }
+  }
+
+  /* ─── Eén kandidaatregel ───────────────────────────────────── */
+  function zoekRij(r, besteVan){
+    const c = r.c, st = r.st;
+    const beste = r.beste !== undefined ? r.beste : besteVan(c);
+    const gold = goldenIds().has(String(c.id));
+    const tel = String(c.telefoon||'').trim();
+    const fase = String(c.fase||'').trim();
+    const score = beste ? beste.m.score : null;
+    const kleur = !beste ? '' : beste.m.blokkers.length ? 'red' : score >= 70 ? 'green' : score >= 50 ? '' : 'amber';
+
+    /* Onder de 25% is het geen suggestie meer maar ruis. Wel benoemen wat de
+       beste dan wél was — anders lijkt het alsof we niets gekeken hebben. */
+    const zwak = beste && score < 25;
+    const matchHtml = !beste
+      ? `<div class="src3-geenmatch">Er staat geen openstaande vacature om tegen te matchen.</div>`
+      : `<div class="src3-match${zwak?' zwak':''}">
+          <div class="src3-match-t">
+            <span class="chip ${kleur}"><span class="num">${score}%</span></span>
+            <b>${h(beste.v.functie||'Vacature zonder functie')}</b>
+            <span class="src3-match-s">${h(beste.v.klant||'—')} · ${h(beste.v.locatie||'—')}${
+              beste.m.km != null ? ` · <span class="num">${beste.m.km}</span> km` : ''}</span>
+          </div>
+          ${zwak ? `<div class="src3-onbekend">Dit is de best passende openstaande vacature, en die past dus eigenlijk niet.</div>` : ''}
+          ${beste.m.blokkers.length ? `<div class="src2-blok">Hier gaat het op stuk: ${h(beste.m.blokkers.join(' · '))}</div>` : ''}
+          ${beste.m.twijfels.length ? `<div class="src2-twijfel">Let op: ${h(beste.m.twijfels.join(' · '))}</div>` : ''}
+          ${!beste.m.blokkers.length && !beste.m.twijfels.length && beste.m.plussen.length
+            ? `<div class="src3-plus">Past op: ${h(beste.m.plussen.slice(0,3).join(' · '))}</div>` : ''}
+        </div>`;
+
+    return `<div class="src3-rij">
+      <div class="src3-rij-t">
+        <a href="#kandidaten/${encodeURIComponent(c.id)}" data-kand="${h(String(c.id))}"><b>${h(c.naam||'Naam onbekend')}</b></a>
+        ${gold ? '<span class="src2-goud" title="Golden candidate">★</span>' : ''}
+        ${sterHtml(c.ster)}
+        <span class="spacer"></span>
+        ${r.km != null ? `<span class="chip"><span class="num">${r.km}</span> km</span>` : ''}
+        ${st.dagen != null ? `<span class="chip ${st.kleur}">${h(st.tekst)}</span>` : ''}
+      </div>
+      <div class="src3-rij-s">${h(c.functie || (c.cv && c.cv.functie) || 'geen functie ingevuld')}
+        · ${h(c.woonplaats||'woonplaats onbekend')}${fase ? ' · ' + h(fase) : ''}${
+        c.klant ? ' · ' + h(c.klant) : ''}</div>
+      ${matchHtml}
+      <div class="row tight src3-rij-a">
+        ${tel ? `<a class="btn sub sm" href="${h(telLink(tel))}">Bellen</a>` : ''}
+        <a class="btn sub sm" href="#kandidaten/${encodeURIComponent(c.id)}" data-kand="${h(String(c.id))}">Kandidatenkaart</a>
+        ${beste ? `<button class="btn sub sm" data-vac="${h(String(beste.v.id))}">Bekijk deze vacature</button>` : ''}
+        <button class="btn sub sm" data-alle="${h(String(c.id))}">Alle matches</button>
+      </div>
+    </div>`;
+  }
+
+  /* ─── De resultatenlijst ───────────────────────────────────── */
+  function tekenLijst(){
+    if(!mount.isConnected) return;
+    const u = zoekResultaat();
+    mount.dataset.rekentijdMs = u.ms;
+
+    $('#z_tel').innerHTML = `<span class="num">${u.rijen.length}</span> van <span class="num">${u.totaal}</span> kandidaten`;
+    const noot = [];
+    if(Z.plaats.trim() && !plaatsPunt(Z.plaats))
+      noot.push(`De plaats "${h(Z.plaats.trim())}" staat niet in de afstandentabel, dus er valt niets te meten — het straalfilter doet nu niets.`);
+    else if(u.plaatsOnbekend)
+      noot.push(`${u.plaatsOnbekend} kandidaten vallen buiten dit lijstje omdat hun woonplaats leeg is of niet in de afstandentabel staat. Haal het straalfilter weg om ze wel te zien.`);
+    if(Z.sort === 'match' && !openVacs().length)
+      noot.push('Er staat geen enkele vacature open, dus er valt niets te matchen.');
+    $('#z_noot').innerHTML = noot.join(' ');
+    $('#z_meertel').textContent = extraAan() ? extraAan() + ' extra filter' + (extraAan()===1?'':'s') + ' aan' : '';
+
+    const el = $('#z_res');
+    if(!u.rijen.length){
+      el.innerHTML = `<div class="card pad">${CRM.ui.leeg('Niemand gevonden',
+        'Haal een filter weg of verruim de straal. Let op: een kandidaat zonder functie of zonder fase valt hier niet vanzelf af — alleen een ingevuld filter filtert.')}</div>`;
+      return;
+    }
+    const zichtbaar = u.rijen.slice(0, zMeer);
+    el.innerHTML = `<div class="src3-lijst">${zichtbaar.map(r => zoekRij(r, u.besteVan)).join('')}</div>
+      ${u.rijen.length > zichtbaar.length
+        ? `<button class="btn ghost sm block" id="z_meerres" style="margin-top:12px">Toon de volgende ${
+            Math.min(50, u.rijen.length - zichtbaar.length)} van ${u.rijen.length}</button>` : ''}`;
+
+    el.querySelectorAll('[data-kand]').forEach(a => a.onclick = e => {
+      e.preventDefault(); CRM.ga('kandidaten', {id:a.dataset.kand});
+    });
+    el.querySelectorAll('[data-vac]').forEach(b => b.onclick = () => {
+      /* Doorpakken: de dekkingsweergave van díé vacature, met deze kandidaat
+         ertussen. Dat is de matchweergave die dit scherm al had. */
+      zetS('modus', 'vraag');
+      sel.vraag = String(b.dataset.vac);
+      toonMeer = 25;
+      tekenModule(mount, acties, {});
+    });
+    el.querySelectorAll('[data-alle]').forEach(b => b.onclick = () => toonAlleMatches(b.dataset.alle));
+    const meer = el.querySelector('#z_meerres');
+    if(meer) meer.onclick = () => { zMeer += 50; tekenLijst(); };
+  }
+
+  /* ─── Alle matches van één kandidaat ───────────────────────── */
+  function toonAlleMatches(id){
+    const c = CRM.kandidaat(id);
+    if(!c) return;
+    const lijst = CRM.besteMatches(c, 8);
+    CRM.drawer.open(`
+      <div class="drawer-h">
+        <div style="min-width:0;flex:1">
+          <div class="h2" style="font-size:17px">${h(c.naam||'Kandidaat')}</div>
+          <div class="meta" style="margin-top:3px">${h(c.functie||'geen functie ingevuld')} · ${h(c.woonplaats||'woonplaats onbekend')}</div>
+        </div>
+        <button class="btn ghost sm x" data-close>Sluiten</button>
+      </div>
+      <div class="drawer-b">
+        <p class="sub" style="margin-top:0">Openstaande vacatures die bij deze kandidaat passen, beste eerst.
+          Wat eronder staat is de reden — een score zonder reden is niets waard.</p>
+        ${lijst.length ? `<div class="src2-vaclijst">${lijst.map(x => `
+          <div class="src3-drrij">
+            <div class="src3-match-t">
+              <span class="chip ${x.m.blokkers.length?'red':x.score>=70?'green':x.score>=50?'':'amber'}"><span class="num">${x.score}%</span></span>
+              <b>${h(x.vacature.functie||'Vacature')}</b>
+              <span class="src3-match-s">${h(x.vacature.klant||'—')} · ${h(x.vacature.locatie||'—')}${
+                x.m.km != null ? ` · <span class="num">${x.m.km}</span> km` : ''}</span>
+            </div>
+            ${x.m.blokkers.length ? `<div class="src2-blok">Hier gaat het op stuk: ${h(x.m.blokkers.join(' · '))}</div>` : ''}
+            ${x.m.twijfels.length ? `<div class="src2-twijfel">Let op: ${h(x.m.twijfels.join(' · '))}</div>` : ''}
+            ${x.m.onbekend.length ? `<div class="src2-onbekend">Niet bekend: ${h(x.m.onbekend.slice(0,3).join(' · '))}</div>` : ''}
+            <div class="row tight" style="margin-top:8px">
+              <button class="btn sub sm" data-drvac="${h(String(x.vacature.id))}">Wie woont er nog meer in de buurt</button>
+            </div>
+          </div>`).join('')}</div>`
+        : CRM.ui.leeg('Geen passende vacature',
+            'Er staat op dit moment niets open waar deze kandidaat op uitkomt. Markeer hem als golden candidate, dan komt hij terug zodra dat verandert.')}
+      </div>`, {onOpen(dr){
+        dr.querySelectorAll('[data-drvac]').forEach(b => b.onclick = () => {
+          CRM.drawer.close();
+          zetS('modus', 'vraag');
+          sel.vraag = String(b.dataset.drvac);
+          toonMeer = 25;
+          tekenModule(mount, acties, {});
+        });
+      }});
+  }
+
+  /* ─── Bediening ────────────────────────────────────────────── */
+  const modusSeg = acties && acties.querySelector('#s2_modus');
+  if(modusSeg) modusSeg.querySelectorAll('button').forEach(b => b.onclick = () => {
+    zetS('modus', b.dataset.m);
+    tekenModule(mount, acties, {});
+  });
+
+  const vrij = $('#z_vrij');
+  vrij.oninput = CRM.debounce(() => { zetZ('vrij', vrij.value); zMeer = 25; tekenLijst(); }, 250);
+
+  const plaatsIn = $('#z_plaats');
+  plaatsIn.oninput = CRM.debounce(() => { zetZ('plaats', plaatsIn.value); zMeer = 25; tekenLijst(); }, 250);
+
+  mount.querySelectorAll('[data-zf]').forEach(el => {
+    const k = el.dataset.zf;
+    const pas = () => {
+      zetZ(k, k === 'ster' || k === 'straal' ? Number(el.value)||0 : el.value);
+      zMeer = 25;
+      tekenLijst();
+    };
+    if(el.tagName === 'SELECT') el.onchange = pas; else el.oninput = CRM.debounce(pas, 250);
+  });
+
+  const meerknop = $('#z_meerknop');
+  const zetMeerknop = () => {
+    meerknop.textContent = extraOpen ? 'Minder verfijnen' : 'Meer verfijnen';
+    meerknop.setAttribute('aria-expanded', String(extraOpen));
+  };
+  meerknop.onclick = () => {
+    extraOpen = !extraOpen;
+    zetZ('meer', extraOpen);
+    $('#z_extra').style.display = extraOpen ? '' : 'none';
+    zetMeerknop();
+  };
+  zetMeerknop();
+
+  $('#z_wis').onclick = () => {
+    /* De sortering is geen zoekcriterium maar een voorkeur — die blijft. */
+    const sort = Z.sort;
+    Z = Object.assign({}, Z_STD, {sort});
+    try{ localStorage.setItem(ZKEY, JSON.stringify(Z)); }catch(e){}
+    tekenZoek(mount, acties);
+  };
+
+  $('#z_sort').querySelectorAll('button').forEach(b => b.onclick = () => {
+    zetZ('sort', b.dataset.s);
+    $('#z_sort').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    tekenLijst();
+  });
+
+  tekenChips(false);
+  tekenLijst();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BINNENKOMST
+   Twee schermen onder één modulenaam. `params` mag hier zeggen waar je
+   binnenkomt: Kandidaten stuurt door met CRM.ga('source', {modus:'zoek',
+   q:'lasser'}) zodra iemand daar meer wil dan naam en status.
+   ═══════════════════════════════════════════════════════════════ */
+function tekenModule(mount, acties, params){
+  params = params || {};
+  if(params.modus && MODUS_KEYS.includes(params.modus)) zetS('modus', params.modus);
+  if(params.q != null){ zetZ('vrij', String(params.q)); zetS('modus', 'zoek'); }
+  /* Eenmalige instructie, geen blijvende toestand: zonder dit zou elke
+     volgende hertekening (modus wisselen, realtime-sync) je terugzetten in
+     de zoekmodus met dezelfde zoekterm, hoe ver je ook verder was. */
+  delete params.modus; delete params.q;
+
+  if(S.modus === 'zoek') tekenZoek(mount, acties);
+  else tekenSourcing(mount, acties);
+}
+
 CRM.registerModule('source', {
   title:'Sourcing', icon:'◎',
-  onderschrift:'Waar zit vraag zonder mensen, en waar zitten mensen zonder vraag',
-  render(mount, acties){ tekenSourcing(mount, acties); }
+  onderschrift:'Zoek in het kandidatenbestand, en zie waar vraag en aanbod elkaar missen',
+  render(mount, acties, params){ tekenModule(mount, acties, params); }
 });
 
 })();
@@ -1358,7 +1908,19 @@ CRM.registerModule('source', {
       kan plaatsen — de match komt dan lager uit dan hij hoort. De nette
       oplossing is die aliaslaag in data.js zetten, zodat de hele app dezelfde
       afstand ziet.
-   3. Vacatures zonder `locatie` vallen terug op de locatie van de klant. Staat
+   3. `CRM.ga(key, params)` zet alleen `params.id` in de hash. De zoekmodus
+      komt binnen via `CRM.ga('source', {modus:'zoek', q:'…'})` en dat werkt,
+      maar zo'n zoekopdracht is niet te delen of te bookmarken en overleeft
+      geen F5 — de gebruiker landt dan op `#source` en krijgt wat er in
+      localStorage staat. Een tweede segment in de hash (bv.
+      `#source/zoek:lasser`) zou dat oplossen voor elke module die meer dan
+      één ding wil meegeven.
+   4. Elke kandidaat tegen elke open vacature scoren (de "beste openstaande
+      vacature" in de zoeklijst) kost bij 355 kandidaten × 50 vacatures ~80 ms.
+      Dit bestand cachet dat zelf per schermbezoek. Dashboard en Kandidaten
+      willen hetzelfde getal; als het vaker nodig blijkt, hoort die cache op
+      CRM (bv. `CRM.besteMatch(kandidaat)`) en niet drie keer los.
+   5. Vacatures zonder `locatie` vallen terug op de locatie van de klant. Staat
       die ook leeg, dan doet de vacature nergens in dit scherm mee. In de
       importdata heeft een flink deel van de klanten geen locatie; dat is een
       datataak, geen codetaak, maar het beperkt wel wat dit scherm kan zeggen.
