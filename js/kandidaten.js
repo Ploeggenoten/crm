@@ -1061,6 +1061,15 @@ function kaart(mount, acties, id){
   /* Traject-acties — de logica woont in js/recruitment.js, inclusief álle
      poortwachters. Deze kaart roept alleen aan. */
   const klik = (sel, fn) => { const b = mount.querySelector(sel); if(b) b.onclick = fn; };
+  /* Een plaatsing is een feit dat je vastlegt, geen fase die je uitkiest.
+     Dit stond alleen in "Fase wijzigen…" — een lijst van elf fases waaruit je
+     de goede moest zoeken, terwijl dit de belangrijkste handeling in het hele
+     systeem is: hier hangt de omzet, het feestscherm en de nazorg aan.
+     De poortwachters zitten in faseWissel(): startdatum, maandloon en type
+     worden daar gevraagd. (Tjeerd, 2 aug 2026: "hoe zet je een kandidaat nu
+     bij plaatsing? dit moet je ook allemaal bij de kandidatenkaart kunnen
+     doen toch?") */
+  klik('#c_getekend', () => CRM.kandidaatFase && CRM.kandidaatFase(c.id, 'Contract getekend'));
   klik('#c_fase',   () => CRM.kandidaatFasePicker && CRM.kandidaatFasePicker(c.id));
   klik('#c_intake', () => CRM.kandidaatIntake && CRM.kandidaatIntake(c.id));
   klik('#c_noshow', () => CRM.kandidaatNoShow && CRM.kandidaatNoShow(c.id));
@@ -1815,6 +1824,8 @@ function trajectHtml(c){
     <!-- Verhuisd uit de bewerk-drawer van het bord: fasewissel mét
          poortwachters, video-intake, no-show en afmelden. -->
     <div class="card-f row tight" style="flex-wrap:wrap;row-gap:8px">
+      ${inTraject(c) && !uitval && !CRM.PLACED.includes(CRM.faseNorm(c.fase))
+        ? `<button class="btn sm" id="c_getekend">Contract getekend</button>` : ''}
       <button class="btn ghost sm" id="c_fase">Fase wijzigen…</button>
       ${kanIntake?`<button class="btn ghost sm" id="c_intake">Video-intake</button>`:''}
       ${inTraject(c)&&!uitval?`<button class="btn ghost sm" id="c_noshow" title="Afspraak wissen en de no-show tellen">No-show</button>`:''}

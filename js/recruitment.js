@@ -2872,8 +2872,16 @@ async function faseWissel(id, fase){
            data-klant="${h(v.klant)}" data-functie="${h(v.functie||'')}">${h(v.functie||'(geen functie)')}</option>`)
         .join('')}</optgroup>`).join('');
   };
+  /* Een plaatsing is de belangrijkste handeling in het systeem: hier hangen
+     de omzet, het feestscherm en het hele nazorgritme aan. Dan hoort het
+     venster ook te lezen als vastleggen ("Plaatsing van X bij Y vastleggen")
+     en niet als verhuizen ("X → Contract getekend"). Zelfde poortwachters,
+     andere vraag. */
+  const kop = vraagKlant ? h(c.naam) + ' voorstellen'
+    : vraagStart ? 'Plaatsing van ' + h(c.naam) + (c.klant ? ' bij ' + h(c.klant) : '') + ' vastleggen'
+    : h(c.naam) + ' → ' + h(fase);
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">${vraagKlant ? h(c.naam) + ' voorstellen' : h(c.naam) + ' → ' + h(fase)}</div>
+    <div class="modal-h"><div class="h2">${kop}</div>
       <p class="sub" style="margin:6px 0 0">${h(uitleg)}</p></div>
     <div class="modal-b">
       ${vraagKlant ? `<div class="f-row"><label for="fw_vac">Vacature</label>
@@ -2890,12 +2898,18 @@ async function faseWissel(id, fase){
           <input type="date" id="fw_start" value="${h(c.start||'')}"></div>` : ''}
       ${vraagLoon || vraagStart ? `<div class="f-row"><label for="fw_loon">Bruto maandloon (€)</label>
           <input type="number" id="fw_loon" min="0" step="50" value="${c.maandloon?h(c.maandloon):''}"></div>` : ''}
+      ${vraagStart ? `<div class="f-row"><label for="fw_type">Soort plaatsing</label>
+          <select id="fw_type">
+            <option value="W&S"${(c.type||'W&S')==='W&S'?' selected':''}>W&amp;S — werving en selectie, fee ineens</option>
+            <option value="Flex"${c.type==='Flex'?' selected':''}>Flex — de opbrengst loopt via gewerkte uren</option>
+          </select>
+          <div class="hint">Bepaalt of hier een fee bij hoort. Bij Flex rekent het systeem bewust geen fee.</div></div>` : ''}
       <div class="f-row"><label for="fw_actie">Volgende actie (optioneel)</label>
         <input type="text" id="fw_actie" value="${h(c.volgendeActie||'')}" placeholder="Bijv. bevestiging sturen"></div>
       <div class="note err" id="fw_err" style="display:none"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="fw_ok">Verplaatsen</button></div>`, {onOpen(m){
+      <button class="btn" id="fw_ok">${vraagStart ? 'Plaatsing vastleggen' : vraagKlant ? 'Voorstellen' : 'Opslaan'}</button></div>`, {onOpen(m){
       m.querySelector('#fw_ok').onclick = async () => {
         const err = m.querySelector('#fw_err');
         const zeg = t => { err.style.display=''; err.textContent = t; };
@@ -2924,6 +2938,11 @@ async function faseWissel(id, fase){
         if(vraagStart){
           if(!val('start')) return zeg('Een startdatum is verplicht bij een getekend contract.');
           extra.start = val('start');
+          /* Type hoort bij de plaatsing zelf. Zonder dit veld stond er op elke
+             geplaatste kaart een amber "type?" en wist de facturatie niet of
+             er een fee bij hoorde — terwijl dit precies het moment is waarop
+             je het weet. */
+          if(val('type')) extra.type = val('type');
         }
         if(vraagLoon || vraagStart){
           if(!val('loon')) return zeg('Vul het bruto maandloon in — nodig voor ' + feeUitleg + '.');
