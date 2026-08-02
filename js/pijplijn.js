@@ -304,9 +304,21 @@ function tekenActies(acties){
       <button data-w="bord" class="${lijst?'':'on'}" aria-pressed="${lijst?'false':'true'}">Bord</button>
       <button data-w="lijst" class="${lijst?'on':''}" aria-pressed="${lijst?'true':'false'}">Lijst</button>
     </div>
-    ${lijst?'':`<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>`}
-    <button class="btn ghost sm" id="pp_oo">+ O&amp;O-sessie</button>
-    <button class="btn sm" id="pp_kand">+ Kandidaat</button>`;
+    ${lijst?'':`<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>`}`;
+  /* Hier stonden "+ O&O-sessie" en "+ Kandidaat". Allebei weg per 2 aug 2026.
+
+     Dit scherm laat zien wat er bij klanten loopt; het is geen plek om dingen
+     aan te maken. Een kandidaat ontstaat bij Recruitment (uit een lead, of
+     met "+ Sollicitant"), en een O&O-sessie hoort bij de vacature waarvoor
+     hij georganiseerd wordt — niet bij een bord dat toevallig een kolom met
+     die naam heeft.
+
+     Het onderliggende punt is groter dan twee knoppen: zolang je hier dingen
+     kunt aanmaken, is de fase iets wat je zélf ergens neerzet. Terwijl de
+     fase een gevolg hoort te zijn van wat er met de kandidaat gebeurt.
+     (Tjeerd, 2 aug 2026: "een O&O sessie toevoegen in klanttrajecten en een
+     kandidaat toevoegen daar, dit hoort niet. Deze fase moet zich aanpassen
+     aan de handelingen die je doet bij een kandidaat.") */
   CRM.$$('#pp_weerg button', el).forEach(b => b.onclick = () => {
     if(weergave() === b.dataset.w) return;
     zetWeergave(b.dataset.w);
@@ -317,12 +329,6 @@ function tekenActies(acties){
     localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
     tekenActies(); pasDichtheidToe();
   };
-  el.querySelector('#pp_oo').onclick = () => D().ooModal(null);
-  /* Let op: een nieuwe kandidaat komt in Intake terecht en dus NIET op dit
-     bord, maar in de regel "klaar om voor te stellen" onder de filters. De
-     knop staat hier omdat dit voorlopig de enige plek in het CRM is waar je er
-     handmatig een aanmaakt; zie het verzoek onderaan. */
-  el.querySelector('#pp_kand').onclick = () => D().nieuweKandidaat();
 }
 
 /* Container wisselen (bord ↔ lijst). Bij alleen een filterwijziging is
@@ -391,13 +397,21 @@ function kaartHtml(c){
   const gemist    = dd && !placed && dt < 0;
   const over = c.actieDatum && (CRM.dagenGeleden(c.actieDatum) || 0) > 0;
   const dg = dagenInFase(c);
-  /* De intake gebeurt nu vóór dit bord, in de recruitmentpijplijn. De knop
-     bleef hier staan uit de tijd dat Intake de eerste kolom was; hij is nog
-     nuttig voor precies één geval — iemand die op Voorgesteld staat zonder dat
-     de intake ooit is vastgelegd (import, of doorgezet zonder formulier).
-     Staat de intake er wel, dan is de knop ruis. */
-  const kanIntake = CRM.faseIs(c.fase, 'Voorgesteld') && !d.intakeDone(c);
+  /* GEEN intake-knop meer op dit bord. Hij stond hier voor het geval iemand
+     op Voorgesteld belandde zonder vastgelegde intake — maar dat gaf de
+     verkeerde boodschap: alsof je de intake nog even kunt doen nádat het cv
+     bij de klant ligt. De intake hoort ervóór, en sinds 2 aug 2026 laat de
+     poort in faseWissel() je er ook niet meer zomaar langs.
+
+     Ontbreekt de intake bij iemand die hier tóch staat (de oude import, of
+     een bewust doorgezette kandidaat), dan wordt dat gemeld als signaal op
+     de kaart — zie 'intake?' hieronder. Vastleggen doe je op de
+     kandidaatkaart, waar de rest van de gegevens ook staat.
+     (Tjeerd, 2 aug 2026: "hier is al een videointake gedaan. We stellen ze
+     pas voor als dit voldaan is.") */
+  const intakeMist = CRM.faseIs(c.fase, 'Voorgesteld') && !d.intakeDone(c);
   const chips = [];
+  if(intakeMist) chips.push(`<span class="chip amber" title="Deze kandidaat staat bij de klant zonder vastgelegde video-intake. Vastleggen doe je op de kandidaatkaart.">intake?</span>`);
   if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
   else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
   if(c.bron) chips.push(`<span class="chip">${h(c.bron)}</span>`);
@@ -448,8 +462,7 @@ function kaartHtml(c){
     ${chips.length?`<div class="bc-f">${chips.join('')}</div>`:''}
     ${when}${verw}
     ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
-    ${kanIntake?`<button class="btn ghost sm rc-intakebtn" data-intake="${h(c.id)}">Video-intake</button>`:''}
-    <button class="btn ghost sm rc-move" data-move="${h(c.id)}">Verplaatsen naar fase…</button>
+    <button class="btn ghost sm rc-move" data-move="${h(c.id)}">Volgende stap…</button>
   </div>`;
 }
 
@@ -598,12 +611,11 @@ function tekenKolommen(){
        meer het smalle bewerkpaneel van het oude pijplijnbord. Positie eerst
        bewaren, zodat "← Terug naar het bord" je precies terugzet. */
     k.onclick = e => {
-      if(e.target.closest('[data-intake],[data-move]')) return;
+      if(e.target.closest('[data-move]')) return;
       bewaarPositie(k.dataset.id);
       CRM.ga('kandidaten', {id:k.dataset.id});
     };
   });
-  CRM.$$('[data-intake]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.intakeForm(b.dataset.intake); });
   CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); CRM.kandidaatFasePicker(b.dataset.move); });
   CRM.$$('[data-oo]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.ooModal(b.dataset.oo); });
   /* Alleen nog de kolommen zijn sleepdoel — de uitvalstrook is weg. */

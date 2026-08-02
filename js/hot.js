@@ -1130,7 +1130,18 @@
     const el = M.acties;
     if(!el) return;
     if(M.vac){
-      el.innerHTML = `<button class="btn ghost sm" id="ov_terug">← Alle vacatures</button>`;
+      /* De O&O-sessie hoort hier, bij de vacature waarvoor je hem organiseert.
+         Hij stond boven het bord Klanttrajecten, maar daar kijk je alleen —
+         een sessie plannen is een handeling, en die hoort bij het ding waar
+         hij over gaat. Klant, functie en locatie gaan mee, zodat je ze niet
+         opnieuw hoeft te zoeken. (Tjeerd, 2 aug 2026.) */
+      const v = CRM.state.vacs.find(x => String(x.id) === String(M.vac));
+      el.innerHTML = `${v && CRM._rcDeel?.ooModal
+          ? `<button class="btn ghost sm" id="ov_oo">+ O&amp;O-sessie</button>` : ''}
+        <button class="btn ghost sm" id="ov_terug">← Alle vacatures</button>`;
+      const oo = el.querySelector('#ov_oo');
+      if(oo) oo.onclick = () => CRM._rcDeel.ooModal(null,
+        {klant:v.klant, functie:v.functie || '', locatie:v.locatie || ''});
       el.querySelector('#ov_terug').onclick = () => CRM.ga('hot');
       return;
     }

@@ -2800,35 +2800,71 @@ async function faseWissel(id, fase){
   if(!c || !fase || CRM.faseIs(c.fase, fase)) return;
   if(UITVAL.includes(fase)) return uitvalForm(c, fase);
 
-  /* Verhuisd van het oude tabblad Voorselectie (knop "→ Voorstellen"):
-     iemand aan de klant voorstellen zonder video-intake is een bewuste keuze,
-     geen ongelukje. Nu de fase op het bord staat geldt de vraag ook bij
-     slepen en bij de fase-picker. */
-  if(CRM.faseIs(fase, 'Voorgesteld') && CRM.faseIs(c.fase, 'Intake') && !intakeDone(c)){
-    const toch = await CRM.bevestig(`${c.naam} heeft nog geen video-intake gehad`, 'Toch voorstellen aan de klant?');
+  /* ─── De poort vóór Voorgesteld ───────────────────────────────
+     Voorstellen is geen verplaatsing maar een handeling met gevolgen: er
+     gaat een cv naar een klant. Daar horen drie dingen bij te kloppen, en
+     dat gold hier maar half.
+
+     De intake-vraag stond er al, maar alleen als je vanuit 'Intake' kwam.
+     Wie op de import stond (fase leeg — 236 kaarten in productie) of op een
+     andere fase, schoof er zonder vraag doorheen. Vandaar ook de knop
+     "Video-intake" op een kaart in de kolom Voorgesteld: die stond er omdat
+     het systeem toeliet dat je daar zonder intake belandde. Verkeerd om —
+     dan repareer je de poort, niet de kolom.
+
+     Klant en vacature ontbraken helemaal als eis. Zonder die twee weet
+     niemand aan wie je iemand hebt voorgesteld; de kaart komt dan wel op
+     het bord maar telt bij geen enkele klant en bij geen enkele vacature
+     mee. Ze worden nu gevraagd in hetzelfde venster (zie vraagKlant).
+
+     (Besluit Tjeerd, 2 aug 2026: "de knop met videointake bij voorgesteld
+     klopt niet, hier is al een videointake gedaan. We stellen ze pas voor
+     als dit voldaan is.") */
+  if(CRM.faseIs(fase, 'Voorgesteld') && !intakeDone(c)){
+    const toch = await CRM.bevestig(`${c.naam} heeft nog geen video-intake gehad`,
+      'Voorstellen kan pas na de intake. Weet je zeker dat je deze kandidaat toch aan de klant voorstelt?');
     if(!toch) return;
   }
 
   /* Welke poortwachters gelden voor de doelfase? */
+  const vraagKlant = CRM.faseIs(fase, 'Voorgesteld') && (!String(c.klant||'').trim() || !c.vacatureId);
   const vraagCall  = CRM.faseIs(fase, 'Intake') && !c.datum;
   const vraagDatum = GESPREK_FASES.includes(fase);
   const vraagVerw  = fase === 'In de wacht';
   const vraagLoon  = CONTRACT_FASES.includes(fase) && !c.maandloon;
   const vraagStart = CRM.PLACED.includes(fase);
-  if(!vraagCall && !vraagDatum && !vraagVerw && !vraagLoon && !vraagStart) return bewaarFase(c, fase);
+  if(!vraagKlant && !vraagCall && !vraagDatum && !vraagVerw && !vraagLoon && !vraagStart) return bewaarFase(c, fase);
 
   /* "fee" is een financieel begrip en blijft bij wie geld mag zien; voor het
      team benoemen we waarom het veld nodig is zonder onze omzet erbij te halen. */
   const feeUitleg = CRM.canSeeMoney() ? 'de automatische fee-berekening' : 'de contract- en factuurgegevens';
-  const uitleg = vraagStart ? `Startdatum en maandloon zijn verplicht — daar rekenen plaatsingen en ${feeUitleg} mee.`
+  const uitleg = vraagKlant ? 'Aan wie stel je deze kandidaat voor? Zonder klant en vacature telt dit voorstel nergens mee.'
+    : vraagStart ? `Startdatum en maandloon zijn verplicht — daar rekenen plaatsingen en ${feeUitleg} mee.`
     : vraagVerw ? 'Zet de verwachte startdatum erbij — dan rekent de forecast ermee.'
     : vraagLoon ? `Het bruto maandloon is nodig voor ${feeUitleg}.`
     : vraagCall ? 'Intake is de videocall-lijst: alleen kandidaten mét geplande call.'
     : 'Zet de afspraak erbij, dan weet iedereen waar de kandidaat aan toe is.';
+  /* De openstaande vacatures, gegroepeerd per klant. Alleen openstaande:
+     iemand voorstellen op een vacature die vervuld is levert een traject op
+     dat nergens heen gaat. */
+  const vacKeuze = () => {
+    const vs = (CRM.state.vacs || []).filter(v => v && v.klant && (v.status || 'Open') !== 'Gesloten');
+    const perKlant = {};
+    vs.forEach(v => { (perKlant[v.klant] = perKlant[v.klant] || []).push(v); });
+    return Object.keys(perKlant).sort((a,b)=>a.localeCompare(b,'nl')).map(k =>
+      `<optgroup label="${h(k)}">${perKlant[k]
+        .sort((a,b)=>String(a.functie||'').localeCompare(String(b.functie||''),'nl'))
+        .map(v => `<option value="${h(v.id)}"${String(c.vacatureId)===String(v.id)?' selected':''}
+           data-klant="${h(v.klant)}" data-functie="${h(v.functie||'')}">${h(v.functie||'(geen functie)')}</option>`)
+        .join('')}</optgroup>`).join('');
+  };
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">${h(c.naam)} → ${h(fase)}</div>
+    <div class="modal-h"><div class="h2">${vraagKlant ? h(c.naam) + ' voorstellen' : h(c.naam) + ' → ' + h(fase)}</div>
       <p class="sub" style="margin:6px 0 0">${h(uitleg)}</p></div>
     <div class="modal-b">
+      ${vraagKlant ? `<div class="f-row"><label for="fw_vac">Vacature</label>
+          <select id="fw_vac"><option value="">— kies een openstaande vacature —</option>${vacKeuze()}</select>
+          <div class="hint">De klant volgt uit de vacature. Staat de vacature er niet bij, maak hem dan eerst aan bij Vacatures.</div></div>` : ''}
       ${vraagDatum || vraagCall ? `<div class="f-grid">
           <div class="f-row"><label for="fw_datum">${vraagCall?'Datum videocall':'Datum afspraak'}</label>
             <input type="date" id="fw_datum" value="${h(c.datum||'')}"></div>
@@ -2851,6 +2887,18 @@ async function faseWissel(id, fase){
         const zeg = t => { err.style.display=''; err.textContent = t; };
         const val = id => { const e = m.querySelector('#fw_'+id); return e ? e.value : ''; };
         const extra = {volgende_actie: val('actie').trim() || null};
+        if(vraagKlant){
+          const sel = m.querySelector('#fw_vac');
+          const opt = sel && sel.selectedOptions[0];
+          if(!sel || !sel.value || !opt) return zeg('Kies de vacature waarop je deze kandidaat voorstelt.');
+          /* Klant en functie komen uit de vacature, niet uit een los veld:
+             twee plekken waar hetzelfde in kan staan lopen een keer uit
+             elkaar, en dan telt dezelfde persoon bij de ene klant wel en bij
+             de andere niet mee. */
+          extra.vacature_id = sel.value;
+          extra.klant       = opt.dataset.klant || '';
+          if(opt.dataset.functie && !String(c.functie||'').trim()) extra.functie = opt.dataset.functie;
+        }
         if(vraagDatum || vraagCall){
           if(!val('datum')) return zeg(vraagCall ? 'Plan eerst de videocall — zonder datum geen Intake.' : 'Zonder datum weten we niet wanneer het gesprek is.');
           extra.datum = val('datum'); extra.tijd = val('tijd') || '';
@@ -3633,7 +3681,12 @@ function intakeForm(id){
    Schrijft dezelfde kolommen als het bord: id, klant, functie,
    datum, locatie. Kandidaten koppelen via oo_id.
    ═══════════════════════════════════════════════════════════════ */
-function ooModal(sid){
+/* sid = een bestaande sessie beheren. voor = {klant, functie, locatie} om een
+   nieuwe sessie voor te vullen — zo kun je hem openen vanaf de vacature
+   waarvoor je de sessie organiseert, in plaats van de klant en functie
+   opnieuw uit een lijst te zoeken. De knop stond tot 2 aug 2026 boven het
+   bord Klanttrajecten; daar hoort hij niet, want daar maak je niets aan. */
+function ooModal(sid, voor){
   const sessies = ooSessies();
   const s = sid ? ooSessie(sid) : null;
   const klanten = Array.from(new Set(
@@ -3693,10 +3746,15 @@ function ooModal(sid){
       const vulVelden = () => {
         const x = huidige ? ooSessie(huidige) : null;
         m.querySelector('#oo_del').style.display = x ? '' : 'none';
-        kSel.value = x ? x.klant : (klanten[0]||'');
-        vulFunc(x ? x.functie : '');
+        /* Bij een nieuwe sessie: eerst wat er is meegegeven (je komt van een
+           vacature), dan pas de eerste klant uit de lijst. Anders sta je op
+           een willekeurige klant terwijl je net op een specifieke vacature
+           klikte. */
+        kSel.value = x ? x.klant : (voor && voor.klant) || (klanten[0]||'');
+        vulFunc(x ? x.functie : (voor && voor.functie) || '');
         m.querySelector('#oo_datum').value = x ? (x.datum||'') : '';
-        m.querySelector('#oo_loc').value = x ? (x.locatie||'') : locVan(kSel.value);
+        m.querySelector('#oo_loc').value = x ? (x.locatie||'')
+          : (voor && voor.locatie) || locVan(kSel.value);
         vulLijst();
       };
       sel.onchange = () => { huidige = sel.value === '__new' ? null : sel.value; pending = []; vulVelden(); };
