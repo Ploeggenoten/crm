@@ -1708,6 +1708,61 @@ function tabInhoud(mount, k){
 }
 
 /* ─── Tab: vacatures ──────────────────────────────────────────── */
+/* ─── O&O-sessies van deze klant ──────────────────────────────────
+   Een sessie hoort bij de klánt, niet bij één vacature: er zitten geregeld
+   kandidaten voor meerdere functies in dezelfde sessie. De knop stond eerst
+   boven het bord Klanttrajecten (waar je niets hoort aan te maken) en daarna
+   even op de vacature (te smal). Hier hoort hij.
+
+   Welke functies een sessie beslaat leiden we af uit wie erin zit, niet uit
+   een veld. Zo kan het label nooit iets anders zeggen dan de werkelijkheid,
+   en werkt "meerdere functies in één sessie" zonder databasewijziging.
+   (Tjeerd, 2 aug 2026: "via de klantenkaart kan ik matchen voor welke
+   vacature(s) we de O&O sessie doen, soms meerdere functies in 1 sessie".) */
+function ooBlokHtml(k){
+  const D = CRM._rcDeel || {};
+  if(!D.ooSessies || !D.ooModal) return '';
+  const vandaag = CRM.todayISO();
+  const sessies = D.ooSessies()
+    .filter(s => s.klant === k.naam)
+    .sort((a,b) => String(a.datum||'').localeCompare(String(b.datum||'')));
+  const komend = sessies.filter(s => !s.datum || s.datum >= vandaag);
+  /* NIET D.sessLeden(): die telt alleen wie op dit moment op fase 'O&O sessie'
+     staat. Dat is de goede maat bij het plannen ("zitten er al vier in?"),
+     maar niet hier: zodra de sessie is geweest schuift iedereen door naar
+     Eerste gesprek en zou een geslaagde sessie er als leeg bij staan.
+     sessDeelnemers/sessFuncties komen uit js/recruitment.js, zodat deze kaart
+     en het sessievenster gegarandeerd hetzelfde zeggen. */
+  const regel = s => {
+    const leden = D.sessDeelnemers ? D.sessDeelnemers(s.id) : [];
+    const functies = D.sessFuncties ? [D.sessFuncties(s.id)].filter(Boolean) : [];
+    const verleden = s.datum && s.datum < vandaag;
+    return `<button type="button" class="kl-oorij${verleden?' weg':''}" data-oo="${h(s.id)}">
+      <span class="kl-oodat num">${h(s.datum ? CRM.fmtDateShort(s.datum) : 'geen datum')}</span>
+      <span class="kl-oowat"><b>${h(functies.join(' · ') || s.functie || 'nog geen kandidaten')}</b>
+        ${s.locatie ? `<span class="meta">${h(s.locatie)}</span>` : ''}</span>
+      <span class="kl-ooaantal num${leden.length >= 4 ? ' goed' : ''}"
+        title="${verleden ? 'Deelnemers aan deze sessie' : 'Streef naar vier kandidaten per sessie'}"
+        >${leden.length}${verleden ? '' : '/4'}</span>
+    </button>`;
+  };
+  return `<div class="kl-oo">
+    <div class="kl-tabkop"><div class="h2">O&amp;O-sessies</div>
+      <span class="meta">${komend.length ? komend.length + ' gepland' : 'niets gepland'}</span>
+      <span class="spacer"></span>
+      <button class="btn ghost sm" id="k_oonieuw">+ Sessie plannen</button></div>
+    ${sessies.length ? `<div class="kl-oolijst">${sessies.map(regel).join('')}</div>`
+      : `<p class="meta" style="margin:0">Nog geen sessies voor deze klant. Plan er een en koppel er kandidaten aan — die komen dan op fase O&amp;O sessie te staan.</p>`}
+  </div>`;
+}
+
+function ooBlokBind(el, k){
+  const D = CRM._rcDeel || {};
+  const nieuw = el.querySelector('#k_oonieuw');
+  if(nieuw) nieuw.onclick = () => D.ooModal(null, {klant:k.naam, locatie:k.locatie || ''});
+  el.querySelectorAll('[data-oo]').forEach(b => b.onclick = () => D.ooModal(b.dataset.oo));
+}
+
 function tabVacatures(el, k, c){
   const alle = c.vs.slice().sort((a,b) =>
     String(a.status||'Open').localeCompare(String(b.status||'Open')) ||
@@ -1718,8 +1773,10 @@ function tabVacatures(el, k, c){
       <span class="spacer"></span>
       <button class="btn sm" id="v_nieuw">Vacature toevoegen</button></div>
     ${alle.length ? alle.map(v => vacatureHtml(v, k)).join('') :
-      CRM.ui.leeg('Nog geen vacatures','Voeg de eerste opdracht van deze klant toe.')}`;
+      CRM.ui.leeg('Nog geen vacatures','Voeg de eerste opdracht van deze klant toe.')}
+    ${ooBlokHtml(k)}`;
 
+  ooBlokBind(el, k);
   el.querySelector('#v_nieuw').onclick = () => vacatureModal(k, null);
   el.querySelectorAll('[data-vbew]').forEach(b => b.onclick = e => {
     e.preventDefault(); e.stopPropagation();

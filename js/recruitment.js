@@ -2732,6 +2732,16 @@ const intakeDone = c => !!(c.intake && (c.intake.cijfer
 const ooSessies = () => CRM.state.ooSessions || [];
 const ooSessie  = id => ooSessies().find(s => String(s.id) === String(id));
 const sessLeden = id => CRM.kandidaten().filter(c => String(c.ooId) === String(id) && c.fase === 'O&O sessie');
+/* Wie er ooit in deze sessie zat, ongeacht waar diegene nu staat. sessLeden
+   is de goede maat bij het plannen ("zitten er al vier in?"), maar niet om
+   een sessie te beschrijven: zodra de sessie geweest is schuift iedereen door
+   naar Eerste gesprek, en dan zou een geslaagde sessie er als leeg bij staan. */
+const sessDeelnemers = id => CRM.kandidaten().filter(c => String(c.ooId) === String(id));
+/* Welke functies deze sessie beslaat — afgeleid uit de deelnemers, niet uit
+   het veld `functie` op de sessie. Er zitten geregeld kandidaten voor
+   meerdere functies in één sessie, en dan zegt dat ene veld iets wat niet
+   klopt. Wat je afleidt kan niet uit de pas lopen met de werkelijkheid. */
+const sessFuncties = id => [...new Set(sessDeelnemers(id).map(c => c.functie).filter(Boolean))].join(' · ');
 
 /* `alles()` tekent de eigen schermdelen van Recruitment opnieuw. Die bestaan
    alleen als Recruitment ook echt in beeld is. De fasewissel en het
@@ -2776,7 +2786,11 @@ async function bewaarFase(c, fase, extra){
   if(fase !== 'O&O sessie' && c.ooId) patch.oo_id = null;
   const ok = await bewaarKand(c.id, patch);
   if(!ok) return;
-  await CRM.logActiviteit('kandidaat', c.id, 'fase', `${c.fase} → ${fase}`);
+  /* Bij een lege beginfase (de import uit het oude ATS, of een kaart die net
+     is aangemaakt) stond hier letterlijk " → Voorgesteld". Dat leest als een
+     fout in plaats van als een eerste stap. */
+  await CRM.logActiviteit('kandidaat', c.id, 'fase',
+    c.fase ? `${c.fase} → ${fase}` : `Fase gezet op ${fase}`);
   /* Een plaatsing is feest, voor iedereen die nu ingelogd is — en voor wie
      later inlogt (js/feest.js). Hier en nergens anders: élke fasewissel komt
      langs deze functie, of hij nu van het bord komt (slepen), uit de
@@ -3701,7 +3715,7 @@ function ooModal(sid, voor){
       <div class="f-row"><label for="oo_sel">Sessie</label>
         <select id="oo_sel"><option value="__new">+ Nieuwe sessie</option>
           ${sessies.slice().sort((a,b)=>String(a.datum||'').localeCompare(String(b.datum||''))).map(x =>
-            `<option value="${h(x.id)}" ${s&&String(s.id)===String(x.id)?'selected':''}>${h(CRM.fmtDay(x.datum)||'?')} · ${h(x.klant)} – ${h(x.functie)} (${sessLeden(x.id).length})</option>`).join('')}
+            `<option value="${h(x.id)}" ${s&&String(s.id)===String(x.id)?'selected':''}>${h(CRM.fmtDay(x.datum)||'?')} · ${h(x.klant)} – ${h(sessFuncties(x.id) || x.functie)} (${sessDeelnemers(x.id).length})</option>`).join('')}
         </select></div>
       <div class="f-grid">
         <div class="f-row"><label for="oo_klant">Klant</label>
@@ -3858,11 +3872,43 @@ CRM.kandidaatUitval = (id, fase) => {                       // afmelden of uitva
   const c = CRM.kandidaat(id);
   if(c) uitvalForm(c, UITVAL.includes(fase) ? fase : (UITVAL.includes(c.fase) ? c.fase : 'Afgevallen'));
 };
+/* ─── Voorstellen bij een vacature — één route voor élk scherm ───
+   Dit kon op twee manieren, en maar één ervan had poortwachters. Vanaf het
+   bord en de fase-picker liep het via faseWissel(); vanaf de kandidaatkaart
+   ("Voorstellen bij deze vacature") schreef js/kandidaten.js zelf de fase
+   weg. Gevolg: dezelfde handeling, twee uitkomsten — via de kaart kwam
+   iemand zonder video-intake er zonder vragen doorheen, en er werd geen
+   activiteit bij de klant gelogd.
+
+   bewaarFase() claimt in zijn eigen commentaar dat élke fasewissel er
+   langskomt. Dat was dus niet waar. Nu wel.
+
+   (Tjeerd, 2 aug 2026: "het bord van klanttrajecten en recruitment moet
+   altijd matchen met wat er op de kaarten van de klanten en kandidaten
+   gebeurt.") */
+CRM.voorstellen = async (id, vac) => {
+  const c = CRM.kandidaat(id);
+  if(!c || !vac) return false;
+  if(!intakeDone(c)){
+    const toch = await CRM.bevestig(`${c.naam} heeft nog geen video-intake gehad`,
+      'Voorstellen kan pas na de intake. Weet je zeker dat je deze kandidaat toch aan de klant voorstelt?');
+    if(!toch) return false;
+  }
+  const extra = {klant: vac.klant || '', vacature_id: vac.id};
+  /* Functie van de vacature alleen overnemen als de kandidaat er zelf geen
+     heeft: wat op zijn kaart staat is wat híj doet, en dat overschrijven
+     maakt de kaart onbruikbaar zodra hij ergens anders wordt voorgesteld. */
+  if(vac.functie && !String(c.functie||'').trim()) extra.functie = vac.functie;
+  await bewaarFase(c, 'Voorgesteld', extra);
+  await CRM.logActiviteit('klant', vac.klant, 'systeem',
+    `${c.naam} voorgesteld voor ${vac.functie || 'een vacature'}`);
+  return true;
+};
 CRM.kandidaatIntake  = id => intakeForm(id);                // video-intakeformulier
 CRM.kandidaatPlannen = id => { const c = CRM.kandidaat(id); if(c) planAfspraak(c); };
 CRM._rcDeel = {
   intakeForm, ooModal, promoteerStarts, weekGrens,
-  ooSessies, ooSessie, sessLeden, intakeDone,
+  ooSessies, ooSessie, sessLeden, sessDeelnemers, sessFuncties, intakeDone,
   garantieEnd, owesReplacement, repOf, totaalJaarSalaris,
   /* "+ Kandidaat" stond op het vervallen tabblad Voorselectie; die knop hoort
      nu op het bord, want de kandidaat komt in de eerste kolom (Intake). */

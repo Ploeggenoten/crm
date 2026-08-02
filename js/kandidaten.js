@@ -1754,13 +1754,13 @@ async function voorstellen(c, v){
     [c.naam + ' → ' + v.functie + ' bij ' + v.klant + '. De fase gaat naar Voorgesteld.']
       .concat(sig).join(' '));
   if(!ok) return;
-  const nieuw = Object.assign({}, c, {
-    klant:v.klant, functie:v.functie || c.functie, vacatureId:v.id, fase:'Voorgesteld',
-    historie:(c.historie||[]).concat([{fase:'Voorgesteld', op:CRM.todayISO()}])
-  });
-  await bewaarKandidaat(nieuw);
-  await CRM.logActiviteit('kandidaat', c.id, 'fase', 'Voorgesteld bij ' + v.klant + ' — ' + v.functie);
-  await CRM.logActiviteit('klant', v.klant, 'systeem', c.naam + ' voorgesteld voor ' + v.functie);
+  /* Eén route naar Voorgesteld, gedeeld met het bord en de fase-picker.
+     Dit bestand schreef de fase eerst zelf weg, en daarmee liep het langs de
+     intake-poort, langs de trajectpoort en langs de plaatsingslogica in
+     bewaarFase heen: dezelfde handeling gaf een andere uitkomst, afhankelijk
+     van waar je klikte. Zie CRM.voorstellen in js/recruitment.js. */
+  if(!CRM.voorstellen) return CRM.fout('Voorstellen is nu niet beschikbaar — herlaad de pagina');
+  await CRM.voorstellen(c.id, v);
   CRM.render();
 }
 

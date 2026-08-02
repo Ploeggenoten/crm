@@ -369,3 +369,24 @@ a.ob-i:hover b{text-decoration:underline}
   .kl-af-regel{grid-template-columns:minmax(0,1fr) 74px 34px;gap:6px}
   .kl-af-std{max-width:none}
 }
+
+/* ─── O&O-sessies op de klantkaart ────────────────────────────────
+   Onder de vacatures, want een sessie gaat over meerdere vacatures
+   tegelijk. Rustige rijen, geen kaarten: het is een agenda, en de vraag
+   die je eraan stelt is "wanneer, voor welke functies, en zitten er al
+   genoeg mensen in". Alleen dat laatste krijgt kleur, en alleen als het
+   goed is — vier is het streefgetal, minder is normaal onderweg. */
+.kl-oo{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.kl-oolijst{display:flex;flex-direction:column;gap:1px}
+.kl-oorij{display:grid;grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:14px;
+  width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef0e4;
+  padding:10px 4px;font-family:var(--body);cursor:pointer}
+.kl-oorij:last-child{border-bottom:none}
+.kl-oorij:hover{background:var(--card-2)}
+.kl-oorij.weg{opacity:.55}
+.kl-oodat{font-size:12.5px;font-weight:600;color:var(--txt-2);white-space:nowrap}
+.kl-oowat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.kl-oowat b{font-size:13px;color:var(--ink);font-weight:600}
+.kl-oowat .meta{font-size:11.5px}
+.kl-ooaantal{font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap}
+.kl-ooaantal.goed{color:var(--olive)}
