@@ -1759,9 +1759,20 @@ async function voorstellen(c, v){
      naar beneden hebt gescrold. Het blijft een bevestiging, geen blokkade. */
   const sig = (CRM.kdHistorie ? CRM.kdHistorie.signalen(c, v) : [])
     .filter(s => s.k !== 'gekoppeld').map(s => 'Let op: ' + s.tekst + '.');
+  /* Reageerde deze kandidaat op een ándere vacature, zeg dat dan. Een lead
+     uit een advertentie komt binnen mét de vacature waarop is gereageerd;
+     dat veld werd bij het voorstellen stilzwijgend overschreven. Dan staat er
+     later "gereageerd op Heftruckchauffeur" nergens meer, en denkt de klant
+     dat wij iemand sturen die om dít werk vroeg. Het blijft een mededeling,
+     geen blokkade: iemand voorstellen op iets anders is vaak juist goed werk. */
+  const oudeVac = c.vacatureId && String(c.vacatureId) !== String(v.id)
+    ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
+  const anders = oudeVac
+    ? `Let op: deze kandidaat kwam binnen op ${oudeVac.functie} bij ${oudeVac.klant}. Die koppeling vervalt.`
+    : '';
   const ok = await CRM.bevestig('Voorstellen bij deze vacature?',
     [c.naam + ' → ' + v.functie + ' bij ' + v.klant + '. De fase gaat naar Voorgesteld.']
-      .concat(sig).join(' '));
+      .concat(anders ? [anders] : []).concat(sig).join(' '));
   if(!ok) return;
   /* Eén route naar Voorgesteld, gedeeld met het bord en de fase-picker.
      Dit bestand schreef de fase eerst zelf weg, en daarmee liep het langs de

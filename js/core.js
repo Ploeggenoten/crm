@@ -220,7 +220,17 @@ CRM.modal = {
     if(!m.hasAttribute('tabindex')) m.tabIndex = -1;
     _mFocusTerug = document.activeElement;
     cancelAnimationFrame(_mFrame);
-    _mFrame = requestAnimationFrame(()=>{ _mFrame = null; scrim.classList.add('on'); m.classList.add('on'); focusIn(m); });
+    /* De rAF is er alleen voor de animatie: hij geeft de browser één frame om
+       de nieuwe inhoud te plaatsen vóór de overgang begint. Maar in een tab
+       die op de achtergrond staat vuurt requestAnimationFrame niet, en dan
+       blijft het venster op opacity 0 staan terwijl het logisch wél openstaat
+       (_aan = true, niet inert). Wie dan terugklikt ziet niets gebeuren en
+       klikt nog een keer.
+       Staat de pagina verborgen, dan zetten we de klasse meteen — een
+       animatie die niemand ziet hoeft niet gepland te worden. */
+    const toon = () => { _mFrame = null; scrim.classList.add('on'); m.classList.add('on'); focusIn(m); };
+    if(document.hidden) toon();
+    else _mFrame = requestAnimationFrame(toon);
     CRM.$$('[data-mclose]', m).forEach(b => b.onclick = () => CRM.modal.close());
     /* Sluit de modal op een andere manier dan via de knoppen — Escape, een klik
        op de achtergrond — dan moet een wachtende `await` alsnog verder. Zonder

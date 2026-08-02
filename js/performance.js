@@ -96,6 +96,12 @@ function pctTxt(deel, totaal, grens=10){
   return `<span class="num">${p}%</span>` + (totaal < grens ? ` <span class="meta num">n=${totaal}</span>` : '');
 }
 
+/* "92% door" op een trede van 4 kandidaten is geen conversie maar toeval.
+   Bij kleine treden staat het aantal er daarom bij, net als bij pctTxt. */
+function pctDoor(door, van, grens=10){
+  return Math.round(door/van*100) + '% door' + (van < grens ? ` <span class="meta num">(${door}/${van})</span>` : '');
+}
+
 /* Laatste beweging in de historie — proxy voor "wanneer viel de kandidaat af". */
 function laatsteBeweging(c){
   const hist = c.historie||[];
@@ -136,13 +142,29 @@ const FUNNEL = CRM.PHASES.filter(p => !['Afgevallen','Gestopt'].includes(p.k));
    fIdx daar −1 op en vielen die kandidaten stilzwijgend uit de trechter,
    alsof ze er nooit in hadden gezeten. */
 const fIdx = k => FUNNEL.findIndex(f => CRM.faseIs(f.k, k));
+/* EEN HANDTEKENING BESTAAT ALLEEN MET EEN DATUM VAN TEKENEN.
+   De historie van een afgevallen kandidaat bevat álle fases waar die ooit
+   langs kwam. Wie tot 'Contract getekend' kwam en tóch afhaakte, had daardoor
+   verste() = Contract getekend en telde in de trechter als plaatsing. Op de
+   demodata gaf dat 33 "geplaatst" in de trechter naast 17 getekend in het
+   jaarblok — twee antwoorden op dezelfde vraag, op één scherm. Dezelfde fout
+   is op 2 aug 2026 al in conversies() gerepareerd; hier stond hij nog.
+   Regel, gelijk aan het bord en Finance: alles vanaf 'Contract getekend'
+   telt alleen mee als `geplaatstOp` gevuld is. Zonder die datum wordt de
+   kandidaat afgetopt op de laatste fase vóór de handtekening — hij is wel
+   zó ver gekomen, maar er is niet getekend.
+   De drempels lager in de trechter (Voorgesteld, Eerste gesprek) raakt dit
+   niet, dus ratios(), conversies() en de klantcijfers houden hun uitkomst. */
 function verste(c){
+  const getekendIdx = fIdx('Contract getekend');
+  const bewijs  = !!kort(c.geplaatstOp);
+  const plafond = bewijs ? FUNNEL.length : getekendIdx - 1;
   const idxs = [];
-  (c.historie||[]).forEach(x => { const i = fIdx(x.fase); if(i>=0) idxs.push(i); });
-  const cur = fIdx(c.fase);
-  if(cur>=0) idxs.push(cur);
-  if(CRM.faseIs(c.fase,'Gestopt')) idxs.push(fIdx('Gestart'));
-  if(kort(c.geplaatstOp)) idxs.push(fIdx('Contract getekend'));
+  const zet = i => { if(i >= 0 && i <= plafond) idxs.push(i); };
+  (c.historie||[]).forEach(x => zet(fIdx(x.fase)));
+  zet(fIdx(c.fase));
+  if(CRM.faseIs(c.fase,'Gestopt')) zet(fIdx('Gestart'));
+  if(bewijs) idxs.push(getekendIdx);
   return idxs.length ? Math.max.apply(null, idxs) : -1;
 }
 /* Staat deze kandidaat nú in de pijplijn? Alleen echte, lopende fases —
@@ -177,6 +199,59 @@ function cijfers(p){
   const instroom  = cs.filter(c => inP(c.since,p));
   const afgevallen= cs.filter(c => CRM.faseIs(c.fase,'Afgevallen') && inP(laatsteBeweging(c),p));
   return {cs, getekend, gestopt, cohort, instroom, afgevallen, netto:getekend.length-gestopt.length};
+}
+
+/* ═══ 0a. WAAR DEZE CIJFERS OP RUSTEN ════════════════════════════
+   Klacht Tjeerd (2 aug 2026): "de performance klopt niet qua cijfers, veel
+   staat ook op 0". Dat kwam niet doordat de blokken verkeerd rekenden maar
+   doordat ze zwégen: van de 355 kandidaten in productie komen er 236 uit de
+   import van het oude ATS, zónder fase, zónder instroomdatum en zónder
+   plaatsingsdatum. Elk blok filtert die er — terecht — uit, en het scherm
+   toonde vervolgens een handvol cijfers en een rij nullen zonder ooit te
+   zeggen dat vier op de vijf kaarten buiten beeld bleven.
+
+   Dit blok zegt het wél, en alleen als er iets te melden valt. Het rekent
+   niets uit: het telt lege velden. Zo weet je bij elke nul of het aan het
+   werk ligt of aan de gegevens — en dat is een ander gesprek.             */
+function blokBasis(){
+  const cs = CRM.kandidaten();
+  if(!cs.length) return '';
+
+  /* "Geen pijplijnfase" is breder dan "leeg": een waarde die niet in
+     CRM.PHASES of CRM.VOOR_BORD staat (oude ATS-statussen) valt er net zo
+     hard buiten, en dat is aan het scherm niet te zien. */
+  const kentFase = c => !!String(c.fase||'').trim() &&
+    CRM.ALLE_FASES.some(f => CRM.faseIs(f.k, c.fase));
+  const geenFase   = cs.filter(c => !kentFase(c));
+  const geenSince  = cs.filter(c => !kort(c.since));
+  const geenBron   = cs.filter(c => !(c.bron||'').trim());
+  const plaatsingen= cs.filter(isPlaatsing);
+  const zonderLoon = plaatsingen.filter(c => (c.type||'W&S') !== 'Flex' && !c.vervangt && c.maandloon == null);
+
+  const punten = [];
+  if(geenFase.length) punten.push([geenFase.length,
+    'geen (herkenbare) fase — die tellen niet mee in de conversietrechter, de pijplijnkolom per recruiter en de uitvalredenen']);
+  if(geenSince.length) punten.push([geenSince.length,
+    'geen instroomdatum — die vallen buiten élk periodefilter op dit scherm, dus ook buiten de trechter en de brontabel']);
+  if(geenBron.length) punten.push([geenBron.length,
+    'geen bron ingevuld — die staan in geen enkele regel van "Per bron"']);
+  if(zonderLoon.length) punten.push([zonderLoon.length,
+    'een W&S-plaatsing zonder bruto maandsalaris — daarvan is geen fee te berekenen']);
+  if(!punten.length) return '';
+
+  const pct = Math.round(Math.max(geenFase.length, geenSince.length) / cs.length * 100);
+  return `<div class="card pf-basis"><div class="card-h"><div class="h2">Waar deze cijfers op rusten</div>
+      <span class="meta num">${cs.length} kandidaten in het systeem</span></div>
+    <div class="card-b">
+      <ul class="pf-basislijst">${punten.map(([n, tekst]) =>
+        `<li><b class="num">${n}</b><span>${h(tekst)}</span></li>`).join('')}</ul>
+      <p class="pf-uitleg meta">Dit is geen fout in de berekening maar een gat in de gegevens: een kaart zonder fase
+        is nooit de pijplijn in gegaan en een kaart zonder datum valt buiten elke maand. Ze meetellen zou de
+        percentages hieronder juist onwaar maken. Zie je een blok op nul staan, kijk dan eerst hier —
+        ${pct >= 50 ? `het gaat om ruwweg de helft of meer van je bestand` : `het gaat om een deel van je bestand`},
+        en dat is meestal de overzetting uit het oude ATS. Vul je fase, instroomdatum en bron aan, dan vullen de
+        blokken zich vanzelf.</p>
+    </div></div>`;
 }
 
 /* ═══ 0. HET JAAR — het gedeelde doel van het hele team ══════════
@@ -241,9 +316,17 @@ function blokJaar(){
     .map(k => ({k, n:J.getekend.filter(c => (c.klant||'').trim() === k).length}))
     .sort((a,b) => b.n - a.n)[0];
 
+  /* CRM.jaarTarget() valt terug op de standaard van 75 als er geen rij in
+     `targets` staat. Zonder dat erbij te zeggen leest 75 als "het doel dat
+     Tjeerd heeft ingesteld", terwijl het de noodwaarde van de app is — en
+     dan stuurt het halve scherm (bruto nodig, tempo, omzet bij het doel) op
+     een getal dat niemand heeft afgesproken. */
+  const doelGezet = (CRM.state.targets || []).some(t => String(t.maand) === String(J.jaar) && t.aantal != null);
+
   return `<section class="pf-sec pf-jaar">
     <div class="pf-kop"><span class="label">Het jaar ${h(J.jaar)}</span>
-      <span class="meta">gedeeld doel · t/m 31 december</span></div>
+      <span class="meta">gedeeld doel · t/m 31 december${doelGezet ? ''
+        : ` · doel van ${J.doel} is de standaardwaarde, nog niet zelf ingesteld`}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Getekend dit jaar', `<span class="num">${J.gedaan}</span><span class="pf-eh"> van ${J.doel}</span>`,
         `<span class="meta num">${J.pct}% van het jaardoel</span>`, 'accent')}
@@ -455,8 +538,17 @@ function blokNaar(){
       <div class="pf-ncs">
         ${ncijfer('Nog te tekenen', gehaald ? '<span class="chip green">Doel gehaald</span>' : J.teGaan,
           `${J.gedaan} van ${J.doel} staat · nog ${een(weken)} ${weken < 2 ? 'week' : 'weken'}`)}
-        ${ncijfer('Per week', gehaald ? '0' : een(perWeek), 'om netto op ' + J.doel + ' uit te komen')}
-        ${ncijfer('Per maand', gehaald ? '0' : een(perMaand), `over de resterende ${een(maanden)} maanden`)}
+        ${/* In de laatste twee weken van het jaar loopt "per week" hard weg —
+              op 31 december staat er 406 per week. Rekenkundig juist en als
+              stuurgetal waardeloos, dus dan de resterende dagen, net als de
+              tempotegel in het jaarblok hierboven. */''}
+        ${J.dagenTeGaan < 14 && !gehaald
+          ? ncijfer('Nog te gaan', J.teGaan,
+              `in de laatste ${J.dagenTeGaan} ${J.dagenTeGaan===1?'dag':'dagen'} — een weektempo zegt hier niets meer`)
+          : ncijfer('Per week', gehaald ? '0' : een(perWeek), 'om netto op ' + J.doel + ' uit te komen')}
+        ${J.dagenTeGaan < 14 && !gehaald
+          ? ncijfer('Per dag', een(J.teGaan / J.dagenTeGaan), 'over de resterende dagen van het jaar')
+          : ncijfer('Per maand', gehaald ? '0' : een(perMaand), `over de resterende ${een(maanden)} maanden`)}
       </div>
       <div class="pf-nbruto">
         <span class="label">En als ${pctW(R.stopRatio)} stopt</span>
@@ -535,8 +627,16 @@ function blokNaar(){
         <span class="meta">berekende fee · ${h(J.jaar)}</span></div>
       <div class="card-b">
         <div class="pf-ncs">
-          ${ncijfer('Omzet tot nu toe', h(CRM.euro(O.som)),
-            `over ${O.metFee} van de ${J.getekend.length} plaatsingen van dit jaar`)}
+          ${/* € 0 is hier bijna nooit waar: het betekent meestal dat er geen
+                commerciële afspraak is vastgelegd, niet dat er niets verdiend is.
+                Het scherm zei letterlijk "€ 0 over 0 van de 17 plaatsingen"
+                terwijl de regel eronder uitlegde dat die 17 nergens als € 0
+                meetellen. Zonder één berekende fee dus een streepje. */''}
+          ${ncijfer('Omzet tot nu toe', O.metFee ? h(CRM.euro(O.som)) : '—',
+            O.metFee ? `over ${O.metFee} van de ${J.getekend.length} plaatsingen van dit jaar`
+              : J.getekend.length
+                ? `van geen van de ${J.getekend.length} plaatsingen van dit jaar is een fee te berekenen — dat is niet hetzelfde als € 0`
+                : 'nog geen plaatsing dit jaar', O.metFee ? '' : 'zwak')}
           ${ncijfer('Gemiddelde fee', O.gem != null ? h(CRM.euro(O.gem)) : '—',
             O.metFee ? `per plaatsing met een berekende fee (n=${O.metFee})` : 'nog geen plaatsing met fee',
             genoegN(O.metFee) ? '' : 'zwak')}
@@ -607,7 +707,11 @@ function blokPlaatsingen(p, D){
                             : '<span class="meta">geen plaatsingen in deze periode</span>')}
     </div>
     <p class="pf-uitleg meta">Netto volgt exact de definitie van het bord: getekend in de periode min gestopt in de periode.
-      Duurzaamheid kijkt naar de lichting die in deze periode tekende — met een garantie van ${GARANTIE_STD} maanden als er niets is ingevuld.</p>
+      Duurzaamheid kijkt naar de lichting die in deze periode tekende — met een garantie van ${GARANTIE_STD} maanden als er niets is ingevuld.
+      ${D.cohort.length !== D.getekend.length ? `Die lichting telt <span class="num">${D.cohort.length}</span> mensen en niet
+        ${D.getekend.length}: een gestopte garantievervanger tekende wél, maar telt bewust niet mee in het targetcijfer —
+        anders zou dezelfde plek twee keer worden afgetrokken.` : ''}
+      Alleen kandidaten mét een datum van tekenen tellen hier mee; een kaart zonder die datum is geen plaatsing.</p>
     ${namenEnNazorg(D)}
   </section>`;
 }
@@ -696,7 +800,13 @@ function recruiterRijen(p, D){
       duurN: duur.length, duurT: cohort.length,
       pijplijn: mijn.filter(inPijplijn).length,
       looptijd: gem(looptijden),
-      gesprekken: mijn.filter(c => inP(c.datum, p)).length
+      /* `datum` is het veld "afspraak" op de kaart: ÉÉN datum, die bij elke
+         volgende afspraak wordt overschreven. Dit is dus geen telling van
+         gevoerde gesprekken (dat suggereerde de kolomkop "Gesprekken" wel)
+         maar het aantal kandidaten met een afspraakdatum in deze periode.
+         Zolang dat veld het enige is wat we hebben, noemen we het ook zo. */
+      afspraken: mijn.filter(c => inP(c.datum, p)).length,
+      metDatum: mijn.filter(c => !!kort(c.datum)).length
     };
   });
 }
@@ -731,7 +841,7 @@ function blokRecruiters(p, D){
         ${kop('duur','Duurzaam','n')}
         ${kop('pijplijn','In klanttraject','n')}
         ${kop('looptijd','Doorlooptijd','n')}
-        ${kop('gesprekken','Gesprekken','n')}
+        ${kop('afspraken','Afspraken','n')}
       </tr></thead>
       <tbody>${rijen.map(r=>`<tr>
         <td><b>${h(r.naam)}</b></td>
@@ -741,9 +851,15 @@ function blokRecruiters(p, D){
         <td class="n">${r.duurT ? pctTxt(r.duurN, r.duurT) : '<span class="meta">—</span>'}</td>
         <td class="n num">${r.pijplijn}</td>
         <td class="n num">${r.looptijd!=null ? r.looptijd+' dgn' : '<span class="meta">—</span>'}</td>
-        <td class="n num">${r.gesprekken}</td>
+        <td class="n num">${r.metDatum ? r.afspraken : '<span class="meta">—</span>'}</td>
       </tr>`).join('')}</tbody>
     </table></div>
+    <p class="pf-uitleg meta">Plaatsingen en netto volgen de definitie van het bord. <b>In klanttraject</b> telt alleen
+      kandidaten die nú op een echte pijplijnfase staan; kaarten zonder fase (de import uit het oude ATS) horen daar
+      niet bij. <b>Afspraken</b> is het aantal kandidaten van deze recruiter met een afspraakdatum in de periode —
+      op de kaart staat één afspraakveld dat bij elke nieuwe afspraak wordt overschreven, dus dit is geen telling
+      van gevoerde gesprekken. Staat er een streepje, dan heeft deze recruiter bij geen enkele kandidaat een
+      afspraakdatum staan; dat is iets anders dan nul afspraken.</p>
   </section>`;
 }
 
@@ -755,10 +871,18 @@ function blokTrechter(p, D){
   const cohort = D.instroom.filter(c => verste(c) >= 0);
   const buiten = D.instroom.length - cohort.length;
   const buitenTxt = buiten ? ` · <span class="num">${buiten}</span> zonder pijplijnfase niet meegeteld` : '';
-  if(cohort.length < 3)
+  if(cohort.length < 3){
+    /* Nul instroom heeft twee heel verschillende oorzaken en het scherm zei
+       allebei "te weinig instroom". Ligt het aan een lege instroomdatum, dan
+       helpt een langere periode NIET — die kaarten vallen buiten élke maand.
+       Dat verschil moet je zien, anders blijf je periodes proberen. */
+    const zonderSince = CRM.kandidaten().filter(c => !kort(c.since)).length;
+    const uitleg = !D.instroom.length && zonderSince
+      ? `Er staat geen enkele instroomdatum in deze periode, terwijl ${zonderSince} kandidaten helemaal geen instroomdatum hebben — die vallen buiten elke periode. Een langere periode helpt hier niet; een instroomdatum invullen wel.`
+      : `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} kandidaten zonder pijplijnfase tellen niet mee — meestal de import uit het oude ATS)`:''}. Kies een langere periode voor een betrouwbaar beeld.`;
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Conversietrechter</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Te weinig instroom in deze periode',
-        `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} kandidaten zonder pijplijnfase tellen niet mee — meestal de import uit het oude ATS)`:''}. Kies een langere periode voor een betrouwbaar beeld.`)}</div></div></section>`;
+      <div class="card"><div class="card-b">${CRM.ui.leeg('Te weinig instroom in deze periode', uitleg)}</div></div></section>`;
+  }
 
   const verstes = cohort.map(verste);
   const tel = FUNNEL.map((f,i) => ({fase:f.k, kleur:f.c, n:verstes.filter(v => v>=i).length}));
@@ -778,20 +902,25 @@ function blokTrechter(p, D){
             <div class="pf-fl">${h(t.fase)}</div>
             <div class="pf-fb"><i style="width:${Math.round(t.n/start*100)}%"></i>
               <span class="pf-fn num">${t.n}</span></div>
-            <div class="pf-fd meta num">${door!=null && t.n ? Math.round(door/t.n*100)+'% door' : ''}</div>
+            <div class="pf-fd meta num">${door!=null && t.n ? pctDoor(door, t.n) : ''}</div>
           </div>`;
         }).join('')}
       </div>
       <div class="pf-ratios">
         <div><span class="label">Voorstellen per plaatsing</span>
-          <b class="num">${plaatsingen ? (voorgesteld/plaatsingen).toFixed(1) : '—'}</b>
-          <span class="meta num">${voorgesteld} voorgesteld · ${plaatsingen} geplaatst</span></div>
+          <b class="num">${plaatsingen ? (voorgesteld/plaatsingen).toFixed(1).replace('.',',') : '—'}</b>
+          <span class="meta num">${voorgesteld} voorgesteld · ${plaatsingen} ${plaatsingen===1?'tekende':'tekenden'}${
+            plaatsingen ? '' : ' — niemand uit deze lichting heeft getekend'}</span></div>
         <div><span class="label">Offers per plaatsing</span>
-          <b class="num">${plaatsingen ? (offers/plaatsingen).toFixed(1) : '—'}</b>
-          <span class="meta num">${offers} offers · ${plaatsingen} geplaatst</span></div>
+          <b class="num">${plaatsingen ? (offers/plaatsingen).toFixed(1).replace('.',',') : '—'}</b>
+          <span class="meta num">${offers} ${offers===1?'offer':'offers'} · ${plaatsingen} ${plaatsingen===1?'tekende':'tekenden'}</span></div>
       </div>
       <p class="pf-uitleg meta">Een kandidaat telt bij elke fase die ooit is bereikt (uit de historie).
         Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die is gehaald.
+        De onderste twee treden vragen wél een bewijs: <b>Contract getekend en Gestart tellen alleen met een
+        datum van tekenen</b>, precies zoals het pijplijnbord en Finance. Zonder die eis telde iedereen die ooit
+        tot een contract kwam en tóch afhaakte hier als plaatsing, en stond er in dit blok een hoger aantal
+        plaatsingen dan in het jaarblok bovenaan.
         Kandidaten zonder fase (import uit het oude ATS) zijn nooit de pijplijn in gegaan en tellen dus nergens mee.</p>
     </div></div>
   </section>`;
@@ -1333,6 +1462,10 @@ function klantTabel(V, C){
     actief: rijen.reduce((s,r)=>s+r.actief,0),
     omzet:  rijen.reduce((s,r)=>s+(klantWaarde(r)||0),0)
   };
+  /* Staat er in de hele kolom geen enkele waarde, dan is de optelling
+     daarvan niet nul maar onbekend — anders leest de totaalregel als een
+     feit terwijl elke cel erboven "onbekend" zegt. */
+  const totBekend = rijen.some(r => klantWaarde(r) != null);
 
   return `<div class="tblwrap"><table class="tbl pf-tbl">
     <thead><tr>
@@ -1379,7 +1512,7 @@ function klantTabel(V, C){
       <td class="n num">${tot.voorg}</td>
       <td class="n num">${tot.plaats}</td>
       <td class="n num">${tot.actief}</td>
-      ${omzetKolom ? `<td class="n num">${h(klantFmt(tot.omzet))}</td>` : ''}${gemKolom ? '<td></td>' : ''}
+      ${omzetKolom ? `<td class="n num">${totBekend ? h(klantFmt(tot.omzet)) : '<span class="meta">onbekend</span>'}</td>` : ''}${gemKolom ? '<td></td>' : ''}
       <td colspan="${(vergelijk?1:0)+4}"></td></tr>
     </tbody>
   </table></div>`;
@@ -1427,9 +1560,19 @@ function blokKlanten(fin){
         `<span class="meta num">van ${C.rijen.length} met beweging in deze periode</span>`, 'accent')}
       ${CRM.ui.kpi('Plaatsingen', `<span class="num">${totPlaats}</span>`,
         metPlaatsing ? `<span class="meta num">gemiddeld ${(totPlaats/metPlaatsing).toFixed(1).replace('.',',')} per klant</span>` : '')}
+      ${/* Bij de berekende fee is € 0 met plaatsingen erbij geen feit maar een
+            ontbrekende afspraak — en de bronregel hierboven zegt zelf dat die
+            plaatsingen "nergens als € 0 meetellen". Dan mag de tegel dat niet
+            alsnog doen. Bij gefactureerd (fin) is € 0 wél een feit: er staan
+            termijnen in het financebord en er is niets van gefactureerd. */''}
       ${klantGeld()
-        ? CRM.ui.kpi(klantBron === 'fin' ? 'Gefactureerd' : 'Berekende fee', `<span class="num">${h(CRM.euro(totWaarde))}</span>`,
-            gemPerPlaatsing ? `<span class="meta num">gemiddeld ${h(CRM.euro(gemPerPlaatsing))} per plaatsing</span>` : '')
+        ? CRM.ui.kpi(klantBron === 'fin' ? 'Gefactureerd' : 'Berekende fee',
+            (klantBron === 'fee' && !metFeeTot && totPlaats)
+              ? '<span class="meta">—</span>'
+              : `<span class="num">${h(CRM.euro(totWaarde))}</span>`,
+            (klantBron === 'fee' && !metFeeTot && totPlaats)
+              ? `<span class="meta">van geen van de ${totPlaats} plaatsingen is een fee te berekenen — leg de commerciële afspraken vast</span>`
+              : gemPerPlaatsing ? `<span class="meta num">gemiddeld ${h(CRM.euro(gemPerPlaatsing))} per plaatsing</span>` : '')
         : CRM.ui.kpi('Actief aan het werk', `<span class="num">${C.rijen.reduce((s,r)=>s+r.actief,0)}</span>`,
             '<span class="meta">nu geplaatst bij een klant</span>')}
       ${CRM.ui.kpi('Grootste klant', top1 != null ? `<span class="num">${top1}%</span>` : '<span class="meta">—</span>',
@@ -1498,25 +1641,58 @@ function blokBron(p, D){
     return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per bron</span></div>
       <div class="card"><div class="card-b">${CRM.ui.leeg('Geen bron vastgelegd','Vul het veld bron bij leads en kandidaten in om marketing aan plaatsingen te koppelen.')}</div></div></section>`;
 
-  const alle = bronnen.map(b => ({
-    bron: b,
-    werving: !BRON_GEEN_WERVING(b),
-    leads: leads.filter(l => (l.bron||'').trim()===b).length,
-    kand:  D.instroom.filter(c => (c.bron||'').trim()===b).length,
-    plaats:D.getekend.filter(c => (c.bron||'').trim()===b).length
-  })).sort((a,b)=> (b.leads+b.kand*3+b.plaats*10) - (a.leads+a.kand*3+a.plaats*10));
+  /* DRIE KOLOMMEN, DRIE POPULATIES — en twee percentages die daardoor onzin
+     waren. Op de demodata stond er "Indeed → kandidaat 192%": 13 leads en 25
+     kandidaatkaarten met bron Indeed, op elkaar gedeeld. Dat zijn geen 25 van
+     die 13 leads — een kandidaatkaart kan ook zonder lead worden aangemaakt.
+     Een conversie boven de 100% is het bewijs dat teller en noemer niet uit
+     dezelfde groep komen.
+     Nu meten we allebei de stappen als een échte doorstroom:
+       → kandidaatkaart : van de leads uit deze periode, hoeveel zijn er aan
+         een kandidaat gekoppeld (crm_leads.kandidaat_id — dezelfde meetlat
+         als leadRatio() hierboven). Is dat veld nergens gevuld, dan is de
+         stap niet te meten en staat er een streepje in plaats van een breuk.
+       → plaatsing : van de kandidaten die in deze periode instroomden,
+         hoeveel hebben er inmiddels getekend. Dat is een cohort, dus teller
+         en noemer gaan over dezelfde mensen. De kolom Plaatsingen ernaast
+         blijft het volume van de periode (getekend in deze periode, ongeacht
+         wanneer iemand binnenkwam) — dat zijn bewust twee vragen.        */
+  const gekoppeld = leads.filter(l => String(l.kandidaat_id || '').trim());
+  const meetbaarLead = gekoppeld.length > 0;
+
+  const alle = bronnen.map(b => {
+    const mijnKand = D.instroom.filter(c => (c.bron||'').trim()===b);
+    return {
+      bron: b,
+      werving: !BRON_GEEN_WERVING(b),
+      leads: leads.filter(l => (l.bron||'').trim()===b).length,
+      leadDoor: gekoppeld.filter(l => (l.bron||'').trim()===b).length,
+      kand:  mijnKand.length,
+      kandGeplaatst: mijnKand.filter(c => !!kort(c.geplaatstOp)).length,
+      plaats:D.getekend.filter(c => (c.bron||'').trim()===b).length
+    };
+  }).sort((a,b)=> (b.leads+b.kand*3+b.plaats*10) - (a.leads+a.kand*3+a.plaats*10));
 
   const rijen  = alle.filter(r => r.werving);
   const buiten = alle.filter(r => !r.werving);
-  const tot = rijen.reduce((s,r)=>({leads:s.leads+r.leads, kand:s.kand+r.kand, plaats:s.plaats+r.plaats}), {leads:0,kand:0,plaats:0});
+  const tot = rijen.reduce((s,r)=>({leads:s.leads+r.leads, leadDoor:s.leadDoor+r.leadDoor,
+    kand:s.kand+r.kand, kandGeplaatst:s.kandGeplaatst+r.kandGeplaatst, plaats:s.plaats+r.plaats}),
+    {leads:0, leadDoor:0, kand:0, kandGeplaatst:0, plaats:0});
+
+  /* Is de stap nergens te meten, dan staat er in élke rij hetzelfde zinnetje —
+     vijf keer "niet te meten" onder elkaar is ruis. Eén streepje per cel, de
+     reden één keer in de toelichting onder de tabel. */
+  const leadCel = r => (!meetbaarLead || !r.leads) ? '<span class="meta">—</span>'
+    : pctTxt(r.leadDoor, r.leads);
+  const plCel = r => r.kand ? pctTxt(r.kandGeplaatst, r.kand) : '<span class="meta">—</span>';
 
   const rij = r => `<tr>
     <td><b>${h(r.bron)}</b></td>
     <td class="n num">${r.leads}</td>
     <td class="n num">${r.kand}</td>
-    <td class="n">${r.leads ? pctTxt(r.kand, r.leads) : '<span class="meta">—</span>'}</td>
+    <td class="n">${leadCel(r)}</td>
     <td class="n num">${r.plaats}</td>
-    <td class="n">${r.kand ? pctTxt(r.plaats, r.kand) : '<span class="meta">—</span>'}</td>
+    <td class="n">${plCel(r)}</td>
   </tr>`;
 
   return `<section class="pf-sec">
@@ -1524,14 +1700,14 @@ function blokBron(p, D){
       <span class="meta">van advertentie tot plaatsing · ${h(p.lbl)}</span></div>
     <div class="tblwrap"><table class="tbl pf-tbl">
       <thead><tr><th>Bron</th><th class="n">Leads</th><th class="n">Kandidaten</th>
-        <th class="n">→ kandidaat</th><th class="n">Plaatsingen</th><th class="n">→ plaatsing</th></tr></thead>
+        <th class="n">→ kandidaatkaart</th><th class="n">Getekend</th><th class="n">Instroom geplaatst</th></tr></thead>
       <tbody>
         ${rijen.map(rij).join('') || `<tr><td colspan="6"><span class="meta">Geen wervingsbron in deze periode.</span></td></tr>`}
         <tr class="pf-tot"><td><b>Totaal wervingsbronnen</b></td>
           <td class="n num">${tot.leads}</td><td class="n num">${tot.kand}</td>
-          <td class="n">${tot.leads ? pctTxt(tot.kand, tot.leads) : '<span class="meta">—</span>'}</td>
+          <td class="n">${leadCel(tot)}</td>
           <td class="n num">${tot.plaats}</td>
-          <td class="n">${tot.kand ? pctTxt(tot.plaats, tot.kand) : '<span class="meta">—</span>'}</td></tr>
+          <td class="n">${plCel(tot)}</td></tr>
       </tbody>
       ${buiten.length ? `<tbody class="pf-buiten">${buiten.map(r=>`<tr>
         <td><b>${h(r.bron)}</b><div class="rowsub">historisch bestand, geen werving</div></td>
@@ -1542,8 +1718,16 @@ function blokBron(p, D){
         <td class="n"><span class="meta">niet meegeteld</span></td>
       </tr>`).join('')}</tbody>` : ''}
     </table></div>
-    <p class="pf-uitleg meta">Leads zijn binnengekomen reacties, kandidaten zijn de leads die de pijplijn in gingen.
-      Beide gemeten binnen de gekozen periode, dus een lead uit vorige maand die nu plaatst telt hier niet mee.${
+    <p class="pf-uitleg meta"><b>Leads</b> zijn binnengekomen reacties, <b>Kandidaten</b> zijn de kaarten die in deze
+      periode instroomden; dat zijn twee aparte lijsten, want een kandidaatkaart kan ook zonder lead ontstaan.
+      Daarom deelt <b>→ kandidaatkaart</b> ze niet op elkaar, maar telt het welk deel van de leads
+      daadwerkelijk aan een kandidaat is gekoppeld${meetbaarLead
+        ? ` (${tot.leadDoor} van de ${tot.leads})`
+        : ' — bij geen enkele lead is dat gedaan, dus die stap is nu niet te meten'}.
+      <b>Getekend</b> is het volume van deze periode, ongeacht wanneer iemand binnenkwam;
+      <b>Instroom geplaatst</b> volgt juist de kandidaten die in deze periode instroomden en kijkt hoeveel daarvan
+      inmiddels getekend hebben. Over een korte periode staat dat laatste laag: wie deze maand binnenkwam heeft
+      meestal nog niet getekend.${
       buiten.length ? ` Onder de streep staat het overgezette bestand uit het oude ATS
       (${buiten.reduce((s,r)=>s+r.kand,0).toLocaleString('nl-NL')} kandidaten in deze periode). Die namen zijn nooit geworven,
       dus ze tellen niet mee in het totaal en krijgen geen conversiepercentage — anders lijkt elke echte bron
@@ -1615,7 +1799,10 @@ function tempoHtml(plPerMnd, conv){
   return `<div class="pf-tempo">
     ${t(plPerMnd, 'Plaatsingen / maand', 'nodig om het doel te halen')}
     ${t(vs, 'Voorstellen / maand', conv.voorPerPl!=null ? `eigen conversie: ${conv.voorPerPl.toFixed(1)} voorstellen per plaatsing` : 'nog te weinig eigen data')}
-    ${t(gs, 'Gesprekken / maand', conv.gesprekPerPl!=null ? `eigen conversie: ${conv.gesprekPerPl.toFixed(1)} gesprekken per plaatsing` : 'nog te weinig eigen data')}
+    ${/* Bewust "eerste gesprekken": conversies() telt kandidaten die minstens
+          tot de fase Eerste gesprek kwamen, niet het aantal gevoerde gesprekken.
+          Dat zijn twee verschillende getallen en de kop moet zeggen welke. */''}
+    ${t(gs, 'Eerste gesprekken / maand', conv.gesprekPerPl!=null ? `eigen conversie: ${conv.gesprekPerPl.toFixed(1)} eerste gesprekken per plaatsing` : 'nog te weinig eigen data')}
   </div>`;
 }
 
@@ -1879,6 +2066,7 @@ function teken(mount, acties){
   mount.innerHTML = `<div class="pf">
     ${omgekeerd ? `<div class="note warn">De begindatum (${h(CRM.fmtDate(p.van))}) ligt ná de einddatum
       (${h(CRM.fmtDate(p.tot))}), dus er valt niets binnen deze periode. Draai de datums om.</div>` : ''}
+    ${blokBasis()}
     ${blokJaar()}
     ${blokNaar()}
     ${blokDoel(_fin)}
@@ -1965,3 +2153,38 @@ CRM.registerModule('performance', {
 });
 
 })();
+
+/* VERZOEK AAN CORE: vier dingen die Performance nu zelf moet omzeilen.
+   Alle vier komen uit de doorlichting van 2 aug 2026 ("de cijfers kloppen
+   niet, veel staat op 0"). Ze zijn hier opgelost binnen deze module, maar
+   ze raken meer schermen dan dit.
+
+   1. CRM.jaarTarget() geeft stilzwijgend de standaard 75 terug als er geen
+      rij in `targets` staat. Elk scherm dat daarmee rekent presenteert die
+      noodwaarde als een afgesproken doel — en op Performance hangt het halve
+      blok "Op weg naar 75" eraan (bruto nodig, weektempo, omzet bij het
+      doel). Dit bestand leest daarom zelf CRM.state.targets na om te kunnen
+      zeggen "dit is de standaardwaarde". Mooier: CRM.plaatsingenJaar() geeft
+      een veld `doelGezet` terug, dan hoeft niemand die tabel meer te kennen.
+      (De lege staat "Geen jaardoel ingesteld" in blokJaar() is om diezelfde
+      reden onbereikbaar geworden.)
+
+   2. CRM.plaatsingenMaand() en CRM.plaatsingenJaar() vergelijken fases nog
+      rechtstreeks: `c.fase === 'Gestopt'` en `CRM.PLACED.includes(c.fase)`.
+      Dat gaat vandaag goed omdat geen enkele alias die twee raakt, maar het
+      is precies het patroon dat §4 van de bouwafspraken verbiedt. Zodra er
+      ooit een alias voor 'Gestart' of 'Gestopt' bij komt, wijkt het bord af
+      van elk scherm dat wél CRM.faseIs/faseIn gebruikt. Graag omzetten.
+
+   3. `crm_leads.kandidaat_id` wordt bij het doorschieten van een lead
+      nergens gevuld. Daardoor is de stap lead → kandidaatkaart nergens te
+      meten: zowel de trechter in "Op weg naar het jaardoel" als de kolom
+      "→ kandidaatkaart" in Per bron staat daarom op een streepje. Dat is
+      eerlijk, maar het is ook het enige gat in de keten van advertentie tot
+      plaatsing. Eén regel in de doorschiet-actie van Recruitment vult het.
+
+   4. Er is geen veld "voorgesteld op". Performance leidt die datum af uit de
+      eerste historieregel met fase 'Voorgesteld' en valt anders terug op de
+      instroomdatum — dat staat zichtbaar onder de klanttabel, maar het blijft
+      een aanname. Een kolom `voorgesteld_op` op candidates zou het echt
+      maken.                                                                */

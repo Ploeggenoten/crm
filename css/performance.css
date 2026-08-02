@@ -10,6 +10,16 @@
 .pf .kpi .big{display:flex;align-items:baseline;gap:4px}
 .pf .kpi .pf-eh{font-size:14px;font-weight:500;color:var(--muted)}
 
+/* ─── Waar deze cijfers op rusten ─────────────────────────────
+   Staat bovenaan en moet gelezen worden, maar het is geen alarm: het gaat
+   over ontbrekende velden, niet over een fout. Dus gewoon een kaart in het
+   gedempte vlak, geen gekleurde note — die zou het eerste accent van het
+   scherm opeisen terwijl de cijfers eronder belangrijker zijn. */
+.pf-basis{background:var(--well)}
+.pf-basislijst{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.pf-basislijst li{display:flex;align-items:baseline;gap:12px;font-size:12.5px;color:var(--txt-2);line-height:1.5}
+.pf-basislijst b{flex:0 0 auto;min-width:42px;text-align:right;font-size:15px;font-weight:600;color:var(--ink)}
+
 /* ─── Doel: omzetdoel, voortgang en benodigd tempo ───────────── */
 .pf-doelkop{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
 .pf-doelkop > div{display:flex;flex-direction:column;gap:7px}
