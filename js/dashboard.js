@@ -1245,8 +1245,24 @@ function mailHTML(lijst){
   const kop = n
     ? `<div class="mail-kop meta"><b class="num">${n}</b> ongelezen${bekend.length?` — waarvan <b class="num">${bekend.length}</b> uit je pijplijn`:''}
        <span class="mail-per">laatste 3 dagen</span></div>` : '';
+  /* Wélke postbus je hier leest, staat erbij. Dat lijkt overbodig — het is
+     toch je eigen mail — maar precies daar ging het mis: wie naast zijn
+     eigen postbus ook een gedeelde postbus gebruikt (recruitment@, info@)
+     kreeg maandenlang de inbox van een collega te zien zonder dat het ergens
+     stond. De koppeling is gerepareerd (js/outlook.js, kiesAccount), maar
+     een fout die je kunt zien is een andere fout dan een die stil is.
+     Klopt het adres niet met je CRM-account, dan wordt het benoemd. */
+  const postbus = (() => {
+    let adres = ''; try{ adres = CRM.outlook?.accountNaam?.() || ''; }catch(e){}
+    if(!adres) return '';
+    const mijn = String(CRM.user?.email || '').trim().toLowerCase();
+    const anders = mijn && adres.toLowerCase() !== mijn;
+    return `<span class="mail-bus meta${anders ? ' let' : ''}"
+      title="${anders ? 'Dit is niet het adres waarmee je in het CRM zit — ga naar Instellingen en verbind opnieuw.'
+                      : 'De postbus die het CRM voor jou uitleest.'}">${h(adres)}${anders ? ' — niet jouw CRM-account' : ''}</span>`;
+  })();
   return `<div class="dash-sec">
-    <div class="label sec-kop rij">Je mail
+    <div class="label sec-kop rij">Je mail${postbus}
       <button type="button" class="mail-ver" id="mail_ver" title="Nu ophalen — het gebeurt ook vanzelf">↻</button></div>
     <div class="card"><div class="card-b mail-b">${kop}${inhoud}</div></div></div>`;
 }

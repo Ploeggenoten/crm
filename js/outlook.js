@@ -110,9 +110,20 @@ function kiesAccount(acc){
   if(!acc || !acc.length) return null;
   const eigen = bijMij(acc);
   if(eigen) return eigen;
-  /* Eén account en geen CRM-adres om mee te vergelijken: dat is vrijwel
-     zeker gewoon de gebruiker zelf (of een demo). Dan niet zeuren. */
-  if(acc.length === 1 && !CRM.user?.email) return acc[0];
+  /* Eén account en geen CRM-gebruiker: alleen in demo. Hier stond eerder
+     `acc.length === 1 && !CRM.user?.email`, en dat was het lek.
+
+     Dit bestand draait `herstel()` meteen bij het laden van de pagina, dus
+     vóórdat Supabase klaar is met inloggen. Op dat moment is CRM.user nog
+     null, en dan koos deze regel het enige account dat de browser kende —
+     bij Tjeerd was dat recruitment@, de postbus van Rajesh. Daarna werd het
+     nooit meer herzien, want zowel _laadBelofte als _herstelBelofte worden
+     onthouden. Gevolg: het dashboard las maandenlang de inbox van een
+     collega, en dat was niet te zien.
+
+     De regel is nu: weten we niet wie er is ingelogd, dan koppelen we
+     niets. Zodra dat wél bekend is, roept core.js herkoppel() aan. */
+  if(acc.length === 1 && CRM.demo) return acc[0];
   return null;
 }
 
@@ -630,6 +641,24 @@ CRM.outlook = {
       return !!_account;
     })();
     return _herstelBelofte;
+  },
+
+  /* Opnieuw bepalen wélke postbus bij deze gebruiker hoort. Roept core.js
+     aan zodra het inloggen rond is — dus op het moment dat CRM.user.email
+     eindelijk bekend is. Kost niets: leest alleen wat MSAL al in dit
+     browsergeheugen heeft staan, geen netwerk, geen inlogvenster.
+
+     Zonder deze stap blijft de keuze staan zoals hij bij het laden van de
+     pagina uitviel, en dat is te vroeg — zie de toelichting bij
+     kiesAccount(). Geeft het adres terug dat nu gekoppeld is, of ''. */
+  herkoppel(){
+    if(!_msal) return '';
+    const was = _account?.username || '';
+    _account = kiesAccount(_msal.getAllAccounts());
+    const nu = _account?.username || '';
+    if(was && was !== nu)
+      console.warn('Outlook: postbus gewisseld van ' + was + ' naar ' + (nu || '(geen)'));
+    return nu;
   }
 };
 

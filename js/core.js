@@ -934,6 +934,14 @@ async function start(user){
   document.getElementById('whoname').textContent = CRM.profile.naam || user.email;
   document.getElementById('whorol').textContent  = CRM.canSeeMoney() ? 'Eigenaar' : (CRM.profile.rol==='admin'?'Beheerder':'Teamlid');
   CRM.tekenEigenAvatar();
+  /* Pas hier weet de app wie je bent. js/outlook.js draait zijn
+     accountkeuze al bij het laden van de pagina — dus daarvóór — en koos
+     toen het enige Microsoft-account dat de browser kende. Bij wie naast
+     zijn eigen postbus ook een gedeelde postbus gebruikt (recruitment@,
+     info@) was dat de verkeerde, en het dashboard toonde stilzwijgend de
+     mail en agenda van een collega. Nu wordt de keuze hier opnieuw gemaakt,
+     mét e-mailadres. Kost geen netwerkverkeer. */
+  try{ CRM.outlook?.herkoppel?.(); }catch(e){ console.warn('Outlook herkoppelen', e); }
   document.getElementById('whoava').onclick = () => CRM.accountModal();
   bouwNav();
   await CRM.load();
@@ -945,6 +953,9 @@ async function start(user){
 }
 function toonLogin(){
   CRM.user=null; CRM.profile=null;
+  /* Ook bij uitloggen: anders houdt de volgende die op deze computer inlogt
+     de postbus van de vorige, tot hij toevallig iets doet dat herkoppelt. */
+  try{ CRM.outlook?.herkoppel?.(); }catch(e){}
   document.getElementById('loginscreen').style.display='flex';
   document.getElementById('app').classList.remove('on');
 }
