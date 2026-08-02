@@ -255,6 +255,46 @@ CRM.maandTarget = (mk = CRM.todayISO().slice(0,7)) => {
 };
 
 /* Filter "mijn" — elke AM kijkt standaard naar zijn eigen klanten/leads. */
+/* ─── Ontdubbelen op telefoonnummer ──────────────────────────────
+   Het telefoonnummer is het énige veld dat deze mensen uniek maakt: er is
+   geen e-mailadres, geen cv, en namen worden verschillend gespeld. De meeste
+   ATS'en ontdubbelen op e-mail en zijn hier dus nutteloos.
+
+   Zonder dit staat dezelfde persoon na drie campagnes drie keer in het
+   systeem — en zie je niet dat hij al twee keer eerder reageerde. Dat laatste
+   is precies het koopsignaal dat je zoekt: wie voor de derde keer belt, wil
+   echt weg bij zijn huidige werkgever.
+
+   Normaliseren is nodig omdat hetzelfde nummer op zes manieren binnenkomt:
+   06 12345678, 0612345678, +31612345678, 0031 6 1234 5678. Alles wat geen
+   cijfer is gaat eruit, en de Nederlandse landcode wordt teruggebracht tot
+   een 0 zodat +31 6… en 06… hetzelfde nummer zijn. */
+CRM.telSleutel = tel => {
+  let s = String(tel || '').replace(/\D+/g, '');
+  if(!s) return '';
+  if(s.startsWith('0031')) s = '0' + s.slice(4);
+  else if(s.startsWith('31') && s.length > 10) s = '0' + s.slice(2);
+  if(!s.startsWith('0')) s = '0' + s;
+  return s;
+};
+/* Wie heeft dit nummer al? Kijkt in kandidaten én leads, want dezelfde
+   persoon kan in allebei staan. `negeer` is de id die je zelf aan het
+   bewerken bent — anders vindt een kaart altijd zichzelf. */
+CRM.zelfdeNummer = (tel, negeer) => {
+  const k = CRM.telSleutel(tel);
+  if(!k || k.length < 8) return [];        // te kort om iets over te zeggen
+  const uit = [];
+  (CRM.state.cands || []).forEach(c => {
+    if(String(c.id) === String(negeer)) return;
+    if(CRM.telSleutel(c.telefoon) === k) uit.push({soort:'kandidaat', id:c.id, naam:c.naam, fase:c.fase, klant:c.klant});
+  });
+  (CRM.state.leads || []).forEach(l => {
+    if(String(l.id) === String(negeer)) return;
+    if(CRM.telSleutel(l.telefoon) === k) uit.push({soort:'lead', id:l.id, naam:l.naam, status:l.status});
+  });
+  return uit;
+};
+
 CRM.isVanMij = obj => {
   const mij = CRM.me();
   return !mij || obj?.eigenaar === mij || obj?.rec === mij || obj?.am === mij;

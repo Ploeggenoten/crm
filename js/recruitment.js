@@ -2067,6 +2067,19 @@ function sollicitantForm(pre){
         const zeg = t => { err.style.display=''; err.textContent = t; };
         if(!g('naam')) return zeg('Vul de naam in.');
         if(!g('tel'))  return zeg('Vul het telefoonnummer in — zonder nummer kun je niet bellen.');
+        /* Staat dit nummer er al? Melden, niet blokkeren. Iemand die voor de
+           tweede keer reageert is juist interessant — maar dan wil je verder
+           op de bestaande kaart, niet naast de geschiedenis beginnen. */
+        const dubbel = CRM.zelfdeNummer ? CRM.zelfdeNummer(g('tel')) : [];
+        if(dubbel.length && !m.dataset.dubbelGezien){
+          m.dataset.dubbelGezien = '1';
+          const d = dubbel[0];
+          const waar = d.soort === 'kandidaat'
+            ? `staat al als kandidaat${d.fase ? ' op ' + d.fase : ''}${d.klant ? ' bij ' + d.klant : ''}`
+            : `staat al als sollicitant op ${d.status || 'Nieuw'}`;
+          return zeg(`Dit nummer is al bekend: ${d.naam || 'een bestaande kaart'} — ${waar}. `
+            + `Werk daar verder, dan blijft de geschiedenis bij elkaar. Klik nog een keer om tóch een nieuwe kaart te maken.`);
+        }
         const gg = {naam:g('naam'), telefoon:g('tel'), email:g('mail'), woonplaats:g('plaats'),
                     functie:g('functie'), bron:m.querySelector('#nsf_bron').value, cv:pre.cv||null};
         CRM.modal.close();
