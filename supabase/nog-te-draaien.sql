@@ -106,6 +106,21 @@ alter table vacatures add column if not exists web_door       text default '';
 -- gewoon over — je kunt dit dus veilig opnieuw draaien nadat je de rest
 -- hebt aangemaakt.
 --
+-- LET OP — TWEE VELDEN, TWEE BETEKENISSEN. Verwar ze niet:
+--
+--   rol      = mag deze persoon beheren? Alleen 'admin' of 'am'. De tabel
+--              profiles komt uit het oude pijplijnbord en heeft een
+--              check-constraint (profiles_rol_check) die niets anders
+--              toestaat. Hier stond eerst 'user'; dat bestaat niet en het
+--              hele script liep daarop stuk (1 aug 2026). De app kijkt ook
+--              alleen naar rol === 'admin' en noemt al het andere "Teamlid",
+--              dus 'am' betekent hier simpelweg "gewone gebruiker".
+--   functie  = welk dashboard krijg je: am | recruiter | marketeer.
+--
+-- Rajesh is dus functie 'recruiter' met rol 'am', en Bryan functie
+-- 'marketeer' met rol 'am'. Dat leest raar, maar het is de tabel die dat zo
+-- wil; wie het netter wil, verruimt eerst de constraint.
+--
 -- `functie` bepaalt welk dashboard iemand ziet: am | recruiter | marketeer.
 -- `naam` is waar de hele app op koppelt (eigenaar van een klant, recruiter
 -- op een kandidaat, "voor wie" bij een taak). Schrijf hem dus precies zoals
@@ -115,9 +130,9 @@ insert into profiles (id, naam, email, functie, rol)
 select u.id, v.naam, v.email, v.functie, v.rol
   from (values
     ('tjeerd@ploeggenoten.nl',      'Tjeerd', 'am',        'admin'),
-    ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'user'),
-    ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'user'),
-    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'user')
+    ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'am'),
+    ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'am'),
+    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'am')
   ) as v(email, naam, functie, rol)
   join auth.users u on lower(u.email) = v.email
 on conflict (id) do update
