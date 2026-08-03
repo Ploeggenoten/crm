@@ -304,7 +304,16 @@ function momentenBlokHtml(r){
   }
   const kop = [nMis ? `${nMis}× gemist` : '', nOpen ? `${nOpen} open` : '']
     .filter(Boolean).join(' · ');
-  return `<details class="pl-opv"${nMis ? ' open' : ''}>
+  /* NOOIT vanzelf openklappen. Ik liet hem opengaan zodra er iets gemist was,
+     en dat pakte precies verkeerd uit bij het geval waar het om gaat: wie in
+     mei tekende en in september begint, heeft vijftien wekelijkse
+     "warm houden"-momenten, en die stonden allemaal als losse rode regel
+     onder elkaar. Dat is geen achterstand van vijftien dingen — het is één
+     feit: die persoon is vijftien weken niet gesproken. Dat staat in de
+     samenvattingsregel, en dat is genoeg.
+     (Tjeerd, 3 aug 2026: "alleen al deze info is teveel ruis. Houd het
+     clean.") */
+  return `<details class="pl-opv">
     <summary><span class="${nMis ? 'pl-mis-t' : 'meta'}">${h(kop)}</span>
       <span class="meta">opvolging</span></summary>
     ${binnen}</details>`;
@@ -320,7 +329,21 @@ function momentenHtml(r){
      Eerst de datum, dan het ritme. */
   if(r.kapotteDatum)
     return `<div class="pl-taken"><span class="meta">Zolang de startdatum onleesbaar is valt er geen ritme te berekenen. Corrigeer de datum, dan loopt de opvolging vanzelf mee.</span></div>`;
-  const items = r.gemist.concat(r.open);
+  /* Opeenvolgende gemiste momenten van dezelfde soort worden één regel.
+     "Warm houden — week 1" tot en met "week 9" zijn negen keer hetzelfde
+     verzuim, en negen knoppen suggereren negen handelingen terwijl er één
+     ding te doen is: bellen. De laatste (meest recente) blijft staan als
+     aanknopingspunt, met ervoor hoeveel er in die reeks zitten. */
+  const samengevat = (() => {
+    const uit = [];
+    r.gemist.forEach(m => {
+      const vorig = uit[uit.length - 1];
+      if(vorig && vorig.soort === m.soort && vorig.gemist){ vorig.reeks = (vorig.reeks || 1) + 1; vorig.datum = m.datum; vorig.titel = m.titel; vorig.key = m.key; }
+      else uit.push(Object.assign({}, m, {reeks:1}));
+    });
+    return uit;
+  })();
+  const items = samengevat.concat(r.open);
   if(!items.length){
     if(r.volgende)
       return `<div class="pl-taken"><span class="meta">Volgende contactmoment: ${
@@ -329,7 +352,8 @@ function momentenHtml(r){
   }
   return `<div class="pl-taken">${items.map(m => `
     <span class="pl-t${m.gemist ? ' mis' : ''}">
-      <span class="pl-t-w">${h(m.titel)}</span>
+      <span class="pl-t-w">${h(m.titel)}${
+        m.reeks > 1 ? ` <span class="meta">— ${m.reeks} keer overgeslagen</span>` : ''}</span>
       <span class="pl-t-d num">${h([CRM.fmtDateShort(m.datum), m.gemist ? 'gemist' : ''].filter(Boolean).join(' · '))}</span>
       <button type="button" class="btn ghost sm" data-opv="${h(r.c.id)}|${h(m.key)}">${h(knopLabel(m))}</button>
     </span>`).join('')}</div>`;
