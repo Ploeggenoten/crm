@@ -175,7 +175,17 @@ const toestandVan = r =>
 /* Een gemist contactmoment is het enige waar je vandaag nog iets aan kunt
    doen; dat wint van de toestand (rood, via .fr-let). Een kapotte datum niet:
    dan wéten we niet of er iets gemist is. */
-const heeftMissers = r => !!(r.gemist.length && !r.kapotteDatum);
+/* ROOD IS VOOR WAT JE VANDAAG NOG KUNT DOEN, niet voor wat voorbij is.
+   Dit stond op `gemist` en dat bleek bij honderd plaatsingen rampzalig: op
+   vrijwel elke historische regel stond dezelfde zin ("9× contactmoment
+   gemist") in rood, ook op mensen die pas over vijftig dagen beginnen — dat
+   zijn dan gemiste warm-houd-momenten. Een venster dat vijf maanden geleden
+   dichtviel kún je niet meer inhalen; het elke dag als alarm tonen leert het
+   team rood te negeren, en dan is het signaal weg op de dag dat het telt.
+   `open` is wat er nú openstaat. Dát is het alarm. `gemist` blijft zichtbaar
+   als feit in de waarschuwingskolom, gedempt, achter de dingen die je nog
+   wél kunt rechtzetten. */
+const heeftMissers = r => !!(r.open.length && !r.kapotteDatum);
 
 /* ─── Indexen, één keer per hertekening ──────────────────────────
    Bij 350 kandidaten en een paar duizend activiteiten is "wanneer sprak ik
@@ -417,9 +427,14 @@ function startTekst(r){
    kandidatenkaart sturen betekent in de praktijk dat het niet gebeurt. */
 function waarschuwing(r){
   const c = r.c, nu = vandaag();
+  /* Volgorde is rangorde. Wat nu openstaat gaat voorop — dat is het enige
+     contactmoment waar je vandaag nog iets aan kunt doen. Blokkers vóór de
+     start daarna. Wat gemist is staat achteraan en alleen als aantal: het is
+     naslag, geen opdracht. */
   const alle = [];
-  if(r.gemist.length) alle.push(`${r.gemist.length}× contactmoment gemist`);
+  if(r.open.length)   alle.push(`${r.open.length} contactmoment${r.open.length===1?'':'en'} open`);
   r.blokkers.forEach(b => alle.push(b));
+  if(r.gemist.length) alle.push(`${r.gemist.length}× eerder gemist`);
   if(CRM.faseIs(c.fase, 'Contract getekend') && r.start && r.start <= nu)
     alle.push('staat nog op Contract getekend');
   else if(CRM.faseIs(c.fase, 'Gestart') && r.start && r.start > nu)
@@ -438,7 +453,7 @@ function waarschuwing(r){
     ? ` <button type="button" class="btn ghost sm" data-startdatum="${h(c.id)}">Invullen</button>` : '';
   if(!zichtbaar.length) return knop ? `<span class="pl-let">${knop}</span>` : '';
 
-  const ernstig = !!r.gemist.length;
+  const ernstig = !!r.open.length;
   const titel = zichtbaar.length > 1 ? ` title="${h(zichtbaar.join(' · '))}"` : '';
   return `<span class="pl-let${ernstig ? ' erg' : ''}"${titel}>${h(zichtbaar[0])}${
     zichtbaar.length > 1 ? ` <span class="pl-letn num">+${zichtbaar.length-1}</span>` : ''}${knop}</span>`;
