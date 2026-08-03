@@ -1234,11 +1234,17 @@ function notitiesBlokHtml(){
   return `<div class="card kl-railkaart kl-r-nt">
     <div class="card-h"><div class="h2">Notities</div></div>
     <div class="card-b">
-      <div class="f-row" style="margin-bottom:10px">
+      <!-- Wat er al staat, komt eerst. Het invoerveld stond bovenaan en de
+           notities eronder, dus je zag als eerste een leeg vak in plaats van
+           wat een collega had opgeschreven. Bij een klant waar Tjerk en
+           Rajesh allebei aan werken is dat precies het verkeerde om: je wilt
+           lézen voordat je schrijft. (Tjeerd, 3 aug 2026: "notities moeten
+           meteen te zien zijn, ook als andere AM's erin hebben gewerkt.") -->
+      <div id="rn_lijst"></div>
+      <div class="f-row kl-ntinvoer">
         <textarea id="rn_tekst" rows="2" placeholder="Korte notitie… (@naam meldt een collega)"></textarea>
         <button class="btn sm" id="rn_opslaan" style="align-self:flex-end">Opslaan</button>
       </div>
-      <div id="rn_lijst"></div>
     </div></div>`;
 }
 
@@ -1722,6 +1728,15 @@ function tabInhoud(mount, k){
 function ooBlokHtml(k){
   const D = CRM._rcDeel || {};
   if(!D.ooSessies || !D.ooModal) return '';
+  /* Alleen bij een relatie waar ook echt iets loopt. Bij een lead of prospect
+     staat er geen vacature en geen kandidaat, en dan is een lege
+     O&O-sectie ("nog geen sessies") ruis op een kaart die juist over
+     acquisitie gaat. Hij verschijnt zodra er een vacature is, of zodra er al
+     een sessie voor deze klant bestaat. (Tjeerd, 3 aug 2026: "O&O sessie mag
+     weg in de kaart" — bij een lead, waar hij niets toevoegt.) */
+  const heeftVacature = (CRM.state.vacs||[]).some(v => v.klant === k.naam);
+  const heeftSessie   = D.ooSessies().some(s => s.klant === k.naam);
+  if(!heeftVacature && !heeftSessie) return '';
   const vandaag = CRM.todayISO();
   const sessies = D.ooSessies()
     .filter(s => s.klant === k.naam)
