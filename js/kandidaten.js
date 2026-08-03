@@ -1059,6 +1059,8 @@ function kaart(mount, acties, id){
      knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
      naar het lege blok en niet naar de kopregel. */
   mount.querySelectorAll('#c_cvlees, #c_cvleeg').forEach(b => b.onclick = () => cvLezen(c));
+  { const b = mount.querySelector('#c_cvclaude');
+    if(b) b.onclick = () => CRM.cvClaude.open({kandidaat:c, onKlaar: x => CRM.ga('kandidaten', {id:x.id})}); }
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
   if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
   if(CRM.intakeAI) CRM.intakeAI.bindBlok(mount);
@@ -1539,7 +1541,14 @@ function cvHtml(c){
       <!-- Is er nog niets, dan is dit de enige zinnige vervolgstap op dit
            blok en staat de knop gevuld in plaats van als randje. Zodra er
            wel gegevens staan zakt hij terug naar een gewone hulpknop. -->
-      <button class="btn ${leeg?'':'ghost '}sm" id="c_cvlees">CV inlezen</button></div>
+      <button class="btn ${leeg?'':'ghost '}sm" id="c_cvlees">CV inlezen</button>
+      ${/* De route via Claude, voor cv's waar de snelle inlezer weinig uit
+           haalt — inspringing zonder bolletjes, "± 4 jaar" in plaats van
+           jaartallen. Die opmaak valt niet met regels te vangen; zie de kop
+           van js/cvclaude.js. Bewust een tweede knop en geen automatische
+           keuze: jij bepaalt per cv of je het door Claude haalt. */
+        CRM.cvClaude ? `<button class="btn ghost sm" id="c_cvclaude"
+          title="Zet de cv-tekst met een opdracht op je klembord. Plak in Claude, plak het antwoord terug.">Door Claude laten lezen</button>` : ''}</div>
     <div class="card-b">${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens',
       'Lees een CV in (PDF, Word of tekst) — werkervaring, opleidingen, certificaten, talen en de pasfoto komen er in één keer in. Je ziet per gegeven wat het CV zegt voordat er iets wordt overgenomen.',
       '<button class="btn" id="c_cvleeg">CV inlezen</button>') : `

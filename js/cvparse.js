@@ -1232,7 +1232,14 @@ function open(opts={}){
           bindOpslaanAlleen(m);
           return;
         }
-        p = parseTekst(ruw, {bestandsnaam: f.name, groot: r.groot});
+        /* opts.parsed = een al uitgelezen cv, van js/cvclaude.js. Zelfde
+           vorm, dus vanaf hier is het één weg: hetzelfde controlevenster,
+           dezelfde vinkjes per gegeven, dezelfde opslag. Twee weergaven voor
+           twee routes zou betekenen dat niemand meer weet welke waarheid op
+           de kaart komt. Eén keer gebruiken en dan loslaten — een volgend
+           bestand in ditzelfde venster hoort weer gewoon geparsed te worden. */
+        p = opts.parsed || parseTekst(ruw, {bestandsnaam: f.name, groot: r.groot});
+        opts.parsed = null;
         if(r.doc) fotoBlob = await fotoUitPdf(r.doc);
         rijen = voorstelMaken(c, p);
         uit.innerHTML = voorstelHtml(c, p, rijen, fotoBlob, r);
