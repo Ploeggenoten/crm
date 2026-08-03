@@ -251,3 +251,56 @@ select rec, count(*) from candidates where rec <> '' group by rec order by 2 des
 -- opgeslagen — zonder tijd, met een melding erbij. Een taak kwijtraken door
 -- een optioneel veld zou erger zijn dan de tijd missen.
 alter table crm_taken add column if not exists tijd text default '';
+
+
+-- ─── 9. De vacaturekaart ──────────────────────────────────────
+-- Het vacatureformulier had zeventien velden; op de kaart zag je er bijna
+-- niets van terug. Je vulde ze in en ze verdwenen. Deze kolommen maken van de
+-- vacature een dossier: de voorwaarden waar je met de klant op afrekent, en
+-- de tekst zoals hij op de website komt te staan.
+--
+-- ALLES OPTIONEEL, ALLES MET EEN DEFAULT. Draai je dit niet, dan blijft de app
+-- gewoon werken: de kaart toont dan lege velden en de tekstblokken blijven
+-- verborgen. Er breekt niets, er verdwijnt niets.
+
+-- Vacaturetekst, in de blokken van ploeggenoten.nl. `over_bedrijf` en `eisen`
+-- bestaan al (blok 3). De opsommingen zijn platte tekst met één punt per
+-- regel: dat is het eenvoudigst in te vullen, het kopieert schoon naar Indeed
+-- en de website, en het vraagt geen jsonb dat niemand met de hand kan lezen.
+alter table vacatures add column if not exists openingszin   text default '';
+alter table vacatures add column if not exists de_baan       text default '';
+alter table vacatures add column if not exists wat_krijg_je  text default '';
+
+-- Praktisch. Werktijden, ploegendienst, contractvorm en bereikbaarheid staan
+-- er al; alleen het aantal uur ontbrak, en dat staat wel als chip bovenaan de
+-- vacaturepagina ("Dagdienst · 40 uur").
+alter table vacatures add column if not exists uren          text default '';
+
+-- Salaris in dezelfde opbouw als de kandidaatkaart, zodat wat je hier invult
+-- bij een plaatsing één-op-één naar de kandidaat kan en de fee meteen klopt.
+-- Uurloon erbij omdat dat in productie en logistiek de taal van de klant is,
+-- terwijl de fee op jaarsalaris rekent. sal_min/sal_max (maandloon) bestaan al.
+alter table vacatures add column if not exists uurloon_min   numeric;
+alter table vacatures add column if not exists uurloon_max   numeric;
+alter table vacatures add column if not exists vt_pct        numeric;
+alter table vacatures add column if not exists eju_pct       numeric;
+alter table vacatures add column if not exists toeslag_pct   numeric;
+alter table vacatures add column if not exists reiskosten    text default '';
+
+-- Afwijking op de klantafspraak. NULL betekent uitdrukkelijk "erf van de
+-- klant" — daarom geen default 0: dat zou een fee van nul procent zijn en
+-- niet "niet ingevuld". Dit is de reden dat het losse kolommen zijn en geen
+-- kopie van de hele afspraak: er is één waarheid (crm_afspraken) en hier staat
+-- alleen waar deze vacature van afwijkt.
+alter table vacatures add column if not exists fee_pct           numeric;
+alter table vacatures add column if not exists garantie_mnd      int;
+alter table vacatures add column if not exists betaaltermijn_dgn int;
+
+-- De contactpersoon voor déze vacature. Kan een andere zijn dan het
+-- hoofdcontact van de klant: bij een productievacature is dat vaak de
+-- bedrijfsleider en niet de HR-manager waar de SWO mee getekend is.
+alter table vacatures add column if not exists contact_id    text default '';
+
+-- Documenten en historie hebben geen nieuwe tabel nodig: crm_documenten en
+-- crm_activiteiten kennen allebei al entiteit/ref, en js/hot.js schrijft daar
+-- nu al activiteiten weg met entiteit='vacature'.

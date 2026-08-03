@@ -39,7 +39,8 @@
 
   /* ─── Schermstand ───────────────────────────────────────────────
      Bewust niet bewaard: dit zijn vragen van dít moment, geen gewoonte. */
-  const S = { open:null, zoek:'', sort:'knelt', mijn:false, toonRest:false, klant:'', am:'' };
+  const S = { open:null, zoek:'', sort:'knelt', mijn:false, toonRest:false, klant:'', am:'',
+              dtab:'kandidaten', afvalOpen:false };   // stand van de vacaturekaart
   const M = { mount:null, acties:null, vac:null };   // vac gezet = detailpagina
 
   const EIND = ['Afgevallen','Gestopt'];
@@ -800,193 +801,453 @@
       .slice(0, n);
   }
 
+  /* ─── De vacaturekaart ───────────────────────────────────────────
+     Variant B (keuze Tjeerd, 3 aug 2026): een smalle werkkolom links die
+     blijft staan, en rechts het dossier met tabbladen. De reden voor die
+     vorm: wie in Voorwaarden salarisvelden invult, moet blijven zien dat er
+     nog twee posities open staan en dat er iemand twaalf dagen stilligt.
+
+     Er is bewust GEEN tabblad "Overzicht" — de linkerkolom ís het overzicht.
+     Met zo'n tabblad erbij zouden de tellers en de lopende kandidaten twee
+     keer op hetzelfde scherm staan, en dan heb je de nadelen van een smaller
+     dossier zonder de winst. */
+
+  /* Fee-schatting voor deze vacature: het afgesproken percentage over een
+     grondslag uit de salarisvelden van de vacature zelf. Dezelfde rekenregel
+     als bij een kandidaat (CRM.fee.grondslag), dus de schatting en de latere
+     echte fee kunnen niet uiteenlopen. Per vacature mag het percentage, de
+     garantie en de betaaltermijn afwijken van de klantafspraak — NULL in die
+     kolommen betekent "erf van de klant". */
+  function feeAfspraak(v){
+    const basis = (CRM.fee && CRM.fee.voorKlant) ? CRM.fee.voorKlant(v.klant, CRM.todayISO()) : null;
+    const a = Object.assign({}, basis || (CRM.fee ? CRM.fee.leegAfspraak() : {}));
+    const wijkt = [];
+    if(v.fee_pct != null && v.fee_pct !== ''){ a.pct = Number(v.fee_pct); a.soort = 'vast_pct'; wijkt.push('fee'); }
+    if(v.garantie_mnd != null && v.garantie_mnd !== ''){ a.garantie_mnd = Number(v.garantie_mnd); wijkt.push('garantie'); }
+    if(v.betaaltermijn_dgn != null && v.betaaltermijn_dgn !== ''){ a.betaaltermijn = Number(v.betaaltermijn_dgn); wijkt.push('betaaltermijn'); }
+    return {a, wijkt, heeftKlantAfspraak: !!basis};
+  }
+  function feeSchatting(v){
+    if(!CRM.magOpbrengstZien() || !CRM.fee) return null;
+    try{
+      const {a} = feeAfspraak(v);
+      const pseudo = { maandloon: v.sal_max != null ? Number(v.sal_max) : (v.sal_min != null ? Number(v.sal_min) : null),
+                       vtPct: v.vt_pct == null ? null : Number(v.vt_pct),
+                       toeslagPct: v.toeslag_pct == null ? null : Number(v.toeslag_pct),
+                       ejuPct: v.eju_pct == null ? null : Number(v.eju_pct) };
+      const gr = CRM.fee.grondslag(pseudo, a);
+      const p  = CRM.fee.pctVoor ? CRM.fee.pctVoor(pseudo, a) : {pct: a.pct};
+      if(!gr.compleet || p.pct == null) return {fee:null};
+      return {fee: Math.round(gr.jaarSalaris * p.pct / 100), pct: p.pct, grondslag: gr.jaarSalaris};
+    }catch(e){ return {fee:null}; }
+  }
+
+  /* De opsommingsblokken van de vacaturetekst zijn platte tekst met één punt
+     per regel — precies zoals ze op ploeggenoten.nl staan. */
+  const regels = t => String(t||'').split('\n').map(r => r.trim()).filter(Boolean);
+  const lijstHtml = t => { const r = regels(t);
+    return r.length ? `<ul>${r.map(x => `<li>${h(x)}</li>`).join('')}</ul>` : ''; };
+
+  /* De salarisregel van "Wat krijg je" komt uit de salarisvelden, niet uit de
+     tekst. Eén bron: op de website stond bovenaan "Tot €4.000" en in het blok
+     "€2.400 – €3.000" over dezelfde vacature — dat kan hiermee niet meer. */
+  function salarisRegel(v){
+    const sal = salarisTekst(v);
+    return sal ? sal + ' per maand' : '';
+  }
+
   function detail(v){
     const mount = M.mount, t = telling(v);
     const klantBestaat = !!(v.klant && CRM.klant(v.klant));
     const dgn = dagenOpen(v);
     const niveau = knelNiveau(t);
     const knel = KNEL[niveau];
+    const vandaag = CRM.todayISO();
+    const geld = CRM.magOpbrengstZien();
 
     kopTekst(v.functie || 'Vacature',
       `${klantLabel(v)} · ${locLabel(v)}${v.eigenaar ? ' · ' + v.eigenaar : ''}`);
 
-    /* ── Kop met de vier getallen ── */
+    /* ── Linkerkolom: het werk ── */
+    const fs = geld ? feeSchatting(v) : null;
+    const feeRij = !geld ? ''
+      : (fs && fs.fee != null)
+        ? `<div class="ovd-mini"><span>Fee bij vulling</span><span class="num">${h(CRM.euro(fs.fee * Math.max(1, t.teVullen)))}</span></div>`
+        : `<div class="ovd-mini"><span>Fee bij vulling</span><span class="meta">vul salaris in</span></div>`;
+    const contact = v.contact_id
+      ? (CRM.state.contacten || []).find(ct => String(ct.id) === String(v.contact_id)) : null;
+
+    const openTaken = (CRM.state.taken || [])
+      .filter(x => x.entiteit === 'vacature' && String(x.ref) === String(v.id) && !x.klaar)
+      .sort((a,b) => String(a.datum||'9').localeCompare(String(b.datum||'9')));
+
     const statusChip = statusOpen(v)
       ? (t.teVullen ? `<span class="chip green">openstaand</span>` : `<span class="chip amber">vol, staat nog op Open</span>`)
       : `<span class="chip">${h(v.status)}</span>`;
 
-    const kpis = `<div class="grid c4 ovd-kpi">
-      ${CRM.ui.kpi('Gevraagd', `<span class="num">${t.gevraagd}</span>`,
-        t.aantalBekend ? (t.gevraagd===1?'positie':'posities')
-                       : 'aantal niet ingevuld — gerekend met 1')}
-      ${CRM.ui.kpi('Geplaatst', `<span class="num">${t.geplaatst}</span>`,
-        'contract getekend of gestart')}
-      ${CRM.ui.kpi('Nog te vullen', `<span class="num">${t.teVullen}</span>`,
-        t.over ? `${t.over} meer geplaatst dan gevraagd` : (t.teVullen ? 'hier is nog ruimte' : 'niets meer open'),
-        t.teVullen ? '' : 'klaar')}
-      ${CRM.ui.kpi('In procedure', `<span class="num">${t.bijKlant.length}</span>`,
-        t.voorbereiding.length ? `plus ${t.voorbereiding.length} in voorbereiding` : 'voorgesteld bij de klant')}
+    const links = `
+      <div class="card ovd-blok${CRM.ui && knel.rand ? '' : ''}"${knel.rand ? ` style="border-left:3px solid ${h(knel.rand)}"` : ''}>
+        <div class="card-b">
+          <div class="label">Nog te vullen</div>
+          <div class="ovd-groot num">${t.teVullen}</div>
+          <div class="meta" style="margin-top:4px">van ${t.gevraagd}${t.geplaatst ? ` · ${t.geplaatst} geplaatst` : ''}${
+            t.aantalBekend ? '' : ' · aantal niet ingevuld'}</div>
+          ${knel.lbl ? `<div style="margin-top:9px"><span class="chip ${knel.kleur}">${h(knel.lbl)}</span></div>` : ''}
+        </div></div>
+
+      <div class="card ovd-blok"><div class="card-b">
+        <div class="label">Deze vacature</div>
+        <div class="ovd-minis">
+          <div class="ovd-mini"><span>Klant</span><span>${klantBestaat
+            ? `<a href="#" id="ovd_klant">${h(v.klant)}</a>` : h(v.klant || '—')}</span></div>
+          <div class="ovd-mini"><span>Locatie</span><span>${h(locLabel(v))}</span></div>
+          <div class="ovd-mini"><span>Accountmanager</span><span>${h(v.eigenaar || '—')}</span></div>
+          ${contact ? `<div class="ovd-mini"><span>Contactpersoon</span><span>${h(contact.naam)}</span></div>` : ''}
+          <div class="ovd-mini"><span>Open sinds</span><span class="num">${
+            v.aangemaakt ? h(CRM.fmtDateShort(v.aangemaakt)) + (dgn != null ? ` · ${dgn} dgn` : '') : '—'}</span></div>
+          ${feeRij}
+          <div class="ovd-mini"><span>Status</span><span>${statusChip}${hotChip(v)}</span></div>
+        </div>
+      </div></div>
+
+      <div class="card ovd-blok"><div class="card-b">
+        <div class="label">Wie loopt er nu</div>
+        ${t.lopend.length ? `<div class="ovd-namen">${t.lopend.map(c =>
+          `<div class="ovd-naam" data-cand="${h(c.id)}"${CRM.ui.frand ? '' : ''} style="border-left:3px solid ${h(CRM.faseKleur(c.fase))};padding-left:9px">
+            <b>${h(c.naam)}</b><span class="meta">${h(CRM.faseNorm(c.fase))}</span></div>`).join('')}</div>`
+          : `<p class="meta" style="margin:6px 0 0">Nog niemand — koppelen gebeurt op de kandidatenkaart, of via "Zou hierop passen" hiernaast.</p>`}
+        ${t.geplaatst ? `<div class="meta" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">${t.geplaatst} geplaatst</div>` : ''}
+      </div></div>
+
+      ${openTaken.length ? `<div class="card ovd-blok"><div class="card-b">
+        <div class="label">Volgende stap</div>
+        <div style="font-size:13px;margin-top:4px">${h(openTaken[0].tekst)}</div>
+        <div class="meta num" style="margin-top:2px">${openTaken[0].datum ? h(CRM.fmtDateShort(openTaken[0].datum)) : 'geen datum'}${
+          openTaken[0].wie ? ' · ' + h(openTaken[0].wie) : ''}</div>
+      </div></div>` : ''}
+
+      <div class="row tight ovd-acties">
+        <button class="btn ghost sm" id="ovd_status">Status</button>
+        ${v.hot ? `<button class="btn ghost sm" id="ovd_hotbew">Deadline</button>`
+                : `<button class="btn ghost sm" id="ovd_hotop">Hot maken</button>`}
+        <button class="btn sub sm" id="ovd_notitie">+ Notitie</button>
+        <button class="btn sub sm" id="ovd_taak">+ Taak</button>
+      </div>`;
+
+    /* ── Tabbladen ── */
+    const TABS = [
+      ['kandidaten', `Kandidaten`, t.cands.length],
+      ['voorwaarden', 'Voorwaarden', 0],
+      ['tekst', 'Vacaturetekst', 0],
+      ['documenten', 'Documenten', (CRM.state.documenten||[]).filter(d => d.entiteit==='vacature' && String(d.ref)===String(v.id)).length],
+      ['historie', 'Historie', 0]
+    ];
+    const tabbalk = `<div class="tabs ovd-tabs">${TABS.map(([k, lbl, n]) =>
+      `<button class="tab${S.dtab===k?' on':''}" data-dtab="${k}">${h(lbl)}${n ? ` <span class="cnt num">${n}</span>` : ''}</button>`).join('')}</div>`;
+
+    mount.innerHTML = `<div class="ovd ovd-b">
+      <div class="ovd-werk">${links}</div>
+      <div class="card ovd-doss">
+        ${tabbalk}
+        <div class="ovd-binnen" id="ovd_tab"></div>
+      </div>
     </div>`;
 
-    /* ── Wat er loopt ── */
+    tekenTab(v);
+
+    CRM.$$('[data-dtab]', mount).forEach(b => b.onclick = () => {
+      S.dtab = b.dataset.dtab;
+      CRM.$$('[data-dtab]', mount).forEach(x => x.classList.toggle('on', x.dataset.dtab === S.dtab));
+      tekenTab(v);
+    });
+    CRM.$$('.ovd-werk [data-cand]', mount).forEach(el =>
+      el.onclick = () => CRM.ga('kandidaten', {id:el.dataset.cand}));
+    const kl = mount.querySelector('#ovd_klant');
+    if(kl) kl.onclick = e => { e.preventDefault(); CRM.ga('klanten', {id:v.klant}); };
+    mount.querySelector('#ovd_status').onclick = () => statusModal(v);
+    const hb = mount.querySelector('#ovd_hotbew'); if(hb) hb.onclick = () => instelModal(v, false);
+    const ho = mount.querySelector('#ovd_hotop');  if(ho) ho.onclick = () => instelModal(v, true);
+    mount.querySelector('#ovd_notitie').onclick = () => notitieModal(v);
+    mount.querySelector('#ovd_taak').onclick = () =>
+      CRM.taakModal({entiteit:'vacature', ref:v.id, refLabel:`${v.klant||'vacature'} – ${v.functie||''}`});
+  }
+
+  function tekenTab(v){
+    const el = M.mount.querySelector('#ovd_tab');
+    if(!el) return;
+    const teken = {kandidaten:tabKandidaten, voorwaarden:tabVoorwaarden,
+                   tekst:tabTekst, documenten:tabDocumenten, historie:tabHistorie}[S.dtab] || tabKandidaten;
+    teken(el, v);
+  }
+
+  /* ── Tab: Kandidaten ── */
+  function tabKandidaten(el, v){
+    const t = telling(v);
     const vandaag = CRM.todayISO();
-    const achteraan = c => (EIND.includes(c.fase) || !heeftFase(c)) ? 1 : 0;
-    const rijen = t.cands.slice().sort((a,b) =>
-      achteraan(a) - achteraan(b) || CRM.faseIdx(b.fase) - CRM.faseIdx(a.fase));
-    const loopt = `<section class="card">
-      <div class="card-h"><div class="h2">Wie er op deze vacature loopt</div>
-        <span class="meta">${t.cands.length} ${t.cands.length===1?'kandidaat':'kandidaten'}</span></div>
-      <div class="card-b">
-        ${!rijen.length
-          ? `<p class="meta" style="margin:0">Er is nog niemand aan deze vacature gekoppeld. Koppelen gebeurt op de kandidatenkaart, bij Voorstellen.</p>`
-          : rijen.map(c => `<div class="hk-row${EIND.includes(c.fase)||!heeftFase(c)?' af':''}" data-cand="${h(c.id)}">
-              <i class="hot-dot" style="background:${heeftFase(c)?CRM.faseKleur(c.fase):'var(--line-2)'}"></i>
-              <b>${h(c.naam)}</b>
-              <span class="chip">${heeftFase(c) ? h(CRM.faseNorm(c.fase)) : 'geen fase'}</span>
-              <span class="hk-actie">${h(c.volgendeActie
-                  ? c.volgendeActie + (c.actieDatum ? ' · ' + CRM.fmtDateShort(c.actieDatum) : '')
-                  : (c.datum && dat(c.datum) >= vandaag && !EIND.includes(c.fase)
-                     ? 'afspraak ' + CRM.fmtDay(c.datum) + (c.tijd?' '+c.tijd:'') : ''))}</span>
-              <span class="hk-ga">→</span></div>`).join('')}
-        ${t.zonderFase ? `<p class="meta" style="margin:10px 0 0">${t.zonderFase} hiervan ${t.zonderFase===1?'heeft':'hebben'} geen fase (import uit het oude ATS) — die tellen nergens als lopend traject.</p>` : ''}
-      </div></section>`;
 
-    /* ── Wie zou kunnen passen ── */
+    const lopendRij = c => {
+      const dg = CRM.dagenGeleden(c.since);
+      const stil = dg != null && dg > 7 && !CRM.faseIn(c.fase, CRM.PLACED);
+      const actie = c.volgendeActie
+        ? c.volgendeActie + (c.actieDatum ? ' · ' + CRM.fmtDateShort(c.actieDatum) : '')
+        : (c.datum && dat(c.datum) >= vandaag ? 'afspraak ' + CRM.fmtDay(c.datum) + (c.tijd?' '+c.tijd:'') : '');
+      return `<div class="ovd-krij" data-cand="${h(c.id)}" style="border-left:3px solid ${h(CRM.faseKleur(c.fase))}">
+        <b>${h(c.naam)}</b>
+        <span class="chip">${h(CRM.faseNorm(c.fase))}</span>
+        <span class="spacer"></span>
+        ${actie ? `<span class="meta">${h(actie)}</span>` : ''}
+        ${stil ? `<span class="chip red num">${dg} dgn stil</span>` : (dg != null ? `<span class="meta num">${dg} dgn</span>` : '')}
+      </div>`;
+    };
+
+    /* De afvallers als één regel met de redenen, niet als rijen tussen de
+       lopende kandidaten. Drie afwijzingen op één vacature is een diagnose
+       van de vacature (tarief, eisen, reistijd) — geen kandidaatruis, maar
+       ook geen gezelschap voor de mensen die er nog wél lopen.
+       (Tjeerd, 3 aug 2026: "deze doen er niet meer toe en geven alleen maar
+       ruis" — de datá blijft, het lawaai gaat weg.) */
+    const afvallers = t.cands.filter(c => CRM.faseIn(c.fase, EIND));
+    const perReden = {};
+    afvallers.forEach(c => {
+      const r = c.fase === 'Gestopt' ? (c.stopCat || 'gestopt') : (c.afvalCat || 'geen reden vastgelegd');
+      perReden[r] = (perReden[r] || 0) + 1;
+    });
+    const redenTekst = Object.entries(perReden).sort((a,b) => b[1]-a[1])
+      .map(([r, n]) => `${n}× ${r.toLowerCase()}`).join(' · ');
+
     const sug = t.teVullen ? suggesties(v) : [];
-    const passen = !t.teVullen ? '' : `<section class="card">
-      <div class="card-h"><div class="h2">Wie zou kunnen passen</div></div>
-      <div class="card-b">
-        ${!sug.length
-          ? `<p class="meta" style="margin:0">Geen beschikbare kandidaat die genoeg lijkt op deze functie en locatie.</p>`
-          : `<div class="ovd-match">${sug.map(m => {
-              /* Wat er over deze persoon al vastligt en hier iets betekent:
-                 loopt al ergens anders, of is hier eerder afgevallen. Zie
-                 CRM.kdHistorie in js/kandidaten.js. Waarschuwen, niet
-                 wegfilteren — een tweede kans kan een prima zet zijn. */
+
+    el.innerHTML = `
+      <div class="label" style="margin-bottom:8px">Loopt nu · ${t.lopend.length}</div>
+      <div class="card ovd-lijstje" style="margin-bottom:18px">
+        ${t.lopend.length
+          ? t.lopend.slice().sort((a,b) => CRM.faseIdx(b.fase) - CRM.faseIdx(a.fase)).map(lopendRij).join('')
+          : `<div class="card-b"><p class="meta" style="margin:0">Er loopt nog niemand op deze vacature.</p></div>`}
+        ${t.zonderFase ? `<div class="card-b" style="border-top:1px solid var(--line)"><span class="meta">${t.zonderFase} gekoppeld zonder fase (import oud ATS) — telt nergens als lopend.</span></div>` : ''}
+      </div>
+
+      ${afvallers.length ? `
+      <div class="label" style="margin-bottom:8px">Eerder afgevallen · ${afvallers.length}</div>
+      <div class="card ovd-lijstje" style="margin-bottom:18px">
+        <div class="card-b ovd-afval">
+          <span style="font-size:13px">${h(redenTekst)}</span>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" id="ovd_afvaltoon">${S.afvalOpen ? 'Verberg namen' : 'Toon namen'} ${S.afvalOpen ? '↑' : '→'}</button>
+        </div>
+        ${S.afvalOpen ? afvallers.map(c => `<div class="ovd-krij af" data-cand="${h(c.id)}" style="border-left:3px solid var(--line-2)">
+          <b>${h(c.naam)}</b>
+          <span class="chip">${h(c.fase)}</span>
+          <span class="spacer"></span>
+          <span class="meta">${h(c.fase === 'Gestopt' ? (c.stopCat || '') : (c.afvalCat || ''))}${c.reden ? ' · "' + h(c.reden) + '"' : ''}</span>
+        </div>`).join('') : ''}
+      </div>` : ''}
+
+      <div class="label" style="margin-bottom:8px">Zou hierop passen · uit de kaartenbak</div>
+      <div class="card ovd-lijstje">
+        ${!t.teVullen
+          ? `<div class="card-b"><p class="meta" style="margin:0">Alle posities zijn gevuld — er valt niets meer te werven.</p></div>`
+        : sug.length
+          ? sug.map(m => {
               const sig = (CRM.kdHistorie ? CRM.kdHistorie.signalen(m.c, v) : [])
-                .filter(s => s.k === 'elders' || s.k === 'eerder');
-              return `<div class="ovd-mrij${sig.length?' let':''}" data-cand="${h(m.c.id)}">
-              <span class="ovd-score num">${m.score}</span>
-              <div class="ovd-mwie"><b>${h(m.c.naam)}</b>
-                <span class="meta">${h(m.c.functie || 'functie onbekend')}${
-                  m.c.woonplaats ? ' · ' + h(m.c.woonplaats) : ''}${
-                  m.km ? ` · ${m.km} km` : ''}</span>
-                ${sig.map(s => `<span class="ovd-msig">${h(s.tekst)}</span>`).join('')}</div>
-              ${m.c.beschikbaar ? `<span class="chip">${h(m.c.beschikbaar)}</span>` : ''}
-              <span class="hk-ga">→</span></div>`;
-            }).join('')}</div>
-             <p class="meta" style="margin:10px 0 0">Deze volgorde is afgeleid uit functiewoorden en reisafstand, niet ergens vastgelegd. Beoordeel zelf. De regels eronder komen wél uit vastgelegde velden: de fase en klant op de kaart, en de uitvalreden.</p>`}
-      </div></section>`;
+                .filter(x => x.k === 'elders' || x.k === 'eerder');
+              return `<div class="ovd-krij${sig.length ? ' let' : ''}" data-cand="${h(m.c.id)}">
+                <span class="ovd-score num">${m.score}</span>
+                <b>${h(m.c.naam)}</b>
+                <span class="meta">${h(m.c.functie || '')}${m.c.woonplaats ? ' · ' + h(m.c.woonplaats) : ''}${m.km ? ` · ${m.km} km` : ''}</span>
+                <span class="spacer"></span>
+                ${sig.map(x => `<span class="chip amber">${h(x.tekst)}</span>`).join('')}
+                ${m.c.beschikbaar ? `<span class="chip">${h(m.c.beschikbaar)}</span>` : ''}
+              </div>`;
+            }).join('') + `<div class="card-b" style="border-top:1px solid var(--line);background:var(--well)">
+              <span class="meta">Volgorde uit functiewoorden en reisafstand — hulpmiddel, geen oordeel. Voorstellen doe je op de kandidatenkaart.</span></div>`
+          : `<div class="card-b"><p class="meta" style="margin:0">Geen beschikbare kandidaat die genoeg op deze functie en locatie lijkt.</p></div>`}
+      </div>`;
 
-    /* ── Vacaturetekst ── */
-    const tekstStukken = [
-      ['De opdracht', v.omschrijving],
-      ['Over het bedrijf', v.over_bedrijf],
-      ['Waarom hier werken', v.waarom_hier]
-    ].filter(([, w]) => String(w||'').trim());
-    const tekst = `<section class="card">
-      <div class="card-h"><div class="h2">Vacaturetekst</div></div>
-      <div class="card-b">
-        ${tekstStukken.length
-          ? tekstStukken.map(([lbl, w]) =>
-              `<div class="ovd-tekst"><div class="label">${h(lbl)}</div><p>${h(w).replace(/\n/g,'<br>')}</p></div>`).join('')
-          : `<p class="meta" style="margin:0">Er is nog geen vacaturetekst vastgelegd. Die vul je in op de klantkaart, bij de vacature.</p>`}
-      </div></section>`;
+    CRM.$$('[data-cand]', el).forEach(x => x.onclick = () => CRM.ga('kandidaten', {id:x.dataset.cand}));
+    const at = el.querySelector('#ovd_afvaltoon');
+    if(at) at.onclick = () => { S.afvalOpen = !S.afvalOpen; tabKandidaten(el, v); };
+  }
 
-    /* ── De vacature zelf ── */
-    const aanwezig = DETAILVELDEN.filter(f => f.k in v && String(v[f.k]||'').trim());
-    const ontbreekt = DETAILVELDEN.filter(f => f.k in v && !String(v[f.k]||'').trim());
-    const sal = salarisTekst(v);
-    const web = 'web_status' in v
-      ? `<div class="ovd-veld"><span class="label">Op de website</span><span>${h(v.web_status || 'Nog niet online')}${
-          v.web_online_op ? ' · ' + h(CRM.fmtDate(v.web_online_op)) : ''}</span></div>` : '';
-    const feiten = `<section class="card">
-      <div class="card-h"><div class="h2">De vacature</div>${statusChip}${hotChip(v)}</div>
-      <div class="card-b">
-        <div class="ovd-veld"><span class="label">Aantal posities</span><span class="num">${t.gevraagd}${
-          t.aantalBekend ? '' : ' <span class="meta">(niet ingevuld — gerekend met 1)</span>'}</span></div>
-        <div class="ovd-veld"><span class="label">Locatie</span><span>${h(locLabel(v))}</span></div>
-        ${sal ? `<div class="ovd-veld"><span class="label">Salarisindicatie</span><span class="num">${h(sal)}</span></div>` : ''}
-        ${aanwezig.map(f => `<div class="ovd-veld"><span class="label">${h(f.lbl)}</span><span>${h(v[f.k])}</span></div>`).join('')}
-        ${web}
-        <div class="ovd-veld"><span class="label">Aangemaakt</span><span>${
-          v.aangemaakt ? h(CRM.fmtDate(v.aangemaakt)) + (dgn != null ? ` <span class="meta">(${dgn} ${dgn===1?'dag':'dagen'} open)</span>` : '')
-                       : '<span class="meta">onbekend</span>'}</span></div>
-        ${v.eigenaar ? `<div class="ovd-veld"><span class="label">Accountmanager</span><span>${h(v.eigenaar)}</span></div>` : ''}
-        ${ontbreekt.length ? `<p class="meta" style="margin:12px 0 0">Nog niet ingevuld: ${h(ontbreekt.map(f=>f.lbl.toLowerCase()).join(', '))}. Aanvullen doe je op de klantkaart.</p>` : ''}
+  /* ── Tab: Voorwaarden ── */
+  function tabVoorwaarden(el, v){
+    const geld = CRM.magOpbrengstZien();
+    const {a, wijkt, heeftKlantAfspraak} = feeAfspraak(v);
+    const fs = geld ? feeSchatting(v) : null;
+    const rij = (lbl, val, leeg='invullen…') => `<div class="ovd-veld"><span class="label">${h(lbl)}</span>
+      <span>${val || `<span class="meta" style="font-style:italic">${h(leeg)}</span>`}</span></div>`;
+    const num = w => (w == null || w === '') ? '' : `<span class="num">${h(String(w))}</span>`;
+    const euroBereik = (a2, b2) => (a2 == null && b2 == null) ? ''
+      : `<span class="num">${a2 != null ? CRM.euro(a2) : '…'} – ${b2 != null ? CRM.euro(b2) : '…'}</span>`;
+    const afwChip = k => wijkt.includes(k)
+      ? ' <span class="chip amber">afwijkend</span>'
+      : (heeftKlantAfspraak ? ' <span class="chip">standaard</span>' : '');
+
+    el.innerHTML = `
+      ${heeftKlantAfspraak || !geld ? '' : `<div class="note warn" style="margin-bottom:14px">Er is nog geen fee-afspraak met ${h(v.klant || 'deze klant')} vastgelegd. Zolang die ontbreekt valt er hier niets te erven — leg hem vast op de klantkaart.</div>`}
+      <div class="ovd-kols2">
+        <div>
+          <div class="label" style="margin-bottom:6px">Salaris</div>
+          ${rij('Uurloon', euroBereik(v.uurloon_min, v.uurloon_max))}
+          ${rij('Bruto maand', euroBereik(v.sal_min, v.sal_max))}
+          ${rij('Vakantiegeld', v.vt_pct != null ? num(v.vt_pct + '%') : '')}
+          ${rij('Ploegentoeslag', v.toeslag_pct != null ? num(v.toeslag_pct + '%') : '')}
+          ${rij('13e maand / eju', v.eju_pct != null ? num(v.eju_pct + '%') : '')}
+          ${rij('Reiskosten', v.reiskosten ? h(v.reiskosten) : '')}
+          <div class="label" style="margin:16px 0 6px">Rooster en contract</div>
+          ${rij('Werktijden', v.werktijden ? h(v.werktijden) : '')}
+          ${rij('Uren per week', v.uren ? h(v.uren) : '')}
+          ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '')}
+          ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '')}
+          ${rij('Soort opdracht', v.type ? h(v.type) : '')}
+        </div>
+        <div>
+          ${geld ? `<div class="label" style="margin-bottom:6px">Afspraak met de klant</div>
+          ${rij('Fee', (a.pct != null ? num(a.pct + '%') : '') + afwChip('fee'), 'geen afspraak')}
+          ${rij('Garantie', (a.garantie_mnd ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'geen')}
+          ${rij('Betaaltermijn', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14')}
+          ${fs && fs.fee != null ? rij('Grondslag (schatting)', num(CRM.euro(fs.grondslag))) + rij('Fee per plaatsing', num(CRM.euro(fs.fee))) : ''}
+          <p class="meta" style="margin:10px 0 16px">NULL = geërfd van de klantafspraak. Wijk je hier af, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>` : ''}
+          <div class="label" style="margin-bottom:6px">Eisen</div>
+          ${rij('Ervaring en certificaten', v.eisen ? h(v.eisen).replace(/\n/g,'<br>') : '')}
+          ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '')}
+        </div>
       </div>
-      <div class="card-f row tight">
-        ${klantBestaat
-          ? `<button class="btn ghost sm" id="ovd_klant">Naar de klantkaart</button>`
-          : `<span class="meta">${v.klant ? h(v.klant) + ' staat niet meer in het systeem' : 'Er hangt geen klant aan deze vacature'}</span>`}
-        <button class="btn sub sm" id="ovd_status">Status wijzigen</button>
-      </div></section>`;
+      <div class="row tight" style="margin-top:16px">
+        <button class="btn sm" id="ovd_bewerk">Bewerken</button>
+        <span class="meta">Bewerken opent het vacatureformulier — zelfde formulier als op de klantkaart.</span>
+      </div>`;
 
-    /* ── Hot-blok ── */
-    const beh = telDoel(v, t.cands), doel = Number(v.doel_aantal)||0;
-    const rest = restDagen(v);
-    const hotBlok = `<section class="card">
-      <div class="card-h"><div class="h2">Druk en deadline</div></div>
-      <div class="card-b">
-        ${v.hot ? `
-          <div class="ovd-veld"><span class="label">Deadline</span><span>${
-            v.deadline ? h(CRM.fmtDay(v.deadline)) + (rest != null ? ` <span class="meta">(${rest < 0 ? 'gemist' : rest === 0 ? 'vandaag' : 'nog ' + rest + (rest===1?' dag':' dagen')})</span>` : '') : '<span class="meta">geen</span>'}</span></div>
-          <div class="ovd-veld"><span class="label">Doel</span><span>${
-            doel ? `minimaal ${doel} ${h(woord(doel, v.doel_soort))}` : '<span class="meta">nog geen doel</span>'}</span></div>
-          ${doel ? `<div class="ovd-veld"><span class="label">Behaald</span><span class="num">${beh} van ${doel}</span></div>` : ''}
-          <div class="ovd-veld"><span class="label">Prioriteit</span><span class="num">${v.hot_prio || '—'}</span></div>`
-        : `<p class="meta" style="margin:0">Deze vacature staat niet op het hot-bord. Zet hem daarop als er een deadline op zit en je de voortgang wilt volgen.</p>`}
-      </div>
-      <div class="card-f row tight">
-        ${v.hot
-          ? `<button class="btn ghost sm" id="ovd_hotbew">Deadline en doel</button>
-             <button class="btn sub sm" id="ovd_hotaf">Niet meer hot</button>`
-          : `<button class="btn ghost sm" id="ovd_hotop">Hot maken</button>`}
-      </div></section>`;
+    const bw = el.querySelector('#ovd_bewerk');
+    if(bw) bw.onclick = () => CRM.vacatureModal
+      ? CRM.vacatureModal(v.klant, v)
+      : CRM.toast('Het vacatureformulier is nog niet geladen', 'err');
+  }
 
-    /* ── Activiteit ── */
-    const acts = CRM.activiteitenVoor('vacature', v.id).slice(0, 12).map(a => ({
+  /* ── Tab: Vacaturetekst ── */
+  function tabTekst(el, v){
+    const blok = (lbl, binnen, bron) => !binnen ? '' : `<div class="ovd-tblok">
+      <div class="ovd-tblokkop"><span class="label">${h(lbl)}</span>
+        <button class="btn ghost sm" data-kopieer="${h(bron)}">Kopieer</button></div>
+      ${binnen}
+    </div>`;
+
+    const salaris = salarisRegel(v);
+    const krijgRegels = regels(v.wat_krijg_je);
+    const krijgHtml = (salaris || krijgRegels.length)
+      ? `<ul>${salaris ? `<li>${h(salaris)}<span class="meta"> — uit het salarisveld</span></li>` : ''}${
+          krijgRegels.map(x => `<li>${h(x)}</li>`).join('')}</ul>` : '';
+
+    const stukken = [
+      blok('Openingszin', v.openingszin ? `<p>${h(v.openingszin)}</p>` : '', 'openingszin'),
+      blok('Over het bedrijf', v.over_bedrijf ? `<p>${h(v.over_bedrijf).replace(/\n/g,'<br>')}</p>` : '', 'over_bedrijf'),
+      blok('Dit is de baan', lijstHtml(v.de_baan), 'de_baan'),
+      blok('Wat wij vragen', lijstHtml(v.eisen), 'eisen'),
+      blok('Wat krijg je', krijgHtml, 'wat_krijg_je')
+    ].filter(Boolean);
+
+    el.innerHTML = `
+      ${stukken.length ? `<p class="meta" style="margin:0 0 12px">Dit zijn de blokken zoals ze op ploeggenoten.nl staan. De salarisregel in "Wat krijg je" komt uit het salarisveld op Voorwaarden — één bron, dus de website kan nooit iets anders zeggen dan het CRM.</p>` : ''}
+      ${stukken.join('') || `<p class="meta" style="margin:0">Er is nog geen vacaturetekst. Vul de blokken in via Bewerken op het tabblad Voorwaarden — of begin met de omschrijving${v.omschrijving ? ' hieronder' : ''}.</p>
+        ${v.omschrijving ? `<div class="ovd-tblok" style="margin-top:12px"><div class="ovd-tblokkop"><span class="label">Omschrijving (oud veld)</span></div><p>${h(v.omschrijving).replace(/\n/g,'<br>')}</p></div>` : ''}`}
+      ${stukken.length ? `<div class="row tight" style="margin-top:14px">
+        <button class="btn sm" id="ovd_kopalles">Kopieer de hele tekst</button>
+        <span class="meta">Voor Bryan: alles onder elkaar, met de koppen erbij.</span>
+      </div>` : ''}`;
+
+    const pak = bron => {
+      if(bron === 'wat_krijg_je'){
+        const r = [salarisRegel(v)].filter(Boolean).concat(regels(v.wat_krijg_je));
+        return r.join('\n');
+      }
+      return String(v[bron] || '');
+    };
+    CRM.$$('[data-kopieer]', el).forEach(b => b.onclick = async () => {
+      try{ await navigator.clipboard.writeText(pak(b.dataset.kopieer)); CRM.toast('Gekopieerd', 'ok'); }
+      catch(e){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf', 'err'); }
+    });
+    const ka = el.querySelector('#ovd_kopalles');
+    if(ka) ka.onclick = async () => {
+      const alles = [
+        v.openingszin && v.openingszin.trim(),
+        'OVER HET BEDRIJF\n' + String(v.over_bedrijf||'').trim(),
+        'DIT IS DE BAAN\n' + regels(v.de_baan).join('\n'),
+        'WAT WIJ VRAGEN\n' + regels(v.eisen).join('\n'),
+        'WAT KRIJG JE\n' + [salarisRegel(v)].filter(Boolean).concat(regels(v.wat_krijg_je)).join('\n')
+      ].filter(x => x && !/\n$/.test(x)).join('\n\n');
+      try{ await navigator.clipboard.writeText(alles); CRM.toast('Hele tekst gekopieerd', 'ok'); }
+      catch(e){ CRM.toast('Kopiëren lukte niet', 'err'); }
+    };
+  }
+
+  /* ── Tab: Documenten ── */
+  function tabDocumenten(el, v){
+    const docs = (CRM.state.documenten || [])
+      .filter(d => d.entiteit === 'vacature' && String(d.ref) === String(v.id))
+      .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+    el.innerHTML = `
+      <p class="meta" style="margin:0 0 12px">Functieprofiel, veiligheidsinstructie, plattegrond — wat een kandidaat of een collega nodig heeft vóór de eerste dag.</p>
+      ${docs.length ? `<div class="card ovd-lijstje" style="margin-bottom:14px">${docs.map(d => `
+        <div class="ovd-krij" data-doc="${h(d.id)}">
+          <b>${h(d.naam || 'Document')}</b>
+          <span class="chip">${h(d.soort || 'overig')}</span>
+          <span class="spacer"></span>
+          <span class="meta num">${h(CRM.fmtDateShort(d.op))}${d.door ? ' · ' + h(d.door) : ''}</span>
+        </div>`).join('')}</div>` : `<p class="meta" style="margin:0 0 14px">Nog geen documenten aan deze vacature gekoppeld.</p>`}
+      <button class="btn sm" id="ovd_docnieuw">Document koppelen</button>`;
+
+    /* Openen via CRM.opslag: de link wordt pas bij de klik gemaakt en alles
+       wat geen bestand is wordt geweigerd — zelfde regel als overal. */
+    CRM.$$('[data-doc]', el).forEach(x => x.onclick = () => {
+      const d = docs.find(y => String(y.id) === x.dataset.doc);
+      if(d && CRM.opslag && CRM.opslag.open) CRM.opslag.open(d.url);
+    });
+    const nw = el.querySelector('#ovd_docnieuw');
+    if(nw) nw.onclick = () => docModal(v, () => tabDocumenten(el, v));
+  }
+
+  function docModal(v, naKlaar){
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Document koppelen</div>
+        <div class="meta" style="margin-top:2px">${h(klantLabel(v))} – ${h(v.functie||'')}</div></div>
+      <div class="modal-b"><div class="f-grid">
+        <div class="f-row"><label>Naam</label><input type="text" id="vd_naam" placeholder="Bijv. Functieprofiel CNC"></div>
+        <div class="f-row"><label>Soort</label><select id="vd_soort">
+          <option>functieprofiel</option><option>veiligheidsinstructie</option><option>overig</option></select></div>
+        <div class="f-row"><label>Link of pad</label><input type="text" id="vd_url" placeholder="SharePoint-link of pad in de opslag"></div>
+      </div></div>
+      <div class="modal-f">
+        <button class="btn ghost" data-mclose>Annuleren</button>
+        <button class="btn" id="vd_ok">Koppelen</button>
+      </div>`, {onOpen(m){
+        m.querySelector('#vd_ok').onclick = async () => {
+          const rij = { id: CRM.uid(), entiteit:'vacature', ref:String(v.id),
+                        naam: m.querySelector('#vd_naam').value.trim() || 'Document',
+                        soort: m.querySelector('#vd_soort').value,
+                        url: m.querySelector('#vd_url').value.trim(),
+                        door: CRM.me(), op: new Date().toISOString() };
+          CRM.state.documenten = CRM.state.documenten || [];
+          CRM.state.documenten.unshift(rij);
+          if(!CRM.demo){
+            const {error} = await CRM.sb.from('crm_documenten').insert(rij);
+            if(error){ CRM.toast('Opslaan mislukte: ' + error.message, 'err'); return; }
+          }
+          CRM.modal.close(); CRM.toast('Document gekoppeld', 'ok');
+          if(naKlaar) naKlaar();
+        };
+      }});
+  }
+
+  /* ── Tab: Historie ── */
+  function tabHistorie(el, v){
+    const acts = CRM.activiteitenVoor('vacature', v.id).map(a => ({
       ico: (CRM.ACT_SOORTEN[a.soort]||{}).ico || '•',
       titel: (CRM.ACT_SOORTEN[a.soort]||{}).lbl || a.soort,
       wanneer: CRM.geleden(a.op) + (a.door ? ' · ' + a.door : ''),
       tekst: a.tekst
     }));
-    const activiteit = `<section class="card">
-      <div class="card-h"><div class="h2">Wat er is gebeurd</div></div>
-      <div class="card-b">${CRM.ui.tijdlijn(acts)}</div>
-      <div class="card-f row tight">
-        <button class="btn sub sm" id="ovd_notitie">+ Notitie</button>
-        <button class="btn sub sm" id="ovd_taak">+ Taak</button>
-      </div></section>`;
-
-    mount.innerHTML = `<div class="ovd">
-      ${knel.lbl ? `<div class="note ${knel.kleur === 'red' ? 'err' : 'warn'} ovd-let">${h(
-        niveau === 0 ? 'Er loopt niets op deze vacature — er is nog geen kandidaat gekoppeld die in een traject zit.'
-        : niveau === 1 ? 'Er zijn wel kandidaten, maar er is nog niemand bij de klant voorgesteld.'
-        : `Er lopen ${t.bijKlant.length} ${t.bijKlant.length===1?'kandidaat':'kandidaten'} op ${t.teVullen} openstaande ${t.teVullen===1?'positie':'posities'} — dat is krap.`)}</div>` : ''}
-      ${kpis}
-      <div class="ovd-body">
-        <div class="ovd-kol">${loopt}${passen}${tekst}</div>
-        <div class="ovd-kol">${feiten}${hotBlok}${activiteit}</div>
-      </div>
-    </div>`;
-
-    // Doorstappen naar kandidaten
-    CRM.$$('[data-cand]', mount).forEach(el =>
-      el.onclick = () => CRM.ga('kandidaten', {id:el.dataset.cand}));
-
-    /* De klantenmodule leest params.id, en de wáárde daarvan is de klantnaam
-       (CRM.klant zoekt op naam). Geen {naam:...} dus. */
-    const kl = mount.querySelector('#ovd_klant');
-    if(kl) kl.onclick = () => CRM.ga('klanten', {id:v.klant});
-
-    mount.querySelector('#ovd_status').onclick = () => statusModal(v);
-    const hb = mount.querySelector('#ovd_hotbew'); if(hb) hb.onclick = () => instelModal(v, false);
-    const ho = mount.querySelector('#ovd_hotop');  if(ho) ho.onclick = () => instelModal(v, true);
-    const ha = mount.querySelector('#ovd_hotaf');  if(ha) ha.onclick = () => haalUitHot(v);
-    mount.querySelector('#ovd_notitie').onclick = () => notitieModal(v);
-    mount.querySelector('#ovd_taak').onclick = () =>
-      CRM.taakModal({entiteit:'vacature', ref:v.id, refLabel:`${v.klant||'vacature'} – ${v.functie||''}`});
+    el.innerHTML = `
+      <p class="meta" style="margin:0 0 12px">Statuswissels, notities, doelen — alles wat er op deze vacature is gebeurd, nieuwste eerst.</p>
+      ${CRM.ui.tijdlijn(acts)}`;
   }
 
   /* ─── Status wijzigen ────────────────────────────────────────────

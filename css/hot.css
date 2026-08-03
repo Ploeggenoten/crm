@@ -273,3 +273,51 @@
   .hot-doel,.hot-onder,.hot-uitklap{padding-left:0}
   .hot-acties{margin-left:0}
 }
+
+/* ─── De vacaturekaart, variant B (3 aug 2026) ────────────────────
+   Werkkolom links die blijft staan, dossier met tabbladen rechts. Er is
+   bewust geen tabblad Overzicht: de linkerkolom ís het overzicht, en met
+   zo'n tabblad zou alles twee keer op het scherm staan. */
+.ovd-b{display:grid;grid-template-columns:290px minmax(0,1fr);gap:16px;align-items:start}
+.ovd-werk{position:sticky;top:14px;display:flex;flex-direction:column;gap:12px}
+.ovd-blok .card-b{padding:13px 15px}
+.ovd-groot{font-family:var(--disp);font-weight:400;font-size:34px;line-height:1;letter-spacing:.5px;margin-top:2px}
+.ovd-minis{margin-top:6px}
+.ovd-mini{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #eef0e4}
+.ovd-mini:last-child{border-bottom:none}
+.ovd-mini span:first-child{color:var(--muted)}
+.ovd-mini span:last-child{font-weight:600;text-align:right;min-width:0}
+.ovd-mini a{font-weight:600}
+.ovd-namen{display:flex;flex-direction:column;gap:6px;margin-top:7px}
+.ovd-naam{display:flex;justify-content:space-between;gap:8px;align-items:baseline;cursor:pointer}
+.ovd-naam b{font-size:13px;font-weight:600}
+.ovd-naam:hover b{color:var(--olive)}
+.ovd-acties{flex-wrap:wrap}
+
+.ovd-doss{overflow:visible}
+.ovd-tabs{padding:0 16px;background:var(--well-2);border-radius:var(--r) var(--r) 0 0;margin-bottom:0}
+.ovd-binnen{padding:16px 18px}
+.ovd-kols2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+
+/* Eén kandidaatregel op het tabblad — zelfde vorm als hk-row, maar met de
+   fasrand links (gedeelde kleurtaal). */
+.ovd-lijstje{overflow:hidden}
+.ovd-krij{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #eef0e4;cursor:pointer;font-size:13px;flex-wrap:wrap}
+.ovd-krij:last-child{border-bottom:none}
+.ovd-krij:hover{background:#f7f9f1}
+.ovd-krij b{font-weight:600}
+.ovd-krij.af{opacity:.75;cursor:pointer}
+.ovd-afval{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--well)}
+
+/* Vacaturetekst: de blokken zoals ze op de website staan. */
+.ovd-tblok{border:1px solid var(--line);border-radius:var(--r-s);padding:12px 14px;margin-bottom:10px;background:var(--card)}
+.ovd-tblokkop{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.ovd-tblok p{margin:0;font-size:13px}
+.ovd-tblok ul{margin:0;padding-left:18px;font-size:13px}
+.ovd-tblok ul li{margin:2px 0}
+
+@media (max-width:1000px){
+  .ovd-b{grid-template-columns:1fr}
+  .ovd-werk{position:static}
+  .ovd-kols2{grid-template-columns:1fr}
+}
