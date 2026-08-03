@@ -1702,7 +1702,12 @@ function tekenZoek(mount, acties){
             ? `<div class="src3-plus">Past op: ${h(beste.m.plussen.slice(0,3).join(' · '))}</div>` : ''}
         </div>`;
 
-    return `<div class="src3-rij">
+    /* De streep links (.frand in base.css) draagt ook hier de fase, zoals op
+       de kandidatenlijst. Dat is op dit scherm niet cosmetisch: je zoekt hier
+       door de hele kaartenbak, dus tussen de resultaten staan mensen die vrij
+       zijn én mensen die al bij een klant in een traject zitten. Wie geen
+       fase heeft — de import uit het oude ATS — krijgt geen rand. */
+    return `<div${CRM.ui.frand(fase ? CRM.faseKleur(fase) : '', 'src3-rij')}>
       <div class="src3-rij-t">
         <a href="#kandidaten/${encodeURIComponent(c.id)}" data-kand="${h(String(c.id))}"><b>${h(c.naam||'Naam onbekend')}</b></a>
         ${gold ? '<span class="src2-goud" title="Golden candidate">★</span>' : ''}

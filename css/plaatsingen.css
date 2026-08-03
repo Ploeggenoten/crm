@@ -108,13 +108,12 @@
    kleur volgt de tijd en niet de fase, want dit scherm groepeert op datum —
    anders zegt de rand iets anders dan de kop erboven. Alleen een randje
    links: een gekleurd vlak per rij maakt een lijst van tien onleesbaar. */
-.pl-r{border-left:3px solid transparent}
-.pl-r.pl-werkt{border-left-color:var(--green, #3d9968)}
-.pl-r.pl-komt {border-left-color:#5b8bbf}
-.pl-r.pl-weg  {border-left-color:var(--line-2);opacity:.7}
-/* Rood is en blijft van een gemist contactmoment — het enige waar je vandaag
-   iets aan moet doen. Dat wint van de toestandskleur. */
-.pl-r.mis{border-left-color:var(--red)}
+/* De streep zelf komt sinds 3 aug 2026 uit .frand in base.css — dit scherm
+   bedacht hem, maar hij geldt nu overal en hoort dus niet meer hier te
+   staan. De kleuren komen uit PL_RAND in js/plaatsingen.js; rood bij een
+   gemist contactmoment loopt via .fr-let, dezelfde weg als elders. Wat hier
+   blijft is het enige dat níét kleur is: wie weg is, dringt minder aan. */
+.pl-r.pl-weg{opacity:.7}
 
 /* ─── Opvolging opgevouwen ────────────────────────────────────────
    Stond uitgeklapt onder elke rij: bij zes plaatsingen vijftien regels

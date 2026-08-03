@@ -3257,7 +3257,15 @@ function tekenUitval(el){
             ? `<span class="chip red">vervanging nodig</span> <button class="btn ghost sm" data-rep="${h(c.id)}">+ Vervanger</button>`
             : `<span class="meta">buiten garantie</span>`)
       : (c.vervangt ? '<span class="meta">was zelf vervanger</span>' : '');
-    return `<tr>
+    /* De streep draagt hier "verst gekomen" — dezelfde fasekleur als overal,
+       maar dan van de fase die deze persoon gehaald hééft. Dat is wat je op
+       dit scherm zoekt: wie vlak voor de streep afviel is je beste pool om
+       opnieuw aan te bieden, en die stond tussen tweehonderd rijen precies
+       even opvallend als iemand die bij het eerste gesprek al afhaakte.
+       Géén rood voor de uitval zelf: iedereen op dit scherm is uitgevallen,
+       dus een rode rand zou niets onderscheiden. */
+    const verst = CRM.PHASES[furthestPhaseIdx(c)];
+    return `<tr${CRM.ui.frand(verst ? verst.c : '')}>
       <td><b>${h(c.naam)}</b><div class="rowsub">${h(c.klant||'—')} · ${h(c.functie||'—')}</div></td>
       <td>${lbl}${c.reden?`<div class="rowsub">"${h(c.reden)}"</div>`:''}
         ${scheef(c)?`<div><span class="chip amber" title="Deze kaart staat op Afgevallen maar heeft nog een stopdatum (${h(CRM.fmtDate(c.gestoptOp))}). Een afvaller is nooit geplaatst geweest — werk hem bij, dan wordt de datum gewist.">stopdatum op een afvaller</span></div>`:''}

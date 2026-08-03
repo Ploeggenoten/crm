@@ -104,6 +104,32 @@ const zetWerkOpen = aan => { try{ localStorage.setItem(WERK_KEY, aan ? '1' : '0'
 const S = { zoek:'', mijn:false };
 const M = { mount:null };
 
+/* ─── Toestand en kleur ──────────────────────────────────────────
+   Dit scherm bedacht de gekleurde rand ("de kaarten van de kandidaten moeten
+   een kleur krijgen, zo zie je beter wie er geplaatst is" — Tjeerd, 3 aug
+   2026). Sinds diezelfde dag geldt hij overal (.frand in css/base.css) en
+   staat de tekenlogica daar; hier blijft alleen wat er per persoon uit komt.
+
+   De regel is de TIJD en niet de fase: dit scherm groepeert op datum, en dan
+   moet de rand hetzelfde zeggen als de kop erboven. Kaarten worden vaak naar
+   'Gestart' gesleept zodra het contract rond is, weken vóór de eerste
+   werkdag — op de fase afgaan zou hier dus liegen.
+
+   Eén functie, zodat de lijst en de tabel er nooit anders over kunnen denken;
+   de tabel had helemaal geen kleur en dat was precies de reden om het hier
+   samen te trekken. */
+const PL_RAND = {
+  werkt: 'var(--green)',   // aan het werk — startdatum is geweest
+  komt:  '#5b8bbf',        // getekend, moet nog beginnen (kleur van Voorgesteld)
+  weg:   'var(--line-2)'   // gestopt
+};
+const toestandVan = r =>
+  r.c.gestoptOp ? 'weg' : (r.start && r.start <= vandaag()) ? 'werkt' : 'komt';
+/* Een gemist contactmoment is het enige waar je vandaag nog iets aan kunt
+   doen; dat wint van de toestand (rood, via .fr-let). Een kapotte datum niet:
+   dan wéten we niet of er iets gemist is. */
+const heeftMissers = r => !!(r.gemist.length && !r.kapotteDatum);
+
 /* ─── Indexen, één keer per hertekening ──────────────────────────
    Bij 350 kandidaten en een paar duizend activiteiten is "wanneer sprak ik
    deze persoon voor het laatst" de duurste vraag op dit scherm: via
@@ -386,21 +412,11 @@ function rijHtml(r){
     onder.push('staat nog op Contract getekend');
   else if(CRM.faseIs(c.fase, 'Gestart') && r.start && r.start > vandaag())
     onder.push('staat op Gestart, maar de startdatum ligt nog voor ons');
-  /* Kleur op de rij, zodat je in één oogopslag ziet in welke toestand iemand
-     is. Tjeerd: "de kaarten van de kandidaten moeten een kleur krijgen, zo
-     zie je beter wie er geplaatst is." De regel is de tijd, niet de fase —
-     dit scherm groepeert op datum en dan moet de kleur hetzelfde zeggen:
-       groen  aan het werk (startdatum is geweest)
-       blauw  getekend, moet nog beginnen
-       grijs  gestopt
-     Rood blijft voorbehouden aan een gemist contactmoment; dat is het enige
-     waar je vandaag iets aan moet doen. */
-  const vd = vandaag();
-  const kleur = c.gestoptOp ? 'weg'
-    : (r.start && r.start <= vd) ? 'werkt'
-    : 'komt';
-  const missers = r.gemist.length && !r.kapotteDatum;
-  return `<div class="pl-r pl-${kleur}${missers ? ' mis' : ''}" data-kaart="${h(c.id)}" role="button" tabindex="0">
+  /* Toestand en kleur staan bovenaan dit bestand (PL_RAND, toestandVan) —
+     de tabelweergave gebruikt exact dezelfde. */
+  const kleur = toestandVan(r);
+  const missers = heeftMissers(r);
+  return `<div${CRM.ui.frand(PL_RAND[kleur], `pl-r pl-${kleur}${missers ? ' mis' : ''}`, !!missers)} data-kaart="${h(c.id)}" role="button" tabindex="0">
     <div class="pl-r-top">
       <span class="pl-naam">${h(c.naam || '—')}</span>
       <span class="pl-sub">${h(sub)}</span>
@@ -434,7 +450,11 @@ function tabelHtml(rijen, gestopt){
         : r.open.length ? `<span class="num">nu · ${h(r.open[0].kort)}</span>`
         : r.volgende ? `<span class="num">${h(CRM.fmtDateShort(r.volgende.datum))} · ${h(r.volgende.kort)}</span>`
         : '<span class="meta">—</span>';
-      return `<tr class="clickable" data-kaart="${h(c.id)}">
+      /* Dezelfde streep als in de lijst erboven. Stond hier niet, waardoor
+         "Aan het werk" in tabelvorm de enige weergave in de app was die de
+         toestand voor zich hield. */
+      const mis = heeftMissers(r);
+      return `<tr${CRM.ui.frand(PL_RAND[toestandVan(r)], 'clickable', mis)} data-kaart="${h(c.id)}">
         <td><b>${h(c.naam || '—')}</b></td>
         <td>${h(c.functie || '—')}</td>
         <td>${h(c.klant || '—')}</td>

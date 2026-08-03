@@ -331,6 +331,29 @@ function gefilterd(){
 }
 
 /* Eén regel voor de stilte, in dezelfde woorden als op de kaart. */
+/* De kleur van de streep links (.frand in base.css). Op elk ander scherm
+   draagt die de fase, maar een contactpersoon hééft geen fase — het enige
+   dat hier verloopt is de tijd sinds je hem sprak, en dat is precies waar
+   dit overzicht op sorteert. Dus loopt de schaal over de tijd, met dezelfde
+   grenzen als de tekst in de kolom ernaast (30 en 90 dagen), zodat de kleur
+   en het getal nooit iets anders zeggen.
+
+   "Nooit" krijgt bewust GEEN rand. Van de 188 geïmporteerde contactpersonen
+   staat bij vrijwel niemand een gesprek vastgelegd, en dat betekent niet dat
+   er nooit gebeld is — het betekent dat we het niet weten. Kleurden die
+   allemaal rood, dan was het hele scherm rood en zei rood niets meer; precies
+   dezelfde reden waarom de fase Lead op het salesbord buiten de tellingen
+   valt. Het woord "nooit" staat al in amber in de kolom ernaast, dus het
+   signaal is er wel. Rood is voor wat we wél weten: langer dan 90 dagen
+   geleden gesproken. */
+function stilteRand(ct){
+  const d = laatsteContact(ct).dagen;
+  if(d == null) return {kleur:'', let_:false};                 // onbekend, geen rand
+  if(d > 90)    return {kleur:'', let_:true};                  // rood wint
+  if(d > 30)    return {kleur:'var(--amber)', let_:false};
+  return {kleur:'var(--green)', let_:false};
+}
+
 function stilteHtml(ct){
   const lc = laatsteContact(ct);
   if(lc.dagen == null) return '<span class="ck-stil nooit">nooit</span>';
@@ -363,7 +386,8 @@ function tekenLijst(mount){
     ${rij.map(c => {
       const jarig = jarigKolom ? dagMaand(c.geboortedatum) : '';
       const dagen = dagenTotJarig(c);
-      return `<tr class="clickable" data-ct="${h(c.id)}">
+      const rand = stilteRand(c);
+      return `<tr${CRM.ui.frand(rand.kleur, 'clickable', rand.let_)} data-ct="${h(c.id)}">
         <td><b>${h(c.naam)}</b>${c.hoofd?' <span class="chip green">Hoofdcontact</span>':''}
           <span class="ck-mobfunctie">${h(c.functie||'—')}</span></td>
         <td>${h(c.functie||'—')}</td>
