@@ -279,10 +279,12 @@ function waaromHTML(k, lc, vandaag){
   /* De klasse s-w-stap is het haakje voor agendaOpBord(): staat er in de
      Outlook-agenda een afspraak met deze klant, dan vervangt die deze
      regel — de taak is dan de terugval, niet andersom. */
+  /* Datum voorop, net als bij de agenda-afspraak hieronder: achteraan
+     verdween hij bij het afkappen van een lange taaktekst. */
   const stapRegel = taak
     ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
-        <span class="s-w-v trunc" title="${h(taak.tekst)}">${h(taak.tekst)}${
-          taak.datum ? ` <span class="num">${h(CRM.fmtDateShort(taak.datum))}</span>` : ''}</span></div>`
+        <span class="s-w-v trunc" title="${h(taak.tekst)}">${
+          taak.datum ? `<span class="num">${h(CRM.fmtDateShort(taak.datum))}</span> ` : ''}${h(taak.tekst)}</span></div>`
     : ((stil || hangt) ? `<div class="s-w-r geen s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v">niets gepland</span></div>` : '');
 
@@ -352,9 +354,12 @@ async function agendaOpBord(){
     const dt = new Date(e.start);
     const wanneer = isNaN(dt) ? '' : CRM.fmtDateShort(e.start) + ' · ' +
       dt.toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
+    /* De datum stáát voorop. Achteraan viel hij weg zodra de titel werd
+       afgekapt ("Afspraak Arcelor Mittal De…") — en juist het wanneer is
+       wat je in één oogopslag wilt zien (Tjeerd, 3 aug 2026). */
     const regel = `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
-      <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}">${h(e.titel||'Afspraak')}${
-        wanneer ? ` <span class="num">${h(wanneer)}</span>` : ''}</span></div>`;
+      <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}${wanneer ? ' — ' + h(wanneer) : ''}">${
+        wanneer ? `<span class="num">${h(wanneer)}</span> ` : ''}${h(e.titel||'Afspraak')}</span></div>`;
     const stap = kaart.querySelector('.s-w-stap');
     const blok = kaart.querySelector('.s-waarom');
     if(stap) stap.outerHTML = regel;
