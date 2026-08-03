@@ -1542,7 +1542,7 @@ function maandBlok(){
      plaatsingsdatum telt gewoon als getekend, en een gestopte vervanger
      trekt niet nóg eens af. Zonder die regels zei dit blok iets anders over
      dezelfde persoon dan de band erboven. */
-  const teltAlsStop = c => c.fase==='Gestopt' && !!c.geplaatstOp && !c.vervangt;
+  const teltAlsStop = CRM.teltAlsStop;   // één definitie, in js/data.js — hier hing een eigen kopie
   const get  = cs.filter(c => c.rec===mij && kort(c.geplaatstOp).slice(0,7)===mk
     && (CRM.PLACED.includes(c.fase) || teltAlsStop(c))).length;
   const stop = cs.filter(c => c.rec===mij && teltAlsStop(c) && kort(c.gestoptOp).slice(0,7)===mk).length;

@@ -105,6 +105,18 @@ CRM.klaarOmVoorTeStellen = c =>
   !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
       && (CRM.faseIs(c.fase, 'Intake') || (!!c.intake && !CRM.isInstroom(c.fase)));
 
+/* ─── Twee gedeelde vragen over een plaatsing ────────────────────
+   `teltAlsStop` stond vier keer los in de code (hier twee keer, dashboard,
+   performance) en het maandtarget hangt eraan — vier kopieën van een formule
+   waar geld aan hangt is drie te veel. Nu één definitie; de kopieën roepen
+   deze aan. BEWUST DEZELFDE SEMANTIEK als voorheen (fase-gebonden): de
+   verbetering om op gestoptOp te toetsen hoort bij de uitval-verbouwing en
+   verandert cijfers, dus die gaat niet stilletjes mee in een ontdubbeling.
+   `loopt` is de vraag "is dit een lopende plaatsing" die zes modules elk
+   zelf uitschreven. */
+CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp && !c.vervangt;
+CRM.loopt = c => !!c && CRM.faseIn(c.fase, CRM.PLACED) && !c.gestoptOp;
+
 CRM.AFVAL_CATS = {
   niet_gekwalificeerd:['Taal','Ervaring/skills','Motivatie','No-show','Fysiek/gezondheid','Klant wees af','Meeloopdag niet goed','Anders'],
   offer_afgewezen:['Salaris te laag','Ander aanbod geaccepteerd','Reistijd/afstand','Rooster/ploegen','Blijft bij huidige werkgever','Niets meer gehoord','Anders']
@@ -213,7 +225,7 @@ CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
      ongedaan. Daarom telt een Gestopt-kaart mee als getekend — maar met exact
      dezelfde uitzondering als hierboven, anders levert een vervanger die tekent
      en stopt een +1 op zonder bijbehorende −1. */
-  const teltAlsStop = c => c.fase==='Gestopt' && !!c.geplaatstOp && !c.vervangt;
+  const teltAlsStop = CRM.teltAlsStop;
   const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk &&
     (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
   const gestopt  = cs.filter(c => teltAlsStop(c) && (c.gestoptOp||'').slice(0,7)===mk);
@@ -246,7 +258,7 @@ CRM.jaarTarget = (jaar = CRM.todayISO().slice(0,4)) => {
    Terug: {getekend, doel, gedaan, teGaan, dagenTeGaan, perWeekNodig, opSchema} */
 CRM.plaatsingenJaar = (jaar = CRM.todayISO().slice(0,4)) => {
   const cs = CRM.kandidaten();
-  const teltAlsStop = c => c.fase === 'Gestopt' && !!c.geplaatstOp && !c.vervangt;
+  const teltAlsStop = CRM.teltAlsStop;
   const getekend = cs.filter(c => String(c.geplaatstOp || '').slice(0,4) === String(jaar) &&
     (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
 

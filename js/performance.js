@@ -189,7 +189,7 @@ function cijfers(p){
         plaatsingsdatum telt gewoon mee als getekend.
      2. Een gestopte vervanger telt niet nog eens af: zijn voorganger is al
         als stop geteld, anders trek je dezelfde plek twee keer af. */
-  const teltAlsStop = c => CRM.faseIs(c.fase,'Gestopt') && !!c.geplaatstOp && !c.vervangt;
+  const teltAlsStop = CRM.teltAlsStop;   // één definitie, in js/data.js — hier hing een eigen kopie
   const getekend = cs.filter(c => inP(c.geplaatstOp,p) &&
     (CRM.faseIn(c.fase, CRM.PLACED) || teltAlsStop(c)));
   const gestopt  = cs.filter(c => teltAlsStop(c) && inP(c.gestoptOp,p));
