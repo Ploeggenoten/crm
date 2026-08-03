@@ -10,6 +10,12 @@
    elkaar geweven en is er niets meer van te maken. Een betere
    tekstlaag levert meer op dan slimmere regexes op kapotte tekst,
    dus daar begint dit bestand.
+
+   TESTEN: er staat een vaste set van zeven echte cv's (zeven
+   verschillende opmaken) in ~/cv-testset, met meetscript en
+   ijkpunten in LEESMIJ.md aldaar. Meet ná elke wijziging de hele
+   set — elke reparatie voor het ene cv heeft al eens een ander cv
+   gebroken. De cv's horen NIET in deze (publieke) repo.
    ═══════════════════════════════════════════════════════════════ */
 (() => {
 'use strict';
@@ -320,7 +326,7 @@ const SECTIES = [
    vaak één samengesteld woord ("Nachtportier", "Horecamedewerker",
    "Procesoperator"). Met een woordgrens ervoor herkenden we precies die
    titels niet, terwijl dat de meest voorkomende vorm is. */
-const FUNCTIE_RE = /(operator|medewerk(st)?er|monteur|chauffeur|leider|manager|assistent|technicus|planner|specialist|engineer|helper|inpakker|orderpicker|picker|voorman|co[oö]rdinator|beveiliger|\bkok\b|matroos|deksman|portier|bijrijder|lasser|schoonmaker|magazijn\w+|expediteur|verlader|toezichthouder|monteur|steward|heftruckrijder|productie\w*|logistiek|verladings\w*|proces\w*|machine\w*|meewerkend|allround|waarnemend|freelance|\bzzp\b|stagiair|uitzendkracht|vakkenvuller|schoonmaak|bezorger|lasser|\bsales\b|verkoper|serveer(der|ster)|gastheer|gastvrouw)\w*/i;
+const FUNCTIE_RE = /(operator|medewerk(st)?er|monteur|chauffeur|leider|manager|assistent|technicus|planner|specialist|engineer|helper|inpakker|orderpicker|picker|voorman|co[oö]rdinator|beveiliger|\w*kok\b|matroos|deksman|portier|bijrijder|lasser|schoonmaker|magazijn\w+|expediteur|verlader|toezichthouder|monteur|steward|heftruckrijder|productie\w*|logistiek|verladings\w*|proces\w*|machine\w*|meewerkend|allround|waarnemend|freelance|\bzzp\b|stagiair|uitzendkracht|vakkenvuller|schoonmaak|bezorger|lasser|\bsales\b|verkoper|serveer(der|ster)|gastheer|gastvrouw|student|afstudeer\w*|trainee|machinist|brandwacht|verkeersregelaar|poets\w*)\w*/i;
 const FUNCTIE_VOOR = /^(allround|senior|junior|assistent|hoofd|waarnemend|meewerkend|eerste|tweede|derde|aankomend|leerling|zelfstandig)\b/i;
 
 /* Woorden die van een stukje tekst een bedrijfsnaam maken. */
@@ -328,7 +334,7 @@ const FUNCTIE_VOOR = /^(allround|senior|junior|assistent|hoofd|waarnemend|meewer
    in "incasso"), en stammen die in het Nederlands aan een woord vastgeplakt
    worden — "meubelfabriek", "afvalverwerkingsbedrijf". Zonder die
    tweede helft valt precies de meest Nederlandse bedrijfsnaam buiten de boot. */
-const BEDRIJF_RE = /\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?|gmbh|ltd|inc|s\.?a\.?|group|holding|holland|nederland|netherlands|international|foods?|dairy|meat|packaging|college|academie|hogeschool|universiteit)\b|(fabriek|fabrieken|bedrijf|industrie|terminal|logistics?|logistiek b|transport|uitzend|detachering|supermarkt|bakkerij|slachterij|vleeswaren|kwekerij|veiling|distributie|groothandel|onderwijs|opleidingen)\w*/i;
+const BEDRIJF_RE = /\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?|gmbh|ltd|inc|s\.?a\.?|group|holding|holland|nederland|netherlands|international|foods?|dairy|meat|packaging|college|academie|hogeschool|universiteit)\b|(fabriek|fabrieken|bedrijf|industrie|terminal|logistics?|logistiek b|transport|uitzend|detachering|supermarkt|bakkerij|slachterij|vleeswaren|kwekerij|veiling|distributie|groothandel|onderwijs|opleidingen|maatschappij|bottling|brouwerij|hotel|taveerne)\w*/i;
 const NIVEAU_RE = /\b(vmbo(-[a-z]{1,3})?|havo|vwo|mavo|lbo|mbo(\s*niveau\s*[1-4]|\s*[1-4])?|hbo|wo|bachelor|master|associate(?:'s)? degree|niveau\s*[1-4]|basisonderwijs|basisschool)\b/i;
 
 /* Certificaten die er in productie, logistiek en industrie toe doen.
@@ -412,7 +418,9 @@ const MND = {januari:1,jan:1,january:1,februari:2,feb:2,february:2,maart:3,mrt:3
   april:4,apr:4,mei:5,may:5,juni:6,jun:6,june:6,juli:7,jul:7,july:7,augustus:8,aug:8,august:8,
   september:9,sep:9,sept:9,oktober:10,okt:10,october:10,oct:10,november:11,nov:11,december:12,dec:12};
 const MND_RE = Object.keys(MND).sort((a,b) => b.length - a.length).join('|');
-const NU_RE = '(?:heden|nu|nog\\s+werkzaam|present|current|now|today|actueel|prezent|obecnie)';
+/* "tot heden" staat er apart in voor het geval het streepje de "tot" al
+   heeft opgeslokt ("01/11/2021 – TOT HEDEN", Europass). */
+const NU_RE = '(?:tot\\s+heden|heden|nu|nog\\s+werkzaam|present|current|now|today|actueel|prezent|obecnie)';
 
 /* ─── 5. Periodes lezen ───────────────────────────────────────────
    Een dienstverband zonder jaartallen is voor een planner waardeloos,
@@ -421,7 +429,11 @@ const NU_RE = '(?:heden|nu|nog\\s+werkzaam|present|current|now|today|actueel|pre
    de praktijk voor, en "heden" in vijf talen. */
 const STREEP = '(?:\\s*(?:[–—−-]{1,2}|\\bt\\/?m\\b|\\btot\\b|\\bto\\b|\\buntil\\b|\\bdo\\b)\\s*)';
 const P_MND   = new RegExp(`\\b(${MND_RE})\\.?\\s*(\\d{4})${STREEP}(?:(${MND_RE})\\.?\\s*(\\d{4})|(${NU_RE}))`, 'i');
-const P_CIJF  = new RegExp(`\\b(\\d{1,2})[\\/.-](\\d{4})${STREEP}(?:(\\d{1,2})[\\/.-](\\d{4})|(${NU_RE}))`, 'i');
+const P_MND2  = new RegExp(`\\b(${MND_RE})\\.?${STREEP}(${MND_RE})\\.?\\s*(\\d{4})`, 'i');
+/* De dag vóór de maand ("01/11/2021", Europass en veel Word-cv's) is
+   opmaak die we overslaan — zonder dat prefix-deel liep de regex vast op
+   dag/maand-verwisseling en viel het hele dienstverband weg. */
+const P_CIJF  = new RegExp(`\\b(?:\\d{1,2}[\\/.-])?(\\d{1,2})[\\/.-](\\d{4})${STREEP}(?:(?:\\d{1,2}[\\/.-])?(\\d{1,2})[\\/.-](\\d{4})|(${NU_RE}))`, 'i');
 /* Jaar-eerst: 2024-01 – 2026-07. Dit is het exportformaat van LinkedIn,
    Indeed en de meeste cv-bouwers, en het werd hier niet herkend — P_CIJF
    leest maand-eerst (01/2024) en P_JAAR wil twee kale jaartallen. Gevolg:
@@ -475,6 +487,14 @@ function leesPeriode(s){
     van: iso(m[2], MND[m[1].toLowerCase()]),
     tot: m[5] ? '' : iso(m[4], MND[(m[3]||'').toLowerCase()]),
     lopend: !!m[5], tekst: m[0].trim(), index: m.index, sterk: true};
+  /* "Apr - Juli 2016": twee maanden, één jaartal achteraan — een stage of
+     kort dienstverband binnen één jaar. Zonder dit patroon viel zo'n regel
+     op het losse jaartal en werden de maandnamen functie ("Apr") en
+     werkgever ("Juli"). (Cv Frencino, 3 aug 2026.) */
+  if((m = P_MND2.exec(s))) return {
+    van: iso(m[3], MND[m[1].toLowerCase()]),
+    tot: iso(m[3], MND[m[2].toLowerCase()]),
+    lopend: false, tekst: m[0].trim(), index: m.index, sterk: true};
   if((m = P_CIJF.exec(s))) return {
     van: iso(m[2], +m[1]), tot: m[5] ? '' : iso(m[4], +m[3]),
     lopend: !!m[5], tekst: m[0].trim(), index: m.index, sterk: true};
@@ -490,6 +510,26 @@ function leesPeriode(s){
 /* ─── 6. Secties ──────────────────────────────────────────────────
    Regels labelen met de sectie waar ze onder staan. Een kopje is kort,
    staat alleen op zijn regel en komt uit de lijst hierboven. */
+
+/* Kopjes met een spatie tussen élke letter ("W O R K  E X P E R I E N C E")
+   zijn een geliefde cv-opmaak; samengeperst zijn de woordgrenzen weg, dus
+   die vergelijken we tegen deze compacte varianten. */
+const SECTIES_COMPACT = [
+  ['werk', /^(werkervaring(en)?|workexperience|experiences?|employment(history)?|werkverleden)$/i],
+  ['opleiding', /^(opleiding(en)?|education|onderwijs)$/i],
+  ['cursus', /^(certifica(at|ten|tes?)|cursus(sen)?|courses?|training(en|s)?)$/i],
+  ['vaardigheid', /^((hard|soft)?skills?|vaardigheden|competenties)$/i],
+  ['taal', /^(talen|taal|languages?)$/i],
+  ['persoon', /^(contact(gegevens)?|profiel|profile|personalia|aboutme|overmij)$/i],
+  ['overig', /^(hobby.?s?|interess?es|references?|referenties)$/i]
+];
+/* Geeft de samengeperste vorm als de tekst uit losse letters bestaat,
+   anders ''. */
+function gespreid(s){
+  const tk = String(s).trim().split(/\s+/);
+  return tk.length >= 4 && tk.every(w => /^[A-Za-zÀ-ž]$/.test(w)) ? tk.join('') : '';
+}
+
 function sectieRegels(tekst){
   const uit = [];
   let sectie = 'kop';                       // alles vóór het eerste kopje
@@ -522,6 +562,11 @@ function sectieRegels(tekst){
         const hit = SECTIES.find(([, re]) => re.test(cel));
         if(hit){ sectie = hit[0]; return; }
       }
+      const celC = gespreid(cel);
+      if(celC){
+        const hit = SECTIES_COMPACT.find(([, re]) => re.test(celC));
+        if(hit){ sectie = hit[0]; return; }
+      }
     }
     const kaal = r.replace(/\t/g,' ').replace(/[:•·\-–—_|]+$/,'').trim();
     if(kaal.length <= 40){
@@ -529,6 +574,11 @@ function sectieRegels(tekst){
       /* Alleen een kopje als er verder niets op de regel staat. "Ervaring
          met heftrucks" is een zin, geen sectiekop. */
       if(hit && kaal.split(/\s+/).length <= 4){ sectie = hit[0]; return; }
+    }
+    const kaalC = gespreid(kaal.replace(/[:•·\-–—_|]+$/,''));
+    if(kaalC){
+      const hit = SECTIES_COMPACT.find(([, re]) => re.test(kaalC));
+      if(hit){ sectie = hit[0]; return; }
     }
     uit.push({tekst: r, sectie});
   });
@@ -592,6 +642,16 @@ function plaatsAchteraan(s){
   return '';
 }
 
+/* Is dit hele stuk tekst alleen een plaats (+land)? "Zuidland, Nederland"
+   wel; "Witron, Nieuwegein, Netherlands" niet (Witron blijft over). Een
+   pure plaats is nooit een functie of werkgever. */
+function puurPlaats(s){
+  const delen = kaal(s).split(',')
+    .map(d => schoon(d.replace(/\b(the\s+)?(netherlands|nederland|holland|nl|belgi[eë]|belgium|duitsland|germany)\b/i,'')))
+    .filter(Boolean);
+  return delen.length > 0 && delen.every(d => !!plaatsnaam(d));
+}
+
 /* Een regel als "Teamleider – Zuidhoek Foods" of "MBO Beveiliger – Rijnmond
    Opleidingen" in twee stukken knippen. Alleen op een echt scheidingsteken
    met spaties eromheen, anders sneuvelt "Wit & Zonen" of een
@@ -614,7 +674,10 @@ function isBeschrijving(s){
   if(isOpsomming(s)) return true;
   if(t.length > 70) return true;
   const komma = (t.match(/,/g) || []).length;
-  if(/[.,;]$/.test(t) && !/\b(b\.v\.|n\.v\.|ltd\.|inc\.|s\.a\.|v\.o\.f\.)$/i.test(t)) return true;
+  /* Rechtsvormen ook met spaties ("N. V.") — zo schrijft een deel van de
+     cv's het, en zonder die variant werd de werkgever een beschrijving en
+     stopte de zoektocht er pal voor. (Cv Frencino, 3 aug 2026.) */
+  if(/[.,;]$/.test(t) && !/\b(b\.?\s?v\.?|n\.?\s?v\.?|ltd\.?|inc\.?|s\.?\s?a\.?|v\.?\s?o\.?\s?f\.?)\s*$/i.test(t)) return true;
   if(komma >= 3) return true;
   return false;
 }
@@ -626,6 +689,12 @@ function isBeschrijving(s){
    erboven, of in een eigen kolom naast de tekst. */
 function blokken(regels, welke){
   const uit = [];
+  /* Regels die een eerder blok al heeft gebruikt (als optie onder zijn
+     periode, of als taak) zijn vergeven. De zoektocht omhóóg moet daarop
+     stuiten: zonder deze grens las een blok de functie en werkgever van
+     het blok erbóven in — bij een cv met losse regels tussen de banen
+     kreeg elke baan zo de kop van zijn voorganger. (Cv's 3 aug 2026.) */
+  const geclaimd = new Set();
   const heeftSectie = regels.some(r => welke.includes(r.sectie));
   const meetel = regels.map((r, i) => heeftSectie
     ? welke.includes(r.sectie)
@@ -641,22 +710,44 @@ function blokken(regels, welke){
 
     const opties = [];
     const voegToe = (s, afstand) => {
+      const ruwe = String(s);
       /* "Functie Chauffeur / Sales" is een labelregel: het woord Functie is
          opmaak, de rest is de titel. Het label onthouden we — zo'n regel
-         ís de functie, en die wetenschap is meer waard dan elke woordscore. */
-      const metLabel = /^\s*functie\b[:.]?\s/i.test(String(s));
-      let t = schoon(String(s).replace(/\(\s*\)/g,'').replace(/^\s*functie\b[:.]?\s*/i,''));
+         ís de functie, en die wetenschap is meer waard dan elke woordscore.
+         Spiegelbeeldig geldt "Bij Vepco te Moerdijk": dat ís de werkgever. */
+      const metLabel = /^\s*functie\b[:.]?\s/i.test(ruwe);
+      const bijBedrijf = /^\s*bij\s+\S/i.test(ruwe);
+      /* "Taken ..." en "Werkzaamheden ..." zijn inhoud, geen kop — als
+         optie werd "Taken Laden en lossen" doodleuk de werkgever. */
+      if(/^\s*(werkzaamheden|taken)\b[:.]?\s/i.test(ruwe)) return;
+      let t = schoon(ruwe.replace(/\(\s*\)/g,'')
+        .replace(/^\s*functie\b[:.]?\s*/i,'').replace(/^\s*bij\s+/i,''));
+      /* Sommige omzettingen verdubbelen letterlijk elke regel
+         ("PoetsmanPoetsman") — de helft is dan het echte woord. */
+      const h = t.length >> 1;
+      if(t.length >= 6 && t.length % 2 === 0 && t.slice(0, h) === t.slice(h)) t = t.slice(0, h);
       /* Wat er naast de periode overblijft aan losse datumbrokken ("01-09-"
          van "01-09-2009 t/m 2022") is geen naam maar een leesrest van het
          datumpatroon — die werd eerst doodleuk de functie. */
       if(/^[\d\s.\/-]+$/.test(t)) return;
+      /* Contactgegevens zijn nooit een functie of werkgever: zonder deze
+         zeef werd een e-mailadres of adresregel de kop van een blok. */
+      if(/@|\b\d{4}\s?[A-Z]{2}\b|\d{6,}/.test(t)) return;
       /* Een korte regel met een punt erachter ("Algemeen medewerker.") is
          geen zin maar een titel met opmaakpunt; zonder deze strip keurde
          isBeschrijving hem af en bleef de functie leeg. */
       if(t.length <= 40) t = t.replace(/\.$/,'');
       if(!t || t.length < 2 || isBeschrijving(t) || leesPeriode(t)) return;
-      const paar = splitsPaar(t);
-      opties.push(paar ? {paar, afstand} : {een:t, afstand, functieLabel: metLabel});
+      /* Een regel die alléén een plaats (+land) is, is geen naam: op de
+         Europass-regel "01/11/2021 – HEDEN Amsterdam, Nederland" werd
+         "Amsterdam, Nederland" anders de werkgever. En bij "Dorc
+         International - Zuidland, Nederland" is de rechterhelft de
+         vestigingsplaats, niet de wederhelft van een paar. */
+      if(puurPlaats(t)) return;
+      let paar = splitsPaar(t);
+      if(paar && puurPlaats(paar[1])){ t = paar[0]; paar = null; }
+      else if(paar && puurPlaats(paar[0])){ t = paar[1]; paar = null; }
+      opties.push(paar ? {paar, afstand} : {een:t, afstand, functieLabel: metLabel, bedrijfHint: bijBedrijf});
     };
     /* Opmaaklabels uit gestructureerde cv's ("Branche Horeca", "Voltijd/
        Deeltijd Voltijd"). Geen functie, geen werkgever en geen taak — maar
@@ -672,15 +763,25 @@ function blokken(regels, welke){
        goed uitziet en niet klopt. */
     const stop = j => !meetel[j] || leesPeriode(regels[j].tekst)
                    || isOpsomming(regels[j].tekst) || isBeschrijving(regels[j].tekst);
+    /* Een "Functie ..."-labelregel is per definitie kop-materiaal en mag de
+       zoektocht nooit stoppen — ook niet als er een punt achter staat
+       ("Functie Algemeen medewerker."), waardoor isBeschrijving hem eerst
+       als zin afkeurde en de scan er al vóór het label op afbrak. */
+    const functieLabelRegel = j => /^functie\b[:.]?\s/i.test(kaal(regels[j].tekst));
     for(let j = i-1, n = 0; j >= 0 && n < 2; j--){
-      if(isEtiket(regels[j].tekst)){ if(!meetel[j]) break; continue; }
+      if(!meetel[j] || geclaimd.has(j)) break;
+      if(isEtiket(regels[j].tekst)) continue;
+      if(functieLabelRegel(j)){ voegToe(regels[j].tekst, ++n); continue; }
       if(stop(j)) break;
       voegToe(regels[j].tekst, ++n);
     }
     for(let j = i+1, n = 0; j < regels.length && n < 2; j++){
-      if(isEtiket(regels[j].tekst)){ if(!meetel[j]) break; continue; }
+      if(!meetel[j]) break;
+      if(isEtiket(regels[j].tekst)) continue;
+      if(functieLabelRegel(j)){ voegToe(regels[j].tekst, ++n); geclaimd.add(j); continue; }
       if(stop(j)) break;
       voegToe(regels[j].tekst, ++n);
+      geclaimd.add(j);
     }
     /* ─── De werkzaamheden ────────────────────────────────────────
        Precies de regels die de zoektocht hierboven laat liggen. Voor het
@@ -707,10 +808,22 @@ function blokken(regels, welke){
        Het label "Werkzaamheden:" is opmaak, geen inhoud. */
     const taakTekst = s => kaal(String(s).split('\t').pop())
       .replace(/^\s*[•·▪◦*\-–—o]\s+/, '')
-      .replace(/^werkzaamheden\b[:.]?\s*/i, '')
+      .replace(/^(werkzaamheden|taken)\b[:.]?\s*/i, '')
       .replace(/\s+$/, '');
     const taken = [];
     let overgeslagen = 0;
+    /* Is regel j de kop van het vólgende dienstverband? Twee eisen: er
+       staat een periode direct onder, én de regel zelf oogt als een kop —
+       kort, splitsbaar in functie–werkgever, of met een herkenbaar
+       functie- of bedrijfswoord erin ("Olie en gas industrie Noble
+       Drilling Offshore" telt zeven woorden en is tóch een kop). Een taak
+       zonder zo'n signaal die toevallig vlak boven de volgende periode
+       staat ("Ondersteuning verlenen aan de onderhoudsactiviteiten")
+       blijft zo gewoon een taak. */
+    const kopVolgt = (j, t) => regels[j+1] && meetel[j+1]
+      && leesPeriode(regels[j+1].tekst)
+      && (t.split(/\s+/).length <= 4 || !!splitsPaar(t)
+          || FUNCTIE_RE.test(t) || BEDRIJF_RE.test(t));
     for(let j = i + 1; j < regels.length && taken.length < 14; j++){
       if(!meetel[j]) break;
       if(leesPeriode(regels[j].tekst)) break;         // volgend dienstverband
@@ -723,13 +836,6 @@ function blokken(regels, welke){
       /* Reclame van cv-bouwers is geen werkzaamheid. */
       if(/^dit cv\b|gemaakt met|\bcv maken\b|^pagina\s*\d|^page\s*\d/i.test(t)){
         if(taken.length) break;
-        continue;
-      }
-      /* Een regel met het label "Werkzaamheden:" ís de taak, hoe kort de
-         inhoud ook is — "Reclamefolders bezorgen" viel eerst onder de
-         drie-woordengrens verderop en verdween. */
-      if(/^werkzaamheden\b[:.]?\s/i.test(kaal(String(regels[j].tekst).split('\t').pop()))){
-        taken.push(t);
         continue;
       }
       const bullet = isOpsomming(regels[j].tekst);
@@ -754,28 +860,47 @@ function blokken(regels, welke){
          plakte bij cv's zónder bullets en zónder eindpunten álle taken tot
          één worst aan elkaar — en de kop van het volgende dienstverband
          erbij. (Cv's Adrian en Ricardo Zeef, 3 aug 2026.) */
+      /* Een regel met het label "Werkzaamheden:" of "Taken" ís de taak,
+         hoe kort de inhoud ook is — "Reclamefolders bezorgen" viel eerst
+         onder de drie-woordengrens verderop en verdween. */
+      if(/^(werkzaamheden|taken)\b[:.]?\s/i.test(kaal(String(regels[j].tekst).split('\t').pop()))){
+        taken.push(t);
+        geclaimd.add(j);
+        continue;
+      }
       if(!bullet && vorige &&
          (/^[a-zà-öø-ÿ(]/.test(t) ||
           /,$|\b(en|of|de|het|een|voor|van|met|op|in|door|aan|te|bij|als)$/i.test(vorige))){
-        /* …tenzij de regel erná een periode is: dan is dít geen afgebroken
-           bullethelft maar de kop van het volgende dienstverband. Zonder
-           deze uitzondering eindigde de laatste taak van elk blok op
-           "…standaarden QHSE Coördinator – PepsiCo". */
-        if(regels[j+1] && meetel[j+1] && leesPeriode(regels[j+1].tekst)) break;
+        /* …tenzij de regel erná een periode is én deze regel op een kop
+           lijkt (kort, of splitsbaar in functie–werkgever): dan is dít geen
+           afgebroken bullethelft maar de kop van het volgende
+           dienstverband. Zonder de kop-toets sneuvelde óók de laatste échte
+           taak van een blok waar de volgende periode direct op volgt. */
+        if(kopVolgt(j, t)) break;
         taken[taken.length - 1] = vorige + ' ' + t;
+        geclaimd.add(j);
         continue;
       }
-      if(bullet || isBeschrijving(regels[j].tekst)){ taken.push(t); continue; }
-      /* Korte regel zonder bullet, direct gevolgd door een periode: dat is
-         de kop van het volgende dienstverband — hier houdt dit blok op. */
-      if(regels[j+1] && meetel[j+1] && leesPeriode(regels[j+1].tekst)) break;
+      if(bullet){ taken.push(t); geclaimd.add(j); continue; }
+      /* Kopachtige regel zonder bullet, direct gevolgd door een periode:
+         het volgende dienstverband — hier houdt dit blok op. Deze toets
+         staat vóór de beschrijvingstoets: "Royal Hotel, Il Corallo,
+         Taveerne De Danna" heeft drie komma's en leest als beschrijving,
+         maar het is de werkgever van het volgende blok. */
+      if(kopVolgt(j, t)) break;
+      if(isBeschrijving(regels[j].tekst)){ taken.push(t); geclaimd.add(j); continue; }
       /* Cv's zonder opsommingstekens zetten hun werkzaamheden als kale,
          korte regels onder de periode (cv Adrian, 3 aug 2026). Drie woorden
          of meer is dan een taak; wordt zo'n regel straks als functie of
          werkgever gekozen, dan haalt werkUit hem er weer uit. */
-      if(t.split(/\s+/).length >= 3){ taken.push(t); continue; }
-      if(taken.length) break;                          // taken zijn afgelopen
-      if(++overgeslagen > 2) break;                    // kop is hooguit twee regels
+      if(t.split(/\s+/).length >= 3){ taken.push(t); geclaimd.add(j); continue; }
+      /* Een kort regeltje vlak onder de periode is de kop van dít blok
+         (werkgever of functie), geen sein dat de taken op zijn — daarna
+         volgen ze juist nog. Zonder dit onderscheid brak "Utilities
+         Operator" op regel twee de lus af en verdwenen alle acht taken
+         eronder. (Cv Frencino, 3 aug 2026.) */
+      if(j - i <= 2 && ++overgeslagen <= 2) continue;
+      break;                                           // taken zijn afgelopen
     }
     if(opties.length) uit.push({per, opties, taken});
   });
@@ -812,13 +937,25 @@ function kiesPaar(opties, scoreA, scoreB){
       zet(r, l, scoreA(r) + scoreB(l) - straf + 1, true);
     }
   });
-  const losse = opties.filter(o => o.een);
+  /* Ook de helften van een paar doen los mee, met een kleine extra straf:
+     bij "Zelfstandig werkend kok" boven "Restaurant X - Curaçao" hoort de
+     functie van de ene regel bij de linkerhelft van de andere — dat kon
+     eerst niet, want los combineerde alleen met los. */
+  const losse = [];
+  opties.forEach(o => {
+    if(o.een) losse.push(o);
+    else if(o.paar){
+      losse.push({een: o.paar[0], afstand: (o.afstand || 0) + 0.5});
+      losse.push({een: o.paar[1], afstand: (o.afstand || 0) + 0.5});
+    }
+  });
   /* Een optie uit een "Functie ..."-labelregel hoort aan de functiekant
      thuis: flink erbij als hij daar staat, flink eraf als hij als
      werkgever wordt geprobeerd. Zonder dit werd "Eigenaar" (uit "Functie
-     Eigenaar") de werkgever van een freelancer. */
-  const sA = o => scoreA(o.een) + (o.functieLabel ?  2 : 0);
-  const sB = o => scoreB(o.een) + (o.functieLabel ? -2 : 0);
+     Eigenaar") de werkgever van een freelancer. "Bij Vepco te Moerdijk"
+     is het spiegelbeeld: dat is de werkgeverskant. */
+  const sA = o => scoreA(o.een) + (o.functieLabel ?  2 : 0) + (o.bedrijfHint ? -2 : 0);
+  const sB = o => scoreB(o.een) + (o.functieLabel ? -2 : 0) + (o.bedrijfHint ?  2 : 0);
   losse.forEach(o1 => {
     const straf1 = (o1.afstand || 0) * 0.5;
     /* Een halve uitkomst is een punt minder waard dan een hele. Zonder deze
@@ -846,9 +983,14 @@ function werkUit(regels){
     /* De regel die als functie of werkgever is gekozen mag niet ook nog een
        keer als taak terugkomen — dan staat dezelfde tekst twee keer op de
        kaart. */
-    const kop = [k.a, k.b].filter(Boolean).map(x => kaal(x).toLowerCase());
+    /* Vergelijken zonder leestekens aan het eind: de gekozen werkgever is
+       "Fernandes Bottling N.V" (punt gestript), de taakregel "Fernandes
+       Bottling N.V." — zonder normalisatie bleef de werkgeversnaam als
+       taak op de kaart staan. */
+    const norm = x => kaal(x).toLowerCase().replace(/[.,;:]+$/,'');
+    const kop = [k.a, k.b].filter(Boolean).map(norm);
     const werk = (taken || [])
-      .filter(t => !kop.includes(kaal(t).toLowerCase()))
+      .filter(t => !kop.includes(norm(t)))
       .filter((t, idx, arr) => arr.findIndex(x => kaal(x).toLowerCase() === kaal(t).toLowerCase()) === idx);
     return {functie: k.a, werkgever: k.b, van: per.van, tot: per.tot,
             lopend: per.lopend, periode: per.tekst, zeker,
@@ -956,7 +1098,11 @@ const NAAM_WOORD = /^[A-ZÀ-Ž][\wÀ-ž'’-]*$|^(van|de|der|den|da|do|dos|del|d
 function naamUit(groot, bestandsnaam){
   const kandidaten = [];
   (groot || []).forEach(r => {
-    const t = schoon(r).replace(/\s+/g,' ');
+    let t = schoon(r).replace(/\s+/g,' ');
+    /* Sommige omzettingen verdubbelen de naamregel letterlijk
+       ("Bilal YildizBilal Yildiz") — de helft is dan de echte naam. */
+    const h = t.length >> 1;
+    if(t.length >= 6 && t.length % 2 === 0 && t.slice(0, h) === t.slice(h)) t = t.slice(0, h).trim();
     if(!t || t.length > 45) return;
     if(SECTIES.some(([, re]) => re.test(t))) return;
     if(/ploeggenoten|curriculum|\bcv\b|resume|r[ée]sum[ée]/i.test(t)) return;
