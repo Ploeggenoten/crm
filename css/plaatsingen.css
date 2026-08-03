@@ -102,3 +102,28 @@
   .pl-sec .card-b{padding:14px}
   .pl-t .btn{margin-left:0}
 }
+
+/* ─── Kleur per toestand ──────────────────────────────────────────
+   Eén oogopslag: wie werkt er, wie moet nog beginnen, wie is gestopt. De
+   kleur volgt de tijd en niet de fase, want dit scherm groepeert op datum —
+   anders zegt de rand iets anders dan de kop erboven. Alleen een randje
+   links: een gekleurd vlak per rij maakt een lijst van tien onleesbaar. */
+.pl-r{border-left:3px solid transparent}
+.pl-r.pl-werkt{border-left-color:var(--green, #3d9968)}
+.pl-r.pl-komt {border-left-color:#5b8bbf}
+.pl-r.pl-weg  {border-left-color:var(--line-2);opacity:.7}
+/* Rood is en blijft van een gemist contactmoment — het enige waar je vandaag
+   iets aan moet doen. Dat wint van de toestandskleur. */
+.pl-r.mis{border-left-color:var(--red)}
+
+/* ─── Opvolging opgevouwen ────────────────────────────────────────
+   Stond uitgeklapt onder elke rij: bij zes plaatsingen vijftien regels
+   "warm houden" en "felicitatiemail", en dan zie je de tijdlijn niet meer. */
+.pl-opv{margin-top:6px}
+.pl-opv > summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:8px;
+  padding:3px 0;font-size:12px}
+.pl-opv > summary::-webkit-details-marker{display:none}
+.pl-opv > summary::after{content:'▸';color:var(--muted);font-size:10px;margin-left:2px}
+.pl-opv[open] > summary::after{content:'▾'}
+.pl-opv > summary:hover .meta{color:var(--olive)}
+.pl-opv .pl-taken{margin-top:4px}

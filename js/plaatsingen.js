@@ -288,6 +288,28 @@ const knopLabel = m => SOORT_KNOP[m.soort] || 'Vastleggen';
 /* Openstaande en gemiste momenten. Dit is het enige deel van het scherm dat
    kleur krijgt: rood voor gemist, verder niets. Eén accent, en het staat op
    het enige dat er echt toe doet. */
+/* De opvolging opgevouwen. Wat je op de rij ziet is één regel: hoeveel er
+   openstaan en wat het eerstvolgende moment is. De momenten zelf — met hun
+   knoppen — zitten in de <details>, en die klapt vanzelf open zodra er iets
+   gemist is. Zo blijft de tijdlijn leesbaar en raak je geen achterstand
+   kwijt. */
+function momentenBlokHtml(r){
+  const binnen = momentenHtml(r);
+  if(!binnen) return '';
+  const nMis = r.gemist.length, nOpen = r.open.length;
+  if(!nMis && !nOpen){
+    /* Alleen "volgende contactmoment" of een uitlegregel: die is één regel
+       en hoeft niet weggevouwen te worden. */
+    return binnen;
+  }
+  const kop = [nMis ? `${nMis}× gemist` : '', nOpen ? `${nOpen} open` : '']
+    .filter(Boolean).join(' · ');
+  return `<details class="pl-opv"${nMis ? ' open' : ''}>
+    <summary><span class="${nMis ? 'pl-mis-t' : 'meta'}">${h(kop)}</span>
+      <span class="meta">opvolging</span></summary>
+    ${binnen}</details>`;
+}
+
 function momentenHtml(r){
   if(r.anoniem)
     return `<div class="pl-taken"><span class="meta">Geanonimiseerd — geen opvolging meer.</span></div>`;
@@ -340,7 +362,21 @@ function rijHtml(r){
     onder.push('staat nog op Contract getekend');
   else if(CRM.faseIs(c.fase, 'Gestart') && r.start && r.start > vandaag())
     onder.push('staat op Gestart, maar de startdatum ligt nog voor ons');
-  return `<div class="pl-r${(r.gemist.length && !r.kapotteDatum) ? ' mis' : ''}" data-kaart="${h(c.id)}" role="button" tabindex="0">
+  /* Kleur op de rij, zodat je in één oogopslag ziet in welke toestand iemand
+     is. Tjeerd: "de kaarten van de kandidaten moeten een kleur krijgen, zo
+     zie je beter wie er geplaatst is." De regel is de tijd, niet de fase —
+     dit scherm groepeert op datum en dan moet de kleur hetzelfde zeggen:
+       groen  aan het werk (startdatum is geweest)
+       blauw  getekend, moet nog beginnen
+       grijs  gestopt
+     Rood blijft voorbehouden aan een gemist contactmoment; dat is het enige
+     waar je vandaag iets aan moet doen. */
+  const vd = vandaag();
+  const kleur = c.gestoptOp ? 'weg'
+    : (r.start && r.start <= vd) ? 'werkt'
+    : 'komt';
+  const missers = r.gemist.length && !r.kapotteDatum;
+  return `<div class="pl-r pl-${kleur}${missers ? ' mis' : ''}" data-kaart="${h(c.id)}" role="button" tabindex="0">
     <div class="pl-r-top">
       <span class="pl-naam">${h(c.naam || '—')}</span>
       <span class="pl-sub">${h(sub)}</span>
@@ -348,8 +384,15 @@ function rijHtml(r){
       ${startTekst(r)}
     </div>
     <div class="pl-r-meta meta">${h(onder.join(' · '))}</div>
-    ${momentenHtml(r)}
     ${blokkersHtml(r)}
+    ${/* De opvolgmomenten stonden uitgeklapt onder elke rij — bij zes
+         plaatsingen zijn dat al gauw vijftien regels "warm houden" en
+         "felicitatiemail", en dan zie je de tijdlijn niet meer waar het je om
+         te doen was. Ze staan er nog, maar opgevouwen: wat gemist is telt
+         mee in de rand links, de rest vraagt één klik.
+         (Tjeerd, 3 aug 2026: "al die taken maken het onoverzichtelijk. Het
+         belangrijkste is dat we de tijdlijn goed zien.") */''}
+    ${momentenBlokHtml(r)}
   </div>`;
 }
 
