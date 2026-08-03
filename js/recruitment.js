@@ -2329,10 +2329,17 @@ function sollicitantCvRoute(){
    van CRM.cvParse, dat er meteen achteraan opengaat. */
 async function maakCvKandidaat(naam){
   const vandaag = CRM.todayISO();
+  /* Fase 'CV binnen' en niet 'Intake'. Een ingelezen cv betekent precies dat:
+     er is een cv. Het betekent niet dat de videocall is geweest, en dus ook
+     niet dat deze persoon klaar is om aan een klant voorgesteld te worden.
+     Op 'Intake' kwam de kaart meteen in de lijst "klaar om voor te stellen"
+     terecht — Tjeerd, 3 aug 2026: "Tjerk heeft het cv al van Goncalo
+     Oliveira, automatisch gaat hij naar klaar om voor te stellen. Dit wil ik
+     niet." De AM zet de fase zelf verder op de kaart. */
   const cand = {
     id:CRM.uid(), naam, telefoon:'', email:'', woonplaats:'', functie:'',
-    klant:'', type:'W&S', bron:'Handmatig', fase:'Intake', since:vandaag,
-    rec:CRM.me(), cv:null, historie:[{fase:'Intake', op:vandaag}], notities:[]
+    klant:'', type:'W&S', bron:'Handmatig', fase:'CV binnen', since:vandaag,
+    rec:CRM.me(), cv:null, historie:[{fase:'CV binnen', op:vandaag}], notities:[]
   };
   const rij = CRM.candToRow(cand);
   CRM.state.cands.unshift(rij);
@@ -2341,7 +2348,7 @@ async function maakCvKandidaat(naam){
     if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
   }
   await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
-    'Aangemaakt vanuit een ingelezen CV — fase Intake, nog niet aan een vacature gekoppeld');
+    'Aangemaakt vanuit een ingelezen CV — fase CV binnen, nog niet aan een vacature gekoppeld');
   /* Teruggeven wat de rest van de app ook ziet, en niet het concept hierboven:
      CRM.cvParse werkt dit object bij en schrijft het via CRM.candToRow terug. */
   return CRM.kandidaat(cand.id) || cand;
@@ -3562,15 +3569,26 @@ async function noShow(id){
 /* ─── Fase-picker (tikken in plaats van slepen) ───────────────────
    Woont hier, naast faseWissel, zodat het bord én de kandidatenkaart
    dezelfde picker mét dezelfde poortwachters gebruiken. */
+/* De fasekiezer toont sinds 3 aug 2026 ook de instroom. Hij bood alleen
+   CRM.PHASES — dus alles vanaf Voorgesteld — en daarmee kon een AM vanaf de
+   kandidaatkaart niet vastleggen dat er een videocall gepland staat of dat
+   het cv net binnen is. Dat moest via de leadlijst in Recruitment, terwijl
+   de kandidaat daar niet meer stond. Nu staat de hele weg in één venster,
+   in twee groepen: vóór de klant, en bij de klant. */
 function fasePicker(id){
   const c = CRM.kandidaat(id); if(!c) return;
+  const knop = p => `<button data-f="${h(p.k)}" class="${CRM.faseIs(c.fase,p.k)?'nu':''}">
+    <i class="dot" style="background:${p.c}"></i>${h(p.k)}${
+      CRM.faseIs(c.fase,p.k)?'<span class="meta">huidige fase</span>':''}</button>`;
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">${h(c.naam)} verplaatsen</div>
-      <p class="sub" style="margin:6px 0 0">Kies de nieuwe fase.</p></div>
-    <div class="modal-b"><div class="rc-fasepick">
-      ${CRM.PHASES.map(p => `<button data-f="${h(p.k)}" class="${CRM.faseIs(c.fase,p.k)?'nu':''}">
-        <i class="dot" style="background:${p.c}"></i>${h(p.k)}${CRM.faseIs(c.fase,p.k)?'<span class="meta">huidige fase</span>':''}</button>`).join('')}
-    </div></div>
+    <div class="modal-h"><div class="h2">Waar staat ${h(c.naam)}?</div>
+      <p class="sub" style="margin:6px 0 0">Instroom regel je hier; vanaf Voorgesteld hangt er een klant aan en vraagt het systeem om de gegevens die daarbij horen.</p></div>
+    <div class="modal-b">
+      <div class="label" style="margin:0 0 8px">Bij ons — nog geen klant</div>
+      <div class="rc-fasepick">${CRM.INSTROOM.map(knop).join('')}</div>
+      <div class="label" style="margin:18px 0 8px">Bij een klant</div>
+      <div class="rc-fasepick">${CRM.PHASES.map(knop).join('')}</div>
+    </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
       CRM.$$('[data-f]', m).forEach(b => b.onclick = () => {
         CRM.modal.close();

@@ -54,8 +54,39 @@ CRM.faseIn = (f, lijst) => { const x = CRM.faseNorm(f); return (lijst||[]).some(
    de laatste stap van de recruitmentpijplijn. Kleur en label moeten
    blijven werken, anders wordt zo'n kaart grijs en naamloos op elk scherm
    dat hem toevallig toont. */
+/* ─── Instroom: de weg vóór de klant ─────────────────────────────
+   Deze statussen zaten alleen op de lead in Recruitment. Zodra iemand een
+   kandidaatkaart kreeg — met de hand, of doordat er een cv werd ingelezen —
+   waren ze weg en stond de kaart meteen op 'Intake', wat het systeem leest
+   als "klaar om voor te stellen". Terwijl er dan nog geen videocall was
+   geweest.
+
+   Tjeerd, 3 aug 2026: "Tjerk heeft het cv al van Goncalo Oliveira,
+   automatisch gaat hij naar klaar om voor te stellen. Dit wil ik niet. De AM
+   moet vanuit de kandidatenkaart ook de fases binnen recruitment kunnen
+   aanpassen."
+
+   Dezelfde namen en kleuren als CRM.LEAD_STATUS, zodat een lead en een
+   kandidaat over hetzelfde ding hetzelfde woord gebruiken. Ze staan bewust
+   NIET in CRM.PHASES: faseIdx blijft -1 en dus komt niemand met een
+   instroomstatus op het bord Klanttrajecten. Dat bord begint bij Voorgesteld
+   en dat blijft zo. */
+CRM.INSTROOM   = [
+  {k:'Nieuw',                c:'#5b8bbf'},
+  {k:'Gebeld — geen gehoor', c:'#9aa3b2'},
+  {k:'Potentieel',           c:'#d9a441'},
+  {k:'CV opgevraagd',        c:'#c78a3f'},
+  {k:'CV binnen',            c:'#b08948'},
+  {k:'Videocall gepland',    c:'#4178b0'},
+  {k:'Videocall gehad',      c:'#3d9968'},
+  {k:'Intake',               c:'#9aa3b2'}
+];
+/* VOOR_BORD is wat er ná de instroom komt maar vóór het bord: de laatste
+   halte. Blijft bestaan omdat het bord en de kandidatenlijst hem gebruiken. */
 CRM.VOOR_BORD  = [{k:'Intake', c:'#9aa3b2'}];
-CRM.ALLE_FASES = CRM.PHASES.concat(CRM.VOOR_BORD);
+CRM.ALLE_FASES = CRM.INSTROOM.concat(CRM.PHASES);
+/* Zit deze kandidaat nog vóór de klant? */
+CRM.isInstroom = f => CRM.INSTROOM.some(p => p.k === CRM.faseNorm(f));
 
 CRM.faseKleur = f => (CRM.ALLE_FASES.find(p=>p.k===CRM.faseNorm(f))||{}).c || '#8a927c';
 /* Positie ÓP het bord. -1 betekent "nog niet voorgesteld" — dat geldt voor
@@ -65,9 +96,14 @@ CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=
 /* Klaar om voor te stellen: kaart bestaat, intake is gehad, maar er is nog
    geen klant aan gekoppeld. Dit is het getal waar Tjeerd op stuurt — "hoeveel
    potentiële kandidaten hebben we nou" — en het stond tot nu toe nergens. */
+/* Klaar om voor te stellen: de intake is gehad en er hangt nog geen klant
+   aan. Let op de tweede tak: een vastgelegde intake telt óók als de fase
+   leeg is (de import uit het oude ATS), maar NIET als de kaart nog ergens in
+   de instroom staat. Anders staat iemand op 'Videocall gepland' toch als
+   klaar in de lijst, en dat is precies wat Tjeerd niet wil. */
 CRM.klaarOmVoorTeStellen = c =>
   !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
-      && (CRM.faseIs(c.fase, 'Intake') || !!c.intake);
+      && (CRM.faseIs(c.fase, 'Intake') || (!!c.intake && !CRM.isInstroom(c.fase)));
 
 CRM.AFVAL_CATS = {
   niet_gekwalificeerd:['Taal','Ervaring/skills','Motivatie','No-show','Fysiek/gezondheid','Klant wees af','Meeloopdag niet goed','Anders'],

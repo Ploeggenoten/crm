@@ -1070,6 +1070,7 @@ function kaart(mount, acties, id){
      bij plaatsing? dit moet je ook allemaal bij de kandidatenkaart kunnen
      doen toch?") */
   klik('#c_getekend', () => CRM.kandidaatFase && CRM.kandidaatFase(c.id, 'Contract getekend'));
+  klik('#c_vac', () => vacatureKoppelen(c));
   klik('#c_fase',   () => CRM.kandidaatFasePicker && CRM.kandidaatFasePicker(c.id));
   klik('#c_intake', () => CRM.kandidaatIntake && CRM.kandidaatIntake(c.id));
   klik('#c_noshow', () => CRM.kandidaatNoShow && CRM.kandidaatNoShow(c.id));
@@ -1786,6 +1787,60 @@ async function voorstellen(c, v){
   CRM.render();
 }
 
+/* ─── Vacature koppelen zónder voor te stellen ────────────────────
+   Dit ontbrak. Je kon een kandidaat alleen aan een vacature hangen door hem
+   meteen voor te stellen — dan schiet de fase naar Voorgesteld en ligt zijn
+   cv bij de klant. Maar in de praktijk weet je al vóór de videocall waar je
+   iemand voor in gedachten hebt, en dat wil je vastleggen zonder de klant
+   erbij te halen. (Tjeerd, 3 aug 2026: "nu heb ik een cv geparced, en kan ik
+   hem ook niet koppelen aan een vacature?")
+
+   De fase blijft dus staan waar hij staat. Voorstellen is een aparte,
+   bewuste handeling met eigen poortwachters. */
+async function vacatureKoppelen(c){
+  const vs = (CRM.state.vacs || []).filter(v => v && v.klant && (v.status || 'Open') !== 'Gesloten');
+  if(!vs.length) return CRM.toast('Er staan geen openstaande vacatures','err');
+  const perKlant = {};
+  vs.forEach(v => { (perKlant[v.klant] = perKlant[v.klant] || []).push(v); });
+  const opties = Object.keys(perKlant).sort((a,b)=>a.localeCompare(b,'nl')).map(k =>
+    `<optgroup label="${h(k)}">${perKlant[k]
+      .sort((a,b)=>String(a.functie||'').localeCompare(String(b.functie||''),'nl'))
+      .map(v => `<option value="${h(v.id)}"${String(c.vacatureId)===String(v.id)?' selected':''}
+         data-klant="${h(v.klant)}" data-functie="${h(v.functie||'')}">${h(v.functie||'(geen functie)')}</option>`)
+      .join('')}</optgroup>`).join('');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Vacature koppelen aan ${h(c.naam)}</div>
+      <p class="sub" style="margin:6px 0 0">Legt vast waar je deze kandidaat voor in gedachten hebt. De fase blijft
+        ${h(CRM.faseNorm(c.fase) || 'staan waar hij staat')} — voorstellen bij de klant doe je apart.</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="kv_vac">Vacature</label>
+        <select id="kv_vac"><option value="">— geen vacature —</option>${opties}</select></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="kv_ok">Koppelen</button></div>`, {onOpen(m){
+      m.querySelector('#kv_ok').onclick = async () => {
+        const sel = m.querySelector('#kv_vac');
+        const opt = sel.selectedOptions[0];
+        CRM.modal.close();
+        const patch = {vacature_id: sel.value || '', klant: (opt && opt.dataset.klant) || ''};
+        /* De functie van de vacature alleen overnemen als de kandidaat er zelf
+           geen heeft — wat op zijn kaart staat is wat híj doet. */
+        if(opt && opt.dataset.functie && !String(c.functie||'').trim()) patch.functie = opt.dataset.functie;
+        const rij = CRM.state.cands.find(r => String(r.id) === String(c.id));
+        if(rij) Object.assign(rij, patch);
+        if(!CRM.demo){
+          const {error} = await CRM.sb.from('candidates').update(patch).eq('id', c.id);
+          if(error) return CRM.fout('Koppelen mislukt', error);
+        }
+        await CRM.logActiviteit('kandidaat', c.id, 'systeem', sel.value
+          ? `Gekoppeld aan ${opt.dataset.functie || 'een vacature'} bij ${opt.dataset.klant}`
+          : 'Vacaturekoppeling losgemaakt');
+        CRM.toast(sel.value ? 'Gekoppeld' : 'Koppeling weg','ok');
+        CRM.render();
+      };
+    }});
+}
+
 /* ─── Traject in het kort ─────────────────────────────────────── */
 /* De Teams-link van de laatst ingeplande call. Hij is opgeslagen als
    notitie (en oudere afspraken staan als activiteit) — we vissen hem
@@ -1840,6 +1895,13 @@ function trajectHtml(c){
       ${inTraject(c) && !uitval && !CRM.PLACED.includes(CRM.faseNorm(c.fase))
         ? `<button class="btn sm" id="c_getekend">Contract getekend</button>` : ''}
       <button class="btn ghost sm" id="c_fase">Fase wijzigen…</button>
+      ${/* Alleen zolang er nog géén traject bij een klant loopt (faseIdx < 0:
+            instroom, of helemaal geen fase). Zodra iemand is voorgesteld,
+            verandert van vacature betekent dat een klant een kandidaat
+            kwijtraakt — dat loopt via de trajectpoort in js/traject.js en
+            niet via een stille update hier. */
+        !uitval && CRM.faseIdx(c.fase) < 0
+        ? `<button class="btn ghost sm" id="c_vac">${c.vacatureId ? 'Andere vacature…' : 'Vacature koppelen…'}</button>` : ''}
       ${kanIntake?`<button class="btn ghost sm" id="c_intake">Video-intake</button>`:''}
       ${inTraject(c)&&!uitval?`<button class="btn ghost sm" id="c_noshow" title="Afspraak wissen en de no-show tellen">No-show</button>`:''}
       ${inTraject(c)?`<button class="btn ghost sm" id="c_uitval">${uitval?'Uitvalgegevens bijwerken':'Afmelden'}</button>`:''}
