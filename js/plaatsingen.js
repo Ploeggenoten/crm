@@ -17,15 +17,19 @@
 
    'Contract getekend' en 'Gestart' zijn daarom van het bord gehaald. Dit
    scherm is vanaf dat moment de ENIGE plek waar die mensen nog staan.
-   Daar volgt één harde eis uit: er mag niemand doorheen vallen. Elke
-   kandidaat in CRM.PLACED belandt in precies één groep hieronder —
-   inclusief de rommelgevallen (geen startdatum, onleesbare datum,
-   gestopt, geanonimiseerd). Zie indeel(): die functie eindigt bewust met
-   een groep die alles opvangt wat niet elders past.
+   Daar volgt één harde eis uit: er mag niemand doorheen vallen. Sinds het
+   scherm filters heeft (3 aug 2026) is die eis strenger geworden, niet
+   losser: een filter dat stilletjes iemand wegneemt is hier de
+   gevaarlijkste fout die er is — wie je niet ziet, bel je niet. Daarom
+   zegt de regel onder de tijdlijn altijd hoeveel plaatsingen er buiten
+   beeld vallen en waarom, en staat wie géén datum heeft apart bovenaan in
+   plaats van nergens.
 
    GEEN EIGEN RITME. Wat er vóór en na de start moet gebeuren staat in
-   js/opvolging.js — nazorg, warm houden, felicitatie. Hier wordt dat
-   alleen getoond en afgevinkt. Zou dit scherm zijn eigen momenten
+   js/opvolging.js — nazorg, warm houden, felicitatie. Dit scherm toont
+   daar alleen nog het signaal van (een gemist moment in de
+   waarschuwingskolom); afvinken gebeurt op de kandidatenkaart, waar de
+   momenten met hun knoppen staan. Zou dit scherm zijn eigen momenten
    verzinnen, dan zegt het iets anders dan het dashboard over dezelfde
    persoon, en dan gelooft niemand meer een van beide.
 
@@ -84,25 +88,68 @@ function weekLabel(iso){
   return 'Week ' + isoWeek(iso) + ' · ' + f(ma) + '–' + f(zo);
 }
 
-/* Hoe lang duurt "net gestart"? Dertig dagen. Dat is geen rond getal om het
-   ronde getal: uitval zit vrijwel helemaal in de eerste maand, en het ritme in
-   js/opvolging.js legt daar ook zijn dichtste momenten (startdag, dag 1, einde
-   week 1, twee weken, één maand). Na de check-in van één maand gaat het ritme
-   over op maandelijks, en dan is het naslag geworden. */
-const NET_GESTART_DAGEN = 30;
-
 /* ─── Schermstand ────────────────────────────────────────────────
-   Zoekterm en "alleen van mij" zijn vragen van dít moment en worden niet
-   bewaard. Of "Aan het werk" openstaat is wél een gewoonte: die groep is
-   naslag, en wie hem dagelijks openslaat wil dat niet elke ochtend opnieuw
-   doen. Zelfde vorm als crm_rc_weergave op het bord — een voorkeur van deze
-   persoon op dit apparaat, geen gegeven dat in de database hoort. */
-const WERK_KEY = 'crm_pl_werk_open';
-const werkOpen    = () => { try{ return localStorage.getItem(WERK_KEY) === '1'; }catch(e){ return false; } };
-const zetWerkOpen = aan => { try{ localStorage.setItem(WERK_KEY, aan ? '1' : '0'); }catch(e){} };
+   Tot 3 aug 2026 bestond dit scherm uit zes gestapelde blokken (zonder datum ·
+   deze week · later gepland · net gestart · aan het werk · gestopt), elk met
+   een eigen kop, uitleg en teller. Je moest dus zes keer beslissen of iets jou
+   aanging, en filteren kon alleen op een zoekterm.
 
-const S = { zoek:'', mijn:false };
+   Nu is het één doorlopende tijdlijn met filters ervoor. De indeling die het
+   systeem bedacht is vervangen door de indeling die jij kiest.
+   (Tjeerd, 3 aug 2026: "het moet veel overzichtelijker zijn — filteren op een
+   klant, op vacatures van de klant, op de tijdlijn.")
+
+   TWEE DATUMS, EN DIE VERSCHILLEN. `geplaatstOp` is de dag dat er getekend is;
+   `start` is de eerste werkdag. Daar kan een half jaar tussen zitten. Welke
+   van de twee de tijdlijn draagt is een keuze van de gebruiker, en diezelfde
+   keuze bepaalt waar de periodefilter op slaat — anders zou je op de ene datum
+   filteren en naar de andere kijken. */
+const AS_KEY = 'crm_pl_as';
+const leesAs = () => { try{ return localStorage.getItem(AS_KEY) === 'plaatsing' ? 'plaatsing' : 'start'; }catch(e){ return 'start'; } };
+
+const S = {
+  zoek:'', mijn:false,
+  klant:'', vacature:'',
+  as: leesAs(),          // 'start' = eerste werkdag · 'plaatsing' = datum van tekenen
+  periode:'alles',       // alles | week | maand | kwartaal | eigen
+  van:'', tot:'',
+  gestopt:false          // gestopte plaatsingen meetonen
+};
 const M = { mount:null };
+
+/* Welke datum draagt de tijdlijn, en welke is de andere? De tweede tonen we
+   klein onder de eerste zodra hij afwijkt: dat verschil is precies waar dit
+   scherm over gaat en het stond nergens. */
+const asDatum     = c => dag(S.as === 'plaatsing' ? c.geplaatstOp : c.start);
+const andersDatum = c => dag(S.as === 'plaatsing' ? c.start : c.geplaatstOp);
+const AS_LABEL    = () => S.as === 'plaatsing' ? 'plaatsingsdatum' : 'startdatum';
+
+/* ─── Periode ────────────────────────────────────────────────────
+   De presets rekenen vanaf vandaag. 'alles' geeft lege grenzen terug en dan
+   filtert er niets — belangrijk, want een periode die stilletjes iets
+   wegfiltert is op dit scherm de gevaarlijkste fout die er is: iemand die je
+   niet ziet, bel je niet. Daarom zegt de teller onderaan altijd hoeveel er
+   buiten het filter vallen. */
+function periodeGrenzen(){
+  const nu = vandaag();
+  if(S.periode === 'week'){
+    const ma = maandagVan(nu);
+    return {van: ma, tot: plusDagen(ma, 6)};
+  }
+  if(S.periode === 'maand') return {van: nu.slice(0,8) + '01', tot: eindeMaand(nu)};
+  if(S.periode === 'kwartaal') return {van: nu, tot: plusMaanden(nu, 3)};
+  if(S.periode === 'eigen')   return {van: S.van || '', tot: S.tot || ''};
+  return {van:'', tot:''};
+}
+function eindeMaand(iso){
+  const d = parse(iso); if(!d) return '';
+  return isoLoc(new Date(d.getFullYear(), d.getMonth()+1, 0));
+}
+function plusMaanden(iso, n){
+  const d = parse(iso); if(!d) return '';
+  d.setMonth(d.getMonth()+n);
+  return isoLoc(d);
+}
 
 /* ─── Toestand en kleur ──────────────────────────────────────────
    Dit scherm bedacht de gekleurde rand ("de kaarten van de kandidaten moeten
@@ -183,38 +230,67 @@ function bouwIndex(){
 
    Filteren op fase gaat via CRM.faseIn, nooit met ===: in productie staan nog
    kaarten op oude fasewaarden die CRM.faseNorm vertaalt. */
-function indeel(){
-  const nu = vandaag();
-  const maandag = maandagVan(nu);
-  const zondag  = plusDagen(maandag, 6);
-  const G = {geenDatum:[], dezeWeek:[], later:[], netGestart:[], werk:[], gestopt:[]};
+/* Alle plaatsingen — de bron van dit scherm. Eén definitie, zodat de tellers,
+   de tijdlijn en de badge het nooit oneens kunnen zijn over wie erbij hoort. */
+const allePlaatsingen = () => CRM.kandidaten().filter(c => CRM.faseIn(c.fase, CRM.PLACED));
 
-  CRM.kandidaten().forEach(c => {
-    if(!CRM.faseIn(c.fase, CRM.PLACED)) return;
-    if(c.gestoptOp){ G.gestopt.push(c); return; }
-    const s = dag(c.start);
-    if(!parse(s)){ G.geenDatum.push(c); return; }
-    if(s > zondag){ G.later.push(c); return; }
-    if(s >= maandag){ G.dezeWeek.push(c); return; }
-    const dagenAanHetWerk = dagenTussen(s, nu);
-    if(dagenAanHetWerk != null && dagenAanHetWerk <= NET_GESTART_DAGEN){ G.netGestart.push(c); return; }
-    G.werk.push(c);
+/* De tijdlijn. Geeft terug wat er getekend moet worden én wat er buiten beeld
+   valt, want dat tweede moet het scherm kunnen zeggen.
+
+   `zonderDatum` staat apart en bovenaan: iemand zonder de gekozen datum kán
+   niet op een tijdlijn staan, en juist dat gat is waar dit scherm voor
+   bestaat. Onleesbare datums vallen hier ook in — een datum die de browser
+   niet kan lezen is in de praktijk hetzelfde als geen datum, en in een
+   weekgroep proppen levert een kop "Week NaN" op. */
+function tijdlijn(){
+  const g = periodeGrenzen();
+  const alles = allePlaatsingen();
+  const zonderDatum = [], opTijd = [];
+  let buitenPeriode = 0, verborgenGestopt = 0;
+
+  alles.forEach(c => {
+    if(c.gestoptOp && !S.gestopt){ verborgenGestopt++; return; }
+    if(!past(c)) return;
+    const d = asDatum(c);
+    if(!parse(d)){ zonderDatum.push(c); return; }
+    if((g.van && d < g.van) || (g.tot && d > g.tot)){ buitenPeriode++; return; }
+    opTijd.push(c);
   });
 
-  const opStart = (a,b) => dag(a.start).localeCompare(dag(b.start))
-                        || String(a.naam||'').localeCompare(String(b.naam||''), 'nl');
-  const opNaam  = (a,b) => String(a.naam||'').localeCompare(String(b.naam||''), 'nl');
-  G.dezeWeek.sort(opStart);
-  G.later.sort(opStart);
-  /* Net gestart andersom: de nieuwste bovenaan. Wie gisteren begon vraagt
-     vandaag aandacht; wie 28 dagen geleden begon is bijna naslag. */
-  G.netGestart.sort((a,b) => opStart(b,a));
-  G.geenDatum.sort(opNaam);
-  G.werk.sort(opNaam);
-  G.gestopt.sort((a,b) => dag(b.gestoptOp).localeCompare(dag(a.gestoptOp)) || opNaam(a,b));
-  G.totaal = G.geenDatum.length + G.dezeWeek.length + G.later.length
-           + G.netGestart.length + G.werk.length + G.gestopt.length;
-  return G;
+  const opNaam = (a,b) => String(a.naam||'').localeCompare(String(b.naam||''), 'nl');
+  opTijd.sort((a,b) => asDatum(a).localeCompare(asDatum(b)) || opNaam(a,b));
+  zonderDatum.sort(opNaam);
+
+  return {
+    opTijd, zonderDatum, buitenPeriode, verborgenGestopt,
+    totaal: alles.length,
+    zichtbaar: opTijd.length + zonderDatum.length,
+    gefilterd: !!(S.zoek.trim() || S.mijn || S.klant || S.vacature || S.periode !== 'alles' || !S.gestopt)
+  };
+}
+
+/* De keuzelijsten vullen zich met wat er écht op dit scherm staat, niet met
+   de hele database: een klant zonder plaatsingen in de lijst zetten levert
+   een filter op dat gegarandeerd niets oplevert. De vacaturelijst volgt de
+   gekozen klant — dat was de vraag ("op vacatures van de klant"). */
+function keuzeKlanten(){
+  return [...new Set(allePlaatsingen().map(c => c.klant).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b,'nl'));
+}
+/* Een kandidaat hangt aan een vacature via vacatureId; staat die er niet, dan
+   is de functie op de kaart het enige dat we hebben. Beide worden hier tot
+   dezelfde tekst gemaakt, zodat filteren op "Operator" ook werkt bij kaarten
+   die nooit aan een vacature zijn gekoppeld. */
+function vacatureVan(c){
+  const v = c.vacatureId && CRM.state.vacs
+    ? CRM.state.vacs.find(x => String(x.id) === String(c.vacatureId)) : null;
+  return String((v && v.functie) || c.functie || '').trim();
+}
+function keuzeVacatures(){
+  return [...new Set(allePlaatsingen()
+    .filter(c => !S.klant || c.klant === S.klant)
+    .map(vacatureVan).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b,'nl'));
 }
 
 /* ─── Eén regel klaarmaken ───────────────────────────────────────
@@ -239,8 +315,18 @@ function regel(c, groep){
      onleesbare datum is het veld ingevuld en moet je hem corrigeren, niet
      opvragen bij de klant. */
   const leesbaar = !!parse(s);
+  /* De datum waar de tijdlijn op hangt, en de andere. Ze zijn allebei nodig:
+     de as bepaalt wáár de regel staat, de toestand (werkt / komt / weg) blijft
+     altijd op de échte startdatum rusten. Zou de toestand meebewegen met de
+     as, dan zou iemand die in mei getekend heeft en in september begint bij
+     'plaatsingsdatum' groen kleuren alsof hij al werkt. */
+  const asD = dag(asDatum(c)), anD = dag(andersDatum(c));
   return {
     c, groep, anoniem, start: leesbaar ? s : '', kapotteDatum: !!s && !leesbaar,
+    asDatum: parse(asD) ? asD : '',
+    /* Alleen tonen als hij er is én afwijkt — anders staat dezelfde datum
+       twee keer onder elkaar. */
+    andersDatum: (parse(anD) && anD !== asD) ? anD : '',
     /* Voor het tellen en het label: staat de start nog vóór ons? */
     voorStart: !leesbaar || s > nu,
     dagen: leesbaar ? dagenTussen(s, nu) : null,   // positief = al begonnen
@@ -281,11 +367,12 @@ function blokkers(c, start, anoniem, kapotteDatum){
 }
 
 /* ─── Zoeken en filteren ─────────────────────────────────────────
-   De zoekterm werkt over álle groepen tegelijk. Dat is bewust: "Aan het werk"
-   is de groep waar je iets in opzoekt, maar je weet vooraf niet in welke
-   groep iemand staat — dat is nu juist wat dit scherm voor je uitrekent. */
+   Alles behalve de periode; die zit in tijdlijn(), omdat daar de gekozen
+   datum-as bekend is. */
 function past(c){
   if(S.mijn && CRM.me() && c.rec !== CRM.me()) return false;
+  if(S.klant && c.klant !== S.klant) return false;
+  if(S.vacature && vacatureVan(c) !== S.vacature) return false;
   const q = S.zoek.trim().toLowerCase();
   if(!q) return true;
   return [c.naam, c.klant, c.functie, c.rec].some(v => String(v||'').toLowerCase().includes(q));
@@ -296,342 +383,262 @@ function past(c){
    hele scherm gebruikt. Hier niet zelf iets formuleren: het dashboard zegt
    dan "over 3 dagen" waar dit scherm "nog 3 dagen" zegt over dezelfde datum. */
 function startTekst(r){
-  if(r.kapotteDatum) return '<span class="pl-geen">startdatum onleesbaar</span>';
-  if(!r.start) return '<span class="pl-geen">geen startdatum</span>';
-  const wanneer = CRM.geleden(r.start);
-  const klasse = r.dagen === 0 ? ' nu' : (r.voorStart && r.dagen != null && r.dagen >= -3) ? ' bijna' : '';
-  return `<span class="pl-start${klasse}"><span class="num">${h(CRM.fmtDay(r.start))}</span>`
-       + `<span class="pl-af">${h(wanneer)}</span></span>`;
-}
-
-const SOORT_KNOP = {
-  mail:      'Mail nakijken',
-  afspraak:  'Bericht klaarzetten',
-  verjaardag:'Feliciteren'
-};
-const knopLabel = m => SOORT_KNOP[m.soort] || 'Vastleggen';
-
-/* Openstaande en gemiste momenten. Dit is het enige deel van het scherm dat
-   kleur krijgt: rood voor gemist, verder niets. Eén accent, en het staat op
-   het enige dat er echt toe doet. */
-/* De opvolging opgevouwen. Wat je op de rij ziet is één regel: hoeveel er
-   openstaan en wat het eerstvolgende moment is. De momenten zelf — met hun
-   knoppen — zitten in de <details>, en die klapt vanzelf open zodra er iets
-   gemist is. Zo blijft de tijdlijn leesbaar en raak je geen achterstand
-   kwijt. */
-function momentenBlokHtml(r){
-  const binnen = momentenHtml(r);
-  if(!binnen) return '';
-  const nMis = r.gemist.length, nOpen = r.open.length;
-  if(!nMis && !nOpen){
-    /* Alleen "volgende contactmoment" of een uitlegregel: die is één regel
-       en hoeft niet weggevouwen te worden. */
-    return binnen;
+  if(!r.asDatum){
+    if(r.kapotteDatum) return '<span class="pl-geen">datum onleesbaar</span>';
+    return `<span class="pl-geen">geen ${h(AS_LABEL())}</span>`;
   }
-  const kop = [nMis ? `${nMis}× gemist` : '', nOpen ? `${nOpen} open` : '']
-    .filter(Boolean).join(' · ');
-  /* NOOIT vanzelf openklappen. Ik liet hem opengaan zodra er iets gemist was,
-     en dat pakte precies verkeerd uit bij het geval waar het om gaat: wie in
-     mei tekende en in september begint, heeft vijftien wekelijkse
-     "warm houden"-momenten, en die stonden allemaal als losse rode regel
-     onder elkaar. Dat is geen achterstand van vijftien dingen — het is één
-     feit: die persoon is vijftien weken niet gesproken. Dat staat in de
-     samenvattingsregel, en dat is genoeg.
-     (Tjeerd, 3 aug 2026: "alleen al deze info is teveel ruis. Houd het
-     clean.") */
-  return `<details class="pl-opv">
-    <summary><span class="${nMis ? 'pl-mis-t' : 'meta'}">${h(kop)}</span>
-      <span class="meta">opvolging</span></summary>
-    ${binnen}</details>`;
+  const dgn = dagenTussen(r.asDatum, vandaag());   // positief = geweest
+  const klasse = dgn === 0 ? ' nu' : (dgn < 0 && dgn >= -3) ? ' bijna' : '';
+  /* De tweede datum eronder, klein. Dit is de hele reden dat de as een keuze
+     is: tekenen en beginnen zijn twee verschillende dagen en soms zit er een
+     half jaar tussen. Wie naar de startdatum kijkt wil kunnen zien hoe lang
+     die persoon al vastligt, en andersom. */
+  const ander = r.andersDatum
+    ? `<span class="pl-ander">${h(S.as === 'plaatsing' ? 'start' : 'getekend')} ${h(CRM.fmtDateShort(r.andersDatum))}</span>`
+    : '';
+  return `<span class="pl-start${klasse}"><span class="num">${h(CRM.fmtDay(r.asDatum))}</span>`
+       + `<span class="pl-af">${h(CRM.geleden(r.asDatum))}</span></span>${ander}`;
 }
 
-function momentenHtml(r){
-  if(r.anoniem)
-    return `<div class="pl-taken"><span class="meta">Geanonimiseerd — geen opvolging meer.</span></div>`;
-  /* Bij een onleesbare startdatum rekent het ritme door op een datum die
-     nergens op slaat: je krijgt dan de hele nazorg als "gemist" te zien, met
-     lege datums erachter. Dat is geen achterstand maar een typefout, en er
-     twaalf rode regels van maken maakt het rood op dit scherm waardeloos.
-     Eerst de datum, dan het ritme. */
-  if(r.kapotteDatum)
-    return `<div class="pl-taken"><span class="meta">Zolang de startdatum onleesbaar is valt er geen ritme te berekenen. Corrigeer de datum, dan loopt de opvolging vanzelf mee.</span></div>`;
-  /* Opeenvolgende gemiste momenten van dezelfde soort worden één regel.
-     "Warm houden — week 1" tot en met "week 9" zijn negen keer hetzelfde
-     verzuim, en negen knoppen suggereren negen handelingen terwijl er één
-     ding te doen is: bellen. De laatste (meest recente) blijft staan als
-     aanknopingspunt, met ervoor hoeveel er in die reeks zitten. */
-  const samengevat = (() => {
-    const uit = [];
-    r.gemist.forEach(m => {
-      const vorig = uit[uit.length - 1];
-      if(vorig && vorig.soort === m.soort && vorig.gemist){ vorig.reeks = (vorig.reeks || 1) + 1; vorig.datum = m.datum; vorig.titel = m.titel; vorig.key = m.key; }
-      else uit.push(Object.assign({}, m, {reeks:1}));
-    });
-    return uit;
-  })();
-  const items = samengevat.concat(r.open);
-  if(!items.length){
-    if(r.volgende)
-      return `<div class="pl-taken"><span class="meta">Volgende contactmoment: ${
-        h(r.volgende.kort)} op <span class="num">${h(CRM.fmtDateShort(r.volgende.datum))}</span></span></div>`;
-    return '';
-  }
-  return `<div class="pl-taken">${items.map(m => `
-    <span class="pl-t${m.gemist ? ' mis' : ''}">
-      <span class="pl-t-w">${h(m.titel)}${
-        m.reeks > 1 ? ` <span class="meta">— ${m.reeks} keer overgeslagen</span>` : ''}</span>
-      <span class="pl-t-d num">${h([CRM.fmtDateShort(m.datum), m.gemist ? 'gemist' : ''].filter(Boolean).join(' · '))}</span>
-      <button type="button" class="btn ghost sm" data-opv="${h(r.c.id)}|${h(m.key)}">${h(knopLabel(m))}</button>
-    </span>`).join('')}</div>`;
+/* ─── De waarschuwingskolom ──────────────────────────────────────
+   Eén kolom, en er staat alleen iets in als er iets mis is. Dat was de keuze:
+   een kale regel houdt de lijst leesbaar, maar de signalen mochten niet
+   verdwijnen. Dus precies één melding per regel — de ergste — en de rest in
+   de tooltip. Twee waarschuwingen naast elkaar en je leest er geen meer.
+
+   De volgorde ís de rangorde:
+     1. een gemist contactmoment — het enige dat je vandaag nog kunt inhalen;
+     2. een blokker vóór de start (geen datum, geen contactpersoon, geen
+        nummer) — die kosten je de eerste werkdag;
+     3. fase en datum die elkaar tegenspreken — een administratief gebrek,
+        geen alarm, dus gedempt en als laatste.
+   Alleen bij een ontbrekende startdatum staat er een knop: dat is het enige
+   veld dat je vanaf dit scherm kunt invullen, en iemand daarvoor naar de
+   kandidatenkaart sturen betekent in de praktijk dat het niet gebeurt. */
+function waarschuwing(r){
+  const c = r.c, nu = vandaag();
+  const alle = [];
+  if(r.gemist.length) alle.push(`${r.gemist.length}× contactmoment gemist`);
+  r.blokkers.forEach(b => alle.push(b));
+  if(CRM.faseIs(c.fase, 'Contract getekend') && r.start && r.start <= nu)
+    alle.push('staat nog op Contract getekend');
+  else if(CRM.faseIs(c.fase, 'Gestart') && r.start && r.start > nu)
+    alle.push('staat op Gestart, maar de startdatum ligt nog voor ons');
+  if(!alle.length) return '';
+
+  const geenStart = !r.start && !r.kapotteDatum;
+  /* Staat de rij in het blok "Zonder startdatum", dan zegt de datumkolom dat
+     al met zoveel woorden. Hem hier hérhalen levert twee keer dezelfde tekst
+     op één regel op; de knop blijft wel staan, want dat is het enige veld dat
+     je vanaf dit scherm kunt invullen. Bij de plaatsingsdatum-as gaat de
+     datumkolom over een ándere datum, dus daar blijft de melding staan. */
+  const zichtbaar = (geenStart && !r.asDatum && S.as === 'start')
+    ? alle.filter(t => t !== 'geen startdatum') : alle;
+  const knop = geenStart
+    ? ` <button type="button" class="btn ghost sm" data-startdatum="${h(c.id)}">Invullen</button>` : '';
+  if(!zichtbaar.length) return knop ? `<span class="pl-let">${knop}</span>` : '';
+
+  const ernstig = !!r.gemist.length;
+  const titel = zichtbaar.length > 1 ? ` title="${h(zichtbaar.join(' · '))}"` : '';
+  return `<span class="pl-let${ernstig ? ' erg' : ''}"${titel}>${h(zichtbaar[0])}${
+    zichtbaar.length > 1 ? ` <span class="pl-letn num">+${zichtbaar.length-1}</span>` : ''}${knop}</span>`;
 }
 
-function blokkersHtml(r){
-  if(!r.blokkers.length) return '';
-  const knop = !r.start
-    ? `<button type="button" class="btn ghost sm" data-startdatum="${h(r.c.id)}">Startdatum invullen</button>` : '';
-  return `<div class="pl-blok"><span class="meta">Nog nodig vóór de start: ${h(r.blokkers.join(' · '))}</span>${knop}</div>`;
-}
-
-/* Eén persoon, uitgebreid. Voor de groepen waar vandaag iets voor moet
-   gebeuren: deze week, later gepland, net gestart, zonder startdatum. */
+/* Eén persoon, één regel. Vier kolommen die over de hele lijst uitlijnen, zodat
+   je verticaal kunt scannen: wie · waar · wat er mis is · wanneer.
+   Recruiter, laatst gesproken en de opvolgmomenten stonden hier ook; die zijn
+   naar de kandidatenkaart verhuisd, één klik verderop.
+   (Tjeerd, 3 aug 2026: "het moet heel duidelijk en overzichtelijk zijn.") */
 function rijHtml(r){
   const c = r.c;
   const sub = [c.functie, c.klant].filter(Boolean).join(' @ ') || '—';
-  const onder = [];
-  if(c.rec) onder.push(c.rec);
-  onder.push(r.laatsteContact ? 'laatst gesproken ' + CRM.geleden(r.laatsteContact) : 'nog geen contact vastgelegd');
-  /* Fase en tijd kunnen uit elkaar lopen, en dat komt in productie vaak voor:
-     kaarten worden naar 'Gestart' gesleept zodra het contract rond is, weken
-     vóór de eerste werkdag. Dit scherm groepeert op datum en zet zo iemand
-     terecht bij "Later gepland", maar dan staat er wel iets anders op de kaart
-     dan wat je hier ziet — en zonder uitleg lijkt dát de fout.
-     Dus benoemen, in dezelfde gedempte regel als de recruiter en het laatste
-     contact. Geen chip, geen kleur, geen knop: het is geen alarm. Wie de fase
-     wil rechtzetten doet dat op de kaart, één klik verderop. */
-  if(CRM.faseIs(c.fase, 'Contract getekend') && r.start && r.start <= vandaag())
-    onder.push('staat nog op Contract getekend');
-  else if(CRM.faseIs(c.fase, 'Gestart') && r.start && r.start > vandaag())
-    onder.push('staat op Gestart, maar de startdatum ligt nog voor ons');
-  /* Toestand en kleur staan bovenaan dit bestand (PL_RAND, toestandVan) —
-     de tabelweergave gebruikt exact dezelfde. */
   const kleur = toestandVan(r);
   const missers = heeftMissers(r);
   return `<div${CRM.ui.frand(PL_RAND[kleur], `pl-r pl-${kleur}${missers ? ' mis' : ''}`, !!missers)} data-kaart="${h(c.id)}" role="button" tabindex="0">
-    <div class="pl-r-top">
-      <span class="pl-naam">${h(c.naam || '—')}</span>
-      <span class="pl-sub">${h(sub)}</span>
-      <span class="spacer"></span>
-      ${startTekst(r)}
-    </div>
-    <div class="pl-r-meta meta">${h(onder.join(' · '))}</div>
-    ${blokkersHtml(r)}
-    ${/* De opvolgmomenten stonden uitgeklapt onder elke rij — bij zes
-         plaatsingen zijn dat al gauw vijftien regels "warm houden" en
-         "felicitatiemail", en dan zie je de tijdlijn niet meer waar het je om
-         te doen was. Ze staan er nog, maar opgevouwen: wat gemist is telt
-         mee in de rand links, de rest vraagt één klik.
-         (Tjeerd, 3 aug 2026: "al die taken maken het onoverzichtelijk. Het
-         belangrijkste is dat we de tijdlijn goed zien.") */''}
-    ${momentenBlokHtml(r)}
+    <span class="pl-naam trunc">${h(c.naam || '—')}</span>
+    <span class="pl-sub trunc">${h(sub)}</span>
+    <span class="pl-letkol">${waarschuwing(r)}</span>
+    <span class="pl-datkol">${startTekst(r)}</span>
   </div>`;
 }
 
-/* Compacte tabel. Voor "Aan het werk" en "Gestopt": naslag, geen werklijst. */
-function tabelHtml(rijen, gestopt){
-  return `<div class="tblwrap"><table class="tbl"><thead><tr>
-      <th>Naam</th><th>Functie</th><th>Klant</th>
-      <th>${gestopt ? 'Gestopt' : 'Sinds'}</th><th>Laatst gesproken</th>
-      ${gestopt ? '' : '<th>Volgende contactmoment</th>'}
-    </tr></thead><tbody>${rijen.map(r => {
-      const c = r.c;
-      const datum = gestopt ? dag(c.gestoptOp) : r.start;
-      const volg = r.gemist.length
-        ? `<span class="pl-mis-t">${h(r.gemist.length)}× gemist</span>`
-        : r.open.length ? `<span class="num">nu · ${h(r.open[0].kort)}</span>`
-        : r.volgende ? `<span class="num">${h(CRM.fmtDateShort(r.volgende.datum))} · ${h(r.volgende.kort)}</span>`
-        : '<span class="meta">—</span>';
-      /* Dezelfde streep als in de lijst erboven. Stond hier niet, waardoor
-         "Aan het werk" in tabelvorm de enige weergave in de app was die de
-         toestand voor zich hield. */
-      const mis = heeftMissers(r);
-      return `<tr${CRM.ui.frand(PL_RAND[toestandVan(r)], 'clickable', mis)} data-kaart="${h(c.id)}">
-        <td><b>${h(c.naam || '—')}</b></td>
-        <td>${h(c.functie || '—')}</td>
-        <td>${h(c.klant || '—')}</td>
-        <td class="num">${h(datum ? CRM.fmtDateShort(datum) : '—')}
-          ${datum ? `<div class="rowsub">${h(CRM.geleden(datum))}</div>` : ''}</td>
-        <td class="num">${h(r.laatsteContact ? CRM.geleden(r.laatsteContact) : '—')}</td>
-        ${gestopt ? '' : `<td>${volg}</td>`}
-      </tr>`;
-    }).join('')}</tbody></table></div>`;
-}
+/* ─── De tijdlijn tekenen ────────────────────────────────────────
+   Eén doorlopende lijst met scheiders ertussen. Twee dingen maken hem
+   leesbaar en die zijn allebei nodig:
 
-/* ─── Secties ────────────────────────────────────────────────────
-   Elke groep is één kaart met een kop, een teller en één regel uitleg. De
-   uitleg staat er omdat de indeling een keuze is (waarom 30 dagen? waarom
-   staat wie maandag begon niet bij "net gestart"?) en een keuze die je niet
-   uitlegt, ziet er van buiten uit als een bug. */
-function sectie(opts){
-  const {id, titel, uitleg, aantal, inhoud, klapbaar, open} = opts;
-  return `<section class="card pl-sec" id="${h(id)}">
-    <div class="card-h">
-      <div class="h2">${h(titel)}</div>
-      <span class="chip num">${h(aantal)}</span>
-      <span class="spacer"></span>
-      ${klapbaar ? `<button type="button" class="btn sub sm" data-klap="${h(id)}">${open ? 'Inklappen' : 'Uitklappen'}</button>` : ''}
-    </div>
-    ${(!klapbaar || open) ? `<div class="card-b">
-      ${(uitleg && aantal) ? `<p class="sub pl-uit">${h(uitleg)}</p>` : ''}
-      ${inhoud}
-    </div>` : ''}
-  </section>`;
-}
+   SCHAAL. Bij een korte periode wil je weken zien ("wie start er volgende
+   week"), bij een jaar wil je maanden — anders krijg je tweeënvijftig
+   koppen met soms één naam eronder. De grens ligt op tien weken, gemeten
+   over wat er daadwerkelijk in beeld staat en niet over de gekozen periode:
+   filter je op één klant, dan zijn dat misschien vier plaatsingen verspreid
+   over een jaar, en dan zijn maanden het juiste raster.
 
-/* "Later gepland" per week, precies zoals het bord dat doet. Zonder die
-   koppen wordt het één lange lijst datums waarin je "volgende week" niet meer
-   ziet — en volgende week is nu net de vraag. */
-function weekGroepenHtml(rijen){
-  let uit = '', huidig = null;
+   VANDAAG. Zonder markering is een doorlopende lijst stuurloos — je ziet wel
+   datums maar niet waar het heden zit, en dat is precies de scheiding tussen
+   "hier kan ik niets meer aan doen" en "hier moet ik iets voor regelen".
+   De streep komt vóór de eerste regel die vandaag of later valt, en alleen
+   als er ook iets vóór staat. */
+function tijdlijnHtml(rijen){
+  if(!rijen.length) return '';
+  const nu = vandaag();
+  const eerste = rijen[0].asDatum, laatste = rijen[rijen.length-1].asDatum;
+  const spanDagen = Math.abs(dagenTussen(eerste, laatste) || 0);
+  const perMaand = spanDagen > 70;
+
+  const sleutel = r => perMaand ? r.asDatum.slice(0,7) : maandagVan(r.asDatum);
+  const label   = r => perMaand ? maandLabel(r.asDatum) : weekLabel(r.asDatum);
+
+  /* Vooraf tellen per groep; anders telt hij binnen de lus voor elke regel
+     opnieuw de hele lijst af (dat was het geval bij de oude weekgroepen). */
+  const tellen = new Map();
+  rijen.forEach(r => { const k = sleutel(r); tellen.set(k, (tellen.get(k)||0)+1); });
+
+  const heeftVerleden = rijen.some(r => r.asDatum < nu);
+  let uit = '', huidig = null, streepGezet = !heeftVerleden;
   rijen.forEach(r => {
-    const wk = maandagVan(r.start);
-    if(wk !== huidig){
-      huidig = wk;
-      const n = rijen.filter(x => maandagVan(x.start) === wk).length;
-      uit += `<div class="pl-wdiv"><span>${h(weekLabel(r.start))}</span><b class="num">${h(n)}</b></div>`;
+    const k = sleutel(r);
+    if(k !== huidig){
+      huidig = k;
+      uit += `<div class="pl-wdiv"><span>${h(label(r))}</span><b class="num">${h(tellen.get(k))}</b></div>`;
+    }
+    if(!streepGezet && r.asDatum >= nu){
+      streepGezet = true;
+      uit += `<div class="pl-nu"><span>vandaag</span></div>`;
     }
     uit += rijHtml(r);
   });
   return uit;
 }
 
+function maandLabel(iso){
+  const d = parse(iso); if(!d) return '';
+  const m = ['januari','februari','maart','april','mei','juni','juli',
+             'augustus','september','oktober','november','december'][d.getMonth()];
+  return m + ' ' + d.getFullYear();
+}
+
 const geenHtml = tekst => `<p class="pl-leeg meta">${h(tekst)}</p>`;
 
 /* ─── De tellers ─────────────────────────────────────────────────
-   Vier, en niet meer. We zijn vandaag juist schermen aan het opruimen; een
-   muur van cijfers is precies waar dit scherm een antwoord op is. Dit zijn de
-   vier vragen die een AM 's ochtends stelt voordat hij de lijst inloopt.
+   Vier, en niet meer. Dit zijn de vier vragen die een AM 's ochtends stelt
+   voordat hij de lijst inloopt.
 
-   EEN ONDERSCHRIFT MOET OOK BIJ NUL KLOPPEN. Dit ging hier mis en het is het
-   soort fout dat een heel scherm ongeloofwaardig maakt: "Deze week · 0 ·
-   allemaal begonnen" (er is niemand om begonnen te zijn) en "Lopende
-   plaatsingen · 0" terwijl er zes op hetzelfde scherm stonden. Dat tweede was
-   erger dan een verkeerde tekst: het cijfer telde wie er nú op de vloer staat,
-   maar het label beloofde alle lopende plaatsingen. Nu telt de tegel wat het
-   label zegt — iedereen die dit scherm bewaakt, gestopten uitgezonderd — en
-   staat de verdeling eronder. Elke nulstand heeft hier zijn eigen zin. */
-function kpisHtml(G){
+   ZE GAAN OVER DE HELE STAND, NIET OVER JE FILTER. Dat is met opzet: de
+   tellers zijn de samenvatting van het scherm en horen niet mee te bewegen
+   met een klantfilter dat je zo weer weghaalt. Wat je filter oplevert staat
+   in de regel onder de tijdlijn.
+
+   EEN ONDERSCHRIFT MOET OOK BIJ NUL KLOPPEN. Dat ging hier eerder mis en het
+   is het soort fout dat een heel scherm ongeloofwaardig maakt: "Deze week ·
+   0 · allemaal begonnen" terwijl er niemand is om begonnen te zijn. Elke
+   nulstand heeft daarom zijn eigen zin.
+
+   'Zonder datum' volgt de gekozen as: bij startdatum telt hij wie er getekend
+   heeft zonder eerste werkdag, bij plaatsingsdatum wie er geen tekendatum
+   heeft. Anders wijst de tegel naar een gat dat je in de tijdlijn niet ziet. */
+function kpisHtml(){
   const nu = vandaag();
   const maandag = maandagVan(nu);
-  const volgendeMaandag = plusDagen(maandag, 7);
-  const volgendeZondag  = plusDagen(maandag, 13);
-  const volgendeWeek = G.later.filter(c => dag(c.start) >= volgendeMaandag && dag(c.start) <= volgendeZondag).length;
-  const dezeWeekBegonnen = G.dezeWeek.filter(c => dag(c.start) <= nu).length;
-  const nogTeGaan = G.dezeWeek.length - dezeWeekBegonnen;
+  const zondag  = plusDagen(maandag, 6);
+  const volgMa  = plusDagen(maandag, 7), volgZo = plusDagen(maandag, 13);
 
-  /* Lopend = alles wat dit scherm bewaakt, min de gestopten. Ook wie nog moet
-     beginnen telt mee: het contract is getekend, de fee loopt en er is werk
-     aan die persoon. Wie hier alleen de mensen op de vloer telt, ziet in een
-     rustige maand nul staan terwijl er tien mensen klaarstaan. */
-  const lopend = G.geenDatum.length + G.dezeWeek.length + G.later.length + G.netGestart.length + G.werk.length;
-  const aanHetWerk = G.netGestart.length + G.werk.length + dezeWeekBegonnen;
-  const moetNogStarten = lopend - aanHetWerk;
+  const lopend = allePlaatsingen().filter(c => !c.gestoptOp);
+  const start = c => dag(c.start);
+  const dezeWeek = lopend.filter(c => start(c) >= maandag && start(c) <= zondag);
+  const volgendeWeek = lopend.filter(c => start(c) >= volgMa && start(c) <= volgZo).length;
+  const zonder = lopend.filter(c => !parse(asDatum(c))).length;
+  const dezeWeekBegonnen = dezeWeek.filter(c => start(c) <= nu).length;
+  const nogTeGaan = dezeWeek.length - dezeWeekBegonnen;
+  const aanHetWerk = lopend.filter(c => parse(start(c)) && start(c) <= nu).length;
+  const moetNog = lopend.length - aanHetWerk;
 
   return `<div class="grid c4 pl-kpi">
-    ${CRM.ui.kpi('Deze week', String(G.dezeWeek.length),
-      !G.dezeWeek.length ? 'er start deze week niemand'
+    ${CRM.ui.kpi('Deze week', String(dezeWeek.length),
+      !dezeWeek.length ? 'er start deze week niemand'
       : nogTeGaan ? nogTeGaan + ' moet' + (nogTeGaan === 1 ? '' : 'en') + ' nog beginnen'
-      : (G.dezeWeek.length === 1 ? 'is al begonnen' : 'allemaal al begonnen'))}
+      : (dezeWeek.length === 1 ? 'is al begonnen' : 'allemaal al begonnen'))}
     ${CRM.ui.kpi('Volgende week', String(volgendeWeek),
       volgendeWeek ? 'start gepland' : 'nog niets gepland')}
-    ${CRM.ui.kpi('Zonder startdatum', String(G.geenDatum.length),
-      G.geenDatum.length ? 'getekend, datum onbekend' : 'alle plaatsingen hebben een datum')}
-    ${CRM.ui.kpi('Lopende plaatsingen', String(lopend),
-      !lopend ? 'nog geen lopende plaatsingen'
-      : aanHetWerk + ' aan het werk · ' + moetNogStarten + ' moet' + (moetNogStarten === 1 ? '' : 'en') + ' nog starten')}
+    ${CRM.ui.kpi('Zonder ' + AS_LABEL(), String(zonder),
+      zonder ? 'staat nergens op de tijdlijn' : 'iedereen staat op de tijdlijn')}
+    ${CRM.ui.kpi('Lopende plaatsingen', String(lopend.length),
+      !lopend.length ? 'nog geen lopende plaatsingen'
+      : aanHetWerk + ' aan het werk · ' + moetNog + ' moet' + (moetNog === 1 ? '' : 'en') + ' nog starten')}
   </div>`;
 }
 
 /* ─── Tekenen ────────────────────────────────────────────────────
-   De lijsten zitten in een eigen div. Na het afvinken van een contactmoment
-   wordt alleen die div opnieuw gevuld, niet het hele scherm: de zoekbalk
-   staat in de paginakop en zou anders zijn inhoud en de cursor kwijtraken
-   midden in het opzoeken van iemand. */
+   De tijdlijn zit in een eigen div. Bij het wisselen van een filter wordt
+   alleen die div opnieuw gevuld, niet het hele scherm: de zoekbalk staat in
+   de paginakop en zou anders zijn inhoud en de cursor kwijtraken midden in
+   het opzoeken van iemand. */
 function teken(){
   const wrap = M.mount && M.mount.querySelector('#pl_lijsten');
   if(!wrap) return;
   bouwIndex();
-  const G = indeel();
-  const mk = lijst => lijst.filter(past).map(c => regel(c));
-  const rDezeWeek = mk(G.dezeWeek), rLater = mk(G.later), rNet = mk(G.netGestart),
-        rWerk = mk(G.werk), rGeen = mk(G.geenDatum), rStop = mk(G.gestopt);
-  const gefilterd = S.zoek.trim() || S.mijn;
+  const T = tijdlijn();
+  const rijen  = T.opTijd.map(c => regel(c));
+  const rGeen  = T.zonderDatum.map(c => regel(c));
 
-  /* De tellers gaan over de hele stand, niet over wat er na een zoekopdracht
-     nog zichtbaar is: ze zijn de samenvatting van het scherm, en die hoort
-     niet mee te bewegen met een zoekterm die je zo weer wist. */
   const kpi = M.mount.querySelector('#pl_kpi');
-  if(kpi) kpi.innerHTML = kpisHtml(G);
+  if(kpi) kpi.innerHTML = kpisHtml();
 
   let uit = '';
 
-  /* Bovenaan, en alleen als hij niet leeg is. Een lege kop "Getekend zonder
-     startdatum · 0" zou elke dag om aandacht vragen voor een probleem dat er
-     niet is; dan leest niemand hem nog op de dag dat het er wél toe doet. */
-  if(rGeen.length) uit += sectie({
-    id:'pl_geen', titel:'Getekend zonder startdatum', aantal:rGeen.length,
-    uitleg:'Deze mensen hebben getekend, maar er staat nergens wanneer ze beginnen. Zolang die datum ontbreekt komen ze op geen enkele lijst voor en belt niemand ze — bel de klant en zet de datum erin.',
-    inhoud: rGeen.map(rijHtml).join('')
-  });
+  /* Bovenaan en buiten de tijdlijn, want daar passen ze niet op. Alleen als
+     er iemand staat: een lege kop "Zonder startdatum · 0" vraagt elke dag
+     aandacht voor een probleem dat er niet is, en dan leest niemand hem nog
+     op de dag dat het er wél toe doet. */
+  if(rGeen.length) uit += `<section class="card pl-sec pl-zonder">
+    <div class="card-h"><div class="h2">Zonder ${h(AS_LABEL())}</div>
+      <span class="chip num">${rGeen.length}</span></div>
+    <div class="card-b">
+      <p class="sub pl-uit">Deze plaatsingen hebben geen ${h(AS_LABEL())}, dus ze staan nergens op de tijdlijn — en daarmee op geen enkele lijst waar iemand ’s ochtends naar kijkt. Vul de datum in, dan schuiven ze vanzelf op hun plek.</p>
+      ${rGeen.map(rijHtml).join('')}
+    </div></section>`;
 
-  uit += sectie({
-    id:'pl_week', titel:'Deze week starten', aantal:rDezeWeek.length,
-    uitleg:'Maandag tot en met zondag van deze week. Ook wie maandag al begonnen is staat hier — de vraag van deze week hoort bij deze week.',
-    inhoud: rDezeWeek.length ? rDezeWeek.map(rijHtml).join('')
-      : geenHtml(gefilterd ? 'Niemand die aan je filter voldoet start deze week.' : 'Deze week begint er niemand.')
-  });
-
-  uit += sectie({
-    id:'pl_later', titel:'Later gepland', aantal:rLater.length,
-    uitleg:'Getekend, startdatum in de toekomst. Dit is de periode waarin een tegenbod binnenkomt: het ritme houdt ze wekelijks warm tot de eerste dag.',
-    inhoud: rLater.length ? weekGroepenHtml(rLater)
-      : geenHtml(gefilterd ? 'Niemand die aan je filter voldoet staat gepland.' : 'Er staat verder niemand gepland.')
-  });
-
-  uit += sectie({
-    id:'pl_net', titel:'Net gestart', aantal:rNet.length,
-    uitleg:'De eerste ' + NET_GESTART_DAGEN + ' dagen. Hier komt vrijwel alle uitval vandaan, dus hier hoort de nazorg zichtbaar te zijn.',
-    inhoud: rNet.length ? rNet.map(rijHtml).join('')
-      : geenHtml(gefilterd ? 'Niemand die aan je filter voldoet is net gestart.' : 'Er is de afgelopen maand niemand gestart.')
-  });
-
-  uit += sectie({
-    id:'pl_werk', titel:'Aan het werk', aantal:rWerk.length, klapbaar:true, open:werkOpen(),
-    uitleg:'Langer dan ' + NET_GESTART_DAGEN + ' dagen aan het werk. Naslag — het ritme loopt hier maandelijks door tot een jaar na de start. Zoek bovenin als je iemand zoekt.',
-    inhoud: rWerk.length ? tabelHtml(rWerk, false)
-      : geenHtml(gefilterd ? 'Niemand die aan je filter voldoet.' : 'Nog niemand langer dan een maand aan het werk.')
-  });
-
-  /* Gestopt hoort er niet bij en verdwijnt toch niet. Wie hier niets zag zou
-     denken dat de persoon nog werkt; wie hem tussen de rest zag staan ook. */
-  if(rStop.length) uit += sectie({
-    id:'pl_stop', titel:'Gestopt', aantal:rStop.length, klapbaar:true, open:false,
-    uitleg:'Deze plaatsingen zijn beëindigd. Ze staan hier zodat je ze niet per ongeluk als lopend meetelt — verder is er niets meer aan te doen.',
-    inhoud: tabelHtml(rStop, true)
-  });
+  uit += `<section class="card pl-sec pl-tl">
+    <div class="card-h"><div class="h2">Tijdlijn op ${h(AS_LABEL())}</div>
+      <span class="chip num">${rijen.length}</span>
+      <span class="spacer"></span>
+      <span class="meta">${h(periodeTekst())}</span></div>
+    <div class="card-b">${
+      rijen.length ? tijdlijnHtml(rijen)
+        : geenHtml(T.gefilterd
+            ? 'Niemand binnen deze filters. Verruim de periode of haal een filter weg.'
+            : 'Er staat nog geen plaatsing op de tijdlijn.')
+    }</div></section>`;
 
   wrap.innerHTML = uit;
 
-  /* De optelsom onderaan. Dit is geen sierstuk maar de controle waar dit
-     scherm op staat of valt: alles wat op fase 'Contract getekend' of
-     'Gestart' staat hoort hierboven te staan, want er is geen ander scherm
-     meer waar die mensen op voorkomen. Klopt het niet, dan zie je het hier —
-     en niet pas als er iemand niet komt opdagen. */
-  const zichtbaar = rDezeWeek.length + rLater.length + rNet.length + rWerk.length + rGeen.length + rStop.length;
+  /* De optelsom onderaan. Geen sierstuk maar de controle waar dit scherm op
+     staat of valt: alles op fase 'Contract getekend' of 'Gestart' hoort
+     hierboven te staan, want er is geen ander scherm meer waar die mensen op
+     voorkomen. Sinds je zelf kunt filteren is er een tweede reden: een filter
+     dat stilletjes iemand wegneemt is hier de gevaarlijkste fout die er is —
+     wie je niet ziet, bel je niet. Dus zeggen we altijd hoeveel er buiten
+     beeld vallen en waarom. */
+  const weg = [];
+  if(T.buitenPeriode)    weg.push(T.buitenPeriode + ' buiten de periode');
+  if(T.verborgenGestopt) weg.push(T.verborgenGestopt + ' gestopt');
+  const rest = T.totaal - T.zichtbaar - T.buitenPeriode - T.verborgenGestopt;
+  if(rest > 0) weg.push(rest + ' door je filters');
   wrap.insertAdjacentHTML('beforeend', `<p class="pl-tel meta num">${
-    gefilterd
-      ? h(zichtbaar + ' van ' + G.totaal + ' plaatsingen zichtbaar — je filtert.')
-      : h(G.totaal + ' plaatsingen, allemaal hierboven ingedeeld.')
+    weg.length
+      ? h(T.zichtbaar + ' van ' + T.totaal + ' plaatsingen in beeld \u2014 ' + weg.join(' \u00b7 ') + ' niet.')
+      : h(T.totaal + ' plaatsingen, allemaal in beeld.')
   }</p>`);
+}
+
+/* Wat de periodefilter nu betekent, in gewone taal. Staat in de kop van de
+   tijdlijn omdat de kop anders liegt: "Tijdlijn op startdatum · 3" zegt niet
+   dat je naar deze maand kijkt. */
+function periodeTekst(){
+  const g = periodeGrenzen();
+  if(!g.van && !g.tot) return 'alle datums';
+  if(g.van && g.tot)   return CRM.fmtDateShort(g.van) + ' t/m ' + CRM.fmtDateShort(g.tot);
+  if(g.van)            return 'vanaf ' + CRM.fmtDateShort(g.van);
+  return 'tot en met ' + CRM.fmtDateShort(g.tot);
 }
 
 /* ─── Startdatum invullen ────────────────────────────────────────
@@ -688,41 +695,6 @@ async function bewaarStart(c, iso){
 function bind(){
   const wrap = M.mount.querySelector('#pl_lijsten');
   wrap.onclick = e => {
-    const klap = e.target.closest('[data-klap]');
-    if(klap){
-      if(klap.dataset.klap === 'pl_werk') zetWerkOpen(!werkOpen());
-      else {
-        /* Alleen "Aan het werk" onthoudt zijn stand; Gestopt klapt per keer
-           open. Die groep hoort geen vaste plek op je scherm te krijgen. */
-        const sec = klap.closest('.pl-sec');
-        const body = sec && sec.querySelector('.card-b');
-        if(body){ body.remove(); klap.textContent = 'Uitklappen'; return; }
-        const G = indeel();
-        const rijen = G.gestopt.filter(past).map(c => regel(c));
-        sec.insertAdjacentHTML('beforeend', `<div class="card-b">
-          <p class="sub pl-uit">Deze plaatsingen zijn beëindigd. Ze staan hier zodat je ze niet per ongeluk als lopend meetelt — verder is er niets meer aan te doen.</p>
-          ${tabelHtml(rijen, true)}</div>`);
-        klap.textContent = 'Inklappen';
-        return;
-      }
-      teken();
-      return;
-    }
-
-    /* Een openstaand contactmoment afvinken gaat via dezelfde ingang als op
-       het dashboard en de kandidatenkaart: CRM.opvolging.actie() kiest zelf
-       het juiste venster (felicitatiemail, berichtje, check-in). Zou dit
-       scherm daar iets eigens voor bouwen, dan zou hetzelfde belletje op twee
-       plekken anders worden vastgelegd. */
-    const opv = e.target.closest('[data-opv]');
-    if(opv){
-      e.stopPropagation();
-      const [id, key] = String(opv.dataset.opv).split('|');
-      const k = CRM.kandidaat(id);
-      if(k && CRM.opvolging) CRM.opvolging.actie(k, key, () => { teken(); CRM.navBadges && CRM.navBadges(); });
-      return;
-    }
-
     const sd = e.target.closest('[data-startdatum]');
     if(sd){ e.stopPropagation(); startdatumVenster(sd.dataset.startdatum); return; }
 
@@ -765,31 +737,112 @@ CRM.registerModule('plaatsingen', {
     mount.innerHTML = `${CRM.laadfoutHtml()}
       <div class="pl-wrap">
         <div id="pl_kpi"></div>
+        <div class="card pad pl-fil" id="pl_filters"></div>
         <div class="stack" id="pl_lijsten"></div>
       </div>`;
 
     if(acties) acties.innerHTML = `
       <div class="searchbox"><input type="search" id="pl_zoek" placeholder="Zoek naam, klant of functie"
-        value="${h(S.zoek)}" aria-label="Zoeken in plaatsingen"></div>
-      ${CRM.me() ? `<button type="button" class="chip btn-like${S.mijn ? ' on' : ''}" id="pl_mijn"
-        aria-pressed="${S.mijn ? 'true' : 'false'}">Alleen van mij</button>` : ''}`;
+        value="${h(S.zoek)}" aria-label="Zoeken in plaatsingen"></div>`;
 
     const zoek = document.getElementById('pl_zoek');
     if(zoek) zoek.oninput = CRM.debounce(() => { S.zoek = zoek.value; teken(); }, 200);
-    const mijn = document.getElementById('pl_mijn');
-    if(mijn) mijn.onclick = () => {
-      S.mijn = !S.mijn;
-      mijn.classList.toggle('on', S.mijn);
-      mijn.setAttribute('aria-pressed', S.mijn ? 'true' : 'false');
-      teken();
-    };
     const herlaad = document.getElementById('crm_herlaad');
     if(herlaad) herlaad.onclick = () => CRM.herlaad();
 
+    tekenFilters();
     bind();
     teken();
   }
 });
+
+/* ─── De filterbalk ──────────────────────────────────────────────
+   Alles op één regel, in de volgorde waarin je een vraag stelt: welke datum
+   tel ik · welke periode · welke klant · welke vacature van die klant · en
+   dan de twee schakelaars.
+
+   De vacaturelijst hangt aan de klant, dus hij wordt opnieuw opgebouwd zodra
+   je een klant kiest. Stond er een vacature geselecteerd die bij de nieuwe
+   klant niet bestaat, dan valt die weg — anders zit je naar een leeg scherm
+   te kijken door een filter dat je niet meer ziet staan.
+
+   De balk hertekent zichzelf niet bij elke toetsaanslag: dat kost je de focus
+   midden in het typen van een datum. Alleen de klantkeuze bouwt hem opnieuw
+   op, want alleen dan verandert er iets aan de keuzes zelf. */
+function tekenFilters(){
+  const el = M.mount && M.mount.querySelector('#pl_filters');
+  if(!el) return;
+  const klanten = keuzeKlanten(), vacs = keuzeVacatures();
+  const opt = (waarde, label, gekozen) =>
+    `<option value="${h(waarde)}"${gekozen === waarde ? ' selected' : ''}>${h(label)}</option>`;
+
+  el.innerHTML = `
+    <div class="row pl-filrij">
+      <div class="seg" id="pl_as" role="group" aria-label="Welke datum draagt de tijdlijn">
+        <button type="button" data-as="start"${S.as==='start'?' class="on"':''}>Startdatum</button>
+        <button type="button" data-as="plaatsing"${S.as==='plaatsing'?' class="on"':''}>Plaatsingsdatum</button>
+      </div>
+      <select id="pl_periode" style="width:auto" aria-label="Periode">
+        ${opt('alles','Alle datums',S.periode)}
+        ${opt('week','Deze week',S.periode)}
+        ${opt('maand','Deze maand',S.periode)}
+        ${opt('kwartaal','Komende 3 maanden',S.periode)}
+        ${opt('eigen','Eigen periode…',S.periode)}
+      </select>
+      ${S.periode==='eigen' ? `<span class="row tight pl-eigen">
+        <input type="date" id="pl_van" value="${h(S.van)}" aria-label="Van">
+        <span class="meta">t/m</span>
+        <input type="date" id="pl_tot" value="${h(S.tot)}" aria-label="Tot en met">
+      </span>` : ''}
+      <select id="pl_klant" style="width:auto" aria-label="Klant">
+        ${opt('','Alle klanten',S.klant)}
+        ${klanten.map(k => opt(k,k,S.klant)).join('')}
+      </select>
+      <select id="pl_vac" style="width:auto" aria-label="Vacature">
+        ${opt('', S.klant ? 'Alle vacatures van deze klant' : 'Alle vacatures', S.vacature)}
+        ${vacs.map(v => opt(v,v,S.vacature)).join('')}
+      </select>
+      <span class="spacer"></span>
+      ${CRM.me() ? `<button type="button" class="chip btn-like${S.mijn?' on':''}" data-tog="mijn"
+        aria-pressed="${S.mijn}">Alleen van mij</button>` : ''}
+      <button type="button" class="chip btn-like${S.gestopt?' on':''}" data-tog="gestopt"
+        aria-pressed="${S.gestopt}">Gestopte tonen</button>
+      <button type="button" class="btn ghost sm" id="pl_wis">Wissen</button>
+    </div>`;
+
+  CRM.$$('#pl_as button', el).forEach(b => b.onclick = () => {
+    if(S.as === b.dataset.as) return;
+    S.as = b.dataset.as;
+    try{ localStorage.setItem(AS_KEY, S.as); }catch(e){}
+    tekenFilters(); teken();
+  });
+  el.querySelector('#pl_periode').onchange = e => {
+    S.periode = e.target.value;
+    tekenFilters(); teken();
+  };
+  const van = el.querySelector('#pl_van'), tot = el.querySelector('#pl_tot');
+  if(van) van.onchange = () => { S.van = van.value; teken(); };
+  if(tot) tot.onchange = () => { S.tot = tot.value; teken(); };
+  el.querySelector('#pl_klant').onchange = e => {
+    S.klant = e.target.value;
+    if(S.vacature && !keuzeVacatures().includes(S.vacature)) S.vacature = '';
+    tekenFilters(); teken();
+  };
+  el.querySelector('#pl_vac').onchange = e => { S.vacature = e.target.value; teken(); };
+  CRM.$$('[data-tog]', el).forEach(b => b.onclick = () => {
+    const k = b.dataset.tog;
+    S[k] = !S[k];
+    b.classList.toggle('on', S[k]);
+    b.setAttribute('aria-pressed', String(S[k]));
+    teken();
+  });
+  el.querySelector('#pl_wis').onclick = () => {
+    S.klant = ''; S.vacature = ''; S.periode = 'alles'; S.van = ''; S.tot = '';
+    S.mijn = false; S.gestopt = false; S.zoek = '';
+    const z = document.getElementById('pl_zoek'); if(z) z.value = '';
+    tekenFilters(); teken();
+  };
+}
 
 })();
 

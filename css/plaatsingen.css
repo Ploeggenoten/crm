@@ -1,52 +1,77 @@
 /* ═══════════════════════════════════════════════════════════════
    PLAATSINGEN — opmaak
 
-   Alles komt uit css/base.css: .card, .kpi, .chip, .tblwrap, .btn, .meta.
+   Alles komt uit css/base.css: .card, .kpi, .chip, .btn, .meta, .frand.
    Wat hier staat is uitsluitend indeling — hoe een persoonsregel is
-   opgebouwd en hoeveel lucht ertussen zit. Geen eigen kleuren op één
-   uitzondering na: rood voor een gemist contactmoment. Dat is het enige
-   accent op dit scherm en het staat op het enige dat je nog kunt
-   rechtzetten. Alles wat óók kleur zou krijgen, maakt dat rood zwakker.
+   opgebouwd en hoeveel lucht ertussen zit.
+
+   HET SCHERM IS OP 3 AUG 2026 OMGEBOUWD. Het bestond uit zes gestapelde
+   blokken (zonder datum · deze week · later gepland · net gestart · aan het
+   werk · gestopt), elk met een eigen kop, uitleg en teller. Nu is het één
+   doorlopende tijdlijn met een filterbalk ervoor: de indeling die het
+   systeem bedacht, is vervangen door de indeling die de gebruiker kiest.
+   (Tjeerd: "het moet veel overzichtelijker zijn.")
+
+   Eén accent: rood, voor een gemist contactmoment. Alles wat óók kleur zou
+   krijgen, maakt dat rood zwakker.
    ═══════════════════════════════════════════════════════════════ */
 
 /* Leesbreedte tot 1500px; daarboven mag het scherm zijn ruimte gebruiken.
    De ladder staat in css/base.css toegelicht — media queries kunnen geen
-   custom properties lezen, dus 1500 en 1900 staan hier letterlijk. */
+   custom properties lezen, dus 1500 staat hier letterlijk. */
 .pl-wrap{max-width:1180px}
 @media (min-width:1500px){ .pl-wrap{max-width:none} }
 
-.pl-kpi{margin-bottom:20px}
-
-/* Ruimer dan de standaard .stack: de secties zijn de hoofdindeling van dit
-   scherm en horen als losse blokken te lezen, niet als één lange lijst. */
+.pl-kpi{margin-bottom:16px}
 #pl_lijsten{gap:18px}
 
-.pl-sec .card-b{padding:16px 22px 20px}
-/* De uitleg onder een sectiekop legt de indelingskeuze uit. Lopende tekst
-   houdt zijn eigen leesbreedte, ook op het teamscherm. */
-.pl-uit{max-width:78ch;margin:0 0 14px}
-.pl-leeg{margin:2px 0 0}
+/* ─── Filterbalk ─────────────────────────────────────────────────
+   Op één regel, in de volgorde waarin je de vraag stelt: welke datum · welke
+   periode · welke klant · welke vacature · en dan de schakelaars. Wrapt op
+   een smal scherm; de knoppen rechts blijven bij elkaar. */
+.pl-fil{margin-bottom:16px}
+.pl-filrij{gap:10px;row-gap:10px;flex-wrap:wrap;align-items:center}
+.pl-filrij .seg button{white-space:nowrap}
+.pl-eigen{gap:7px}
+.pl-eigen input[type=date]{width:auto;font-size:12.5px;padding:5px 8px}
 
-/* ─── Eén persoon ────────────────────────────────────────────── */
+.pl-sec .card-b{padding:14px 22px 18px}
+/* De uitleg onder een sectiekop legt een keuze uit, en een keuze die je niet
+   uitlegt ziet er van buiten uit als een bug. Lopende tekst houdt zijn eigen
+   leesbreedte, ook op het teamscherm. */
+.pl-uit{max-width:78ch;margin:0 0 12px}
+.pl-leeg{margin:2px 0 0}
+/* Zonder datum staat boven de tijdlijn en hoort daar niet in te verdwijnen:
+   dit is het gat waar het scherm voor bestaat. */
+.pl-zonder .card-h{border-left:3px solid var(--amber)}
+
+/* ─── Eén persoon, één regel ─────────────────────────────────────
+   Vier kolommen die over de hele lijst uitlijnen, zodat je verticaal kunt
+   scannen: wie · waar · wat er mis is · wanneer. De datumkolom heeft een
+   vaste breedte en staat rechts uitgelijnd — anders danst hij per regel mee
+   met de lengte van de naam en kun je de kolom niet meer aflopen.
+   Grid en geen flex: alleen zo staan de kolommen van regel tot regel op
+   dezelfde x-positie. */
 .pl-r{
-  border-top:1px solid var(--line);padding:13px 0 14px;cursor:pointer;
+  display:grid;
+  grid-template-columns:minmax(130px,1.1fr) minmax(120px,1.4fr) minmax(0,1.3fr) 168px;
+  align-items:baseline;gap:12px;
+  border-top:1px solid var(--line);padding:10px 0 11px;cursor:pointer;
   transition:background .12s;
 }
-.pl-sec .card-b > .pl-r:first-child{border-top:none;padding-top:2px}
+.pl-sec .card-b > .pl-r:first-child{border-top:none}
 .pl-r:hover{background:#f7f9f1}
 /* Negatieve marge + padding: de hoverstrook loopt door tot de rand van de
    kaart, zodat je hem als één rij leest en niet als een blok in het midden. */
 .pl-r{margin:0 -22px;padding-left:22px;padding-right:22px}
 
-.pl-r-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .pl-naam{font-weight:600;font-size:14px;color:var(--ink)}
 .pl-r:hover .pl-naam{color:var(--olive)}
 .pl-sub{font-size:12.5px;color:var(--txt-2);min-width:0}
-.pl-r-meta{margin-top:3px}
 
-/* Startdatum + aftelling. De aftelling is wat je leest, de datum is waar je
-   hem op controleert — vandaar de datum eerst en het aantal dagen gedempt
-   erachter, niet andersom. */
+/* Datum + aftelling. De datum is waar je op controleert, de aftelling is wat
+   je leest — vandaar de datum eerst en het aantal dagen gedempt erachter. */
+.pl-datkol{text-align:right;white-space:nowrap}
 .pl-start{display:inline-flex;align-items:baseline;gap:7px;white-space:nowrap}
 .pl-start .pl-af{font-size:12px;color:var(--muted)}
 /* Vandaag en de eerstvolgende dagen krijgen gewicht, geen kleur: dit is een
@@ -54,39 +79,32 @@
 .pl-start.nu .num,.pl-start.bijna .num{font-weight:700}
 .pl-start.nu .pl-af{color:var(--txt-2);font-weight:600}
 .pl-geen{font-size:12.5px;color:var(--muted);font-style:italic}
+/* De tweede datum, klein eronder. Tekenen en beginnen zijn twee verschillende
+   dagen en soms zit er een half jaar tussen; dat verschil stond nergens. */
+.pl-ander{display:block;font-size:11px;color:var(--muted);margin-top:2px;
+  font-variant-numeric:tabular-nums}
 
-/* ─── Openstaande contactmomenten ────────────────────────────── */
-.pl-taken{display:flex;flex-direction:column;gap:6px;margin-top:9px}
-.pl-t{
-  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);
-  padding:6px 8px 6px 12px;
+/* ─── De waarschuwingskolom ──────────────────────────────────────
+   Eén melding per regel — de ergste — en de rest in de tooltip. Twee
+   waarschuwingen naast elkaar en je leest er geen meer. Staat er niets mis,
+   dan blijft de kolom leeg; dat is het hele punt van een vaste kolom. */
+.pl-let{
+  display:inline-flex;align-items:baseline;gap:7px;flex-wrap:wrap;
+  font-size:12px;color:var(--txt-2);
 }
-.pl-t-w{font-size:12.5px;color:var(--txt);flex:1;min-width:140px}
-.pl-t-d{font-size:11.5px;color:var(--muted)}
-.pl-t .btn{margin-left:auto}
-
-/* HET accent. Alleen hier, alleen voor een moment dat voorbij is. */
-.pl-t.mis{background:var(--red-bg);border-color:var(--red-line)}
-.pl-t.mis .pl-t-w{color:#a4301f}
-.pl-t.mis .pl-t-d{color:#a4301f;font-weight:600}
-.pl-mis-t{color:var(--red);font-weight:600;font-size:12.5px;font-variant-numeric:tabular-nums}
-/* Een dun streepje links op de hele regel, zodat een gemiste opvolging ook
-   opvalt als je langs de lijst scant zonder te lezen. */
-.pl-r.mis{box-shadow:inset 2px 0 0 var(--red-line)}
-
-/* ─── Wat er nog ontbreekt ───────────────────────────────────── */
-.pl-blok{
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;
-  padding:7px 12px;background:var(--well);border:1px solid var(--line);border-radius:var(--r-s);
+.pl-let.erg{color:var(--red);font-weight:600}
+.pl-letn{
+  font-size:10.5px;color:var(--muted);font-weight:600;
+  background:var(--card-2);border:1px solid var(--line);border-radius:999px;padding:0 6px;
 }
-.pl-blok .meta{flex:1;min-width:180px}
+.pl-let .btn{padding:2px 9px;font-size:11.5px}
 
-/* ─── Weekkop in "Later gepland" ─────────────────────────────── */
-/* Dezelfde vorm als de weekscheiders op het pijplijnbord (.rc-wdiv), zodat
-   een week er hier niet anders uitziet dan daar. */
+/* ─── Scheiders in de tijdlijn ───────────────────────────────────
+   Dezelfde vorm als de weekscheiders op het pijplijnbord (.rc-wdiv), zodat
+   een week er hier niet anders uitziet dan daar. Bij een lange periode
+   schakelt de JS naar maanden — dezelfde opmaak, andere tekst. */
 .pl-wdiv{
-  display:flex;align-items:center;gap:8px;margin:14px 0 2px;padding:5px 0 5px;
+  display:flex;align-items:center;gap:8px;margin:14px 0 2px;padding:5px 0;
   border-top:1px solid var(--line);
   font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--txt-2);
 }
@@ -94,35 +112,47 @@
 .pl-wdiv b{margin-left:auto;color:var(--muted);font-size:11.5px;letter-spacing:0;text-transform:none}
 .pl-wdiv + .pl-r{border-top:none}
 
-/* ─── Slotregel: de optelsom ─────────────────────────────────── */
+/* VANDAAG. Zonder markering is een doorlopende lijst stuurloos: je ziet wel
+   datums maar niet waar het heden zit, en dat is precies de scheiding tussen
+   "hier kan ik niets meer aan doen" en "hier moet ik iets voor regelen".
+   Een doorlopende lijn met het woord erin, in olijf — de enige plek op dit
+   scherm waar de merkkleur staat, want dit is de enige regel die over jou
+   gaat en niet over een kandidaat. */
+.pl-nu{
+  display:flex;align-items:center;gap:10px;margin:12px 0 2px;
+  font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--olive);
+}
+.pl-nu::before,.pl-nu::after{content:'';height:1px;background:var(--olive-l);opacity:.5;flex:1}
+.pl-nu::before{flex:0 0 8px}
+.pl-nu + .pl-r{border-top:none}
+
+/* ─── Slotregel: de optelsom ─────────────────────────────────────
+   Zegt altijd hoeveel er buiten beeld vallen en waarom. Een filter dat
+   stilletjes iemand wegneemt is hier de gevaarlijkste fout die er is: wie je
+   niet ziet, bel je niet. */
 .pl-tel{text-align:center;padding:4px 0 0;font-weight:500}
 
+/* ─── Toestand ───────────────────────────────────────────────────
+   De streep links komt uit .frand in base.css (kleuren: PL_RAND in
+   js/plaatsingen.js). Wat hier blijft is het enige dat níét kleur is: wie
+   weg is, dringt minder aan. */
+.pl-r.pl-weg{opacity:.65}
+
+/* ─── Smal scherm ────────────────────────────────────────────────
+   Onder 900px past een regel van vier kolommen niet meer. Dan stapelt hij:
+   naam en datum naast elkaar bovenaan (dat is het paar dat je scant),
+   daaronder waar hij werkt en wat er mis is. */
 @media (max-width:900px){
-  .pl-r{margin:0 -14px;padding-left:14px;padding-right:14px}
+  .pl-r{
+    grid-template-columns:1fr auto;gap:2px 12px;
+    margin:0 -14px;padding-left:14px;padding-right:14px;
+  }
+  .pl-naam{grid-column:1}
+  .pl-datkol{grid-column:2;grid-row:1 / span 2;align-self:start}
+  .pl-sub{grid-column:1}
+  .pl-letkol{grid-column:1 / -1;margin-top:4px}
   .pl-sec .card-b{padding:14px}
-  .pl-t .btn{margin-left:0}
+  .pl-filrij{gap:8px}
+  .pl-filrij select{flex:1 1 46%;min-width:0}
 }
-
-/* ─── Kleur per toestand ──────────────────────────────────────────
-   Eén oogopslag: wie werkt er, wie moet nog beginnen, wie is gestopt. De
-   kleur volgt de tijd en niet de fase, want dit scherm groepeert op datum —
-   anders zegt de rand iets anders dan de kop erboven. Alleen een randje
-   links: een gekleurd vlak per rij maakt een lijst van tien onleesbaar. */
-/* De streep zelf komt sinds 3 aug 2026 uit .frand in base.css — dit scherm
-   bedacht hem, maar hij geldt nu overal en hoort dus niet meer hier te
-   staan. De kleuren komen uit PL_RAND in js/plaatsingen.js; rood bij een
-   gemist contactmoment loopt via .fr-let, dezelfde weg als elders. Wat hier
-   blijft is het enige dat níét kleur is: wie weg is, dringt minder aan. */
-.pl-r.pl-weg{opacity:.7}
-
-/* ─── Opvolging opgevouwen ────────────────────────────────────────
-   Stond uitgeklapt onder elke rij: bij zes plaatsingen vijftien regels
-   "warm houden" en "felicitatiemail", en dan zie je de tijdlijn niet meer. */
-.pl-opv{margin-top:6px}
-.pl-opv > summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:8px;
-  padding:3px 0;font-size:12px}
-.pl-opv > summary::-webkit-details-marker{display:none}
-.pl-opv > summary::after{content:'▸';color:var(--muted);font-size:10px;margin-left:2px}
-.pl-opv[open] > summary::after{content:'▾'}
-.pl-opv > summary:hover .meta{color:var(--olive)}
-.pl-opv .pl-taken{margin-top:4px}
