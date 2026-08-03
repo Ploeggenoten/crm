@@ -493,7 +493,16 @@ function overzicht(mount, acties){
    De labels zijn kort gehouden sinds dit filter in de balk zelf staat: een
    keuzelijst die op zijn langste optie 320px breed wordt, duwt de rest van
    de balk naar een tweede regel. De groepskoppen dragen de uitleg. */
+/* De instroom staat vooraan. Toen de fases van vóór de klant op de
+   kandidaatkaart kwamen (3 aug 2026) was er nog nergens een lijst waar die
+   mensen in stonden: Recruitment leest de leadtabel, Klanttrajecten begint
+   bij Voorgesteld, en hier kon je er niet op filteren. Zet je iemand op
+   'Videocall gepland', dan was hij daarna nergens meer terug te vinden —
+   precies wat Tjeerd meldde met Goncalo. */
+const INSTROOM_OPTS = (CRM.INSTROOM || []).map(p => ({g:'In de instroom', k:'in:'+p.k, lbl:p.k}));
 const STATUS_OPTS = [
+  {g:'In de instroom',   k:'instroom',    lbl:'Alles vóór de klant'},
+  ...INSTROOM_OPTS,
   {g:'De voorraad',      k:'gekwalificeerd', lbl:'Gekwalificeerd'},
   {g:'In een traject',   k:'lopend',      lbl:'Actief lopend'},
   {g:'In een traject',   k:'geplaatst',   lbl:'Geplaatst'},
@@ -589,6 +598,9 @@ function gefilterd(){
   const golden = goldenIds();
 
   const rijen = CRM.kandidaten().filter(c => {
+    if(F.status === 'instroom'    && !CRM.isInstroom(c.fase)) return false;
+    if(String(F.status).startsWith('in:')
+       && CRM.faseNorm(c.fase) !== F.status.slice(3))         return false;
     if(F.status === 'gekwalificeerd' && !gekwalificeerd(c))  return false;
     if(F.status === 'lopend'      && !CRM.isActiefLopend(c)) return false;
     if(F.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;

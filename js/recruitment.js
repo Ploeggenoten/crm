@@ -2290,6 +2290,15 @@ function sollicitantCvRoute(){
               <span class="hint">${naam
                 ? 'Uit het CV gelezen — pas de naam aan als dit niet klopt.'
                 : 'Stond niet in het CV. Vul de naam hier in; al het andere uit het CV gaat gewoon mee.'}</span></div>
+            <!-- Waar deze kandidaat staat, kiest de recruiter zelf. Er stond
+                 eerst vast 'CV binnen', maar een cv zegt niets over het
+                 gesprek: je kunt de videocall al gepland hebben, of al gehad.
+                 (Tjeerd, 3 aug 2026: "je kan ook al een videocall hebben gehad
+                 en gepland. Je moet dus zelf kunnen kiezen op welke fase.") -->
+            <div class="f-row" style="margin-top:12px"><label for="nc_fase">Waar staat deze kandidaat?</label>
+              <select id="nc_fase">${(CRM.INSTROOM||[]).map(f =>
+                `<option value="${h(f.k)}"${f.k==='CV binnen'?' selected':''}>${h(f.k)}</option>`).join('')}</select>
+              <span class="hint">Je kunt dit later op de kaart altijd bijstellen.</span></div>
             ${p
               ? `<p class="meta" style="margin:10px 0 0">Verder gevonden: ${h(cvVangst(p))}. Je kiest zo per gegeven wat je overneemt.</p>`
               : `<div class="note warn" style="margin-top:10px">Er kwam geen tekst uit dit bestand — waarschijnlijk een scan,
@@ -2314,7 +2323,8 @@ function sollicitantCvRoute(){
           return;
         }
         ok.disabled = true; ok.textContent = 'Bezig…';
-        const cand = await maakCvKandidaat(naam);
+        const fSel = m.querySelector('#nc_fase');
+        const cand = await maakCvKandidaat(naam, fSel ? fSel.value : 'CV binnen');
         if(!cand){ ok.disabled = false; ok.textContent = 'Kandidaat aanmaken →'; return; }
         /* De rest doet CRM.cvParse: per gegeven tonen wat het cv zegt, en bij
            akkoord het bestand en de pasfoto opslaan. Op een verse kaart staat
@@ -2327,19 +2337,18 @@ function sollicitantCvRoute(){
 
 /* Een kandidaatkaart met alleen de naam erop. De rest komt uit het venster
    van CRM.cvParse, dat er meteen achteraan opengaat. */
-async function maakCvKandidaat(naam){
+/* fase = wat de recruiter in het venster koos. Stond hier eerst vast op
+   'Intake', en daarmee kwam elke ingelezen cv meteen in de lijst "klaar om
+   voor te stellen" — zonder dat er ooit een videocall was geweest. Daarna
+   even vast op 'CV binnen', maar ook dat is een aanname: je kunt de call al
+   gepland of gehad hebben. De recruiter kiest. */
+async function maakCvKandidaat(naam, fase){
   const vandaag = CRM.todayISO();
-  /* Fase 'CV binnen' en niet 'Intake'. Een ingelezen cv betekent precies dat:
-     er is een cv. Het betekent niet dat de videocall is geweest, en dus ook
-     niet dat deze persoon klaar is om aan een klant voorgesteld te worden.
-     Op 'Intake' kwam de kaart meteen in de lijst "klaar om voor te stellen"
-     terecht — Tjeerd, 3 aug 2026: "Tjerk heeft het cv al van Goncalo
-     Oliveira, automatisch gaat hij naar klaar om voor te stellen. Dit wil ik
-     niet." De AM zet de fase zelf verder op de kaart. */
+  const f = (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'CV binnen';
   const cand = {
     id:CRM.uid(), naam, telefoon:'', email:'', woonplaats:'', functie:'',
-    klant:'', type:'W&S', bron:'Handmatig', fase:'CV binnen', since:vandaag,
-    rec:CRM.me(), cv:null, historie:[{fase:'CV binnen', op:vandaag}], notities:[]
+    klant:'', type:'W&S', bron:'Handmatig', fase:f, since:vandaag,
+    rec:CRM.me(), cv:null, historie:[{fase:f, op:vandaag}], notities:[]
   };
   const rij = CRM.candToRow(cand);
   CRM.state.cands.unshift(rij);
@@ -2348,7 +2357,7 @@ async function maakCvKandidaat(naam){
     if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
   }
   await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
-    'Aangemaakt vanuit een ingelezen CV — fase CV binnen, nog niet aan een vacature gekoppeld');
+    `Aangemaakt vanuit een ingelezen CV — fase ${f}, nog niet aan een vacature gekoppeld`);
   /* Teruggeven wat de rest van de app ook ziet, en niet het concept hierboven:
      CRM.cvParse werkt dit object bij en schrijft het via CRM.candToRow terug. */
   return CRM.kandidaat(cand.id) || cand;
