@@ -187,18 +187,53 @@ function nazorgMomenten(start){
    Zonder startdatum loopt het ritme door, maar niet oneindig: na twaalf
    weken houdt het op. Dan is er iets anders aan de hand dan opvolging. */
 const WARM_MAX_WEKEN = 12;
+/* Het ritme past zich aan de aanloop aan.
+
+   Het was altijd wekelijks. Bij een korte aanloop klopt dat — twee, drie
+   belletjes en hij begint. Maar iemand die in mei tekent en op 1 september
+   begint kreeg vijftien wekelijkse momenten, en die worden geen van alle
+   afgevinkt. Op het scherm Plaatsingen stonden dan vijftien rode regels
+   "gemist" onder één kaart. Dat is geen achterstand van vijftien dingen; het
+   maakt het wóórd "gemist" waardeloos, ook op de plekken waar het er wél toe
+   doet. (Tjeerd, 3 aug 2026: "alleen al deze info is teveel ruis.")
+
+   Vanaf zes weken aanloop dus geen wekelijkse reeks meer maar vier vaste
+   momenten: kort na het tekenen, halverwege, twee weken vóór de start en de
+   laatste week. Dat is precies waar een tegenbod binnenkomt of iemand
+   afhaakt — en het is wél bij te houden.
+
+   De sleutels blijven 'warm:<weeknummer vanaf tekenen>', zodat een moment
+   dat iemand eerder heeft afgevinkt afgevinkt blijft. */
 function warmMomenten(getekendOp, start){
   const M = [];
-  for(let w = 1; w <= WARM_MAX_WEKEN; w++){
-    const datum = plusDagen(getekendOp, w * 7);
-    if(!datum) break;
-    if(start && datum >= start) break;      // vanaf de startdag doet de nazorg het
+  const dagen = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+  const voegToe = (datum, tekst) => {
+    if(!datum) return;
+    if(start && datum >= start) return;     // vanaf de startdag doet de nazorg het
+    const w = Math.max(1, Math.round(dagen(getekendOp, datum) / 7));
+    if(M.some(x => x.key === 'warm:' + w)) return;
     M.push({soort:'warm', key:'warm:' + w, datum, kanaal:'bel', kort:'week ' + w,
-      titel:'Warm houden — week ' + w + ' na het tekenen',
+      titel:'Warm houden — ' + tekst,
       hint: start ? 'De start is pas ' + CRM.fmtDate(start) + '. Even laten merken dat we er zijn.'
                   : 'Startdatum is nog niet bekend — vraag er meteen naar.'});
+  };
+
+  const aanloop = start ? dagen(getekendOp, start) : null;
+
+  /* Geen startdatum, of een korte aanloop: wekelijks, zoals het was. Bij een
+     onbekende start houdt het na twaalf weken op — dan is er iets anders aan
+     de hand dan opvolging. */
+  if(aanloop == null || aanloop <= 42){
+    const max = aanloop == null ? WARM_MAX_WEKEN : Math.ceil(aanloop / 7);
+    for(let w = 1; w <= max; w++) voegToe(plusDagen(getekendOp, w * 7), 'week ' + w + ' na het tekenen');
+    return M;
   }
-  return M;
+
+  voegToe(plusDagen(getekendOp, 7),                  'eerste week na het tekenen');
+  voegToe(plusDagen(getekendOp, Math.round(aanloop/2)), 'halverwege de aanloop');
+  voegToe(plusDagen(start, -14),                     'twee weken vóór de start');
+  voegToe(plusDagen(start, -3),                      'laatste check vóór de eerste dag');
+  return M.sort((a,b) => String(a.datum).localeCompare(String(b.datum)));
 }
 
 /* ═══ 3. VERJAARDAG ═══════════════════════════════════════════════
