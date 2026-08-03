@@ -151,7 +151,34 @@ const AFVAL_LBL = {niet_gekwalificeerd:'Niet gekwalificeerd', offer_afgewezen:'O
 const STOP_LBL  = {kandidaat:'door kandidaat', klant:'door klant', anders:'anders'};
 
 /* ─── Kleine helpers ──────────────────────────────────────────── */
-const leads    = () => CRM.state.leads || [];
+/* ─── Wat er in de recruitmentpijplijn staat ──────────────────────
+   Twee soorten rijen, één lijst. Naast de leads uit crm_leads staan hier nu
+   ook de KANDIDATEN met een instroomfase (Nieuw t/m Intake).
+
+   Zonder dit was iemand met een kandidaatkaart onvindbaar in Recruitment:
+   zet je Goncalo op 'Videocall gepland', dan stond hij op zijn kaart maar
+   nergens op het bord waar je 's ochtends je werk vandaan haalt. Dat was
+   precies de klacht (Tjeerd, 3 aug 2026), en het blokkeerde ook de wens dat
+   "+ Sollicitant" meteen een kandidaatkaart oplevert.
+
+   De instroomfases hebben met opzet dezelfde namen als de leadstatussen
+   (CRM.INSTROOM in js/data.js), dus een kandidaat past zonder vertaling in
+   dezelfde kolom. `_kand` markeert waar de rij vandaan komt; bewaarLead()
+   stuurt de schrijfactie op basis daarvan naar de goede tabel. */
+const kandAlsRij = c => ({
+  id: c.id, naam: c.naam, telefoon: c.telefoon, email: c.email,
+  woonplaats: c.woonplaats, functie: c.functie, klant: c.klant,
+  status: CRM.faseNorm(c.fase), bron: c.bron,
+  vacature_id: c.vacatureId || '', binnen_op: c.since,
+  eigenaar: c.rec, kandidaat_id: c.id, kwalificatie: c.note || '',
+  notities: c.notities, laatst_actie: c.actieDatum || '',
+  _kand: true
+});
+const leads = () => {
+  const uit = CRM.state.leads || [];
+  if(!CRM.isInstroom) return uit;                 // data.js nog niet geladen
+  return uit.concat(CRM.kandidaten().filter(c => CRM.isInstroom(c.fase)).map(kandAlsRij));
+};
 const leadById = id => leads().find(l => String(l.id) === String(id));
 const vacById  = id => (CRM.state.vacs||[]).find(v => String(v.id) === String(id));
 const vacLabel = v => v ? (v.functie + ' · ' + v.klant) : '';
@@ -319,6 +346,28 @@ function videocallGehadOp(lead){
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
 async function bewaarLead(lead, patch){
+  /* Rijen met _kand komen uit de kandidatentabel (zie kandAlsRij). Die
+     mogen niet naar crm_leads geschreven worden — dan verdwijnt de wijziging
+     stilzwijgend in een tabel waar die kaart niet staat. De veldnamen
+     verschillen, dus we vertalen wat er vertaald moet worden. */
+  if(lead && lead._kand){
+    Object.assign(lead, patch);            // de rij op het scherm bijwerken
+    const p = {};
+    if(patch.status      !== undefined) p.fase        = patch.status;
+    if(patch.eigenaar    !== undefined) p.rec         = patch.eigenaar;
+    if(patch.vacature_id !== undefined) p.vacature_id = patch.vacature_id;
+    if(patch.klant       !== undefined) p.klant       = patch.klant;
+    if(patch.kwalificatie!== undefined) p.note        = patch.kwalificatie;
+    if(patch.notities    !== undefined) p.notities    = patch.notities;
+    if(!Object.keys(p).length) return true;   // alleen leadvelden — niets te doen
+    if(p.fase !== undefined){
+      /* Een fasewissel loopt via bewaarFase: die zet de historie, de datum
+         sinds wanneer, en ruimt uitval- en plaatsingsvelden op. */
+      const c = CRM.kandidaat(lead.id);
+      if(c){ await bewaarFase(c, p.fase, (() => { const r = Object.assign({}, p); delete r.fase; return r; })()); return true; }
+    }
+    return await bewaarKand(lead.id, p);
+  }
   Object.assign(lead, patch);
   if(!CRM.demo){
     const {error} = await CRM.sb.from('crm_leads').update(patch).eq('id', lead.id);
@@ -2099,13 +2148,20 @@ function sollicitantBestemming(gg){
     <div class="modal-h"><div class="h2">Waar hoort ${h(gg.naam)} thuis?</div></div>
     <div class="modal-b">
       <div class="rc-radio">
-        ${opt('vac','Koppel aan een vacature','Komt als Nieuw in de recruitmentpijplijn bij die vacature — jij of een collega pakt het daar op.', true)}
+        ${opt('vac','Koppel aan een vacature','Krijgt een kandidaatkaart, gekoppeld aan die vacature, en staat op het recruitmentbord.', true)}
         ${opt('golden','Golden candidate','Goede kandidaat, maar nu geen passende vacature. Krijgt de gouden ster ★ en blijft vindbaar via Kandidaten → filter "Golden candidates ★". Komt bewust niet op het bord.', false)}
-        ${opt('lijst','Alleen opslaan als sollicitant','Komt als Nieuw in de lijst, zonder vacature. Koppelen kan later alsnog.', false)}
+        ${opt('lijst','Alleen opslaan als sollicitant','Krijgt een kandidaatkaart zonder vacature. Koppelen kan later op de kaart.', false)}
       </div>
       <div class="f-row" id="ns_vacwrap" style="margin-top:12px"><label for="ns_vac">Open vacature</label>
         <select id="ns_vac"><option value="">— kies de vacature —</option>
           ${vacs.map(v=>`<option value="${h(v.id)}">${h(vacLabel(v))}</option>`).join('')}</select></div>
+      <!-- Waar deze persoon staat, kies je zelf. Soms zet je iemand er pas in
+           nadat je hem al gesproken hebt, of met de videocall al in de agenda.
+           Vast op 'Nieuw' zetten betekent dat je het daarna alsnog moet
+           corrigeren. (Tjeerd, 3 aug 2026.) -->
+      <div class="f-row" id="ns_fasewrap" style="margin-top:12px"><label for="ns_fase">Waar staat deze persoon?</label>
+        <select id="ns_fase">${(CRM.INSTROOM||[]).map(f =>
+          `<option value="${h(f.k)}"${f.k==='Nieuw'?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
       <div class="note err" id="ns_err2" style="display:none"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
@@ -2134,33 +2190,55 @@ function sollicitantBestemming(gg){
           v = vacById(m.querySelector('#ns_vac').value);
           if(!v){ err.style.display=''; err.textContent = 'Kies de vacature — of kies een andere bestemming.'; return; }
         }
-        const rij = await maakSollicitantRij(gg, v);
-        if(!rij) return;
+        const fSel = m.querySelector('#ns_fase');
+        const fase = fSel ? fSel.value : 'Nieuw';
+        const cand = await maakSollicitantRij(gg, v, fase);
+        if(!cand) return;
         CRM.modal.close();
-        S.tab = 'leads'; alles(); tekenActies();
-        toastLink(`${gg.naam} staat als Nieuw in de recruitmentpijplijn`, 'Openen →', () => openLead(rij.id));
+        /* Meteen naar de kaart. Daar doe je het echte werk: cv inlezen,
+           intake vastleggen, vacature koppelen, fase bijhouden. Hij blijft
+           óók op het recruitmentbord staan, in de kolom van zijn fase. */
+        CRM.ga('kandidaten', {id:cand.id});
+        CRM.toast(`${gg.naam} staat op ${fase} — vul de kaart verder aan`, 'ok');
       };
     }});
 }
 
-/* Zelfde route als instroom van buiten: een crm_leads-rij op status Nieuw. */
-async function maakSollicitantRij(gg, v){
-  const rij = {
+/* Een handmatig toegevoegde sollicitant krijgt meteen een KANDIDAATKAART.
+
+   Dit was een rij in crm_leads. Tjeerd, 3 aug 2026: "als we een sollicitant
+   er zelf inzetten dan is het meestal interessant genoeg, dus dan mag het een
+   kandidatenkaart hebben." Dat klopt ook met wat de rest van het systeem doet:
+   op een kaart kun je een cv inlezen, een intake vastleggen, een vacature
+   koppelen en de fase bijhouden — op een leadrij niet.
+
+   Het kon pas nu dit veilig is: sinds leads() ook kandidaten met een
+   instroomfase teruggeeft, blijft zo iemand gewoon op het recruitmentbord
+   staan. Anders was hij daar meteen uit beeld verdwenen.
+
+   De echte leadtabel blijft bestaan voor wat er straks uit Meta binnenkomt:
+   duizend per maand, ongefilterd. Die worden pas een kaart als iemand ze
+   interessant genoeg vindt. */
+async function maakSollicitantRij(gg, v, fase){
+  const vandaag = CRM.todayISO();
+  const f = (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Nieuw';
+  const cand = {
     id:CRM.uid(), naam:gg.naam, telefoon:gg.telefoon, email:gg.email||'',
-    woonplaats:gg.woonplaats||'', bron:gg.bron||'Handmatig', campagne:'',
-    vacature_id:v?v.id:'', klant:v?v.klant:'', functie:v?v.functie:(gg.functie||''),
-    status:'Nieuw', prioriteit:'', kwalificatie:'', score:null, agent_notitie:'',
-    antwoorden:null, cv:gg.cv||null, eigenaar:CRM.me(), binnen_op:new Date().toISOString(),
-    opvolgen_op:null, kandidaat_id:'', notities:[]
+    woonplaats:gg.woonplaats||'', functie:v?v.functie:(gg.functie||''),
+    klant:v?v.klant:'', vacatureId:v?v.id:'', type:'W&S',
+    bron:gg.bron||'Handmatig', fase:f, since:vandaag, rec:CRM.me(),
+    cv:gg.cv||null, historie:[{fase:f, op:vandaag}], notities:[]
   };
-  CRM.state.leads.unshift(rij);
+  const rij = CRM.candToRow(cand);
+  CRM.state.cands.unshift(rij);
   if(!CRM.demo){
-    const {error} = await CRM.sb.from('crm_leads').insert(rij);
-    if(error){ CRM.state.leads.shift(); CRM.fout('Opslaan mislukt', error); return null; }
+    const {error} = await CRM.sb.from('candidates').insert(rij);
+    if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
   }
-  await CRM.logActiviteit('lead', rij.id, 'systeem',
-    v ? `Handmatig toegevoegd en gekoppeld aan ${v.functie} · ${v.klant}` : 'Handmatig toegevoegd');
-  return rij;
+  await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
+    (v ? `Handmatig toegevoegd en gekoppeld aan ${v.functie} · ${v.klant}` : 'Handmatig toegevoegd')
+    + ` — fase ${f}`);
+  return CRM.kandidaat(cand.id) || cand;
 }
 
 /* Golden candidate: direct een candidates-rij, mét golden-vlag en zónder
