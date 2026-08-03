@@ -156,3 +156,81 @@
   .pl-filrij{gap:8px}
   .pl-filrij select{flex:1 1 46%;min-width:0}
 }
+
+/* ─── Actiestrook ────────────────────────────────────────────────
+   Drie chips die niet met je filter meebewegen. Ze stonden hier als vier
+   KPI-tegels van 350×90px voor vier getallen van één cijfer; hun functie was
+   alarm en een alarm is een regel, geen banner. Een chip met nul is niet weg
+   maar gedempt en uitgeschakeld: "er staat niets open" is ook informatie, en
+   een strook die van lengte verandert leest onrustig. */
+.pl-acts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.pl-act{
+  display:inline-flex;align-items:baseline;gap:7px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:6px 14px;font-family:var(--body);font-size:12.5px;color:var(--txt-2);
+  transition:border-color .12s,background .12s;
+}
+.pl-act .num{font-weight:700;font-size:14px;color:var(--ink)}
+.pl-act:hover{border-color:var(--olive-l);background:#f7f9f1}
+.pl-act.leeg{opacity:.5;cursor:default;background:transparent}
+.pl-act.leeg:hover{border-color:var(--line);background:transparent}
+.pl-act.amber{border-color:var(--amber-line);background:var(--amber-bg)}
+.pl-act.amber .num{color:var(--amber)}
+.pl-act.rood{border-color:var(--red-line);background:var(--red-bg)}
+.pl-act.rood .num{color:var(--red)}
+
+/* ─── De tabel ───────────────────────────────────────────────────
+   Vaste kolombreedtes, zodat de datums en bedragen over de hele lijst onder
+   elkaar staan en je verticaal kunt scannen. De naam- en klantkolom mogen
+   rekken; de rest niet — anders danst een getal per rij mee met de lengte van
+   een naam ernaast. */
+.pl-tbl{table-layout:fixed}
+.pl-tbl th:nth-child(1),.pl-tbl td:nth-child(1){width:22%}
+.pl-tbl th:nth-child(2),.pl-tbl td:nth-child(2){width:22%}
+.pl-tbl th:nth-child(3),.pl-tbl td:nth-child(3){width:104px}
+.pl-tbl th:nth-child(4),.pl-tbl td:nth-child(4){width:128px}
+.pl-tbl th:nth-child(5),.pl-tbl td:nth-child(5){width:78px}
+.pl-tbl th:nth-child(7),.pl-tbl td:nth-child(7){width:112px}
+.pl-tbl td{vertical-align:top}
+.pl-tbl td b{font-weight:600}
+.pl-tbl .pl-let{font-size:11.5px}
+/* Een fee die niet te berekenen valt is geen gat maar een to-do: de reden
+   staat er, afgekapt, met het hele verhaal in de tooltip. */
+.pl-feeleeg{font-size:11px;font-style:italic;display:block;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+
+/* Nazorg als telling, niet als zin. Rood alleen bij wat NU openstaat; wat
+   eerder gemist is telt gedempt mee — dat kun je niet meer inhalen. */
+.pl-naz{
+  display:inline-flex;align-items:baseline;gap:2px;justify-content:flex-end;
+  font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px;
+}
+.pl-naz.open{color:var(--red);font-weight:700}
+.pl-naz i{font-style:normal;opacity:.5}
+
+/* Groepskop en vandaag-scheider in de tabel: dezelfde vorm als de scheiders
+   in de tijdlijn, zodat een groep er in beide weergaven hetzelfde uitziet. */
+.pl-tbl tr.pl-grp td{
+  background:var(--well);border-top:1px solid var(--line);
+  padding:7px 16px;font-size:10.5px;font-weight:600;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--txt-2);
+}
+.pl-tbl tr.pl-grp td{display:table-cell}
+.pl-tbl tr.pl-grp b{float:right;color:var(--muted);font-size:11.5px;
+  letter-spacing:0;text-transform:none;font-weight:600}
+.pl-tbl tr.pl-nurij td{
+  padding:5px 16px;font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--olive);
+  border-top:1px solid var(--olive-l);background:transparent;
+}
+
+@media (max-width:1100px){
+  /* Onder deze breedte past zeven kolommen niet meer; de tabel schuift dan
+     horizontaal binnen .tblwrap in plaats van de cellen te persen. */
+  .pl-tbl{table-layout:auto;min-width:900px}
+}
+/* Een chip die aanstaat is een filter, en dat moet je kunnen zien — anders
+   kijk je naar drie van de zes zonder te weten waarom. */
+.pl-act.aan{background:var(--olive);border-color:var(--olive);color:#fff}
+.pl-act.aan .num{color:#fff}
+.pl-act.aan:hover{background:var(--olive-d);border-color:var(--olive-d)}

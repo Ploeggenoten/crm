@@ -104,25 +104,40 @@ function weekLabel(iso){
    van de twee de tijdlijn draagt is een keuze van de gebruiker, en diezelfde
    keuze bepaalt waar de periodefilter op slaat — anders zou je op de ene datum
    filteren en naar de andere kijken. */
-const AS_KEY = 'crm_pl_as';
-const leesAs = () => { try{ return localStorage.getItem(AS_KEY) === 'plaatsing' ? 'plaatsing' : 'start'; }catch(e){ return 'start'; } };
+const AS_KEY = 'crm_pl_as', W_KEY = 'crm_pl_weergave';
+const bewaard = (sleutel, geldig, standaard) => {
+  try{ const v = localStorage.getItem(sleutel); return geldig.includes(v) ? v : standaard; }
+  catch(e){ return standaard; }
+};
+const onthoud = (sleutel, waarde) => { try{ localStorage.setItem(sleutel, waarde); }catch(e){} };
 
 const S = {
   zoek:'', mijn:false,
   klant:'', vacature:'',
-  as: leesAs(),          // 'start' = eerste werkdag · 'plaatsing' = datum van tekenen
+  /* Waar de periodefilter op slaat, en waar de tijdlijn op hangt. In de tabel
+     staan bèide datums als kolom — de schakelaar die je dwong te kiezen is
+     daar niet meer nodig, want je wilt juist het verschil zien. */
+  periodeOp: bewaard(AS_KEY, ['start','plaatsing'], 'start'),
   periode:'alles',       // alles | week | maand | kwartaal | eigen
   van:'', tot:'',
-  gestopt:false          // gestopte plaatsingen meetonen
+  gestopt:false,         // gestopte plaatsingen meetonen
+  weergave: bewaard(W_KEY, ['tabel','tijdlijn'], 'tabel'),
+  /* Een chip uit de actiestrook zet dit; het is een filter bóvenop de rest.
+     Bewust een aparte sleutel en geen samenraapsel van gewone filters: je moet
+     hem in één klik weer weg kunnen halen, en je moet kunnen zien dát hij
+     aanstaat. */
+  focus:'',              // '' | zonder | nazorg
+  groep:'geen',          // geen | maand | klant
+  sort:{kol:'start', op:1}
 };
 const M = { mount:null };
 
 /* Welke datum draagt de tijdlijn, en welke is de andere? De tweede tonen we
    klein onder de eerste zodra hij afwijkt: dat verschil is precies waar dit
    scherm over gaat en het stond nergens. */
-const asDatum     = c => dag(S.as === 'plaatsing' ? c.geplaatstOp : c.start);
-const andersDatum = c => dag(S.as === 'plaatsing' ? c.start : c.geplaatstOp);
-const AS_LABEL    = () => S.as === 'plaatsing' ? 'plaatsingsdatum' : 'startdatum';
+const asDatum     = c => dag(S.periodeOp === 'plaatsing' ? c.geplaatstOp : c.start);
+const andersDatum = c => dag(S.periodeOp === 'plaatsing' ? c.start : c.geplaatstOp);
+const AS_LABEL    = () => S.periodeOp === 'plaatsing' ? 'plaatsingsdatum' : 'startdatum';
 
 /* ─── Periode ────────────────────────────────────────────────────
    De presets rekenen vanaf vandaag. 'alles' geeft lege grenzen terug en dan
@@ -258,9 +273,17 @@ function tijdlijn(){
   const zonderDatum = [], opTijd = [];
   let buitenPeriode = 0, verborgenGestopt = 0;
 
+  const nu = vandaag();
+  const heeftOpenNazorg = c => {
+    const anoniem = !!(CRM.kandVerwijder && CRM.kandVerwijder.isGeanonimiseerd && CRM.kandVerwijder.isGeanonimiseerd(c));
+    const opv = (!anoniem && CRM.opvolging) ? CRM.opvolging.voorKandidaat(c, nu) : null;
+    return !!(opv && opv.open.length);
+  };
   alles.forEach(c => {
     if(c.gestoptOp && !S.gestopt){ verborgenGestopt++; return; }
     if(!past(c)) return;
+    if(S.focus === 'zonder' && parse(dag(c.start))) return;
+    if(S.focus === 'nazorg' && !heeftOpenNazorg(c)) return;
     const d = asDatum(c);
     if(!parse(d)){ zonderDatum.push(c); return; }
     if((g.van && d < g.van) || (g.tot && d > g.tot)){ buitenPeriode++; return; }
@@ -275,7 +298,7 @@ function tijdlijn(){
     opTijd, zonderDatum, buitenPeriode, verborgenGestopt,
     totaal: alles.length,
     zichtbaar: opTijd.length + zonderDatum.length,
-    gefilterd: !!(S.zoek.trim() || S.mijn || S.klant || S.vacature || S.periode !== 'alles' || !S.gestopt)
+    gefilterd: !!(S.zoek.trim() || S.mijn || S.klant || S.vacature || S.focus || S.periode !== 'alles' || !S.gestopt)
   };
 }
 
@@ -301,6 +324,23 @@ function keuzeVacatures(){
     .filter(c => !S.klant || c.klant === S.klant)
     .map(vacatureVan).filter(Boolean))]
     .sort((a,b) => a.localeCompare(b,'nl'));
+}
+
+/* De fee van één plaatsing. Poort is CRM.magOpbrengstZien() en niet
+   canSeeMoney(): dat laatste is de bankcijfer-grens (Finance), terwijl de fee
+   per plaatsing sinds 31 juli 2026 bewust voor het hele team zichtbaar is.
+   Zonder klantafspraak of zonder bruto maandsalaris komt er geen bedrag uit —
+   dan is `reden` gevuld en tonen we díé, want een lege cel is een gat en een
+   reden is een to-do. Alles in een try: de feeberekening leunt op afspraken
+   die in productie onvolledig kunnen zijn, en dit scherm mag daar nooit op
+   omvallen. */
+function feeVan(c){
+  if(!CRM.magOpbrengstZien() || !CRM.fee) return null;
+  try{
+    const r = CRM.fee.bereken(c, CRM.fee.voorKlant(c.klant, c.geplaatstOp || c.start));
+    if(r.fee != null) return {bedrag:r.fee, reden:''};
+    return {bedrag:null, reden: r.reden || (r.mist && r.mist.length ? r.mist[0] : '') || r.uitleg || 'geen fee te berekenen'};
+  }catch(e){ return {bedrag:null, reden:'fee kon niet berekend worden'}; }
 }
 
 /* ─── Eén regel klaarmaken ───────────────────────────────────────
@@ -344,6 +384,7 @@ function regel(c, groep){
     gemist: opv ? opv.gemist : [],
     volgende: opv ? opv.volgende : null,
     laatsteContact: IX.laatsteContact.get(String(c.id)) || '',
+    fee: feeVan(c),
     blokkers: blokkers(c, leesbaar ? s : '', anoniem, !!s && !leesbaar)
   };
 }
@@ -404,7 +445,7 @@ function startTekst(r){
      half jaar tussen. Wie naar de startdatum kijkt wil kunnen zien hoe lang
      die persoon al vastligt, en andersom. */
   const ander = r.andersDatum
-    ? `<span class="pl-ander">${h(S.as === 'plaatsing' ? 'start' : 'getekend')} ${h(CRM.fmtDateShort(r.andersDatum))}</span>`
+    ? `<span class="pl-ander">${h(S.periodeOp === 'plaatsing' ? 'start' : 'getekend')} ${h(CRM.fmtDateShort(r.andersDatum))}</span>`
     : '';
   return `<span class="pl-start${klasse}"><span class="num">${h(CRM.fmtDay(r.asDatum))}</span>`
        + `<span class="pl-af">${h(CRM.geleden(r.asDatum))}</span></span>${ander}`;
@@ -447,7 +488,7 @@ function waarschuwing(r){
      op één regel op; de knop blijft wel staan, want dat is het enige veld dat
      je vanaf dit scherm kunt invullen. Bij de plaatsingsdatum-as gaat de
      datumkolom over een ándere datum, dus daar blijft de melding staan. */
-  const zichtbaar = (geenStart && !r.asDatum && S.as === 'start')
+  const zichtbaar = (geenStart && !r.asDatum && S.periodeOp === 'start')
     ? alle.filter(t => t !== 'geen startdatum') : alle;
   const knop = geenStart
     ? ` <button type="button" class="btn ghost sm" data-startdatum="${h(c.id)}">Invullen</button>` : '';
@@ -534,77 +575,232 @@ function maandLabel(iso){
 
 const geenHtml = tekst => `<p class="pl-leeg meta">${h(tekst)}</p>`;
 
-/* ─── De tellers ─────────────────────────────────────────────────
-   Vier, en niet meer. Dit zijn de vier vragen die een AM 's ochtends stelt
-   voordat hij de lijst inloopt.
-
-   ZE GAAN OVER DE HELE STAND, NIET OVER JE FILTER. Dat is met opzet: de
-   tellers zijn de samenvatting van het scherm en horen niet mee te bewegen
-   met een klantfilter dat je zo weer weghaalt. Wat je filter oplevert staat
-   in de regel onder de tijdlijn.
-
-   EEN ONDERSCHRIFT MOET OOK BIJ NUL KLOPPEN. Dat ging hier eerder mis en het
-   is het soort fout dat een heel scherm ongeloofwaardig maakt: "Deze week ·
-   0 · allemaal begonnen" terwijl er niemand is om begonnen te zijn. Elke
-   nulstand heeft daarom zijn eigen zin.
-
-   'Zonder datum' volgt de gekozen as: bij startdatum telt hij wie er getekend
-   heeft zonder eerste werkdag, bij plaatsingsdatum wie er geen tekendatum
-   heeft. Anders wijst de tegel naar een gat dat je in de tijdlijn niet ziet. */
-function kpisHtml(){
-  const nu = vandaag();
-  const maandag = maandagVan(nu);
-  const zondag  = plusDagen(maandag, 6);
-  const volgMa  = plusDagen(maandag, 7), volgZo = plusDagen(maandag, 13);
-
+/* ─── De actiestrook ─────────────────────────────────────────────
+   Drie klikbare chips die NOOIT met je filter meebewegen. Dat is met opzet:
+   dit scherm is de enige plek waar getekende kandidaten nog staan, dus er moet
+   één plek zijn die onafhankelijk van je filter zegt of er iemand omvalt.
+   Ze vervangen de vier KPI-tegels die hier stonden. Die waren bedoeld als
+   samenvatting, maar hun echte functie was alarm — en een alarm is een regel,
+   geen banner van negentig pixels. De samenvatting staat nu in de cijferstrook
+   eronder, die wél meebeweegt. */
+function actiestrookHtml(){
+  const nu = vandaag(), ma = maandagVan(nu), zo = plusDagen(ma, 6);
   const lopend = allePlaatsingen().filter(c => !c.gestoptOp);
-  const start = c => dag(c.start);
-  const dezeWeek = lopend.filter(c => start(c) >= maandag && start(c) <= zondag);
-  const volgendeWeek = lopend.filter(c => start(c) >= volgMa && start(c) <= volgZo).length;
-  const zonder = lopend.filter(c => !parse(asDatum(c))).length;
-  const dezeWeekBegonnen = dezeWeek.filter(c => start(c) <= nu).length;
-  const nogTeGaan = dezeWeek.length - dezeWeekBegonnen;
-  const aanHetWerk = lopend.filter(c => parse(start(c)) && start(c) <= nu).length;
-  const moetNog = lopend.length - aanHetWerk;
-
-  return `<div class="grid c4 pl-kpi">
-    ${CRM.ui.kpi('Deze week', String(dezeWeek.length),
-      !dezeWeek.length ? 'er start deze week niemand'
-      : nogTeGaan ? nogTeGaan + ' moet' + (nogTeGaan === 1 ? '' : 'en') + ' nog beginnen'
-      : (dezeWeek.length === 1 ? 'is al begonnen' : 'allemaal al begonnen'))}
-    ${CRM.ui.kpi('Volgende week', String(volgendeWeek),
-      volgendeWeek ? 'start gepland' : 'nog niets gepland')}
-    ${CRM.ui.kpi('Zonder ' + AS_LABEL(), String(zonder),
-      zonder ? 'staat nergens op de tijdlijn' : 'iedereen staat op de tijdlijn')}
-    ${CRM.ui.kpi('Lopende plaatsingen', String(lopend.length),
-      !lopend.length ? 'nog geen lopende plaatsingen'
-      : aanHetWerk + ' aan het werk · ' + moetNog + ' moet' + (moetNog === 1 ? '' : 'en') + ' nog starten')}
+  const dezeWeek = lopend.filter(c => { const d = dag(c.start); return d >= ma && d <= zo; }).length;
+  const zonder   = lopend.filter(c => !parse(dag(c.start))).length;
+  let nazorg = 0;
+  lopend.forEach(c => {
+    const anoniem = !!(CRM.kandVerwijder && CRM.kandVerwijder.isGeanonimiseerd && CRM.kandVerwijder.isGeanonimiseerd(c));
+    const opv = (!anoniem && CRM.opvolging) ? CRM.opvolging.voorKandidaat(c, nu) : null;
+    if(opv && opv.open.length) nazorg++;
+  });
+  const chip = (n, tekst, actie, klasse) =>
+    `<button type="button" class="pl-act${n?'':' leeg'}${klasse?' '+klasse:''}${S.focus===actie?' aan':''}" data-act="${h(actie)}"${n?'':' disabled'} aria-pressed="${S.focus===actie}">
+      <span class="num">${n}</span> ${h(tekst)}</button>`;
+  return `<div class="pl-acts">
+    ${chip(dezeWeek, dezeWeek === 1 ? 'start deze week' : 'starten deze week', 'week')}
+    ${chip(zonder, 'zonder startdatum', 'zonder', zonder ? 'amber' : '')}
+    ${chip(nazorg, 'nazorg open nu', 'nazorg', nazorg ? 'rood' : '')}
   </div>`;
 }
 
+/* ─── De cijferstrook ────────────────────────────────────────────
+   Vier getallen over de SELECTIE die je nu ziet. Daarmee zijn "totaal",
+   "deze maand" en "per klant" geen aparte schermen maar drie standen van
+   hetzelfde filter — dat was de vraag van Tjeerd (3 aug 2026).
+
+   WAT HIER NIET HOORT. Performance rekent verhoudingen en trends (conversie,
+   per recruiter, per maand); Finance rekent euro's die daadwerkelijk bewogen
+   hebben (gefactureerd, betaald, marge). Dit scherm telt mensen in een
+   toestand. Zou het hier ook trends of facturen gaan rekenen, dan spreken twee
+   schermen elkaar binnen een week tegen over dezelfde maand. */
+function cijfersHtml(T, rijen){
+  const nu = vandaag();
+  const werkt  = rijen.filter(r => r.start && r.start <= nu && !r.c.gestoptOp).length;
+  const gestopt= rijen.filter(r => !!r.c.gestoptOp).length;
+  const pct    = rijen.length ? Math.round(gestopt / rijen.length * 100) : 0;
+
+  const geld = CRM.magOpbrengstZien();
+  const metFee = rijen.filter(r => r.fee && r.fee.bedrag != null);
+  const som = metFee.reduce((t, r) => t + r.fee.bedrag, 0);
+  const gem = metFee.length ? Math.round(som / metFee.length) : null;
+  const zonderFee = rijen.length - metFee.length;
+
+  /* Zonder geldrecht geen lege kolom laten staan maar een ander getal dat op
+     dit scherm net zo hard telt. */
+  const vierde = geld
+    ? CRM.ui.kpi('Fee', `<span class="num">${CRM.euro(som)}</span>`,
+        !metFee.length ? 'geen fee te berekenen'
+          : `gemiddeld <span class="num">${CRM.euro(gem)}</span>${zonderFee ? ` · ${zonderFee} zonder fee` : ''}`)
+    : CRM.ui.kpi('Moet nog starten', `<span class="num">${rijen.length - werkt - gestopt}</span>`,
+        'getekend, eerste werkdag nog voor ons');
+
+  return `<div class="grid c4 pl-kpi">
+    ${CRM.ui.kpi('Plaatsingen', `<span class="num">${rijen.length}</span>`, h(selectieTekst()))}
+    ${CRM.ui.kpi('Aan het werk', `<span class="num">${werkt}</span>`, 'eerste werkdag is geweest')}
+    ${CRM.ui.kpi('Gestopt', `<span class="num">${gestopt}</span>`,
+      gestopt ? `<span class="num">${pct}%</span> van deze selectie` : 'niemand gestopt in deze selectie')}
+    ${vierde}
+  </div>`;
+}
+
+/* De selectie in gewone taal. Zonder deze regel liegt een cijfer van 3: je
+   ziet niet dat je op één klant en één kwartaal filtert. */
+function selectieTekst(){
+  const uit = [];
+  if(S.klant)    uit.push(S.klant);
+  if(S.vacature) uit.push(S.vacature);
+  if(S.mijn)     uit.push('van mij');
+  if(S.focus === 'zonder') uit.push('alleen zonder startdatum');
+  if(S.focus === 'nazorg') uit.push('alleen met openstaande nazorg');
+  uit.push(periodeTekst());
+  if(!S.gestopt) uit.push('zonder gestopte');
+  return uit.join(' · ');
+}
+
+/* ─── De tabel ───────────────────────────────────────────────────
+   Zeven kolommen, en elke kolom moet zijn plek verdienen. Naam en klant
+   dragen allebei een tweede regel (recruiter, functie) omdat dat feiten zijn
+   die bij elkaar horen en anders een eigen kolom zouden opeisen.
+   Getekend en Start staan náást elkaar: die twee kunnen maanden uit elkaar
+   liggen en juist dat verschil is wat je wilt zien — daarom is de
+   as-schakelaar hier vervallen. */
+const KOLOMMEN = [
+  {k:'naam',     lbl:'Naam'},
+  {k:'klant',    lbl:'Klant'},
+  {k:'getekend', lbl:'Getekend', n:true},
+  {k:'start',    lbl:'Start',    n:true},
+  {k:'nazorg',   lbl:'Nazorg',   n:true, sorteer:false},
+  {k:'let',      lbl:'Let op',   sorteer:false},
+  {k:'fee',      lbl:'Fee',      n:true}
+];
+const SORTEER = {
+  naam:     r => String(r.c.naam||'').toLowerCase(),
+  klant:    r => String(r.c.klant||'').toLowerCase(),
+  getekend: r => dag(r.c.geplaatstOp) || '9999',
+  start:    r => r.start || '9999',
+  fee:      r => (r.fee && r.fee.bedrag != null) ? r.fee.bedrag : -1
+};
+
+function gesorteerd(rijen){
+  const f = SORTEER[S.sort.kol] || SORTEER.start;
+  const op = S.sort.op;
+  return rijen.slice().sort((a,b) => {
+    const x = f(a), y = f(b);
+    if(x < y) return -1*op;
+    if(x > y) return  1*op;
+    return String(a.c.naam||'').localeCompare(String(b.c.naam||''), 'nl');
+  });
+}
+
+function nazorgCel(r){
+  const open = r.open.length, gemist = r.gemist.length;
+  if(!open && !gemist) return '<span class="meta">—</span>';
+  const titel = [open ? open + ' open' : '', gemist ? gemist + ' eerder gemist' : ''].filter(Boolean).join(' · ');
+  return `<span class="pl-naz${open ? ' open' : ''}" title="${h(titel)}">
+    <span class="num">${open || gemist}</span>${open ? '' : '<i>·</i>'}</span>`;
+}
+
+function rijTabelHtml(r){
+  const c = r.c, nu = vandaag();
+  const geld = CRM.magOpbrengstZien();
+  const onder = [c.rec || '', c.vervangt ? 'vervangt ' + c.vervangt : ''].filter(Boolean).join(' · ');
+  const startExtra = r.start
+    ? (r.start > nu ? CRM.geleden(r.start) : (c.garantieMnd ? 'garantie ' + c.garantieMnd + ' mnd' : CRM.geleden(r.start)))
+    : '';
+  const feeCel = !geld ? ''
+    : (r.fee && r.fee.bedrag != null)
+      ? `<span class="num">${h(CRM.euro(r.fee.bedrag))}</span>`
+      : `<span class="meta pl-feeleeg" title="${h((r.fee && r.fee.reden) || '')}">${h((r.fee && r.fee.reden) || '—')}</span>`;
+  const mis = heeftMissers(r);
+  return `<tr${CRM.ui.frand(PL_RAND[toestandVan(r)], 'clickable', mis)} data-kaart="${h(c.id)}">
+    <td><b>${h(c.naam || '—')}</b>${onder ? `<div class="rowsub">${h(onder)}</div>` : ''}</td>
+    <td>${h(c.klant || '—')}${c.functie ? `<div class="rowsub">${h(c.functie)}</div>` : ''}</td>
+    <td class="n num">${h(c.geplaatstOp ? CRM.fmtDateShort(c.geplaatstOp) : '—')}</td>
+    <td class="n">${r.start ? `<span class="num">${h(CRM.fmtDateShort(r.start))}</span>${
+      startExtra ? `<div class="rowsub">${h(startExtra)}</div>` : ''}`
+      : `<span class="pl-geen">geen datum</span>`}</td>
+    <td class="n">${nazorgCel(r)}</td>
+    <td>${waarschuwing(r)}</td>
+    ${geld ? `<td class="n">${feeCel}</td>` : ''}
+  </tr>`;
+}
+
+/* Groepskop in de tabel. Zelfde vorm als de weekscheiders in de tijdlijn, dus
+   een groep ziet er in beide weergaven hetzelfde uit. Rechts het aantal en —
+   als je het mag zien — de fee-som: dát is het "overzicht per klant". */
+function groepKopHtml(label, rijen, kolommen){
+  const geld = CRM.magOpbrengstZien();
+  const som = rijen.reduce((t, r) => t + ((r.fee && r.fee.bedrag) || 0), 0);
+  return `<tr class="pl-grp"><td colspan="${kolommen}">
+    <span>${h(label)}</span>
+    <b class="num">${rijen.length}${geld && som ? ' · ' + CRM.euro(som) : ''}</b>
+  </td></tr>`;
+}
+
+function tabelHtml(rijen){
+  const geld = CRM.magOpbrengstZien();
+  const kols = KOLOMMEN.filter(k => k.k !== 'fee' || geld);
+  const pijl = k => S.sort.kol !== k ? '' : (S.sort.op < 0 ? ' ↓' : ' ↑');
+  const kop = kols.map(k => k.sorteer === false
+    ? `<th class="${k.n?'n':''}">${h(k.lbl)}</th>`
+    : `<th class="sortable ${k.n?'n':''}" data-sort="${h(k.k)}"
+         aria-sort="${S.sort.kol===k.k ? (S.sort.op<0?'descending':'ascending') : 'none'}">${h(k.lbl)}${pijl(k.k)}</th>`).join('');
+
+  const gs = gesorteerd(rijen);
+  let body = '';
+  if(S.groep === 'geen'){
+    /* De vandaag-scheider alleen als je op startdatum sorteert: in elke andere
+       sortering staat hij op een willekeurige plek en betekent hij niets. */
+    const toonNu = S.sort.kol === 'start' && S.sort.op > 0;
+    const nu = vandaag();
+    let gezet = !toonNu || !gs.some(r => r.start && r.start < nu);
+    gs.forEach(r => {
+      if(!gezet && r.start && r.start >= nu){
+        gezet = true;
+        body += `<tr class="pl-nurij"><td colspan="${kols.length}"><span>vandaag</span></td></tr>`;
+      }
+      body += rijTabelHtml(r);
+    });
+  }else{
+    const sleutel = r => S.groep === 'klant'
+      ? (r.c.klant || '— zonder klant')
+      : (r.start ? maandLabel(r.start) : '— zonder startdatum');
+    const volgorde = [], groepen = new Map();
+    gs.forEach(r => { const k = sleutel(r);
+      if(!groepen.has(k)){ groepen.set(k, []); volgorde.push(k); }
+      groepen.get(k).push(r); });
+    volgorde.forEach(k => {
+      body += groepKopHtml(k, groepen.get(k), kols.length);
+      groepen.get(k).forEach(r => { body += rijTabelHtml(r); });
+    });
+  }
+
+  return `<div class="tblwrap"><table class="tbl pl-tbl">
+    <thead><tr>${kop}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
 /* ─── Tekenen ────────────────────────────────────────────────────
-   De tijdlijn zit in een eigen div. Bij het wisselen van een filter wordt
-   alleen die div opnieuw gevuld, niet het hele scherm: de zoekbalk staat in
-   de paginakop en zou anders zijn inhoud en de cursor kwijtraken midden in
-   het opzoeken van iemand. */
+   De strook met acties staat buiten #pl_lijsten omdat hij niet met het filter
+   meebeweegt; alles daaronder wordt bij elke filterwijziging opnieuw gevuld. */
 function teken(){
   const wrap = M.mount && M.mount.querySelector('#pl_lijsten');
   if(!wrap) return;
   bouwIndex();
   const T = tijdlijn();
-  const rijen  = T.opTijd.map(c => regel(c));
-  const rGeen  = T.zonderDatum.map(c => regel(c));
+  const rijen = T.opTijd.map(c => regel(c));
+  const rGeen = T.zonderDatum.map(c => regel(c));
 
-  const kpi = M.mount.querySelector('#pl_kpi');
-  if(kpi) kpi.innerHTML = kpisHtml();
+  const acts = M.mount.querySelector('#pl_acts');
+  if(acts) acts.innerHTML = actiestrookHtml();
+
+  /* In de tabel horen de mensen zonder datum gewoon in de lijst thuis — daar
+     is een kolom voor, en apart zetten zou ze uit je sortering en je fee-som
+     halen. In de tijdlijn kán dat niet: daar is geen plek zonder datum. */
+  const alles = S.weergave === 'tabel' ? rijen.concat(rGeen) : rijen;
 
   let uit = '';
-
-  /* Bovenaan en buiten de tijdlijn, want daar passen ze niet op. Alleen als
-     er iemand staat: een lege kop "Zonder startdatum · 0" vraagt elke dag
-     aandacht voor een probleem dat er niet is, en dan leest niemand hem nog
-     op de dag dat het er wél toe doet. */
-  if(rGeen.length) uit += `<section class="card pl-sec pl-zonder">
+  if(S.weergave === 'tijdlijn' && rGeen.length) uit += `<section class="card pl-sec pl-zonder">
     <div class="card-h"><div class="h2">Zonder ${h(AS_LABEL())}</div>
       <span class="chip num">${rGeen.length}</span></div>
     <div class="card-b">
@@ -613,26 +809,32 @@ function teken(){
     </div></section>`;
 
   uit += `<section class="card pl-sec pl-tl">
-    <div class="card-h"><div class="h2">Tijdlijn op ${h(AS_LABEL())}</div>
-      <span class="chip num">${rijen.length}</span>
+    <div class="card-h"><div class="h2">${S.weergave === 'tabel' ? 'Plaatsingen' : 'Tijdlijn op ' + h(AS_LABEL())}</div>
+      <span class="chip num">${alles.length}</span>
       <span class="spacer"></span>
-      <span class="meta">${h(periodeTekst())}</span></div>
-    <div class="card-b">${
-      rijen.length ? tijdlijnHtml(rijen)
-        : geenHtml(T.gefilterd
-            ? 'Niemand binnen deze filters. Verruim de periode of haal een filter weg.'
-            : 'Er staat nog geen plaatsing op de tijdlijn.')
-    }</div></section>`;
+      <div class="seg" id="pl_weergave" role="group" aria-label="Weergave">
+        <button type="button" data-w="tabel"${S.weergave==='tabel'?' class="on"':''}>Tabel</button>
+        <button type="button" data-w="tijdlijn"${S.weergave==='tijdlijn'?' class="on"':''}>Tijdlijn</button>
+      </div></div>
+    ${alles.length
+      ? (S.weergave === 'tabel'
+          ? tabelHtml(alles)
+          : `<div class="card-b">${tijdlijnHtml(rijen)}</div>`)
+      : `<div class="card-b">${geenHtml(T.gefilterd
+          ? 'Niemand binnen deze filters. Verruim de periode of haal een filter weg.'
+          : 'Er staat nog geen plaatsing in het systeem.')}</div>`}
+  </section>`;
 
   wrap.innerHTML = uit;
+
+  const kpi = M.mount.querySelector('#pl_kpi');
+  if(kpi) kpi.innerHTML = cijfersHtml(T, alles);
 
   /* De optelsom onderaan. Geen sierstuk maar de controle waar dit scherm op
      staat of valt: alles op fase 'Contract getekend' of 'Gestart' hoort
      hierboven te staan, want er is geen ander scherm meer waar die mensen op
-     voorkomen. Sinds je zelf kunt filteren is er een tweede reden: een filter
-     dat stilletjes iemand wegneemt is hier de gevaarlijkste fout die er is —
-     wie je niet ziet, bel je niet. Dus zeggen we altijd hoeveel er buiten
-     beeld vallen en waarom. */
+     voorkomen. Een filter dat stilletjes iemand wegneemt is hier de
+     gevaarlijkste fout die er is — wie je niet ziet, bel je niet. */
   const weg = [];
   if(T.buitenPeriode)    weg.push(T.buitenPeriode + ' buiten de periode');
   if(T.verborgenGestopt) weg.push(T.verborgenGestopt + ' gestopt');
@@ -640,14 +842,12 @@ function teken(){
   if(rest > 0) weg.push(rest + ' door je filters');
   wrap.insertAdjacentHTML('beforeend', `<p class="pl-tel meta num">${
     weg.length
-      ? h(T.zichtbaar + ' van ' + T.totaal + ' plaatsingen in beeld \u2014 ' + weg.join(' \u00b7 ') + ' niet.')
+      ? h(T.zichtbaar + ' van ' + T.totaal + ' plaatsingen in beeld — ' + weg.join(' · ') + ' niet.')
       : h(T.totaal + ' plaatsingen, allemaal in beeld.')
   }</p>`);
 }
 
-/* Wat de periodefilter nu betekent, in gewone taal. Staat in de kop van de
-   tijdlijn omdat de kop anders liegt: "Tijdlijn op startdatum · 3" zegt niet
-   dat je naar deze maand kijkt. */
+/* Wat de periodefilter nu betekent, in gewone taal. */
 function periodeTekst(){
   const g = periodeGrenzen();
   if(!g.van && !g.tot) return 'alle datums';
@@ -708,8 +908,38 @@ async function bewaarStart(c, iso){
    Gedelegeerd op de wrapper: de lijsten worden herhaaldelijk opnieuw gevuld,
    en losse handlers per regel zouden daar elke keer opnieuw aan moeten. */
 function bind(){
+  const acts = M.mount.querySelector('#pl_acts');
+  /* De chips zetten een filter in plaats van zelf een lijst te tonen: zo is er
+     één lijst en één waarheid, en zie je na het klikken meteen waaróm je die
+     mensen ziet (de selectieregel onder het eerste cijfer zegt het). */
+  acts.onclick = e => {
+    const b = e.target.closest('[data-act]');
+    if(!b) return;
+    S.klant = ''; S.vacature = ''; S.gestopt = false; S.groep = 'geen';
+    const a = b.dataset.act;
+    S.focus = (a === 'week') ? '' : a;
+    S.periode = (a === 'week') ? 'week' : 'alles';
+    if(a === 'week') S.periodeOp = 'start';
+    S.sort = {kol:'start', op:1};
+    S.weergave = 'tabel'; onthoud(W_KEY, 'tabel');
+    tekenFilters(); teken();
+  };
+
   const wrap = M.mount.querySelector('#pl_lijsten');
   wrap.onclick = e => {
+    const w = e.target.closest('#pl_weergave button');
+    if(w){ if(S.weergave !== w.dataset.w){ S.weergave = w.dataset.w; onthoud(W_KEY, S.weergave); teken(); } return; }
+
+    const th = e.target.closest('th[data-sort]');
+    if(th){
+      const k = th.dataset.sort;
+      /* Tweede klik keert om; een nieuwe kolom begint oplopend, behalve bij
+         fee — daar wil je vrijwel altijd het hoogste bedrag bovenaan. */
+      S.sort = (S.sort.kol === k) ? {kol:k, op:-S.sort.op} : {kol:k, op: k === 'fee' ? -1 : 1};
+      teken();
+      return;
+    }
+
     const sd = e.target.closest('[data-startdatum]');
     if(sd){ e.stopPropagation(); startdatumVenster(sd.dataset.startdatum); return; }
 
@@ -719,7 +949,7 @@ function bind(){
   /* Een regel is een knop, dus hij hoort ook op Enter en spatie te openen. */
   wrap.onkeydown = e => {
     if(e.key !== 'Enter' && e.key !== ' ') return;
-    const kaart = e.target.closest('.pl-r[data-kaart]');
+    const kaart = e.target.closest('[data-kaart]');
     if(!kaart) return;
     e.preventDefault();
     CRM.ga('kandidaten', {id:kaart.dataset.kaart});
@@ -751,6 +981,7 @@ CRM.registerModule('plaatsingen', {
     M.mount = mount;
     mount.innerHTML = `${CRM.laadfoutHtml()}
       <div class="pl-wrap">
+        <div id="pl_acts"></div>
         <div id="pl_kpi"></div>
         <div class="card pad pl-fil" id="pl_filters"></div>
         <div class="stack" id="pl_lijsten"></div>
@@ -793,10 +1024,6 @@ function tekenFilters(){
 
   el.innerHTML = `
     <div class="row pl-filrij">
-      <div class="seg" id="pl_as" role="group" aria-label="Welke datum draagt de tijdlijn">
-        <button type="button" data-as="start"${S.as==='start'?' class="on"':''}>Startdatum</button>
-        <button type="button" data-as="plaatsing"${S.as==='plaatsing'?' class="on"':''}>Plaatsingsdatum</button>
-      </div>
       <select id="pl_periode" style="width:auto" aria-label="Periode">
         ${opt('alles','Alle datums',S.periode)}
         ${opt('week','Deze week',S.periode)}
@@ -813,9 +1040,18 @@ function tekenFilters(){
         ${opt('','Alle klanten',S.klant)}
         ${klanten.map(k => opt(k,k,S.klant)).join('')}
       </select>
+      <select id="pl_op" style="width:auto" aria-label="Periode slaat op">
+        ${opt('start','periode op: startdatum',S.periodeOp)}
+        ${opt('plaatsing','periode op: plaatsingsdatum',S.periodeOp)}
+      </select>
       <select id="pl_vac" style="width:auto" aria-label="Vacature">
         ${opt('', S.klant ? 'Alle vacatures van deze klant' : 'Alle vacatures', S.vacature)}
         ${vacs.map(v => opt(v,v,S.vacature)).join('')}
+      </select>
+      <select id="pl_groep" style="width:auto" aria-label="Groeperen">
+        ${opt('geen','Niet groeperen',S.groep)}
+        ${opt('klant','Groepeer op klant',S.groep)}
+        ${opt('maand','Groepeer op maand',S.groep)}
       </select>
       <span class="spacer"></span>
       ${CRM.me() ? `<button type="button" class="chip btn-like${S.mijn?' on':''}" data-tog="mijn"
@@ -825,12 +1061,10 @@ function tekenFilters(){
       <button type="button" class="btn ghost sm" id="pl_wis">Wissen</button>
     </div>`;
 
-  CRM.$$('#pl_as button', el).forEach(b => b.onclick = () => {
-    if(S.as === b.dataset.as) return;
-    S.as = b.dataset.as;
-    try{ localStorage.setItem(AS_KEY, S.as); }catch(e){}
-    tekenFilters(); teken();
-  });
+  el.querySelector('#pl_op').onchange = e => {
+    S.periodeOp = e.target.value; onthoud(AS_KEY, S.periodeOp); teken();
+  };
+  el.querySelector('#pl_groep').onchange = e => { S.groep = e.target.value; teken(); };
   el.querySelector('#pl_periode').onchange = e => {
     S.periode = e.target.value;
     tekenFilters(); teken();
@@ -853,7 +1087,7 @@ function tekenFilters(){
   });
   el.querySelector('#pl_wis').onclick = () => {
     S.klant = ''; S.vacature = ''; S.periode = 'alles'; S.van = ''; S.tot = '';
-    S.mijn = false; S.gestopt = false; S.zoek = '';
+    S.mijn = false; S.gestopt = false; S.zoek = ''; S.groep = 'geen'; S.focus = '';
     const z = document.getElementById('pl_zoek'); if(z) z.value = '';
     tekenFilters(); teken();
   };
