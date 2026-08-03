@@ -146,6 +146,14 @@ const heeftVacInfoVelden = () => {
   const rij = (CRM.state.vacs || []).find(Boolean);
   return !!rij && 'werktijden' in rij && 'web_status' in rij;
 };
+/* Blok 9 (3 aug 2026): de kaartvelden — tekstblokken, uurloon, afwijkende
+   fee. Zelfde patroon als hierboven: pas meesturen als de kolommen bestaan,
+   anders weigert PostgREST de hele insert en lijkt opslaan stuk. */
+const heeftVacKaartVelden = () => {
+  if(CRM.demo) return true;
+  const rij = (CRM.state.vacs || []).find(Boolean);
+  return !!rij && 'openingszin' in rij && 'fee_pct' in rij;
+};
 
 /* Wie is marketeer? Altijd uit de profielen, nooit op naam: er kan er een
    tweede bijkomen en een rol kan wisselen. Geen marketeer in het team
@@ -2458,6 +2466,7 @@ function klantModal(k){
    vanaf de kaart van één klant. (Tjeerd, 3 aug 2026.) */
 function vacatureModal(k, v, opts){
   const extra = heeftVacInfoVelden();
+  const kaart = heeftVacKaartVelden();
   const kiesKlant = !k;
   const klanten = (CRM.state.clients||[]).map(x=>x.naam).filter(Boolean).sort((a,b)=>a.localeCompare(b,'nl'));
   if(kiesKlant && !klanten.length) return CRM.toast('Maak eerst een klant aan bij Relaties','err');
@@ -2486,6 +2495,14 @@ function vacatureModal(k, v, opts){
         <div class="f-row"><label>Open sinds</label><input type="date" id="v_sinds" value="${h(String(n.aangemaakt||'').slice(0,10))}"></div>
         <div class="f-row"><label>Maandloon vanaf</label><input type="number" id="v_smin" value="${n.sal_min==null?'':n.sal_min}"></div>
         <div class="f-row"><label>Maandloon tot</label><input type="number" id="v_smax" value="${n.sal_max==null?'':n.sal_max}"></div>
+        ${kaart ? `
+        <div class="f-row"><label>Uurloon vanaf</label><input type="number" step="0.01" id="v_umin" value="${n.uurloon_min==null?'':n.uurloon_min}"></div>
+        <div class="f-row"><label>Uurloon tot</label><input type="number" step="0.01" id="v_umax" value="${n.uurloon_max==null?'':n.uurloon_max}"></div>
+        <div class="f-row"><label>Uren per week</label><input type="text" id="v_uren" value="${h(n.uren||'')}" placeholder="40"></div>
+        <div class="f-row"><label>Vakantiegeld %</label><input type="number" step="0.1" id="v_vt" value="${n.vt_pct==null?'':n.vt_pct}" placeholder="8"></div>
+        <div class="f-row"><label>Ploegentoeslag %</label><input type="number" step="0.1" id="v_toesl" value="${n.toeslag_pct==null?'':n.toeslag_pct}"></div>
+        <div class="f-row"><label>13e mnd / eju %</label><input type="number" step="0.1" id="v_eju" value="${n.eju_pct==null?'':n.eju_pct}"></div>
+        <div class="f-row"><label>Reiskosten</label><input type="text" id="v_reis" value="${h(n.reiskosten||'')}" placeholder="€0,23 / km"></div>` : ''}
       </div>
       <div class="f-row"><label>Omschrijving</label>
         <textarea id="v_oms" placeholder="Wat je collega's over deze opdracht moeten weten.">${h(n.omschrijving||'')}</textarea>
@@ -2520,6 +2537,37 @@ function vacatureModal(k, v, opts){
         </div>
       </details>` :
       `<p class="meta" style="margin:0">De extra velden voor de website verschijnen zodra de databasewijziging gedraaid is.</p>`}
+      ${kaart ? `
+      <details class="vacinfo">
+        <summary><div style="min-width:0;flex:1"><b>Vacaturetekst — de blokken van de website</b>
+          <div class="meta">Openingszin, de baan en wat je krijgt. Eén punt per regel; het salaris komt er vanzelf bij uit de velden hierboven.</div></div></summary>
+        <div class="vacinfo-b">
+          <div class="f-row"><label>Openingszin</label>
+            <input type="text" id="v_open" value="${h(n.openingszin||'')}" placeholder="Je hoeft nog niet alles te kunnen. Je leert het vak van ervaren monteurs.">
+            <span class="hint">De regel die op de website direct onder de functietitel staat.</span></div>
+          <div class="f-row"><label>Dit is de baan</label>
+            <textarea id="v_baan" rows="4" placeholder="Meelopen met onderhoud en reparaties\nMachines demonteren, reviseren en weer opbouwen">${h(n.de_baan||'')}</textarea>
+            <span class="hint">Eén punt per regel — wordt op de website een opsomming.</span></div>
+          <div class="f-row"><label>Wat krijg je</label>
+            <textarea id="v_krijg" rows="4" placeholder="Een leermeester die je het vak echt leert\nOpleidingen en certificaten betaald">${h(n.wat_krijg_je||'')}</textarea>
+            <span class="hint">Zonder de salarisregel — die komt automatisch uit het maandloon, zodat de site nooit iets anders zegt dan het CRM.</span></div>
+        </div>
+      </details>
+      ${CRM.magOpbrengstZien() ? `
+      <details class="vacinfo">
+        <summary><div style="min-width:0;flex:1"><b>Afwijkende afspraak voor deze vacature</b>
+          <div class="meta">Leeg = de klantafspraak geldt. Vul alleen in wat voor déze vacature anders is.</div></div></summary>
+        <div class="vacinfo-b"><div class="f-grid">
+          <div class="f-row"><label>Fee %</label><input type="number" step="0.5" id="v_fee" value="${n.fee_pct==null?'':n.fee_pct}"></div>
+          <div class="f-row"><label>Garantie (mnd)</label><input type="number" id="v_gar" value="${n.garantie_mnd==null?'':n.garantie_mnd}"></div>
+          <div class="f-row"><label>Betaaltermijn (dgn)</label><input type="number" id="v_bet" value="${n.betaaltermijn_dgn==null?'':n.betaaltermijn_dgn}"></div>
+          <div class="f-row"><label>Contactpersoon</label><select id="v_contactp">
+            <option value=""></option>
+            ${(CRM.state.contacten||[]).filter(ct=>ct.klant===k.naam).map(ct=>
+              `<option value="${h(String(ct.id))}"${String(n.contact_id||'')===String(ct.id)?' selected':''}>${h(ct.naam)}</option>`).join('')}
+          </select><span class="hint">Voor déze vacature — kan een ander zijn dan het hoofdcontact.</span></div>
+        </div></div>
+      </details>` : ''}` : ''}
     </div>
     <div class="modal-f">
       ${v?'<button class="btn sub" id="v_weg">Verwijderen</button>':''}
@@ -2575,6 +2623,22 @@ function vacatureModal(k, v, opts){
         sal_max: smax === '' ? null : Number(smax),
         omschrijving:m.querySelector('#v_oms').value.trim()
       });
+      /* Alleen meesturen als de kolommen bestaan — zie heeftVacKaartVelden. */
+      if(kaart){
+        const getalOf = id => { const x = w(id); return x === '' ? null : Number(x); };
+        Object.assign(rij, {
+          uurloon_min: getalOf('v_umin'), uurloon_max: getalOf('v_umax'),
+          uren: w('v_uren'), vt_pct: getalOf('v_vt'), toeslag_pct: getalOf('v_toesl'),
+          eju_pct: getalOf('v_eju'), reiskosten: w('v_reis'),
+          openingszin: w('v_open'),
+          de_baan: (m.querySelector('#v_baan') ? m.querySelector('#v_baan').value : '').trim(),
+          wat_krijg_je: (m.querySelector('#v_krijg') ? m.querySelector('#v_krijg').value : '').trim()
+        });
+        if(CRM.magOpbrengstZien()) Object.assign(rij, {
+          fee_pct: getalOf('v_fee'), garantie_mnd: getalOf('v_gar'),
+          betaaltermijn_dgn: getalOf('v_bet'), contact_id: w('v_contactp')
+        });
+      }
       /* Alleen meesturen als de kolommen bestaan — zie heeftVacInfoVelden. */
       if(extra) Object.assign(rij, nu(), {
         web_status:   n.web_status || 'Nog niet online',
