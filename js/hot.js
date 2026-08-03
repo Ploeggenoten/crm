@@ -39,7 +39,7 @@
 
   /* ─── Schermstand ───────────────────────────────────────────────
      Bewust niet bewaard: dit zijn vragen van dít moment, geen gewoonte. */
-  const S = { open:null, zoek:'', sort:'knelt', mijn:false, toonRest:false };
+  const S = { open:null, zoek:'', sort:'knelt', mijn:false, toonRest:false, klant:'', am:'' };
   const M = { mount:null, acties:null, vac:null };   // vac gezet = detailpagina
 
   const EIND = ['Afgevallen','Gestopt'];
@@ -325,6 +325,10 @@
     const rij = CRM.state.vacs.filter(v => {
       if(!isOpenstaand(v)) return false;
       if(S.mijn && !CRM.isVanMij(v)) return false;
+      if(S.klant && v.klant !== S.klant) return false;
+      /* De AM staat op de vacature als die er is, en anders op de klantkaart —
+         daar hoort hij thuis en daar is hij ook onderhouden. */
+      if(S.am && (v.eigenaar || (CRM.klant(v.klant)||{}).eigenaar) !== S.am) return false;
       if(!q) return true;
       return norm([v.functie, v.klant, v.locatie, v.eigenaar].join(' ')).includes(q);
     }).map(v => ({v, t:telling(v)}));
@@ -422,8 +426,20 @@
     /* Zonder één enkele vacature heeft filteren geen betekenis. Bij een filter
        dat niets oplevert blijft de balk juist wél staan — je moet hem kunnen
        terugdraaien. */
+    /* Filteren op klant en accountmanager. "Alleen van mij" bestond al, maar
+       Tjeerd wil ook de vacatures van Tjerk kunnen bekijken, en per klant —
+       dat is de vraag die je stelt als een opdrachtgever belt. De lijsten
+       komen uit de vacatures zelf, dus er staat nooit een keuze in die niets
+       oplevert. */
+    const uniek = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'nl'));
+    const klanten = uniek(CRM.state.vacs.map(v => v.klant));
+    const ams     = uniek(CRM.state.vacs.map(v => v.eigenaar || (CRM.klant(v.klant)||{}).eigenaar));
     const balkje = !CRM.state.vacs.length ? '' : `<div class="ov-bar">
       <div class="searchbox"><input type="search" id="ov_q" placeholder="Zoek op functie, klant of plaats" value="${h(S.zoek)}"></div>
+      <select id="ov_klant" aria-label="Klant"><option value="">Alle klanten</option>${
+        klanten.map(x=>`<option${S.klant===x?' selected':''}>${h(x)}</option>`).join('')}</select>
+      <select id="ov_am" aria-label="Accountmanager"><option value="">Alle AM's</option>${
+        ams.map(x=>`<option${S.am===x?' selected':''}>${h(x)}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ov_mijn"${S.mijn?' checked':''}> Alleen van mij</label>
       <select id="ov_sort" aria-label="Sorteren">${SORTS.map(([k,l]) =>
         `<option value="${k}"${S.sort===k?' selected':''}>${h(l)}</option>`).join('')}</select>
@@ -479,6 +495,10 @@
     if(mijn) mijn.onchange = () => { S.mijn = mijn.checked; tekenOpen(); };
     const sort = mount.querySelector('#ov_sort');
     if(sort) sort.onchange = () => { S.sort = sort.value; tekenOpen(); };
+    const kl = mount.querySelector('#ov_klant');
+    if(kl) kl.onchange = () => { S.klant = kl.value; tekenOpen(); };
+    const am = mount.querySelector('#ov_am');
+    if(am) am.onchange = () => { S.am = am.value; tekenOpen(); };
     const restknop = mount.querySelector('#ov_restknop');
     if(restknop) restknop.onclick = () => { S.toonRest = !S.toonRest; tekenOpen(); };
 
@@ -1150,13 +1170,20 @@
         <button data-w="open" class="${w==='open'?'on':''}" aria-pressed="${w==='open'}">Openstaand</button>
         <button data-w="hot" class="${w==='hot'?'on':''}" aria-pressed="${w==='hot'}">Hot</button>
       </div>
-      <button class="btn sm" id="ov_hotadd">+ Hot maken</button>`;
+      <button class="btn ghost sm" id="ov_hotadd">+ Hot maken</button>
+      ${CRM.vacatureModal ? '<button class="btn sm" id="ov_nieuw">+ Vacature</button>' : ''}`;
     CRM.$$('#ov_seg button', el).forEach(b => b.onclick = () => {
       if(weergave() === b.dataset.w) return;
       zetWeergave(b.dataset.w);
       tekenActies(); tekenLijst();
     });
     el.querySelector('#ov_hotadd').onclick = hotMakenModal;
+    /* Een vacature aanmaken kon alleen vanaf de klantkaart. Maar je denkt in
+       vacatures als je op dit scherm staat, niet in klanten — dan is
+       doorklikken naar Relaties, de klant zoeken en dáár op de knop drukken
+       een omweg. Hetzelfde venster, met een klantkeuze erin. */
+    const nieuw = el.querySelector('#ov_nieuw');
+    if(nieuw) nieuw.onclick = () => CRM.vacatureModal(null, null);
   }
 
   function tekenLijst(){

@@ -235,14 +235,24 @@ function motivatieHTML(){
       sessionStorage.removeItem(MOT_ZIN);
       sessionStorage.setItem(MOT_WIE, wie);
     }
-    const bewaard = Number(sessionStorage.getItem(MOT_ZIN));
-    if(Number.isInteger(bewaard) && ZINNEN[bewaard]) zin = ZINNEN[bewaard];
+    /* De zin ververst elk uur. Hij stond in sessionStorage zonder tijdstip,
+       dus wie zijn tabblad de hele dag open houdt — en dat doet iedereen —
+       keek naar dezelfde spreuk tot hij opnieuw inlogde. Bij het bewaarde
+       nummer staat nu het tijdstip; is dat ouder dan een uur, dan schuift de
+       teller door. (Tjeerd, 3 aug 2026: "zorg dat de quote om het uur
+       vernieuwd".) */
+    const UUR = 3600000;
+    const [nrTxt, opTxt] = String(sessionStorage.getItem(MOT_ZIN) || '').split('|');
+    const bewaard = Number(nrTxt);
+    const op = Number(opTxt);
+    const versGenoeg = Number.isFinite(op) && (Date.now() - op) < UUR;
+    if(versGenoeg && Number.isInteger(bewaard) && ZINNEN[bewaard]) zin = ZINNEN[bewaard];
     if(!zin){
       const vorige = Number(localStorage.getItem(MOT_TELLER));
       const i = ((Number.isFinite(vorige) ? vorige : -1) + 1) % ZINNEN.length;
       localStorage.setItem(MOT_TELLER, String(i));
       zin = ZINNEN[i];
-      sessionStorage.setItem(MOT_ZIN, String(i));
+      sessionStorage.setItem(MOT_ZIN, i + '|' + Date.now());
     }
   }catch(e){
     /* Privémodus of geblokkeerde opslag: liever een vaste zin dan geen dashboard. */

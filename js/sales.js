@@ -252,7 +252,12 @@ function bindBord(root){
     c.ondragstart = e => { sleepend = c.dataset.klant; c.classList.add('drag');
       e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', sleepend); };
     c.ondragend = () => { c.classList.remove('drag'); CRM.$$('.bcol', root).forEach(x=>x.classList.remove('over')); };
-    c.onclick = () => openKlant(c.dataset.klant);
+    /* Rechtstreeks naar de klantkaart. Er zat een tussenpaneel met een halve
+       samenvatting en onderaan de knop "Volledige klantkaart openen →" — een
+       extra klik voor iets wat je toch altijd wilde zien, en het toonde
+       minder dan de kaart zelf. (Tjeerd, 3 aug 2026: "als ik op een kaart
+       druk, meteen de klantkaart zien, niet eerst dit scherm.") */
+    c.onclick = () => CRM.ga('klanten', {id: c.dataset.klant});
   });
   CRM.$$('.bcol-b', root).forEach(b => {
     const kol = b.closest('.bcol');

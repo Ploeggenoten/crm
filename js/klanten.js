@@ -2430,8 +2430,15 @@ function klantModal(k){
 }
 
 /* ─── Vacature toevoegen / bewerken ───────────────────────────── */
+/* k mag null zijn: dan vraagt het venster zelf om de klant. Zo kun je ook
+   vanaf het scherm Vacatures een nieuwe opdracht aanmaken, en niet alleen
+   vanaf de kaart van één klant. (Tjeerd, 3 aug 2026.) */
 function vacatureModal(k, v, opts){
   const extra = heeftVacInfoVelden();
+  const kiesKlant = !k;
+  const klanten = (CRM.state.clients||[]).map(x=>x.naam).filter(Boolean).sort((a,b)=>a.localeCompare(b,'nl'));
+  if(kiesKlant && !klanten.length) return CRM.toast('Maak eerst een klant aan bij Relaties','err');
+  k = k || CRM.klant(klanten[0]) || {naam:klanten[0], locatie:'', eigenaar:CRM.me()};
   const n = v || {id:'', klant:k.naam, functie:'', locatie:k.locatie||'', aantal:1,
     sal_min:null, sal_max:null, type:'W&S', status:'Open', eigenaar:k.eigenaar||CRM.me(),
     aangemaakt:CRM.todayISO(), omschrijving:''};
@@ -2439,8 +2446,12 @@ function vacatureModal(k, v, opts){
     lijst.map(s => `<option${nu===s?' selected':''}>${h(s)}</option>`).join('');
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${v?'Vacature bewerken':'Nieuwe vacature'}</div>
-      <p class="sub" style="margin:6px 0 0">${h(k.naam)}</p></div>
+      ${kiesKlant ? '' : `<p class="sub" style="margin:6px 0 0">${h(k.naam)}</p>`}</div>
     <div class="modal-b">
+      ${kiesKlant ? `<div class="f-row"><label for="v_klant">Klant</label>
+        <select id="v_klant">${klanten.map(x =>
+          `<option${x===k.naam?' selected':''}>${h(x)}</option>`).join('')}</select>
+        <div class="hint">De locatie en de accountmanager komen uit de klantkaart zodra je kiest.</div></div>` : ''}
       <div class="f-grid">
         <div class="f-row"><label>Functie</label><input type="text" id="v_functie" value="${h(n.functie)}"></div>
         <div class="f-row"><label>Locatie</label><input type="text" id="v_loc" value="${h(n.locatie)}"></div>
@@ -2529,6 +2540,9 @@ function vacatureModal(k, v, opts){
       /* Vóór het overschrijven vastleggen: was de informatie hiervóór nog
          niet compleet? Alleen dán is aanvullen nieuws voor de marketeer. */
       const wasOnvolledig = extra && vacInfo(n).mist.length > 0;
+      /* Bij het aanmaken vanaf Vacatures staat de klant in het venster zelf. */
+      const kSel = m.querySelector('#v_klant');
+      if(kSel && kSel.value){ k = CRM.klant(kSel.value) || {naam:kSel.value}; }
       const rij = Object.assign({}, n, {
         klant:k.naam, functie, locatie:m.querySelector('#v_loc').value.trim(),
         aantal:Number(m.querySelector('#v_aantal').value)||1,
@@ -2921,6 +2935,13 @@ CRM.naarOutlook = async function(knop, gegevens){
 };
 
 /* ─── Registratie ─────────────────────────────────────────────── */
+/* Het vacatureformulier wordt ook vanaf het scherm Vacatures gebruikt. Eén
+   venster, één opslagroute — anders bestaan er twee formulieren voor
+   hetzelfde ding en lopen de velden vroeg of laat uit elkaar. Zonder klant
+   vraagt het venster er zelf om. */
+CRM.vacatureModal = (klantNaam, v, opts) =>
+  vacatureModal(klantNaam ? (CRM.klant(klantNaam) || {naam:klantNaam}) : null, v, opts);
+
 CRM.registerModule('klanten', {
   title:'Relaties', icon:'▣', onderschrift:'Van lead tot klant — relatiekaarten en accountbeheer',
   render(mount, acties, params){
