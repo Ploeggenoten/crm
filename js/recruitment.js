@@ -1762,6 +1762,13 @@ function cvHtml(lead){
 
 function openLead(id){
   const l = leadById(id); if(!l) return;
+  /* Rijen die uit de kandidatentabel komen hebben al een kaart. Het
+     leadvenster bood die dan alsnog "→ Kandidaat maken" aan, met een leeg
+     cv-blok en een WhatsApp-agent die er niet is — terwijl er een volledige
+     kaart bestaat waar dat allemaal wél op staat. Klikken hoort je daar te
+     brengen. (Tjeerd, 3 aug 2026: "maar Goncalo is al een kandidaat gemaakt,
+     dus dit klopt niet.") */
+  if(l._kand) return CRM.ga('kandidaten', {id: l.id});
   const v = vacVan(l);
   const notities = Array.isArray(l.notities) ? l.notities : [];
   const doorgeschoten = l.status === 'Doorgeschoten' && l.kandidaat_id;

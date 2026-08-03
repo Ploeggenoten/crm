@@ -168,10 +168,16 @@ CRM.drawer = {
     document.body.style.overflow='hidden';
     CRM.drawer._focusTerug = document.activeElement;
     cancelAnimationFrame(CRM.drawer._frame);
-    CRM.drawer._frame = requestAnimationFrame(()=>{
+    /* Zelfde valkuil als bij CRM.modal.open hieronder: in een tab die op de
+       achtergrond staat vuurt requestAnimationFrame niet, en dan blijft het
+       paneel onzichtbaar terwijl het logisch openstaat. Je klikt op een
+       sollicitant, ziet niets gebeuren, en klikt nog een keer. */
+    const toon = () => {
       CRM.drawer._frame = null; scrim.classList.add('on'); dr.classList.add('on');
       dr.inert = false; focusIn(dr);
-    });
+    };
+    if(document.hidden) toon();
+    else CRM.drawer._frame = requestAnimationFrame(toon);
     CRM.$$('[data-close]', dr).forEach(b => b.onclick = () => CRM.drawer.close());
     if(opts.onOpen) opts.onOpen(dr);
     CRM.drawer._onClose = opts.onClose || null;
