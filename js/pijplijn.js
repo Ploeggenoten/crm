@@ -765,13 +765,14 @@ function lijstRij(c){
     eerst = `<span class="pp-mist">datum onleesbaar</span>`;
   }
   const leeg = t => `<span class="pp-mist">${h(t)}</span>`;
-  /* De gedeelde rand links (base.css, .frand): de fasekleur, tenzij er iets
-     is dat vandaag rechtgezet moet worden — een afspraak die voorbij is of
-     stilstand die te ver is opgelopen. Dan wint rood, precies zoals op
-     Plaatsingen en op de klantenlijst. */
-  const gemist = !!(dd && geldigDatum(dd) && !placed && daysTo(dd) < 0);
-  const let_ = gemist || dgCls === 'pp-stil';
-  return `<tr${CRM.ui.frand(CRM.faseKleur(c.fase), 'clickable', let_)} data-id="${h(c.id)}">
+  /* De gedeelde rand links (base.css, .frand): hier puur de fasekleur, ook
+     als iemand stilstaat of een afspraak gemist heeft. Die twee staan op deze
+     rij al in rood — het aantal dagen in de fase, en de gemiste afspraak —
+     én de lijst sorteert er standaard op, dus ze staan bovenaan. Er nóg een
+     rood streepje bij zetten zegt hetzelfde voor de derde keer en maakt rood
+     elders in de app minder waard. Wat je hier niet ziet zonder te lezen is
+     de fase; dat is dus wat de rand draagt. */
+  return `<tr${CRM.ui.frand(CRM.faseKleur(c.fase), 'clickable')} data-id="${h(c.id)}">
     <td><b>${h(c.naam)}</b>${c.woonplaats?`<div class="rowsub">${h(c.woonplaats)}</div>`:''}</td>
     <td>${c.klant ? h(c.klant) : leeg('geen klant')}</td>
     <td>${vacTekst(c) ? h(vacTekst(c)) : leeg('geen vacature')}</td>

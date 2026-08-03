@@ -320,3 +320,14 @@ label.kd-taak input{margin-top:3px}
 .kd-kanswat b{font-size:13px;color:var(--ink)}
 .kd-kanswat .meta{font-size:11.5px}
 .kd-kans .kd-sig{font-size:11px;margin-top:1px}
+
+/* ─── Laatst vastgelegd, pal onder de kop ─────────────────────────
+   Wat een collega gisteren opschreef bepaalt wat jij vandaag doet. Rustig
+   gehouden: het is een aanwijzing, geen alarm — één streep links en verder
+   gewone tekst. Staan er geen notities, dan staat dit blok er ook niet. */
+.kd-lnot{border-left:2px solid var(--line-2)}
+.kd-lnot .card-b{padding-top:12px;padding-bottom:12px}
+.kd-lnot .label{margin:0 0 6px}
+.kd-lnotrij{display:flex;align-items:baseline;gap:12px;padding:3px 0;flex-wrap:wrap}
+.kd-lnottekst{flex:1;min-width:220px;font-size:13px;color:var(--txt);line-height:1.5}
+.kd-lnotrij .meta{white-space:nowrap;font-size:11.5px}

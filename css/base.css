@@ -341,13 +341,18 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
    Bij tabellen kan het niet met een border — border-collapse poetst randen
    op een <tr> in sommige browsers weg — daar zit hij als inset-schaduw op
    de eerste cel. */
-.frand{border-left:3px solid var(--fk,transparent)}
+/* .frand.frand en niet .frand: modulebestanden laden ná base.css en zetten op
+   hun kaarten vaak de shorthand `border:1px solid var(--line)`. Bij gelijke
+   specificiteit wint de laatste regel, dus die shorthand veegde deze rand
+   weg — precies wat er gebeurde op .ovcard (Vacatures). De klasse twee keer
+   noemen tilt hem één stap omhoog en maakt hem onafhankelijk van laadvolgorde. */
+.frand.frand{border-left:3px solid var(--fk,transparent)}
 /* Op een kaart valt de 1px-rand links weg zodra we hem verbreden; zonder
    fasekleur valt hij daarom terug op de gewone randkleur, niet op niets.
    Drie klassen, zodat een module-eigen :hover op border-color hem niet
    overschrijft — anders springt de kleur weg zodra je de muis erop zet. */
-.card.frand,.card.frand:hover{border-left-color:var(--fk,var(--line))}
-tr.frand{border-left:0}
+.card.frand.frand,.card.frand.frand:hover{border-left-color:var(--fk,var(--line))}
+tr.frand.frand{border-left:0}
 tr.frand > td:first-child{box-shadow:inset 3px 0 0 var(--fk,transparent)}
 /* Rood wint — zet .fr-let erbij zodra er iets is dat vandaag moet gebeuren. */
 .frand.fr-let{--fk:var(--red)}

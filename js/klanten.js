@@ -640,12 +640,19 @@ function kaart(mount, acties, naam){
       ${kopHtml(k, c)}
       <div class="kl-dossier">
         <aside class="kl-rail">
+          ${/* Notities staan bovenaan. Ze stonden onderaan de zijbalk, onder de
+               gegevens, de afspraak, de contactpersonen en de taken — dus je
+               moest scrollen om te zien waar een collega mee bezig was. Terwijl
+               dát het eerste is wat je wilt weten als je een kaart opent van een
+               relatie waar Tjerk en Rajesh allebei aan werken.
+               (Tjeerd, 3 aug 2026: "iedereen moet direct zien waar iedereen mee
+               bezig is in de eerste oogopslag.") */
+            notitiesBlokHtml()}
           ${gegevensHtml(k)}
           ${afspraakBlokHtml()}
           ${CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml()}
           ${afsprakenBlokHtml()}
           ${takenBlokHtml()}
-          ${notitiesBlokHtml()}
         </aside>
         <div class="kl-werk">
           ${signalenHtml(k, c, laatsteContact(k))}

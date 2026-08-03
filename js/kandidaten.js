@@ -984,6 +984,7 @@ function kaart(mount, acties, id){
   mount.innerHTML = `
     <div class="stack">
       ${kopHtml(c)}
+      ${laatsteNotitiesHtml(c)}
       <div class="grid c2 kd-kolommen">
         <div class="stack">
           ${gegevensHtml(c)}
@@ -1088,6 +1089,11 @@ function kaart(mount, acties, id){
      doen toch?") */
   klik('#c_getekend', () => CRM.kandidaatFase && CRM.kandidaatFase(c.id, 'Contract getekend'));
   klik('#c_vac', () => vacatureKoppelen(c));
+  klik('#kd_lnotmeer', () => {
+    tabActief = 'notities';
+    mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'notities'));
+    tabInhoud(mount, c);
+  });
   klik('#c_fase',   () => CRM.kandidaatFasePicker && CRM.kandidaatFasePicker(c.id));
   klik('#c_intake', () => CRM.kandidaatIntake && CRM.kandidaatIntake(c.id));
   klik('#c_noshow', () => CRM.kandidaatNoShow && CRM.kandidaatNoShow(c.id));
@@ -2151,6 +2157,32 @@ function videocallModal(c){
       }catch(e){ CRM.fout('Inplannen mislukt', e); }
     };
   }});
+}
+
+/* De laatste notities, pal onder de kop.
+   Ze zaten in een tabblad, dus je moest eerst klikken om te zien waar een
+   collega mee bezig was — en dan zag je het alleen als je eraan dacht.
+   Bij een kandidaat waar Tjerk en Rajesh allebei aan werken is dat precies
+   het verkeerde om: wat er gisteren gezegd is bepaalt wat jij vandaag doet.
+   (Tjeerd, 3 aug 2026: "iedereen moet direct zien waar iedereen mee bezig is
+   in de eerste oogopslag.")
+
+   Twee stuks, kort. Meer hoort in het tabblad — dit is een aanwijzing, geen
+   archief. Staat er niets, dan staat er ook niets: een leeg kader onder elke
+   kop maakt de kaart langer zonder iets te zeggen. */
+function laatsteNotitiesHtml(c){
+  const n = (c.notities||[]).slice()
+    .sort((a,b) => String(b.op||'').localeCompare(String(a.op||''))).slice(0,2);
+  if(!n.length) return '';
+  return `<div class="card kd-lnot"><div class="card-b">
+    <div class="label">Laatst vastgelegd</div>
+    ${n.map(x => `<div class="kd-lnotrij">
+      <span class="kd-lnottekst">${h(x.tekst)}</span>
+      <span class="meta num">${h(x.door||'—')} · ${h(CRM.geleden(x.op))}</span>
+    </div>`).join('')}
+    ${(c.notities||[]).length > 2
+      ? `<button type="button" class="lnk" id="kd_lnotmeer">Alle ${(c.notities||[]).length} notities →</button>` : ''}
+  </div></div>`;
 }
 
 function tabNotities(el, c){

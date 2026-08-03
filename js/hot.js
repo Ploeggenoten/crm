@@ -628,8 +628,15 @@
        enige op deze kaart waar je nog vandaag iets aan kunt doen. De olijven
        rand van de nummer-1 is vervallen — die stond al als gevulde badge bij
        het cijfer, en twee keer hetzelfde is één keer te veel. */
-    const knelH = KNEL[knelNiveau(volT)];
-    const dlLet = rest != null && rest <= 0;
+    /* Een vólle vacature knelt niet, ook al loopt er niemand meer. Zonder deze
+       uitzondering kleurt "alle 2 posities gevuld · 3 geplaatst" rood, want
+       knelNiveau kijkt alleen naar lopende kandidaten. Het Openstaand-overzicht
+       heeft dit probleem niet — daar staan volle vacatures niet in — maar het
+       hot-bord houdt ze vast tot iemand ze eraf haalt. Om dezelfde reden is een
+       verstreken deadline op een volle vacature geen alarm. */
+    const vol = volT.teVullen === 0;
+    const knelH = vol ? KNEL[3] : KNEL[knelNiveau(volT)];
+    const dlLet = !vol && rest != null && rest <= 0;
     return `<div${CRM.ui.frand(knelH.rand, 'hotcard' + (i===0?' top':'') + (open?' open':''), dlLet)} data-id="${h(v.id)}" draggable="true">
       <div class="hot-top">
         <div class="hot-prio">

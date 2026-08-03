@@ -344,8 +344,11 @@ CRM.ui = {
        CRM.ui.frand(kleur, 'kl-kaart')  →  class="kl-kaart frand" style=…
      Zonder kleur (fase onbekend) blijft de rand weg in plaats van grijs te
      worden: "geen fase" is iets anders dan "fase grijs". */
+  /* let_ zet géén inline kleur meer: een style-attribuut wint altijd van een
+     klasse, dus met allebei bleef de fasekleur staan en deed .fr-let niets.
+     Rood wint pas echt als de fasekleur er niet meer staat. */
   frand: (kleur, extra='', let_=false) =>
-    ` class="${extra ? h(extra)+' ' : ''}frand${let_?' fr-let':''}"${kleur ? ` style="--fk:${h(kleur)}"` : ''}`,
+    ` class="${extra ? h(extra)+' ' : ''}frand${let_?' fr-let':''}"${(kleur && !let_) ? ` style="--fk:${h(kleur)}"` : ''}`,
   bar: (pct, kleur='') => `<div class="bar"><i class="${kleur}" style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>`,
   /* Tijdlijn-item: {ico, titel, wanneer, tekst} */
   tijdlijn: items => items.length ? `<div class="tl">${items.map(i=>`
