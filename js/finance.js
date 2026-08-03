@@ -1647,6 +1647,33 @@ const TERMIJN_ST = {
 };
 const stChip = s => { const d = TERMIJN_ST[s] || {lbl:s||'—', cls:''}; return chip(d.lbl, d.cls); };
 
+/* De kleur van de streep links (.frand in css/base.css). Op de rest van de app
+   draagt die de fase; een plaatsing in Finance heeft geen fase maar wel een
+   toestand die precies zo verloopt, dus de schaal blijft dezelfde:
+
+     grijs  er is nog niets gefactureerd
+     amber  concept — de fee staat nog niet vast
+     blauw  onderweg: deels of volledig gefactureerd, nog niet binnen
+     groen  volledig betaald
+
+   ROOD WINT bij een factuur die over de vervaldatum is of een plaatsing die
+   om een vervanger vraagt. Dat is hier de letterlijke invulling van "iets dat
+   vandaag rechtgezet moet worden": onbetaald geld dat over tijd is, is het
+   enige op dit scherm waar nog een telefoontje aan vastzit.
+
+   De kleuren volgen de chip in de statuskolom (plStatus.cls), zodat de streep
+   en het woord ernaast nooit iets anders kunnen zeggen. */
+const FIN_RAND = {amber:'var(--amber)', blue:'var(--blue)', green:'var(--green)', '':'#9aa3b2'};
+function plRand(f, p, ins){
+  const teLaat = ins.some(i => {
+    if(i.status !== 'gefactureerd') return false;
+    const vv = vervaldatum(i, p);
+    return !!vv && vv < todayISO();
+  });
+  if(teLaat || garantie(f, p).vervangingNodig) return {kleur:'', let_:true};
+  return {kleur: FIN_RAND[plStatus(f, p, ins).cls] || FIN_RAND[''], let_:false};
+}
+
 function plStatus(f, p, ins){
   if(p.concept) return {lbl:'concept — fee bevestigen', cls:'amber'};
   const act  = ins.filter(i => i.status!=='vervallen');
@@ -1947,8 +1974,9 @@ function tekenPlTabel(el, f){
         const nGef = act.filter(i => i.status==='gefactureerd' || i.status==='betaald').length;
         const next = ins.find(i => i.status==='te_factureren');
         const open = _open.has(p.id);
+        const rand = plRand(f, p, ins);
         return `
-        <tr class="clickable fin-plrow" data-pid="${H(p.id)}">
+        <tr${CRM.ui.frand(rand.kleur, 'clickable fin-plrow', rand.let_)} data-pid="${H(p.id)}">
           <td class="num" style="color:var(--muted)">${open?'▾':'▸'}</td>
           <td><b>${H(tekst(p.kandidaat))}</b>
             <div class="rowsub">${H([p.functie, p.klant].filter(Boolean).join(' · '))}${
