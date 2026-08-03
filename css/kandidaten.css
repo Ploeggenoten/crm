@@ -283,3 +283,11 @@ label.kd-taak input{margin-top:3px}
 .kd-mistlijst .meta{flex:1;min-width:0}
 
 
+
+/* Werkzaamheden onder een dienstverband. Inspringen zodat de kolom met
+   functies leesbaar blijft, en gedempt: de functie en de werkgever zijn
+   waar je op scant, de taken lees je pas als je iemand echt beoordeelt. */
+.kd-cvtaken{grid-column:1/-1;grid-row:3;margin:6px 0 0;padding:0 0 0 15px;
+  list-style:disc;color:var(--txt-2);font-size:12px;line-height:1.55}
+.kd-cvtaken li{margin:0 0 2px}
+.kd-cvtaken li::marker{color:var(--line-2)}

@@ -418,6 +418,15 @@ const NU_RE = '(?:heden|nu|nog\\s+werkzaam|present|current|now|today|actueel|pre
 const STREEP = '(?:\\s*(?:[–—−-]{1,2}|\\bt\\/?m\\b|\\btot\\b|\\bto\\b|\\buntil\\b|\\bdo\\b)\\s*)';
 const P_MND   = new RegExp(`\\b(${MND_RE})\\.?\\s*(\\d{4})${STREEP}(?:(${MND_RE})\\.?\\s*(\\d{4})|(${NU_RE}))`, 'i');
 const P_CIJF  = new RegExp(`\\b(\\d{1,2})[\\/.-](\\d{4})${STREEP}(?:(\\d{1,2})[\\/.-](\\d{4})|(${NU_RE}))`, 'i');
+/* Jaar-eerst: 2024-01 – 2026-07. Dit is het exportformaat van LinkedIn,
+   Indeed en de meeste cv-bouwers, en het werd hier niet herkend — P_CIJF
+   leest maand-eerst (01/2024) en P_JAAR wil twee kale jaartallen. Gevolg:
+   van zo'n cv kwam géén enkel dienstverband binnen, terwijl de rest van de
+   kaart wél gevuld leek. Precies het soort stille fout dat je pas ziet als
+   je het cv ernaast legt. (Gevonden 3 aug 2026 op het cv van Aliu Ceesay.)
+   De maand is streng begrensd op 01–12, anders leest "2024-13" ook als een
+   datum en verzin je een maand die er niet is. */
+const P_ISO   = new RegExp(`\\b(19\\d{2}|20\\d{2})-(0[1-9]|1[0-2])${STREEP}(?:(19\\d{2}|20\\d{2})-(0[1-9]|1[0-2])|(${NU_RE}))`, 'i');
 const P_JAAR  = new RegExp(`\\b(19\\d{2}|20\\d{2})${STREEP}(?:(19\\d{2}|20\\d{2})|(${NU_RE}))`, 'i');
 const P_LOS   = /\((19\d{2}|20\d{2})\)|\b(19\d{2}|20\d{2})\s*$/;
 
@@ -427,6 +436,12 @@ const iso = (j, m) => j ? String(j) + (m ? '-' + String(m).padStart(2,'0') : '')
    'JJJJ' of 'JJJJ-MM' — nooit een verzonnen dag. */
 function leesPeriode(s){
   let m;
+  /* Jaar-eerst als eerste: 2024-01 is niet te verwarren met iets anders, en
+     als P_JAAR er eerder bij zou zijn leest die "2024" als los jaartal. */
+  if((m = P_ISO.exec(s))) return {
+    van: iso(m[1], +m[2]),
+    tot: m[5] ? '' : iso(m[3], +m[4]),
+    lopend: !!m[5], tekst: m[0].trim(), index: m.index, sterk: true};
   if((m = P_MND.exec(s))) return {
     van: iso(m[2], MND[m[1].toLowerCase()]),
     tot: m[5] ? '' : iso(m[4], MND[(m[3]||'').toLowerCase()]),
@@ -592,7 +607,34 @@ function blokken(regels, welke){
       if(stop(j)) break;
       voegToe(regels[j].tekst, ++n);
     }
-    if(opties.length) uit.push({per, opties});
+    /* ─── De werkzaamheden ────────────────────────────────────────
+       Precies de regels die de zoektocht hierboven laat liggen. Voor het
+       vinden van functie en werkgever is een beschrijvende zin ruis, dus
+       daar stopt de scan erop — maar ínhoudelijk is het het waardevolste
+       deel van een cv. Zonder dit staat er op de kaart "Proces operator bij
+       Witron, 2024–2026" en moet je zelf uit het pdf overtikken wat iemand
+       dáár deed. Dat is precies wat Tjeerd meldde (3 aug 2026): "hij moet
+       alles wat belangrijk in het cv is inladen, nu moet ik teveel
+       handmatig toevoegen."
+
+       We lopen vanaf het dienstverband naar beneden tot de volgende
+       periode. Hooguit twee niet-beschrijvende regels overslaan — dat zijn
+       de functie- en werkgeverregel die hierboven al zijn opgepikt. Zodra
+       de opsomming begint en daarna weer een korte, niet-beschrijvende
+       regel komt, is dat de kop van het volgende dienstverband en houdt
+       het op. */
+    const taken = [];
+    let overgeslagen = 0;
+    for(let j = i + 1; j < regels.length && taken.length < 10; j++){
+      if(!meetel[j]) break;
+      if(leesPeriode(regels[j].tekst)) break;         // volgend dienstverband
+      const t = schoon(regels[j].tekst);
+      if(!t) continue;
+      if(isOpsomming(regels[j].tekst) || isBeschrijving(regels[j].tekst)){ taken.push(t); continue; }
+      if(taken.length) break;                          // taken zijn afgelopen
+      if(++overgeslagen > 2) break;                    // kop is hooguit twee regels
+    }
+    if(opties.length) uit.push({per, opties, taken});
   });
   return uit;
 }
@@ -630,14 +672,22 @@ function kiesPaar(opties, scoreA, scoreB){
 }
 
 function werkUit(regels){
-  return blokken(regels, ['werk']).map(({per, opties}) => {
+  return blokken(regels, ['werk']).map(({per, opties, taken}) => {
     const k = kiesPaar(opties, functieScore, bedrijfScore);
     /* Zeker genoeg? Alleen als er een periode mét jaartallen staat én we
        zowel een werkgever als een functie hebben kunnen aanwijzen op iets
        beters dan een gok. */
     const zeker = (per.sterk && k.a && k.b && k.score >= 3) ? 'hoog' : 'laag';
+    /* De regel die als functie of werkgever is gekozen mag niet ook nog een
+       keer als taak terugkomen — dan staat dezelfde tekst twee keer op de
+       kaart. */
+    const kop = [k.a, k.b].filter(Boolean).map(x => kaal(x).toLowerCase());
+    const werk = (taken || [])
+      .filter(t => !kop.includes(kaal(t).toLowerCase()))
+      .filter((t, idx, arr) => arr.findIndex(x => kaal(x).toLowerCase() === kaal(t).toLowerCase()) === idx);
     return {functie: k.a, werkgever: k.b, van: per.van, tot: per.tot,
-            lopend: per.lopend, periode: per.tekst, zeker};
+            lopend: per.lopend, periode: per.tekst, zeker,
+            taken: werk};
   }).filter(w => w.functie || w.werkgever)
     .sort((a,b) => (b.lopend?1:0) - (a.lopend?1:0) || String(b.van).localeCompare(String(a.van)));
 }
@@ -1371,9 +1421,23 @@ async function overnemen(c, p, rijen, bestand, fotoBlob, uit, onKlaar){
       const i = b.dataset.werk, br = p.werk[+i];
       const veld = s => (uit.querySelector(`[data-${s}="${i}"]`) || {}).value || '';
       werk.push({functie: veld('wf').trim(), werkgever: veld('wg').trim(),
-                 periode: veld('wp').trim(), van: br.van, tot: br.tot, lopend: br.lopend});
+                 periode: veld('wp').trim(), van: br.van, tot: br.tot, lopend: br.lopend,
+                 /* De werkzaamheden gaan mee. Ze zijn niet te bewerken in dit
+                    venster — het zijn er per baan al gauw vijf — maar ze horen
+                    wél op de kaart, want dat is wat je aan een klant vertelt. */
+                 taken: Array.isArray(br.taken) ? br.taken : []});
     });
-    if(werk.length){ cv.werkgevers = werk; gedaan.push(werk.length + ' dienstverbanden'); }
+    if(werk.length){
+      cv.werkgevers = werk;
+      const metTaken = werk.reduce((n,w) => n + (w.taken||[]).length, 0);
+      gedaan.push(werk.length + ' dienstverbanden' + (metTaken ? ` (met ${metTaken} werkzaamheden)` : ''));
+      /* "Huidig bedrijf" stond leeg terwijl "Huidige functie" wél gevuld werd —
+         uit dezelfde regel van hetzelfde cv. Die twee horen bij elkaar: de
+         bovenste baan is de meest recente (de lijst is daarop gesorteerd).
+         Alleen invullen als het veld nog leeg is; wat iemand zelf heeft
+         ingevuld gaat vóór wat wij uit een pdf lezen. */
+      if(!String(cv.werkgever||'').trim() && werk[0].werkgever) cv.werkgever = werk[0].werkgever;
+    }
 
     const opl = [];
     uit.querySelectorAll('input[data-opl]').forEach(b => {

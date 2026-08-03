@@ -1536,6 +1536,8 @@ function cvHtml(c){
           <b>${h(w.functie||w.rol||'—')}</b>
           <span class="sub">${h(w.werkgever||w.bedrijf||'')}</span>
           <span class="meta num">${h([w.van,w.tot].filter(Boolean).join(' – '))||h(w.periode||'')}</span>
+          ${Array.isArray(w.taken) && w.taken.length ? `<ul class="kd-cvtaken">${
+            w.taken.map(t => `<li>${h(t)}</li>`).join('')}</ul>` : ''}
         </div>`).join('')}</div>`:''}
       ${opl.length?`<div class="label" style="margin-top:16px">Opleiding</div>
         <div class="kd-cvlijst">${opl.map(o => `<div class="kd-cvrij">
