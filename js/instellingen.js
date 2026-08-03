@@ -565,11 +565,39 @@ function sectieSysteem(){
 }
 
 /* ─── Module ──────────────────────────────────────────────────── */
+/* Dit scherm stond op adminOnly, en daardoor kon niemand behalve Tjeerd erbij.
+   Dat werkte zolang hij de enige gebruiker was, maar het blokkeert het team:
+   de Microsoft-koppeling is per persoon — je verbindt je eigen postbus en je
+   eigen agenda — en die knop zat hier. Zonder toegang kregen Tjerk, Rajesh en
+   Bryan dus nooit hun agenda, mail of Teams-links in het CRM, en was er geen
+   plek om dat op te lossen.
+
+   Nu is het scherm voor iedereen bereikbaar en zitten de poortwachters per
+   sectie. Wat je eigen account betreft mag je zelf; wat het bedrijf betreft
+   is voor de eigenaar. (3 aug 2026, bij het openzetten voor het team.) */
 CRM.registerModule('instellingen', {
-  title:'Instellingen', icon:'⚙', onderschrift:'Targets, team, export en systeem',
-  adminOnly:true,
+  title:'Instellingen', icon:'⚙',
+  onderschrift:'Je koppelingen en — voor de eigenaar — targets, team en systeem',
   render(mount){
-    mount.innerHTML = `<div class="in-wrap">${sectieTargets()}${sectieTeam()}${sectieMicrosoft()}${sectieContacten()}${sectieData()}${sectieSysteem()}</div>`;
+    /* Alleen de eigenaar ziet targets, teambeheer, export en de systeemcheck.
+       De Microsoft-koppeling en de contactensynchronisatie horen bij jóuw
+       account en staan er voor iedereen. */
+    const baas = CRM.canSeeMoney();
+    const eigen = sectieMicrosoft() + sectieContacten();
+    /* sectieMicrosoft() geeft niets terug zolang de Outlook-koppeling niet is
+       ingericht (msKlaar). Voor de eigenaar valt dat niet op — die heeft nog
+       vier andere secties. Voor een teamlid is dit het hele scherm, en dan
+       sta je naar een lege pagina te kijken zonder te weten of er iets stuk
+       is. Liever uitleggen wat er aan de hand is. */
+    const leeg = !baas && !eigen.trim();
+    mount.innerHTML = `<div class="in-wrap">${
+      baas ? sectieTargets() + sectieTeam() : ''
+    }${eigen}${
+      baas ? sectieData() + sectieSysteem() : ''
+    }${leeg ? `<div class="card"><div class="card-b">${CRM.ui.leeg(
+      'Hier valt voor jou nog niets in te stellen',
+      'De Microsoft-koppeling — je eigen agenda, mail en Teams-links in het CRM — is nog niet ingericht voor deze omgeving. Vraag Tjeerd om dat aan te zetten; daarna kun je hier je eigen account verbinden.'
+    )}</div></div>` : ''}</div>`;
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
@@ -678,8 +706,14 @@ CRM.registerModule('instellingen', {
     const ctSync = mount.querySelector('#in_ctsync');
     if(ctSync) ctSync.onclick = () => syncContacten(ctSync, mount.querySelector('#in_ctstatus'));
 
-    mount.querySelector('#in_export').onclick = exportJson;
-    mount.querySelector('#in_import').onchange = e => {
+    /* Export en import staan in een sectie die alleen de eigenaar ziet. Zonder
+       deze controle gooide de hele module een TypeError zodra een teamlid het
+       scherm opende — en dan zie je niet "geen toegang" maar een foutmelding
+       over de hele pagina. */
+    const exp = mount.querySelector('#in_export');
+    if(exp) exp.onclick = exportJson;
+    const imp = mount.querySelector('#in_import');
+    if(imp) imp.onchange = e => {
       const f = e.target.files && e.target.files[0];
       if(f) importJson(f, mount.querySelector('#in_impstatus'));
       e.target.value = '';

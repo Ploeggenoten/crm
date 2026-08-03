@@ -530,7 +530,14 @@ const NAV_GROEPEN = [
      zonder foutmelding — registerModule alleen is niet genoeg. */
   {titel:'Recruitment', keys:['recruitment','pijplijn','plaatsingen','hot','kandidaten','source']},
   {titel:'Groei', keys:['marketing','performance']},
-  {titel:'Alleen voor jou', keys:['finance','instellingen']}
+  /* Finance is het enige dat écht alleen voor de eigenaar is (adminOnly).
+     Instellingen stond hier ook, maar dat scherm is sinds 3 aug 2026 voor
+     iedereen — je verbindt er je eigen Outlook. Onder de kop "Alleen voor
+     jou" zou dat voor het team een verkeerde belofte zijn: die groep valt
+     bij hen weg zodra Finance eruit gefilterd is, en Instellingen krijgt
+     zijn eigen plek onderaan. */
+  {titel:'Alleen voor jou', keys:['finance']},
+  {titel:'', keys:['instellingen']}
 ];
 /* Strakke lijn-iconen voor de zijbalk (geen emoji): 18px, stroke = tekstkleur. */
 const NAV_ICONEN = {
