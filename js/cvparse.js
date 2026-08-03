@@ -430,12 +430,37 @@ const P_ISO   = new RegExp(`\\b(19\\d{2}|20\\d{2})-(0[1-9]|1[0-2])${STREEP}(?:(1
 const P_JAAR  = new RegExp(`\\b(19\\d{2}|20\\d{2})${STREEP}(?:(19\\d{2}|20\\d{2})|(${NU_RE}))`, 'i');
 const P_LOS   = /\((19\d{2}|20\d{2})\)|\b(19\d{2}|20\d{2})\s*$/;
 
+/* Periodes zonder datums. Sommige cv's zetten onder de functieregel geen
+   jaartallenpaar maar een losse duur: "Huidig", "± 4 jaar", "Start:
+   december 2016". Zonder deze patronen bestond zo'n dienstverband niet
+   voor de parser — en daarmee verdwenen ook alle werkzaamheden eronder.
+   Alleen als de héle regel eruit bestaat: het woord "huidig" middenin een
+   zin is geen dienstverband. (Cv Ricardo Zeef, 3 aug 2026: drie van de
+   vier banen hadden zo'n regel en vielen daardoor compleet weg.) */
+const P_NU_LOS = new RegExp(`^(?:huidig|${NU_RE})$`, 'i');
+const P_DUUR   = /^[±~]?\s*\d{1,2}\s*(?:jaar|jaren|jr\.?|maanden?|mnd\.?|years?|months?)$/i;
+const P_START  = new RegExp(`^(?:start|vanaf|sinds|since|per)[:\\s]\\s*(?:(${MND_RE})\\.?\\s*)?((?:19|20)\\d{2})$`, 'i');
+
 const iso = (j, m) => j ? String(j) + (m ? '-' + String(m).padStart(2,'0') : '') : '';
 
 /* Geeft {van, tot, lopend, tekst, index} of null. `van`/`tot` zijn
    'JJJJ' of 'JJJJ-MM' — nooit een verzonnen dag. */
 function leesPeriode(s){
   let m;
+  /* Eerst de heel-de-regel-patronen zonder datums. Die zijn per definitie
+     ondubbelzinnig (er staat verder níets op de regel) en ze mogen niet
+     bij P_LOS terechtkomen: "Start: december 2016" las daar als los
+     jaartal met "Start: december" als restje, en dat restje werd dan
+     bijna-werkgever. Sterk, want een regel die alléén een duur bevat is
+     in een cv net zo zeker het begin van een dienstverband als een
+     jaartallenpaar — alleen de datums zelf ontbreken, en die laten we
+     dan ook leeg in plaats van ze te verzinnen. */
+  const heel = kaal(s);
+  if(P_NU_LOS.test(heel)) return {van:'', tot:'', lopend:true,  tekst:heel, index:0, sterk:true};
+  if(P_DUUR.test(heel))   return {van:'', tot:'', lopend:false, tekst:heel, index:0, sterk:true};
+  if((m = P_START.exec(heel))) return {
+    van: iso(m[2], m[1] ? MND[m[1].toLowerCase()] : 0), tot:'', lopend:false,
+    tekst:heel, index:0, sterk:true};
   /* Jaar-eerst als eerste: 2024-01 is niet te verwarren met iets anders, en
      als P_JAAR er eerder bij zou zijn leest die "2024" als los jaartal. */
   if((m = P_ISO.exec(s))) return {
@@ -465,6 +490,14 @@ function sectieRegels(tekst){
   const uit = [];
   let sectie = 'kop';                       // alles vóór het eerste kopje
   tekst.split('\n').forEach(ruw => {
+    /* Word zet opsommingstekens vaak in een symboollettertype (Wingdings),
+       en dan komt er in de tekstlaag een teken uit de Private Use Area
+       (U+F0B7 en verwanten) dat eruitziet als een spatie maar het niet is:
+       trim() haalt het niet weg en isOpsomming() herkende het niet. Gevolg
+       was een cv met nul werkzaamheden terwijl er tientallen bullets in
+       stonden. In dat Unicode-bereik staat nooit een letter, dus alles daar
+       mag veilig een bolletje worden. (Cv Ricardo Zeef, 3 aug 2026.) */
+    ruw = ruw.replace(/[\uE000-\uF8FF]/g, '\u2022');
     /* Nieuwe kolom: de kopjes van het vorige blok gelden hier niet meer.
        Een paginaovergang telt bewust níet mee — een werkervaringlijst loopt
        heel gewoon door op de volgende pagina, zonder het kopje te herhalen. */
@@ -651,6 +684,12 @@ function blokken(regels, welke){
          erna verdwenen helemaal. Bij Aliu's cv scheelde dat drie van de zes
          werkzaamheden bij zijn belangrijkste baan. */
       if(!bullet && vorige && (!/[.!?]$/.test(vorige) || /^[a-zà-öø-ÿ(]/.test(t))){
+        /* …tenzij de regel erná een periode is: dan is dít geen afgebroken
+           bullethelft maar de kop van het volgende dienstverband. Zonder
+           deze uitzondering eindigde de laatste taak van elk blok op
+           "…standaarden QHSE Coördinator – PepsiCo" zodra de bullets
+           zonder leesteken eindigen. (Cv Ricardo Zeef, 3 aug 2026.) */
+        if(regels[j+1] && meetel[j+1] && leesPeriode(regels[j+1].tekst)) break;
         taken[taken.length - 1] = vorige + ' ' + t;
         continue;
       }

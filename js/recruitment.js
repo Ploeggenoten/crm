@@ -895,7 +895,13 @@ function rijHtml(l){
   const st = stilstand(l);
   const ken = bekend(l);
   const dub = ken.leads.length + 1;
-  return `<tr class="clickable ${st ? 'rc-telang' : ''}" data-id="${h(l.id)}">
+  /* De streep links is de gedeelde kleurtaal (base.css, .frand): normaal de
+     statuskleur, zodat je zonder lezen ziet waar iemand in de
+     recruitmentpijplijn staat. Blijft de lead liggen, dan wint dat signaal —
+     amber bij beginnende stilstand, rood als het dubbel zo lang duurt als
+     zou moeten. Precies dezelfde volgorde als op elk ander scherm. */
+  const randKleur = st ? (st.klas === 'red' ? '' : 'var(--amber)') : CRM.leadKleur(l.status);
+  return `<tr${CRM.ui.frand(randKleur, 'clickable' + (st ? ' rc-telang' : ''), !!st && st.klas === 'red')} data-id="${h(l.id)}">
     <td><input type="checkbox" class="rc-vink" data-id="${h(l.id)}" ${S.sel.has(String(l.id))?'checked':''}
       aria-label="Selecteer ${h(leadNaam(l))}"></td>
     <td><span class="rc-prio" title="Prioriteit ${h(l.prioriteit||'onbekend')}" style="background:${prioKleur(l.prioriteit)}"></span></td>

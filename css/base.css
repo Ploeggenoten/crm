@@ -304,6 +304,56 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--olive)}
 .seg button{background:none;border:none;border-radius:999px;padding:5px 14px;font-size:12.5px;font-weight:500;color:var(--txt-2);cursor:pointer;font-family:var(--body)}
 .seg button.on{background:#fff;color:var(--ink);font-weight:600;border:1px solid var(--line);margin:-1px}
 
+/* ─── Fasrand — één kleurtaal door de hele app ────────────────────
+   PROBLEEM: CRM.SALES_FASES, CRM.PHASES, CRM.INSTROOM en CRM.LEAD_STATUS
+   hebben allemaal al een kleur, maar die werd alleen als stipje van 7px in
+   een chip gebruikt. Je moest dus lézen om te zien waar iets stond, en op
+   een lijst van tweehonderd relaties lees je niets.
+
+   REGEL: een gekleurde rand links op een kaart of rij zegt overal in de app
+   hetzelfde — WAAR STAAT DIT. De schaal loopt gelijk met de fasekleuren
+   die er al zijn:
+
+     grijs   nog niets gebeurd (Lead, Gebeld — geen gehoor)
+     blauw   onderweg, vroeg  (Prospect, Voorgesteld, Nieuw)
+     amber   onderweg, laat   (Voorstel gedaan, Offer, CV opgevraagd)
+     groen   binnen / op koers (Afgerond, Contract getekend, Gestart)
+
+   ROOD WINT. Is er iets dat vandaag rechtgezet moet worden — een gemist
+   contactmoment, een vacature zonder één kandidaat — dan is de rand rood en
+   zegt de fase even niets. Dat is bewust: op één rij past één signaal, en
+   het dringendste hoort te winnen. (Dit is de regel die Plaatsingen sinds
+   3 aug 2026 al volgde; hier staat hij nu één keer, voor iedereen.)
+
+   ALLEEN LINKS, ALLEEN 3px. Een gekleurd vlak per rij maakt een lijst van
+   tien onleesbaar; een randje links leest als een marge die je scant.
+   Gebruik: zet de kleur in --fk en de klasse .frand op het element.
+     <div class="card frand" style="--fk:#3d9968">
+     <tr class="frand" style="--fk:…">        (kleurt de eerste cel)
+   Of via de helper: CRM.ui.frand(kleur) → ` class="frand" style="--fk:…"`.
+   NIET gebruiken op bordkaarten: daar staat de fase al als kleur boven de
+   kolom, en dan zou dezelfde kleur twee keer hetzelfde zeggen.
+
+   Een echte border en geen inset-schaduw: de rand moet ook zichtbaar blijven
+   op een kaart met een getinte kop of voet, en die kindvlakken schilderen
+   over een inset-schaduw heen. Een border van 3px in transparent houdt de
+   breedte gelijk voor kaarten zónder kleur, dus een grid blijft uitlijnen.
+   Bij tabellen kan het niet met een border — border-collapse poetst randen
+   op een <tr> in sommige browsers weg — daar zit hij als inset-schaduw op
+   de eerste cel. */
+.frand{border-left:3px solid var(--fk,transparent)}
+/* Op een kaart valt de 1px-rand links weg zodra we hem verbreden; zonder
+   fasekleur valt hij daarom terug op de gewone randkleur, niet op niets.
+   Drie klassen, zodat een module-eigen :hover op border-color hem niet
+   overschrijft — anders springt de kleur weg zodra je de muis erop zet. */
+.card.frand,.card.frand:hover{border-left-color:var(--fk,var(--line))}
+tr.frand{border-left:0}
+tr.frand > td:first-child{box-shadow:inset 3px 0 0 var(--fk,transparent)}
+/* Rood wint — zet .fr-let erbij zodra er iets is dat vandaag moet gebeuren. */
+.frand.fr-let{--fk:var(--red)}
+/* Afgesloten of vervallen: de kleur blijft, maar de rij dringt niet meer aan. */
+.frand.fr-weg{--fk:var(--line-2)}
+
 /* ─── Tabel ──────────────────────────────────────────────────── */
 .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}

@@ -28,7 +28,10 @@
 }
 .ovcard:hover{border-color:var(--olive-l)}
 .ovcard:focus-visible{outline:2px solid var(--olive);outline-offset:2px}
-.ovcard.hot{border-left:3px solid var(--olive);padding-left:15px}
+/* De 3px links komt van .frand (base.css) en draagt het knelniveau; hier
+   alleen de padding terugnemen zodat de tekst niet verspringt. "Hot" zit in
+   de chip bovenin en heeft geen eigen rand meer nodig. */
+.ovcard.frand{padding-left:15px}
 
 .ov-kop{display:flex;align-items:flex-start;gap:14px}
 .ov-wie{flex:1;min-width:0}
@@ -148,7 +151,11 @@
 }
 .hotcard:hover{border-color:var(--olive-l)}
 .hotcard.drag{opacity:.4}
-.hotcard.top{border-left:3px solid var(--olive)}
+/* De streep links komt van .frand (base.css) en draagt het knelniveau, niet
+   de prioriteit. Dat de bovenste de bovenste is, zegt het gevulde cijfer al
+   (.hotcard.top .hot-nr). Padding gelijk houden zodat 3px erbij de tekst
+   niet laat verspringen. */
+.hotcard.frand{padding-left:19px}
 
 /* ── Kop: prioriteit · klant/functie · deadline ─────────────── */
 .hot-top{display:flex;align-items:flex-start;gap:16px}

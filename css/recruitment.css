@@ -141,10 +141,11 @@ a.rc-wa:hover{text-decoration:none;color:var(--olive);border-color:var(--olive-l
   border-color:var(--line);background-color:var(--card-2)}
 .rc-stwrap select:hover{border-color:var(--line-2)}
 
-/* Wat te lang op Nieuw staat, valt op: een streep links, verder niets.
-   Een gekleurde rij zou de hele tabel bont maken en de statuskleuren
-   overschreeuwen. */
-tr.rc-telang > td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+/* Deze rij had als enige in de app al een streep links, altijd amber, alleen
+   voor "ligt te lang". Sinds 3 aug 2026 doet de hele app dat (.frand in
+   base.css) en draagt de streep hier de statuskleur — met amber of rood
+   erover zodra er iets blijft liggen. tr.rc-telang blijft bestaan voor de
+   tekst in de rij, maar tekent zelf geen streep meer. */
 .rc-oud-amber{color:var(--amber);font-weight:600}
 .rc-oud-red{color:var(--red);font-weight:700}
 .rc-dub{color:var(--purple);font-weight:600}

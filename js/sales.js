@@ -211,7 +211,82 @@ function kpiHTML(alle){
 }
 
 /* ─── Bord ─────────────────────────────────────────────────────── */
-function kaartHTML(k){
+/* Laatst écht gesproken, per klant. Alleen contactsoorten tellen mee — een
+   notitie, een fasewissel of een systeemregel is geen gesprek. Dezelfde
+   lijst als het dashboard, Plaatsingen en de kandidatenlijst gebruiken
+   (CRM.opvolging.CONTACT), want twee schermen die iets anders beweren over
+   wanneer je iemand voor het laatst sprak, is precies de fout die op
+   31 juli 2026 al een keer is rechtgezet.
+   In één keer over alle activiteiten, niet per kaart: het bord tekent tot
+   250 kaarten en er staan tot 2.000 activiteiten in het geheugen. */
+function contactIndex(){
+  const soort = new Set(CRM.opvolging.CONTACT);
+  const m = new Map();
+  for(const a of (CRM.state.activiteiten || [])){
+    if(a.entiteit !== 'klant' || !soort.has(a.soort)) continue;
+    /* a.op en niets anders — exact zoals 'Blijft liggen' (contactVan) en de
+       klantenlijst het doen. Zou hier ook extra.datum meetellen, dan noemt
+       het bord een andere dag dan de lijst eronder over dezelfde klant. */
+    const dag = lokaleDag(a.op);
+    if(!dag) continue;
+    const v = m.get(a.ref);
+    if(!v || dag > v) m.set(a.ref, dag);
+  }
+  /* clients.laatst_contact is het veld dat een AM met de hand bijwerkt; het
+     mag winnen als het jonger is dan wat er in de log staat. */
+  for(const k of CRM.state.clients){
+    const veld = lokaleDag(k.laatst_contact);
+    if(veld && (!m.get(k.naam) || veld > m.get(k.naam))) m.set(k.naam, veld);
+  }
+  return m;
+}
+
+/* De onderste regel van een bordkaart: waarom staat dit stil?
+   Tot 3 aug 2026 stonden er naam, eigenaar en het aantal dagen in de fase.
+   Dat vertelt dát iets stilstaat, niet waarom — en dus moest een AM elke
+   kaart openen om te weten of hij moest bellen of ergens op wachtte. De twee
+   dingen die dat beantwoorden staan er nu bij: wanneer je deze klant voor
+   het laatst sprak, en wat de afgesproken volgende stap is.
+   De belangrijkste regel is de LEGE: staat er geen vervolgstap gepland, dan
+   zeggen we dat met zoveel woorden. Een kaart zonder taak zag er tot nu toe
+   precies zo uit als een kaart waar alles onder controle is. */
+function waaromHTML(k, lc, vandaag){
+  const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
+  const dgn = lc ? dagenTussen(lc, vandaag) : null;
+  /* Op Lead zwijgen we over contact: 117 geïmporteerde bedrijven waar nooit
+     iemand mee gesproken heeft, zouden allemaal rood kleuren en dan betekent
+     rood op dit bord niets meer. Dezelfde uitzondering als bij 'Blijft
+     liggen' en bij de teller bovenaan. */
+  const meldContact = actief && faseVan(k) !== 'Lead';
+  const stil = meldContact && (dgn == null || dgn >= STIL_CONTACT);
+  const taak = volgendeTaak(k.naam);
+
+  const contactRegel = !meldContact ? ''
+    : `<div class="s-w-r${stil?' let':''}">
+        <span class="s-w-l">gesproken</span>
+        <span class="s-w-v">${dgn == null ? 'nog nooit'
+          : dgn === 0 ? 'vandaag' : `${dgn} ${dgn===1?'dag':'dagen'} geleden`}</span>
+      </div>`;
+
+  /* "Niets gepland" alleen zeggen als het ook echt een probleem ís. Op elke
+     kaart zonder taak stond het eerst — en dan staat er op negen van de tien
+     kaarten dezelfde zin, waarmee hij niets meer betekent. Een traject dat
+     gisteren in beweging kwam heeft geen taak nodig; een traject dat drie
+     weken stilligt zonder afspraak wél. Dus: alleen als de kaart al hangt of
+     al te lang niet gesproken is. */
+  const hangt = actief && faseVan(k) !== 'Lead'
+             && (CRM.dagenGeleden(k.fase_sinds) || 0) > HANGT_NA;
+  const stapRegel = taak
+    ? `<div class="s-w-r"><span class="s-w-l">volgende stap</span>
+        <span class="s-w-v trunc" title="${h(taak.tekst)}">${h(taak.tekst)}${
+          taak.datum ? ` <span class="num">${h(CRM.fmtDateShort(taak.datum))}</span>` : ''}</span></div>`
+    : ((stil || hangt) ? `<div class="s-w-r geen"><span class="s-w-l">volgende stap</span>
+        <span class="s-w-v">niets gepland</span></div>` : '');
+
+  return (contactRegel || stapRegel) ? `<div class="s-waarom">${contactRegel}${stapRegel}</div>` : '';
+}
+
+function kaartHTML(k, lc, vandaag){
   const d = CRM.dagenGeleden(k.fase_sinds);
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   /* In de fase Lead is lang liggen normaal (117 stuks na de import) — daar
@@ -220,7 +295,8 @@ function kaartHTML(k){
   const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
   const vac = openVacatures(k.naam);
   const kans = openKansen(k.naam).length;
-  const taak = volgendeTaak(k.naam);
+  /* Geen .frand hier: de fasekleur staat al boven de kolom waar deze kaart in
+     zit. Een streep in dezelfde kleur zou hetzelfde twee keer zeggen. */
   return `<div class="bcard" draggable="true" data-klant="${h(k.naam)}">
     <div class="bc-t">
       <div style="flex:1;min-width:0">
@@ -232,17 +308,20 @@ function kaartHTML(k){
       ${kans?`<span class="chip blue">${kans} kans${kans===1?'':'en'}</span>`:''}
       ${d==null?'':`<span class="chip${hangt?' amber':''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn</span>`}
     </div>
-    ${taak?`<div class="s-taak trunc" title="${h(taak.tekst)}">${h(taak.tekst)} <span class="meta num">${h(CRM.fmtDateShort(taak.datum))}</span></div>`:''}
+    ${waaromHTML(k, lc, vandaag)}
   </div>`;
 }
 
 function bordHTML(klanten){
+  const contact = contactIndex();
+  const vandaag = CRM.todayISO();
   return `<div class="board" id="s_board">${CRM.SALES_FASES.map(f => {
     const in_ = klanten.filter(k => faseVan(k)===f.k);
     return `<div class="bcol" data-fase="${h(f.k)}">
       <div class="bcol-h" style="--ph:${f.c}"><b>${h(f.k)}</b><span class="cnt num">${in_.length}</span></div>
       <div class="bcol-b" data-drop="${h(f.k)}">
-        ${in_.length ? in_.map(kaartHTML).join('') : `<div class="s-kolomleeg">${h(f.hint||'Nog leeg')}</div>`}
+        ${in_.length ? in_.map(k => kaartHTML(k, contact.get(k.naam) || '', vandaag)).join('')
+                     : `<div class="s-kolomleeg">${h(f.hint||'Nog leeg')}</div>`}
       </div></div>`;
   }).join('')}</div>`;
 }
@@ -299,7 +378,9 @@ function lijstHTML(klanten){
     <tbody>${rijen.map(k=>{
       const d = CRM.dagenGeleden(k.fase_sinds);
       const hangt = CRM.SALES_ACTIEF.includes(faseVan(k)) && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
-      return `<tr class="clickable" data-klant="${h(k.naam)}">
+      /* Dezelfde streep links als op de klantenlijst en de kandidatenlijst
+         (.frand in base.css): fasekleur, amber zodra het traject stilvalt. */
+      return `<tr${CRM.ui.frand(hangt ? 'var(--amber)' : CRM.salesKleur(faseVan(k)), 'clickable')} data-klant="${h(k.naam)}">
         <td><div style="font-weight:600">${h(k.naam)}</div>
           <div class="rowsub">${h(k.locatie||'')}</div></td>
         <td><span class="s-fase"><i style="background:${CRM.salesKleur(faseVan(k))}"></i>${h(faseVan(k))}</span>

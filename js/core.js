@@ -334,6 +334,18 @@ CRM.ui = {
   kpi: (label, waarde, detail='', klasse='') =>
     `<div class="kpi ${klasse}"><div class="label">${h(label)}</div><div class="big">${waarde}</div>${detail?`<div class="kd">${detail}</div>`:''}</div>`,
   chip: (tekst, kleur='') => `<span class="chip ${kleur}">${h(tekst)}</span>`,
+  /* Fasrand — de gedeelde kleurtaal. Zie de uitleg bij .frand in base.css:
+     een randje links dat overal in de app hetzelfde zegt (waar staat dit),
+     met rood als er vandaag iets moet gebeuren. Geeft klasse + kleur terug
+     zodat een aanroep één plek in de HTML is:
+       `<div class="card"${CRM.ui.frand(kleur)}>`  →  class wordt aangevuld
+     Let op: dit levert een compleet class-attribuut, dus zet 'm op een
+     element dat je verder geen eigen class geeft — of gebruik `extra`.
+       CRM.ui.frand(kleur, 'kl-kaart')  →  class="kl-kaart frand" style=…
+     Zonder kleur (fase onbekend) blijft de rand weg in plaats van grijs te
+     worden: "geen fase" is iets anders dan "fase grijs". */
+  frand: (kleur, extra='', let_=false) =>
+    ` class="${extra ? h(extra)+' ' : ''}frand${let_?' fr-let':''}"${kleur ? ` style="--fk:${h(kleur)}"` : ''}`,
   bar: (pct, kleur='') => `<div class="bar"><i class="${kleur}" style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>`,
   /* Tijdlijn-item: {ico, titel, wanneer, tekst} */
   tijdlijn: items => items.length ? `<div class="tl">${items.map(i=>`
@@ -671,6 +683,11 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
           </select></div>
         <div class="f-row"><label>Datum</label>
           <input type="date" id="tk_datum" value="${h(opts.datum || CRM.todayISO())}"></div>
+        <!-- Een tijd erbij. Zonder tijd staat "Tomasz voorbereiden" ergens op
+             morgen en weet je niet of dat vóór of ná het gesprek van 10:00
+             moet. Leeg laten mag: niet elke taak hoort op een klok. -->
+        <div class="f-row"><label>Tijd <span class="meta">optioneel</span></label>
+          <input type="time" id="tk_tijd" value="${h(opts.tijd || '')}"></div>
         <div class="f-row"><label>Prioriteit</label>
           <select id="tk_prio"><option value="">Normaal</option><option value="Hoog">Hoog</option></select></div>
       </div>
@@ -686,19 +703,35 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
         const tekst = inp.value.trim();
         if(!tekst){ inp.focus(); return; }
         const voor = m.querySelector('#tk_voor').value;
+        const tijd = m.querySelector('#tk_tijd').value || '';
         const rij = { id:CRM.uid(), tekst, datum:m.querySelector('#tk_datum').value || null,
-          klaar:false, entiteit:opts.entiteit||'', ref:String(opts.ref||''),
+          tijd, klaar:false, entiteit:opts.entiteit||'', ref:String(opts.ref||''),
           voor, door:CRM.me(), prioriteit:m.querySelector('#tk_prio').value,
           created_at:new Date().toISOString() };
         CRM.state.taken.push(rij);
         if(!CRM.demo){
-          const {error} = await sb.from('crm_taken').insert(rij);
+          let {error} = await sb.from('crm_taken').insert(rij);
+          /* De kolom `tijd` komt uit supabase/nog-te-draaien.sql. Is die nog
+             niet gedraaid, dan zou de hele taak verloren gaan door een veld
+             dat optioneel is. Dan slaan we hem op zonder tijd en zeggen we
+             erbij waarom — een taak kwijtraken is erger dan een tijd missen. */
+          if(error && /tijd/.test(String(error.message||''))){
+            const zonder = Object.assign({}, rij); delete zonder.tijd;
+            ({error} = await sb.from('crm_taken').insert(zonder));
+            if(!error && tijd) CRM.toast('Taak opgeslagen, maar zónder tijd — draai supabase/nog-te-draaien.sql','err');
+          }
           if(error){ CRM.fout('Taak opslaan mislukt', error); return; }
         }
+        /* Wanneer én waarover. "Tjerk moet Tomasz voorbereiden" is pas een
+           bruikbare taak als erbij staat vóór welke vacature en wanneer —
+           anders moet de ontvanger dat zelf gaan uitzoeken. */
+        const wanneer = [rij.datum ? CRM.fmtDate(rij.datum) : '', tijd].filter(Boolean).join(' om ');
         if(voor !== CRM.me())
-          CRM.meld(voor, 'taak', `${CRM.me()} heeft je een taak gegeven: "${tekst}"${opts.refLabel?` (bij ${opts.refLabel})`:''}`, 'taak', rij.id);
+          CRM.meld(voor, 'taak',
+            `${CRM.me()} heeft je een taak gegeven: "${tekst}"${opts.refLabel?` — ${opts.refLabel}`:''}${wanneer?` (${wanneer})`:''}`,
+            'taak', rij.id);
         if(outlookOk && m.querySelector('#tk_outlook')?.checked && voor === CRM.me())
-          CRM.outlook.maakTaak({titel:tekst, datum:rij.datum, notities:opts.refLabel||''}).catch(()=>{});
+          CRM.outlook.maakTaak({titel:tekst, datum:rij.datum, tijd, notities:opts.refLabel||''}).catch(()=>{});
         CRM.modal.close();
         CRM.toast(voor === CRM.me() ? 'Taak aangemaakt' : `Taak aangemaakt voor ${voor} — die krijgt een melding`, 'ok');
         navBadges();

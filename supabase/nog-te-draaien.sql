@@ -240,3 +240,14 @@ update crm_leads set eigenaar = 'Tjerk'  where lower(trim(eigenaar)) like 'tjerk
 
 -- Controle: hierna horen er hooguit drie namen te staan.
 select rec, count(*) from candidates where rec <> '' group by rec order by 2 desc;
+
+
+-- ─── 8. Tijd bij een taak ─────────────────────────────────────
+-- Een taak had alleen een datum. "Tomasz voorbereiden" stond daarmee ergens
+-- op morgen, zonder dat je wist of dat vóór of ná het gesprek van 10:00 moest.
+-- Leeg laten mag: niet elke taak hoort op een klok.
+--
+-- De app is er tegen bestand: draai je dit niet, dan wordt de taak nog steeds
+-- opgeslagen — zonder tijd, met een melding erbij. Een taak kwijtraken door
+-- een optioneel veld zou erger zijn dan de tijd missen.
+alter table crm_taken add column if not exists tijd text default '';

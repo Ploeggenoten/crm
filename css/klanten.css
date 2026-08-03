@@ -5,10 +5,12 @@
 /* auto-fill i.p.v. auto-fit: één resultaat blijft kolombreed staan */
 #kl_lijst .grid.c3{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
 /* Duidelijk gelaagde kaart (wens Tjeerd: verschillen moeten zichtbaar zijn):
-   fasekleur als bovenrand, getinte kop, wit middenstuk, getinte voetstrook. */
-.kl-kaart{cursor:pointer;transition:border-color .12s;border-color:var(--line-2);
-  border-top:3px solid var(--fk,var(--muted));overflow:hidden}
-.kl-kaart:hover{border-color:var(--olive-l);border-top-color:var(--fk,var(--olive-l))}
+   getinte kop, wit middenstuk, getinte voetstrook. De fasekleur stond hier
+   als BOVENrand; sinds 3 aug 2026 staat hij links, want daar staat hij op
+   elk ander scherm ook (.frand in base.css). Eén kleur op één plek, anders
+   moet je per scherm opnieuw leren waar je moet kijken. */
+.kl-kaart{cursor:pointer;transition:border-color .12s;border-color:var(--line-2);overflow:hidden}
+.kl-kaart:hover{border-color:var(--olive-l)}
 .kl-kkop{background:var(--well-2);border-bottom:1px solid var(--line-2);padding:13px 16px 11px}
 .kl-kkop .chip{background:var(--card);border-color:var(--line-2)}
 .kl-klijf .kl-stats{margin:0 0 0;padding:14px 0;border-top:0;border-bottom:0}

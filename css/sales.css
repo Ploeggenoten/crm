@@ -35,11 +35,30 @@
   padding:14px 10px;border:1px dashed var(--line-2);border-radius:8px;background:rgba(255,255,255,.4);
 }
 
-/* Volgende taak op een bordkaart. */
-.bcard .s-taak{
+/* ─── "Waarom staat dit stil" op een bordkaart ────────────────────
+   Twee regels onder de chips: wanneer je deze klant voor het laatst sprak en
+   wat de afgesproken volgende stap is. Label links, waarde rechts, zodat je
+   een kolom kaarten verticaal kunt aflopen zonder te lezen — de labels staan
+   dan onder elkaar en alleen de waarden verschillen.
+   Klein en gedempt: dit is context bij de naam, geen tweede kop. */
+.bcard .s-waarom{
   margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);
-  font-size:11.5px;color:var(--txt-2);
+  display:flex;flex-direction:column;gap:3px;
 }
+.bcard .s-w-r{display:flex;align-items:baseline;gap:8px;font-size:11.5px;min-width:0}
+.bcard .s-w-l{
+  flex:0 0 auto;color:var(--muted);font-size:10px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;
+}
+.bcard .s-w-v{color:var(--txt-2);min-width:0;margin-left:auto;text-align:right}
+/* Te lang niet gesproken: amber, dezelfde drempel en dezelfde kleur als de
+   dagenteller op deze kaart en als "Blijft liggen" op het tabblad
+   Activiteit. Geen rood — er is niets kapot, er is iets blijven liggen. */
+.bcard .s-w-r.let .s-w-v{color:var(--amber);font-weight:600}
+/* Géén vervolgstap is het signaal waar dit blok voor gemaakt is; het staat
+   er cursief zodat je ziet dat er iets ontbreekt in plaats van dat er iets
+   staat. */
+.bcard .s-w-r.geen .s-w-v{font-style:italic;color:var(--muted)}
 
 /* Rij in het detailpaneel (contactpersoon, document, kans, vacature). */
 .s-ct{

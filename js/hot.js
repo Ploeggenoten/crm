@@ -153,11 +153,16 @@
   /* Waar knelt het? Vier niveaus, van "hier gebeurt niets" naar "loopt".
      Dit is de standaardsortering én de waarschuwing op de kaart, zodat het
      scherm en de volgorde nooit iets anders zeggen. */
+  /* `rand` is de kleur van de streep links (de gedeelde kleurtaal, zie .frand
+     in base.css). Hij loopt gelijk met de chip ernaast — anders zeggen de
+     streep en het woord iets anders over dezelfde vacature. Op koers is
+     groen en niet niets: op een grid van dertig vacatures wil je "hier is
+     alles goed" kunnen zíén, niet afleiden uit de afwezigheid van kleur. */
   const KNEL = [
-    {lbl:'niets op deze vacature',  kleur:'red'},
-    {lbl:'nog niemand voorgesteld', kleur:'amber'},
-    {lbl:'te weinig in de pijplijn',kleur:'amber'},
-    {lbl:'', kleur:''}
+    {lbl:'niets op deze vacature',  kleur:'red',   rand:'var(--red)'},
+    {lbl:'nog niemand voorgesteld', kleur:'amber', rand:'var(--amber)'},
+    {lbl:'te weinig in de pijplijn',kleur:'amber', rand:'var(--amber)'},
+    {lbl:'', kleur:'',                             rand:'var(--green)'}
   ];
   function knelNiveau(t){
     if(!t.lopend.length)   return 0;
@@ -388,7 +393,12 @@
       t.voorbereiding.length ? `${t.voorbereiding.length} in voorbereiding` : ''
     ].filter(Boolean).join(' · ') || 'nog geen kandidaat gekoppeld';
 
-    return `<article class="ovcard${v.hot?' hot':''}" data-id="${h(v.id)}" tabindex="0" role="button">
+    /* De streep links zei tot 3 aug 2026 "deze staat op het hot-bord" — maar
+       dat stond er ook al als chip, en het is geen toestand van de vacature
+       maar een keuze van ons. Nu zegt hij waar deze vacature staat: rood als
+       er niemand op zit, amber als het te dun is, groen als het loopt. Dat is
+       dezelfde taal als de rand op een klant- of kandidaatrij. */
+    return `<article${CRM.ui.frand(knel.rand, 'ovcard' + (v.hot?' hot':''))} data-id="${h(v.id)}" tabindex="0" role="button">
       <div class="ov-kop">
         <div class="ov-wie">
           <h3 class="ov-functie">${h(v.functie || 'functie niet ingevuld')}</h3>
@@ -613,7 +623,14 @@
         (import uit het oude ATS) — die tellen niet mee in de funnel of het doel.</div>` : ''}
     </div>`;
 
-    return `<div class="hotcard${i===0?' top':''}${open?' open':''}" data-id="${h(v.id)}" draggable="true">
+    /* Zelfde streep als op het openstaande overzicht. Rood wint hier ook van
+       het knelniveau: een deadline die voorbij is of vandaag valt, is het
+       enige op deze kaart waar je nog vandaag iets aan kunt doen. De olijven
+       rand van de nummer-1 is vervallen — die stond al als gevulde badge bij
+       het cijfer, en twee keer hetzelfde is één keer te veel. */
+    const knelH = KNEL[knelNiveau(volT)];
+    const dlLet = rest != null && rest <= 0;
+    return `<div${CRM.ui.frand(knelH.rand, 'hotcard' + (i===0?' top':'') + (open?' open':''), dlLet)} data-id="${h(v.id)}" draggable="true">
       <div class="hot-top">
         <div class="hot-prio">
           <span class="hot-nr num">${i+1}</span>

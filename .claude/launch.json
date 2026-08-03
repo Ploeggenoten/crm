@@ -4,8 +4,8 @@
     {
       "name": "crm",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8741"],
-      "port": 8741
+      "runtimeArgs": ["-m", "http.server", "8752"],
+      "port": 8752
     }
   ]
 }

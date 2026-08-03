@@ -556,7 +556,7 @@ function lijst(mount){
         <th>Klant</th><th>Branche</th><th>Locatie</th><th>Fase</th><th>Eigenaar</th>
         <th class="n">Open vac.</th><th class="n">In traject</th><th class="n">Geplaatst</th><th>Laatste contact</th>
       </tr></thead><tbody>${rijen.map(({k,c,lc}) => `
-        <tr class="clickable" data-k="${h(k.naam)}">
+        <tr${CRM.ui.frand(k.fase ? CRM.salesKleur(k.fase) : '', 'clickable')} data-k="${h(k.naam)}">
           <td><b>${h(k.naam)}</b></td>
           <td class="sub">${h(k.branche||'—')}</td>
           <td class="sub">${h(k.locatie||'—')}</td>
@@ -570,7 +570,10 @@ function lijst(mount){
   } else {
     wrap.innerHTML = `<div class="grid c3">${rijen.map(({k,c,lc}) => {
       const d = CRM.dagenGeleden(lc);
-      return `<div class="card kl-kaart" data-k="${h(k.naam)}" style="--fk:${CRM.salesKleur(k.fase)}">
+      /* De rand links is de gedeelde kleurtaal (zie .frand in base.css): op
+         een grid van tweehonderd relaties zie je zo in één blik wie prospect
+         is en wie klant, zonder de fasechip te lezen. Zonder fase geen rand. */
+      return `<div${CRM.ui.frand(k.fase ? CRM.salesKleur(k.fase) : '', 'card kl-kaart')} data-k="${h(k.naam)}">
         <div class="kl-kkop">
           <div class="kl-kop">
             <div style="min-width:0;flex:1">

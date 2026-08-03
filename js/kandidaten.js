@@ -817,7 +817,10 @@ function lijst(wrap){
       <th title="Alleen echt contact telt: bellen, appen, mailen, een gesprek of een bezoek. Een notitie of een fasewissel niet.">Laatst gesproken</th><th>Profiel</th>
     </tr></thead><tbody>${rijen.map(({c,st,v}) => {
       const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : '';
-      return `<tr class="clickable" data-id="${h(String(c.id))}">
+      /* Rand links = waar deze kandidaat staat (base.css, .frand). Een kaart
+         zonder fase — de ±298 rijen uit het oude ATS — krijgt geen rand: dat
+         is iets anders dan een fase die toevallig grijs is. */
+      return `<tr${CRM.ui.frand(c.fase ? CRM.faseKleur(c.fase) : '', 'clickable')} data-id="${h(String(c.id))}">
         <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}${
           c.cv && c.cv.werkgever ? ' · '+h(c.cv.werkgever) : ''}${
           c.bron==='Import oud ATS' ? ' <span class="kd-bronimp">Import oud ATS</span>' : ''}</div></td>
@@ -2052,7 +2055,15 @@ function tabTaken(el, c){
 /* Taak via het gedeelde taakvenster van core — toewijzen, prioriteit en
    Outlook werken daar overal hetzelfde. */
 async function nieuweTaak(c){
-  const rij = await CRM.taakModal({entiteit:'kandidaat', ref:c.id, refLabel:c.naam});
+  /* De naam alleen is te weinig. Krijgt Tjerk "Tomasz voorbereiden", dan moet
+     erbij staan vóór welke vacature en bij welke klant — anders begint hij met
+     uitzoeken wat jij al wist. Vacature vóór functie: dat is waar het gesprek
+     over gaat. (Tjeerd, 3 aug 2026.) */
+  const v = c.vacatureId ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
+  const waarover = v ? `${v.functie || 'vacature'} bij ${v.klant}`
+                     : [c.functie, c.klant].filter(Boolean).join(' bij ');
+  const rij = await CRM.taakModal({entiteit:'kandidaat', ref:c.id,
+    refLabel: waarover ? `${c.naam} — ${waarover}` : c.naam});
   if(rij){ tabActief = 'taken'; CRM.render(); }
 }
 
