@@ -203,3 +203,40 @@ begin
   execute 'create policy traj_aanmaken on crm_trajecten
            for insert to authenticated with check (true)';
 end $$;
+
+
+-- ─── 7. Eén naam per collega ──────────────────────────────────
+-- Het veld `rec` op candidates is vrije tekst en is door de jaren heen op
+-- zes manieren gevuld voor vier mensen: 'Bryan', 'bryan', 'Tjeerd' en
+-- 'tjeerd@ploeggenoten.nl'. In Performance leverde dat zes regels per
+-- recruiter op met overal nullen — dan kun je niemand op zijn inzet
+-- afrekenen, want niemands cijfers staan bij elkaar.
+--
+-- Bryan is de naam waaronder Rajesh naar buiten communiceert. Intern is het
+-- Rajesh, en zo hoort het in de cijfers te staan.
+-- (Tjeerd, 3 aug 2026: "alle plaatsingen die op Bryan staan zijn eigenlijk
+-- Rajesh. Extern heet hij Bryan, zo communiceren we naar buiten.")
+--
+-- De app trekt de weergave al gelijk via CRM.naamNorm, dus dit is geen
+-- noodgeval. Maar zolang de rijen zelf niet kloppen, komt de rommel terug
+-- zodra iemand ergens anders op dit veld filtert of groepeert.
+--
+-- Veilig opnieuw te draaien: elke regel raakt alleen wat nog niet goed staat.
+update candidates set rec = 'Rajesh'
+ where lower(trim(rec)) in ('bryan', 'bryan@ploeggenoten.nl', 'recruitment',
+                            'recruitment@ploeggenoten.nl', 'rajesh');
+update candidates set rec = 'Tjeerd'
+ where lower(trim(rec)) in ('tjeerd', 'tjeerd@ploeggenoten.nl');
+update candidates set rec = 'Tjerk'
+ where lower(trim(rec)) in ('tjerk', 'tjerk@ploeggenoten.nl');
+
+-- Zelfde opschoning voor de eigenaar van een klant en van een lead.
+update clients   set eigenaar = 'Rajesh' where lower(trim(eigenaar)) in ('bryan','recruitment','rajesh');
+update clients   set eigenaar = 'Tjeerd' where lower(trim(eigenaar)) like 'tjeerd%';
+update clients   set eigenaar = 'Tjerk'  where lower(trim(eigenaar)) like 'tjerk%';
+update crm_leads set eigenaar = 'Rajesh' where lower(trim(eigenaar)) in ('bryan','recruitment','rajesh');
+update crm_leads set eigenaar = 'Tjeerd' where lower(trim(eigenaar)) like 'tjeerd%';
+update crm_leads set eigenaar = 'Tjerk'  where lower(trim(eigenaar)) like 'tjerk%';
+
+-- Controle: hierna horen er hooguit drie namen te staan.
+select rec, count(*) from candidates where rec <> '' group by rec order by 2 desc;

@@ -785,12 +785,19 @@ function blokTrend(){
 
 /* ═══ 3. PER RECRUITER ═══════════════════════════════════════════ */
 function recruiterRijen(p, D){
-  const namen = Array.from(new Set(D.cs.map(c => (c.rec||'').trim()).filter(Boolean)));
+  /* Groeperen op de genormaliseerde naam (CRM.naamNorm): "bryan", "Bryan" en
+     "tjeerd@ploeggenoten.nl" gaven anders elk een eigen regel met overal
+     nullen. En alleen wie plaatst hoort in dit overzicht — een marketeer
+     levert een rij op die per definitie leeg is. */
+  const nn = c => CRM.naamNorm(c.rec);
+  const namen = Array.from(new Set(D.cs.map(nn).filter(Boolean)))
+    .filter(n => !CRM.isPlaatser || CRM.isPlaatser(n))
+    .sort((a,b) => a.localeCompare(b,'nl'));
   return namen.map(naam => {
-    const mijn      = D.cs.filter(c => (c.rec||'').trim()===naam);
-    const getekend  = D.getekend.filter(c => (c.rec||'').trim()===naam);
-    const gestopt   = D.gestopt.filter(c => (c.rec||'').trim()===naam);
-    const cohort    = D.cohort.filter(c => (c.rec||'').trim()===naam);
+    const mijn      = D.cs.filter(c => nn(c)===naam);
+    const getekend  = D.getekend.filter(c => nn(c)===naam);
+    const gestopt   = D.gestopt.filter(c => nn(c)===naam);
+    const cohort    = D.cohort.filter(c => nn(c)===naam);
     const duur      = cohort.filter(duurzaam);
     const looptijden= getekend.map(c => dagenTussen(c.since, c.geplaatstOp)).filter(n => n!=null && n>=0);
     return {

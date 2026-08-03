@@ -331,6 +331,44 @@ CRM.zelfdeNummer = (tel, negeer) => {
   return uit;
 };
 
+/* ─── Eén naam per collega ────────────────────────────────────────
+   Het veld `rec` op een kandidaat is vrije tekst en is door de jaren heen op
+   zes manieren gevuld voor vier mensen: "Bryan", "bryan", "Tjeerd" en
+   "tjeerd@ploeggenoten.nl". In Performance leverde dat zes regels per
+   recruiter op met overal nullen — je kunt dan niemand op zijn inzet
+   afrekenen, want niemands cijfers staan bij elkaar.
+
+   Twee dingen worden hier rechtgezet:
+   1. Hoofdlettergebruik en e-mailadressen (alles vóór de @ telt).
+   2. Bryan is de naam waaronder Rajesh naar buiten communiceert. Intern is
+      het Rajesh, en zo staat het in de cijfers. (Tjeerd, 3 aug 2026: "alle
+      plaatsingen die op Bryan staan zijn eigenlijk Rajesh. Extern heet hij
+      Bryan, zo communiceren we naar buiten.")
+
+   Dit repareert de weergave. De onderliggende rijen zet supabase/
+   nog-te-draaien.sql goed, zodat er ook in de database één naam staat. */
+CRM.ALIAS_NAAM = { bryan:'Rajesh' };
+CRM.naamNorm = n => {
+  let s = String(n || '').trim();
+  if(!s) return '';
+  if(s.includes('@')) s = s.split('@')[0].replace(/[._-]+/g, ' ');
+  s = s.trim().replace(/\s+/g, ' ');
+  /* HELEMAAL IN HOOFDLETTERS is bijna altijd een importartefact ("TJERK"),
+     geen schrijfwijze die iemand zelf kiest. Zonder dit staat TJERK naast
+     Tjerk in het overzicht. Namen met een enkele hoofdletter laten we met
+     rust — daar zit vaak een tussenvoegsel of dubbele naam in. */
+  if(s === s.toUpperCase() && /[A-Z]{2,}/.test(s)) s = s.toLowerCase();
+  const sleutel = s.toLowerCase();
+  if(CRM.ALIAS_NAAM[sleutel]) return CRM.ALIAS_NAAM[sleutel];
+  /* recruitment@ is het adres van Rajesh; dat blijft geen losse "recruitment". */
+  if(sleutel === 'recruitment') return 'Rajesh';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+/* Wie plaatst er? Een marketeer hoort niet in een plaatsingenoverzicht — dan
+   staat er een regel met overal nul die alleen maar afleidt. */
+CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh'];
+CRM.isPlaatser = n => CRM.PLAATSERS.includes(CRM.naamNorm(n));
+
 CRM.isVanMij = obj => {
   const mij = CRM.me();
   return !mij || obj?.eigenaar === mij || obj?.rec === mij || obj?.am === mij;
