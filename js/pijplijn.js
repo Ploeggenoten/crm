@@ -577,7 +577,23 @@ function tekenKolommen(){
       <div class="bcol-h"><b>${h(p.k)}</b><span class="cnt num">${kaarten.length}</span></div>
       <div class="bcol-b">${binnen || `<div class="rc-leegkol">${h(leeg)}</div>`}</div>
     </div>`;
-  }).join('');
+  }).join('')
+  /* Het sleepdoel voorbij de handtekening. Het bord eindigt bewust bij
+     'Contract ondertekenen' — geplaatste kandidaten horen bij Plaatsingen,
+     niet op een kanban (zie de kop van dit bestand). Maar het plaatsen zélf
+     begint wel hier, en het team sleept (Tjeerd, 3 aug 2026: "we slepen nu
+     vanaf het bord vaak"). Deze strook is daarom geen kolom met kaarten,
+     alleen een doel: het data-fase-attribuut laat de bestaande drop-binding
+     CRM.kandidaatFase(id, 'Contract getekend') aanroepen, en die poort
+     dwingt startdatum, plaatsingstype en maandloon af vóór er iets
+     verandert. Daarna staat de kandidaat bij Plaatsingen en maakt de
+     finance-app er automatisch zijn factuurconcept van. */
+  + `<div class="bcol rb-plaatsdoel" data-fase="Contract getekend" style="--ph:var(--green, #3D6400)">
+      <div class="bcol-h"><b>Geplaatst</b><span class="cnt">✓</span></div>
+      <div class="bcol-b"><div class="rb-plaatsuitleg">Contract getekend? Sleep de kaart hierheen.
+        Je legt dan meteen de startdatum, het type en het loon vast — daarna staat de plaatsing
+        bij <b>Plaatsingen</b> en gaat de facturatie vanzelf lopen.</div></div>
+    </div>`;
 
   /* Uitval: één regel onder het bord, geen kolom ernaast meer.
      Die kolom was een sleepdoel uit het oude pijplijnbord en nam een zesde

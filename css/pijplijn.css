@@ -156,3 +156,13 @@
   .pp-lijstkop{gap:4px}
   .pp-tbl td,.pp-tbl th{white-space:nowrap}
 }
+
+/* ─── Sleepdoel "Geplaatst" ──────────────────────────────────────
+   Geen kolom met kaarten maar een doel: smaller dan de echte kolommen en
+   gedimd, zodat hij niet meedingt naar aandacht — tot je sleept en de
+   bestaande .over-stijl hem laat oplichten. */
+.rc .bcol.rb-plaatsdoel{flex:0 0 148px;width:148px;border-style:dashed;background:transparent}
+.rc .bcol.rb-plaatsdoel .bcol-h{border-bottom-style:dashed}
+.rc .bcol.rb-plaatsdoel .cnt{background:var(--olive,#3D6400)}
+.rb-plaatsuitleg{font-size:12px;line-height:1.5;color:var(--muted)}
+.rc .bcol.rb-plaatsdoel.over{background:#dbe1c4;border-style:solid}
