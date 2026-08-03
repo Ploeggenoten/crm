@@ -623,14 +623,38 @@ function blokken(regels, welke){
        de opsomming begint en daarna weer een korte, niet-beschrijvende
        regel komt, is dat de kop van het volgende dienstverband en houdt
        het op. */
+    /* Bullettekst schoonmaken zónder schoon(): die haalt ook de komma aan het
+       eind weg, en juist bij een afgebroken zin ("…van bezoekers," / "collega's
+       en de locatie.") is die komma het scharnier tussen de twee helften. */
+    const taakTekst = s => kaal(s).replace(/^\s*[•·▪◦*\-–—o]\s+/, '').replace(/\s+$/, '');
     const taken = [];
     let overgeslagen = 0;
-    for(let j = i + 1; j < regels.length && taken.length < 10; j++){
+    for(let j = i + 1; j < regels.length && taken.length < 14; j++){
       if(!meetel[j]) break;
       if(leesPeriode(regels[j].tekst)) break;         // volgend dienstverband
-      const t = schoon(regels[j].tekst);
+      const t = taakTekst(regels[j].tekst);
       if(!t) continue;
-      if(isOpsomming(regels[j].tekst) || isBeschrijving(regels[j].tekst)){ taken.push(t); continue; }
+      const bullet = isOpsomming(regels[j].tekst);
+      const vorige = taken[taken.length - 1];
+      /* Een pdf breekt een opsommingsregel af op de kolombreedte, en dan staat
+         de tweede helft als losse regel zónder bolletje in de tekst. Zonder
+         samenvoegen las de kaart:
+           · Het bewaken van de geautomatiseerde logistieke
+           · installaties vanuit de controlekamer.
+         Twee halve zinnen die er allebei uitzien als een taak.
+
+         Deze toets staat BEWUST vóór de beschrijving- en stopcontrole. Een
+         vervolgregel als "pallets, kratten en producten op de juiste
+         bestemming" is kort, heeft geen eindpunt en maar twee komma's — dus
+         isBeschrijving() zegt nee, en dan viel de lus uit elkaar bij de stop
+         hieronder. Gevolg: die taak bleef halverwege staan en de drie bullets
+         erna verdwenen helemaal. Bij Aliu's cv scheelde dat drie van de zes
+         werkzaamheden bij zijn belangrijkste baan. */
+      if(!bullet && vorige && (!/[.!?]$/.test(vorige) || /^[a-zà-öø-ÿ(]/.test(t))){
+        taken[taken.length - 1] = vorige + ' ' + t;
+        continue;
+      }
+      if(bullet || isBeschrijving(regels[j].tekst)){ taken.push(t); continue; }
       if(taken.length) break;                          // taken zijn afgelopen
       if(++overgeslagen > 2) break;                    // kop is hooguit twee regels
     }
