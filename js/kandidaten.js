@@ -1714,11 +1714,24 @@ function kansenHtml(c){
   const lijst = kansen(c);
   const H = CRM.kdHistorie;
   const lp = H ? H.lopendTraject(c) : null;
-  const kop = !lp ? '' : `<div class="note warn kd-kanslet">
-    ${lp.geplaatst ? 'Werkt op dit moment bij' : 'Loopt op dit moment bij'}
-    <b>${h(lp.klant)}</b> — ${h(lp.fase)}${lp.sinds ? ' sinds ' + h(CRM.fmtDate(lp.sinds)) : ''}${
-      lp.klantBestaat ? '' : ' <span class="meta">(die klant staat niet meer in het systeem)</span>'}.
-    Ergens anders voorstellen kan, maar bespreek het eerst.</div>`;
+  /* Waar deze kandidaat op dit moment loopt, is het belangrijkste feit op de
+     hele kaart — en het stond als rode waarschuwing bovenaan een lijst van
+     vijf grote kansenkaarten. Rood leest als "er is iets mis", terwijl er
+     juist iets góéd gaat: er loopt een traject. Het staat nu apart en in het
+     groen, met de vacature erbij. De kansen eronder zijn wat je zóu kunnen
+     doen; dit is wat er is. (Tjeerd, 3 aug 2026.) */
+  const lopendHtml = !lp ? '' : (() => {
+    const v = c.vacatureId ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
+    return `<div class="card kd-loopt">
+      <div class="card-b">
+        <div class="label">${lp.geplaatst ? 'Werkt bij' : 'Voorgesteld bij'}</div>
+        <div class="kd-looptklant"><a href="#klanten/${encodeURIComponent(lp.klant)}" data-klant="${h(lp.klant)}">${h(lp.klant)}</a></div>
+        ${v ? `<div class="kd-looptvac">${h(v.functie||'')}${v.locatie?` · ${h(v.locatie)}`:''}</div>`
+            : `<div class="kd-looptvac leeg">geen vacature gekoppeld</div>`}
+        <div class="meta">${h(lp.fase)}${lp.sinds ? ' sinds ' + h(CRM.fmtDate(lp.sinds)) : ''}${
+          lp.klantBestaat ? '' : ' · die klant staat niet meer in het systeem'}</div>
+      </div></div>`;
+  })();
 
   let afgeleid = false;
   const body = lijst.map(m => {
@@ -1727,40 +1740,34 @@ function kansenHtml(c){
     if(sig.some(s => s.k === 'eerder')) afgeleid = true;
     const gekoppeld = sig.some(s => s.k === 'gekoppeld');
     const kleur = m.score >= 70 ? 'green' : m.score >= 50 ? '' : 'amber';
-    return `<div class="kd-kans">
-      <div class="row" style="flex-wrap:nowrap;align-items:flex-start">
-        <div style="min-width:0;flex:1">
-          <b>${h(v.functie)}</b>
-          <div class="meta"><a href="#klanten/${encodeURIComponent(v.klant)}" data-klant="${h(v.klant)}">${h(v.klant)}</a>
-            · ${h(v.locatie||'—')}${m.km?` · <span class="num">${m.km}</span> km`:''}</div>
-        </div>
-        <div class="kd-score">
-          ${CRM.ui.bar(m.score, kleur)}
-          <span class="meta num">${m.score}% match</span>
-          ${m.dichtbij?'<span class="meta">op reisafstand</span>':''}
-        </div>
-      </div>
-      <p class="sub kd-uitleg">${h(uitleg(c, v))}</p>
-      ${/* Waaróm die score laag is. Zonder dit staat er "35% match" zonder dat
-           je ziet dat de VCA verlopen is of dat er geen vervoer is — en dan
-           lees je het als "matig passend" in plaats van "hier gaat het op
-           stuk". CRM.match levert die redenen; matchScore geeft alleen het
-           getal. Blokkers eerst, dan twijfels; wat we niet weten laten we
-           hier weg, dat staat al in de uitlegregel erboven. */''}
-      ${(m.m && m.m.blokkers || []).map(b =>
-        `<div class="kd-sig red">${h(b)}</div>`).join('')}
-      ${(m.m && m.m.twijfels || []).map(t =>
-        `<div class="kd-sig amber">${h(t)}</div>`).join('')}
-      ${sig.filter(s => s.k !== 'gekoppeld').map(s =>
-        `<div class="kd-sig ${h(s.kleur)}">${h(s.tekst)}</div>`).join('')}
-      ${gekoppeld ? '<span class="chip green">Al gekoppeld aan deze vacature</span>'
-        : `<button class="btn ghost sm" data-voorstel="${h(String(v.id))}">→ Voorstellen bij deze vacature</button>`}
+    /* Eén regel per kans. Dit was een kaart met een balk, een uitlegzin, alle
+       blokkers, alle twijfels en een knop over de volle breedte — vijf van die
+       kaarten vulden de hele rechterkolom, en dan valt het traject dat er écht
+       toe doet in het niet. Wat blijft: score, functie, klant, en de
+       blokkers — want een score zonder reden is niet te vertrouwen. De
+       uitlegzin staat in de tooltip; die lees je pas als je twijfelt. */
+    const redenen = (m.m && m.m.blokkers || []).slice(0,2).map(b => ({t:b, k:'red'}))
+      .concat((m.m && m.m.twijfels || []).slice(0,1).map(t => ({t, k:'amber'})));
+    return `<div class="kd-kans" title="${h(uitleg(c, v))}">
+      <span class="kd-kansscore ${h(kleur||'mid')}"><b class="num">${m.score}</b>%</span>
+      <span class="kd-kanswat">
+        <b>${h(v.functie)}</b>
+        <span class="meta"><a href="#klanten/${encodeURIComponent(v.klant)}" data-klant="${h(v.klant)}">${h(v.klant)}</a>${
+          m.km ? ` · <span class="num">${m.km}</span> km` : ''}</span>
+        ${redenen.map(r => `<span class="kd-sig ${r.k}">${h(r.t)}</span>`).join('')}
+        ${sig.filter(s => s.k !== 'gekoppeld').slice(0,1).map(s =>
+          `<span class="kd-sig ${h(s.kleur)}">${h(s.tekst)}</span>`).join('')}
+      </span>
+      ${gekoppeld ? '<span class="chip green">gekoppeld</span>'
+        : `<button class="btn ghost sm" data-voorstel="${h(String(v.id))}">Voorstellen</button>`}
     </div>`;
   }).join('');
 
-  return `<div class="card">
-    <div class="card-h"><div class="h2">Kansen — past bij deze vacatures</div></div>
-    <div class="card-b">${kop}${lijst.length ? body : CRM.ui.leeg('Nog geen passende vacature',
+  return `${lopendHtml}<div class="card">
+    <div class="card-h"><div class="h2">Kansen</div>
+      <span class="spacer"></span>
+      <span class="meta">${lijst.length ? lijst.length + ' passende vacature' + (lijst.length===1?'':'s') : ''}</span></div>
+    <div class="card-b">${lijst.length ? body : CRM.ui.leeg('Nog geen passende vacature',
         'Vul de gezochte functie en woonplaats in — dan zoekt het systeem zelf de vacatures erbij.')}
       ${afgeleid ? `<p class="meta kd-kansnoot">Een eerdere afwijzing komt uit de uitvalregistratie op de kaart.
         Er is geen veld dat een afwijzing als paar kandidaat–klant vastlegt: wat hier staat is de klant die

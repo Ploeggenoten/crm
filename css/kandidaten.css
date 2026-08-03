@@ -291,3 +291,32 @@ label.kd-taak input{margin-top:3px}
   list-style:disc;color:var(--txt-2);font-size:12px;line-height:1.55}
 .kd-cvtaken li{margin:0 0 2px}
 .kd-cvtaken li::marker{color:var(--line-2)}
+
+/* ─── Waar deze kandidaat loopt ────────────────────────────────────
+   Het belangrijkste feit op de kaart, en het stond als rode waarschuwing
+   bovenaan de kansenlijst. Rood leest als "er is iets mis", terwijl er juist
+   iets goed gaat. Groen, apart, en met de vacature erbij. */
+.kd-loopt{border-left:3px solid var(--green, #3d9968);background:var(--card)}
+.kd-loopt .card-b{padding-top:14px;padding-bottom:14px}
+.kd-loopt .label{margin:0 0 4px}
+.kd-looptklant{font-size:17px;font-weight:700;color:var(--ink);line-height:1.25}
+.kd-looptklant a{color:inherit;text-decoration:none}
+.kd-looptklant a:hover{color:var(--olive);text-decoration:underline}
+.kd-looptvac{font-size:13px;font-weight:600;color:var(--green, #3d9968);margin-top:1px}
+.kd-looptvac.leeg{color:var(--muted);font-weight:500;font-style:italic}
+
+/* ─── Kansen: één regel per vacature ──────────────────────────────
+   Was een kaart per kans met balk, uitlegzin, alle blokkers en een knop over
+   de volle breedte. Vijf daarvan vulden de hele kolom. Score links, wat het
+   is in het midden, actie rechts. De uitlegzin zit in de tooltip. */
+.kd-kans{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;
+  gap:12px;padding:9px 0;border-bottom:1px solid #eef0e4}
+.kd-kans:last-child{border-bottom:none}
+.kd-kansscore{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.kd-kansscore b{font-size:15px;font-weight:700;color:var(--txt-2)}
+.kd-kansscore.green b{color:var(--green, #3d9968)}
+.kd-kansscore.amber b{color:var(--amber)}
+.kd-kanswat{min-width:0;display:flex;flex-direction:column;gap:1px}
+.kd-kanswat b{font-size:13px;color:var(--ink)}
+.kd-kanswat .meta{font-size:11.5px}
+.kd-kans .kd-sig{font-size:11px;margin-top:1px}
