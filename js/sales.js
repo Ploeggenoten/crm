@@ -276,11 +276,14 @@ function waaromHTML(k, lc, vandaag){
      al te lang niet gesproken is. */
   const hangt = actief && faseVan(k) !== 'Lead'
              && (CRM.dagenGeleden(k.fase_sinds) || 0) > HANGT_NA;
+  /* De klasse s-w-stap is het haakje voor agendaOpBord(): staat er in de
+     Outlook-agenda een afspraak met deze klant, dan vervangt die deze
+     regel — de taak is dan de terugval, niet andersom. */
   const stapRegel = taak
-    ? `<div class="s-w-r"><span class="s-w-l">volgende stap</span>
+    ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v trunc" title="${h(taak.tekst)}">${h(taak.tekst)}${
           taak.datum ? ` <span class="num">${h(CRM.fmtDateShort(taak.datum))}</span>` : ''}</span></div>`
-    : ((stil || hangt) ? `<div class="s-w-r geen"><span class="s-w-l">volgende stap</span>
+    : ((stil || hangt) ? `<div class="s-w-r geen s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v">niets gepland</span></div>` : '');
 
   return (contactRegel || stapRegel) ? `<div class="s-waarom">${contactRegel}${stapRegel}</div>` : '';
@@ -324,6 +327,40 @@ function bordHTML(klanten){
                      : `<div class="s-kolomleeg">${h(f.hint||'Nog leeg')}</div>`}
       </div></div>`;
   }).join('')}</div>`;
+}
+
+/* ─── De agenda op het bord ──────────────────────────────────────
+   Tjeerd (3 aug 2026): "Ik schiet een meeting met Arcelor Mittal in mijn
+   agenda en het systeem ziet dat. Alleen dit moet ik ook meteen in mijn
+   sales pijplijn zien." De klantkaart las de Outlook-agenda al; het bord
+   zei op dezelfde klant "niets gepland". Nu leest het bord dezelfde bron
+   (CRM.opvolging.agendaIndex — één Graph-aanroep voor het hele bord, met
+   cache) en toont per kaart de eerstvolgende afspraak als volgende stap.
+   De handmatige taak blijft de terugval, en zonder Outlook-koppeling of
+   bij een Graph-fout verandert er niets aan het bord — geen foutmelding,
+   het bord wist het gewoon al niet beter. */
+async function agendaOpBord(){
+  if(!(CRM.outlook?.verbonden?.())) return;
+  let idx = null;
+  try{ idx = await CRM.opvolging.agendaIndex(30); }catch(e){ idx = null; }
+  /* Klaar met wachten? Alleen bijwerken als Sales nog op het scherm staat
+     én het bord er nog hangt (de gebruiker kan intussen gewisseld zijn). */
+  if(!idx || CRM.view !== 'sales' || !mountEl.querySelector('#s_board')) return;
+  CRM.$$('.bcard', mountEl).forEach(kaart => {
+    const e = (idx.get(kaart.dataset.klant) || [])[0];
+    if(!e) return;
+    const dt = new Date(e.start);
+    const wanneer = isNaN(dt) ? '' : CRM.fmtDateShort(e.start) + ' · ' +
+      dt.toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
+    const regel = `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
+      <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}">${h(e.titel||'Afspraak')}${
+        wanneer ? ` <span class="num">${h(wanneer)}</span>` : ''}</span></div>`;
+    const stap = kaart.querySelector('.s-w-stap');
+    const blok = kaart.querySelector('.s-waarom');
+    if(stap) stap.outerHTML = regel;
+    else if(blok) blok.insertAdjacentHTML('beforeend', regel);
+    else kaart.insertAdjacentHTML('beforeend', `<div class="s-waarom">${regel}</div>`);
+  });
 }
 
 function bindBord(root){
@@ -1613,6 +1650,9 @@ function tekenInhoud(){
             zoek||mijn||eigFilter ? '<button class="btn ghost" data-wis>Filters wissen</button>'
                                   : '<button class="btn" data-radar>Naar de Leadradar</button>')}</div>`
         : bordHTML(klanten));
+    /* Ná de render, zonder erop te wachten: het bord staat er meteen en de
+       afspraken schuiven in zodra de agenda binnen is (uit cache: direct). */
+    if(!leegBord) agendaOpBord();
   }
   bindInhoud();
 }

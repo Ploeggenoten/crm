@@ -818,22 +818,17 @@ function afsprakenBlokHtml(){
     <div class="card-b" id="ag_lijst"></div></div>`;
 }
 
-/* Agenda van 30 dagen filteren op deze klant: naam in het onderwerp of
-   de locatie, of een e-mailadres van een contactpersoon in de gasten. */
+/* De matching (klantnaam of contact-e-mail in de afspraak) zit sinds
+   3 aug 2026 in CRM.opvolging.agendaIndex — het Sales-bord leest hem ook,
+   en met één gedeelde regel én één gedeelde cache kunnen de kaart en het
+   bord nooit iets anders beweren over dezelfde klant. */
 function railAfspraken(root, k){
   const kaart = root.querySelector('#ag_kaart'); if(!kaart) return;
   const lijst = kaart.querySelector('#ag_lijst');
-  const mails = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
-    .map(x => String(x.email||'').toLowerCase()).filter(Boolean)
-    .concat(String(k.email||'').toLowerCase() || []);
-  const naam = k.naam.toLowerCase();
 
-  Promise.resolve(CRM.outlook.agenda(30)).then(items => {
-    if(!Array.isArray(items)) return;
-    const raak = items.filter(e => {
-      const hooi = [e.titel, e.locatie, ...(e.deelnemers||[])].join(' ').toLowerCase();
-      return hooi.includes(naam) || mails.some(m => m && hooi.includes(m));
-    }).slice(0, 5);
+  Promise.resolve(CRM.opvolging.agendaIndex(30)).then(idx => {
+    if(!idx) return;
+    const raak = (idx.get(k.naam) || []).slice(0, 5);
     if(!raak.length){ kaart.hidden = true; return; }
     kaart.hidden = false;
     lijst.innerHTML = `<div class="kl-afspraken">${raak.map(e => {
@@ -848,8 +843,11 @@ function railAfspraken(root, k){
     }).join('')}</div>`;
   }).catch(e => console.warn('agenda klantkaart', e));
 }
-/* Na het inplannen: het blokje bijwerken als de klantkaart openstaat. */
+/* Na het inplannen: het blokje bijwerken als de klantkaart openstaat.
+   Eerst de gedeelde cache legen, anders toont de kaart de zojuist
+   ingeplande afspraak pas na vijf minuten. */
 function verversAfspraken(k){
+  CRM.opvolging.agendaVervers?.();
   if(klantOpen === k.naam && document.getElementById('ag_kaart')) railAfspraken(document, k);
 }
 

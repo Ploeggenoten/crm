@@ -894,8 +894,72 @@ function klantRondeVenster(vrijdag, na){
    aan — de onderschepping keek naar `.tl2-item`-regels die niet meer
    bestaan en is daarom weggehaald. */
 
+/* ═══ AGENDA UIT OUTLOOK — ÉÉN GEDEELDE LEZING ═══════════════════
+   De klantkaart toonde "Komende afspraken" al uit Outlook, met een eigen
+   matchregel op klantnaam; het Sales-bord wil hetzelfde weten. Twee
+   kopieën van zo'n regel lopen uit elkaar (dat is precies waarom CONTACT
+   hierboven gedeeld is), en per bordkaart ophalen zou 222 Graph-aanroepen
+   betekenen bij het openen van Sales. Daarom hier: één lezing, één
+   matchregel, één index klantnaam → komende afspraken.
+
+   De lezing is optioneel en stil: geen koppeling of een Graph-fout geeft
+   null en het scherm valt terug op wat het zonder agenda ook al wist. Na
+   een fout wachten we een minuut voor een nieuwe poging — hetzelfde
+   patroon als de mail op het dashboard, zodat een 429 van Microsoft niet
+   bij elke render opnieuw tegen de muur loopt. */
+let agLezing = null;    // {op, dagen, index} — alleen een geslaagde lezing
+let agBezig  = null;    // lopende ophaalactie; parallelle aanroepen liften mee
+let agFoutOp = 0;       // tijdstip van de laatste mislukte lezing
+const AG_VERS = 5*60000, AG_FOUT_WACHT = 60000;
+
+/* De matchregel van de klantkaart, ongewijzigd hierheen verhuisd:
+   klantnaam in onderwerp, locatie of gasten — of het e-mailadres van een
+   contactpersoon (of van de klant zelf) onder de gasten. */
+function agendaTreffers(items, k){
+  const naam = String(k.naam||'').toLowerCase();
+  if(!naam) return [];
+  const mails = (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+    .map(x => String(x.email||'').toLowerCase()).filter(Boolean)
+    .concat(String(k.email||'').toLowerCase() || []);
+  return items.filter(e => {
+    const hooi = [e.titel, e.locatie].concat(e.deelnemers||[]).join(' ').toLowerCase();
+    return hooi.includes(naam) || mails.some(m => m && hooi.includes(m));
+  });
+}
+
 /* ═══ PUBLIEKE API ════════════════════════════════════════════════ */
 const OPV = CRM.opvolging = {
+
+  /* Komende afspraken per klant, uit de agenda van déze gebruiker.
+     Geeft een Map(klantnaam → [afspraken, oplopend op begintijd]) of null
+     als er niets te lezen valt. Cache van vijf minuten: het bord rendert
+     bij elke sleep opnieuw en de klantkaart vraagt hetzelfde venster. */
+  async agendaIndex(dagen = 30){
+    if(!(CRM.outlook?.verbonden?.())) return null;
+    if(agLezing && agLezing.dagen >= dagen && Date.now() - agLezing.op < AG_VERS)
+      return agLezing.index;
+    if(agFoutOp && Date.now() - agFoutOp < AG_FOUT_WACHT) return null;
+    if(agBezig) return agBezig;
+    agBezig = (async () => {
+      let items = null;
+      try{ items = await CRM.outlook.agenda(dagen); }catch(e){ items = null; }
+      agBezig = null;
+      if(!Array.isArray(items)){ agFoutOp = Date.now(); return null; }
+      agFoutOp = 0;
+      const index = new Map();
+      (CRM.state.clients||[]).forEach(k => {
+        const raak = agendaTreffers(items, k);
+        if(raak.length) index.set(k.naam, raak);
+      });
+      agLezing = {op: Date.now(), dagen, index};
+      return index;
+    })();
+    return agBezig;
+  },
+
+  /* Na het inplannen van een afspraak: cache weg, zodat het volgende
+     scherm de nieuwe afspraak meteen ziet in plaats van over vijf minuten. */
+  agendaVervers(){ agLezing = null; agFoutOp = 0; },
 
   /* Wat als contact telt. Gedeeld, want de kandidatenlijst filtert en
      sorteert op dezelfde vraag ("hoe lang niet gesproken"). Stond daar
