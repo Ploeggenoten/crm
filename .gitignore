@@ -6,3 +6,9 @@
 # Op 31 jul 2026 stonden hier 298 kandidaatnamen met woonplaats, functie en
 # 125 salarissen publiek op het internet. Bewaar ze buiten de repo.
 supabase/import-*.sql
+
+# Test-cv's voor de cv-parser zijn óók echte persoonsgegevens. Ze staan in
+# ~/cv-testset en worden alleen tíjdelijk hierheen gekopieerd om te meten
+# (zie het kopcommentaar in js/cvparse.js). Op 3 aug 2026 heeft een parallelle
+# sessie ze met git add -A meegecommit en stonden er zeven echte cv's publiek.
+_cv_*
