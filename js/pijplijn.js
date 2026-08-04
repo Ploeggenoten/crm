@@ -558,21 +558,12 @@ function tekenKolommen(){
     else if(P.groep) binnen = klantGroepen(kaarten);
     else if(WEEKCOLS.includes(p.k)) binnen = weekGroepen(kaarten, p.k);
     else binnen = kaarten.map(kaartHtml).join('');
-    /* Voorgesteld is sinds de splitsing de eerste kolom. Wie hier nog geen
-       afspraak heeft staan, wacht op de klant — dat is precies het signaal
-       waar een AM op moet sturen, dus het staat bovenaan de kolom.
-       (Dezelfde vorm als de oude "zonder geplande videocall"-melding, die bij
-       de Intake-kolom hoorde en met die kolom is vertrokken.) */
-    /* Hoeveel er in déze kolom over de grens van deze fase heen is. Elke fase
-       kan een wachtkamer worden en elke fase heeft een eigen grens — zonder
-       deze regel moet je per kolom alle kaarten langs om dat te zien. */
-    { const stil = kaarten.filter(c => stilstandFase(c.fase, dagenInFase(c))).length;
-      const nrm = FASE_NORM[p.k];
-      if(stil) binnen = `<div class="rc-letnote num" title="${h(nrm ? nrm.waarom : '')}">${stil}× staat hier te lang</div>` + binnen; }
-    if(p.k === 'Voorgesteld'){
-      const wacht = kaarten.filter(c => !c.datum).length;
-      if(wacht) binnen = `<div class="rc-letnote num">${wacht}× nog geen afspraak gepland</div>` + binnen;
-    }
+    /* De kolomsignalen ("3× staat hier te lang", "2× nog geen afspraak
+       gepland") zijn per 4 aug 2026 verwijderd — ze stonden op vrijwel elke
+       kolom en dan zegt een signaal niets meer (Tjeerd: "dit wil ik ook
+       weg", direct na het dempen van het rood op de kaarten). De stilstand
+       zelf blijft vindbaar: de lijstweergave sorteert erop en de normen per
+       fase staan daar in de tooltip. */
     const leeg = p.k === 'Voorgesteld'
       ? 'Hier komt iemand te staan zodra je die bij een klant voorstelt — vanuit de recruitmentpijplijn'
       : '—';
