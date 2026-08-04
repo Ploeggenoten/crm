@@ -2059,15 +2059,22 @@ function doorschietForm(lead, opts){
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   + SOLLICITANT — zelf iemand toevoegen. Twee routes met een ander
-   eindpunt, en dat staat er nu ook bij:
+   + SOLLICITANT — zelf iemand toevoegen. Twee routes, hetzelfde
+   eindpunt: de kandidatenkaart.
 
-   • Handmatig — een sollicitant in de recruitmentpijplijn (crm_leads),
-     in drie stappen: route, kerngegevens (naam + telefoon verplicht,
-     volledigheidsbalk), bestemming (vacature, golden candidate of
-     alleen opslaan).
-   • CV inlezen — meteen een kandidaatkaart op fase 'Intake'. Wie een cv
-     heeft, is voorbij het stadium van een lead. Zie sollicitantCvRoute.
+   • Handmatig — kerngegevens invullen (naam + telefoon verplicht,
+     volledigheidsbalk) en je staat op de kaart.
+   • CV inlezen — idem, maar dan op fase 'Intake'. Wie een cv heeft, is
+     voorbij het stadium van een lead. Zie sollicitantCvRoute.
+
+   Tussen het formulier en de kaart zat een derde stap: kies eerst een
+   bestemming — vacature, golden candidate of alleen opslaan. Die is weg
+   (Tjeerd, 3 aug 2026: "als ik een sollicitant toevoeg, dan moet die
+   meteen de gehele kandidatenkaart openen zodat je vanuit daar de status
+   kan koppelen ook"). Alle drie die keuzes kún je op de kaart zelf maken
+   — 'Vacature koppelen…', de sterknop 'Golden candidate' en 'Fase
+   wijzigen…' staan daar allemaal — en daar zie je er ook bij wát je
+   koppelt. Vooraf kiezen betekende raden vóór je de kaart gezien had.
    ═══════════════════════════════════════════════════════════════ */
 function nieuweSollicitantKeuze(){
   CRM.modal.open(`
@@ -2075,7 +2082,7 @@ function nieuweSollicitantKeuze(){
       <p class="sub" style="margin:6px 0 0">Hoe wil je de sollicitant toevoegen?</p></div>
     <div class="modal-b">
       <div class="rc-route">
-        <button id="ns_hand"><b>Handmatig invullen</b><small>Typ de gegevens zelf in. Komt als sollicitant in de recruitmentpijplijn.</small></button>
+        <button id="ns_hand"><b>Handmatig invullen</b><small>Typ de gegevens zelf in. Levert meteen een kandidatenkaart op, en staat op fase Nieuw in de recruitmentpijplijn.</small></button>
         <button id="ns_cv"><b>CV inlezen</b><small>PDF, Word of tekst. Levert meteen een volledige kandidatenkaart op fase Intake.</small></button>
       </div>
     </div>
@@ -2085,8 +2092,12 @@ function nieuweSollicitantKeuze(){
     }});
 }
 
-/* Stap 2 — kerngegevens met volledigheidsbalk (zelfde meetlat als de
-   doorschiet-poortwachter: CRM.volledigheid). */
+/* Het enige formulier — kerngegevens met volledigheidsbalk (zelfde
+   meetlat als de doorschiet-poortwachter: CRM.volledigheid), en daarna
+   meteen de kaart. De balk blijft hier staan en niet alleen op de kaart:
+   hij hoort bij het moment dat je de gegevens intypt, want daar voorkom
+   je de vervuiling. Op de kaart staat dezelfde meetlat als "Wat mist
+   nog" — dat is de herinnering achteraf, niet de rem vooraf. */
 function sollicitantForm(pre){
   pre = pre || {};
   const rij = (id, lbl, val, type, hint) => `
@@ -2105,12 +2116,21 @@ function sollicitantForm(pre){
         ${rij('functie','Gezochte functie (aanbevolen)', pre.functie)}
         <div class="f-row"><label for="nsf_bron">Bron (aanbevolen)</label>
           <select id="nsf_bron">${CRM.LEAD_BRONNEN.map(b=>`<option ${b==='Handmatig'?'selected':''}>${h(b)}</option>`).join('')}</select></div>
+        <!-- Waar deze persoon staat, kies je zelf. Soms zet je iemand er pas in
+             nadat je hem al gesproken hebt, of met de videocall al in de agenda.
+             Vast op 'Nieuw' zetten betekent dat je het daarna alsnog moet
+             corrigeren. (Tjeerd, 3 aug 2026.) Stond in de bestemmingsstap die
+             hierna kwam; die is weg, dus staat de vraag nu hier. Wijzigen kan
+             op de kaart met 'Fase wijzigen…'. -->
+        <div class="f-row"><label for="nsf_fase">Waar staat deze persoon?</label>
+          <select id="nsf_fase">${(CRM.INSTROOM||[]).map(f =>
+            `<option value="${h(f.k)}"${f.k==='Nieuw'?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
       </div>
       ${pre.cv ? `<div class="note ok" style="margin-top:4px">Het ingelezen CV wordt aan deze sollicitant gekoppeld.</div>` : ''}
       <div class="note err" id="ns_err" style="display:none"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="ns_ok">Verder →</button></div>`, {onOpen(m){
+      <button class="btn" id="ns_ok">Kandidatenkaart openen →</button></div>`, {onOpen(m){
       const g = id => m.querySelector('#nsf_'+id).value.trim();
       const vol = () => {
         const v = CRM.volledigheid({naam:g('naam'), telefoon:g('tel'), woonplaats:g('plaats'),
@@ -2124,7 +2144,7 @@ function sollicitantForm(pre){
       m.querySelector('#nsf_bron').onchange = vol;
       vol();
       setTimeout(()=>m.querySelector('#nsf_naam').focus(), 60);
-      m.querySelector('#ns_ok').onclick = () => {
+      m.querySelector('#ns_ok').onclick = async () => {
         const err = m.querySelector('#ns_err');
         const zeg = t => { err.style.display=''; err.textContent = t; };
         if(!g('naam')) return zeg('Vul de naam in.');
@@ -2144,75 +2164,15 @@ function sollicitantForm(pre){
         }
         const gg = {naam:g('naam'), telefoon:g('tel'), email:g('mail'), woonplaats:g('plaats'),
                     functie:g('functie'), bron:m.querySelector('#nsf_bron').value, cv:pre.cv||null};
-        CRM.modal.close();
-        sollicitantBestemming(gg);
-      };
-    }});
-}
-
-/* Stap 3 — bestemming kiezen. */
-function sollicitantBestemming(gg){
-  const vacs = (CRM.state.vacs||[]).filter(v => !v.status || v.status === 'Open')
-    .slice().sort((a,b)=>vacLabel(a).localeCompare(vacLabel(b)));
-  const opt = (val, lbl, sub, checked) => `
-    <label class="rc-opt ${checked?'sel':''}"><input type="radio" name="ns_best" value="${h(val)}" ${checked?'checked':''}>
-      <span><b>${h(lbl)}</b><small>${h(sub)}</small></span></label>`;
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Waar hoort ${h(gg.naam)} thuis?</div></div>
-    <div class="modal-b">
-      <div class="rc-radio">
-        ${opt('vac','Koppel aan een vacature','Krijgt een kandidaatkaart, gekoppeld aan die vacature, en staat op het recruitmentbord.', true)}
-        ${opt('golden','Golden candidate','Goede kandidaat, maar nu geen passende vacature. Krijgt de gouden ster ★ en blijft vindbaar via Kandidaten → filter "Golden candidates ★". Komt bewust niet op het bord.', false)}
-        ${opt('lijst','Alleen opslaan als sollicitant','Krijgt een kandidaatkaart zonder vacature. Koppelen kan later op de kaart.', false)}
-      </div>
-      <div class="f-row" id="ns_vacwrap" style="margin-top:12px"><label for="ns_vac">Open vacature</label>
-        <select id="ns_vac"><option value="">— kies de vacature —</option>
-          ${vacs.map(v=>`<option value="${h(v.id)}">${h(vacLabel(v))}</option>`).join('')}</select></div>
-      <!-- Waar deze persoon staat, kies je zelf. Soms zet je iemand er pas in
-           nadat je hem al gesproken hebt, of met de videocall al in de agenda.
-           Vast op 'Nieuw' zetten betekent dat je het daarna alsnog moet
-           corrigeren. (Tjeerd, 3 aug 2026.) -->
-      <div class="f-row" id="ns_fasewrap" style="margin-top:12px"><label for="ns_fase">Waar staat deze persoon?</label>
-        <select id="ns_fase">${(CRM.INSTROOM||[]).map(f =>
-          `<option value="${h(f.k)}"${f.k==='Nieuw'?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
-      <div class="note err" id="ns_err2" style="display:none"></div>
-    </div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="ns_ok2">Opslaan</button></div>`, {onOpen(m){
-      const keuze = () => m.querySelector('input[name=ns_best]:checked').value;
-      const sync = () => {
-        CRM.$$('.rc-opt', m).forEach(o => o.classList.toggle('sel', o.querySelector('input').checked));
-        m.querySelector('#ns_vacwrap').style.display = keuze() === 'vac' ? '' : 'none';
-      };
-      CRM.$$('.rc-radio input', m).forEach(r => r.onchange = sync);
-      sync();
-      m.querySelector('#ns_ok2').onclick = async () => {
-        const err = m.querySelector('#ns_err2');
-        const k = keuze();
-        if(k === 'golden'){
-          const cand = await maakGoldenCandidate(gg);
-          if(!cand) return;
-          CRM.modal.close();
-          alles();
-          toastLink(`${gg.naam} opgeslagen als golden candidate`, 'Open kandidaatkaart →',
-            () => CRM.ga('kandidaten',{id:cand.id}));
-          return;
-        }
-        let v = null;
-        if(k === 'vac'){
-          v = vacById(m.querySelector('#ns_vac').value);
-          if(!v){ err.style.display=''; err.textContent = 'Kies de vacature — of kies een andere bestemming.'; return; }
-        }
-        const fSel = m.querySelector('#ns_fase');
-        const fase = fSel ? fSel.value : 'Nieuw';
-        const cand = await maakSollicitantRij(gg, v, fase);
-        if(!cand) return;
+        const fase = m.querySelector('#nsf_fase').value;
+        const cand = await maakSollicitantRij(gg, fase);
+        if(!cand) return;                       // opslaan mislukt; melding staat al
         CRM.modal.close();
         /* Meteen naar de kaart. Daar doe je het echte werk: cv inlezen,
            intake vastleggen, vacature koppelen, fase bijhouden. Hij blijft
            óók op het recruitmentbord staan, in de kolom van zijn fase. */
         CRM.ga('kandidaten', {id:cand.id});
-        CRM.toast(`${gg.naam} staat op ${fase} — vul de kaart verder aan`, 'ok');
+        CRM.toast(`${gg.naam} staat op ${fase} — koppel hier de vacature of wijzig de fase`, 'ok');
       };
     }});
 }
@@ -2232,13 +2192,15 @@ function sollicitantBestemming(gg){
    De echte leadtabel blijft bestaan voor wat er straks uit Meta binnenkomt:
    duizend per maand, ongefilterd. Die worden pas een kaart als iemand ze
    interessant genoeg vindt. */
-async function maakSollicitantRij(gg, v, fase){
+async function maakSollicitantRij(gg, fase){
   const vandaag = CRM.todayISO();
   const f = (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Nieuw';
+  /* Zonder vacature en zonder klant: die koppel je op de kaart, met de
+     vacaturelijst en de kandidaat naast elkaar in beeld. */
   const cand = {
     id:CRM.uid(), naam:gg.naam, telefoon:gg.telefoon, email:gg.email||'',
-    woonplaats:gg.woonplaats||'', functie:v?v.functie:(gg.functie||''),
-    klant:v?v.klant:'', vacatureId:v?v.id:'', type:'W&S',
+    woonplaats:gg.woonplaats||'', functie:gg.functie||'',
+    klant:'', vacatureId:'', type:'W&S',
     bron:gg.bron||'Handmatig', fase:f, since:vandaag, rec:CRM.me(),
     cv:gg.cv||null, historie:[{fase:f, op:vandaag}], notities:[]
   };
@@ -2248,35 +2210,17 @@ async function maakSollicitantRij(gg, v, fase){
     const {error} = await CRM.sb.from('candidates').insert(rij);
     if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
   }
-  await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
-    (v ? `Handmatig toegevoegd en gekoppeld aan ${v.functie} · ${v.klant}` : 'Handmatig toegevoegd')
-    + ` — fase ${f}`);
+  await CRM.logActiviteit('kandidaat', cand.id, 'systeem', `Handmatig toegevoegd — fase ${f}`);
   return CRM.kandidaat(cand.id) || cand;
 }
 
-/* Golden candidate: direct een candidates-rij, mét golden-vlag en zónder
-   pijplijnfase (fase '' — faseIdx is dan -1, het bord toont hem terecht
-   niet). Terugvindbaar via Kandidaten → filter Golden ★, en de
-   Pijplijn meldt onder de filters hoeveel er geparkeerd staan. */
-async function maakGoldenCandidate(gg){
-  const vandaag = CRM.todayISO();
-  const cand = {
-    id:CRM.uid(), naam:gg.naam, telefoon:gg.telefoon, email:gg.email||'',
-    woonplaats:gg.woonplaats||'', functie:gg.functie||'', klant:'', type:'',
-    bron:gg.bron||'Handmatig', fase:'', since:vandaag, rec:CRM.me(),
-    cv:gg.cv||null, historie:[], notities:[]
-  };
-  const rij = CRM.candToRow(cand);
-  rij.golden = true;                        // kolom candidates.golden (schema.sql)
-  CRM.state.cands.unshift(rij);
-  if(!CRM.demo){
-    const {error} = await CRM.sb.from('candidates').insert(rij);
-    if(error){ CRM.state.cands.shift(); CRM.fout('Opslaan mislukt', error); return null; }
-  }
-  await CRM.logActiviteit('kandidaat', cand.id, 'systeem',
-    'Aangemaakt als golden candidate — goede kandidaat, nu geen passende vacature');
-  return cand;
-}
+/* Golden candidate maak je niet meer bij het toevoegen aan: dat kon alleen
+   in de bestemmingsstap, en die is weg. Het is ook geen soort kandidaat maar
+   een vlag ("goed, nu geen passende vacature"), en die zet je met de
+   sterknop op de kaart — waar je de kandidaat vóór je hebt. De vlag zelf
+   leeft ongewijzigd in candidates.golden en filtert nog steeds in
+   Kandidaten → Golden candidates ★. */
+
 /* ═══════════════════════════════════════════════════════════════
    CV INLEZEN — via CRM.cvParse (js/cvparse.js)
 
