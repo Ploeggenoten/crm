@@ -331,3 +331,7 @@ label.kd-taak input{margin-top:3px}
 .kd-lnotrij{display:flex;align-items:baseline;gap:12px;padding:3px 0;flex-wrap:wrap}
 .kd-lnottekst{flex:1;min-width:220px;font-size:13px;color:var(--txt);line-height:1.5}
 .kd-lnotrij .meta{white-space:nowrap;font-size:11.5px}
+
+/* "Ook in beeld voor": één regel per extra vacature (4 aug 2026). */
+.kd-sollrij{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #eef0e4;font-size:13px}
+.kd-sollrij:last-child{border-bottom:none}

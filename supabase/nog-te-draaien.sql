@@ -315,3 +315,28 @@ alter table vacatures add column if not exists contact_id    text default '';
 -- hetzelfde regels-per-functiegroep-mechanisme als de W&S-percentages.
 -- De app blijft werken zolang deze kolom ontbreekt: het veld toont dan leeg.
 alter table crm_afspraken add column if not exists overname_uren int;
+
+
+-- ─── 11. Eén kandidaat op meerdere vacatures ──────────────────
+-- "Je moet een kandidaat op meerdere vacatures kunnen zetten" (Tjeerd,
+-- 4 aug 2026) — ook over klanten heen. Stap 1 van dat model: naast het ene
+-- hoofdtraject (candidates.vacature_id, dat de fase draagt) kan een
+-- kandidaat op meerdere vacatures "in beeld" staan. Het hoofdtraject
+-- omhangen is dan een wissel, geen afvallen.
+-- Stap 2 (parallelle fases per traject) volgt met de uitval-verbouwing.
+create table if not exists crm_sollicitaties (
+  id           text primary key,
+  kandidaat_id text not null,
+  vacature_id  text not null,
+  op           timestamptz default now(),
+  door         text default ''
+);
+create index if not exists crm_soll_kand on crm_sollicitaties(kandidaat_id);
+create index if not exists crm_soll_vac  on crm_sollicitaties(vacature_id);
+do $$
+begin
+  execute 'alter table crm_sollicitaties enable row level security';
+  execute 'drop policy if exists soll_team on crm_sollicitaties';
+  execute 'create policy soll_team on crm_sollicitaties
+           for all to authenticated using (true) with check (true)';
+end $$;

@@ -1058,6 +1058,23 @@
         </div>`).join('') : ''}
       </div>` : ''}
 
+      ${(() => {
+        /* Kandidaten die hier "ook in beeld" staan (crm_sollicitaties):
+           hun hoofdtraject loopt elders, maar de AM heeft ze bewust op deze
+           vacature gezet. Hoofdtraject maken doe je op de kandidatenkaart. */
+        const soll = (CRM.state.sollicitaties || [])
+          .filter(r => String(r.vacature_id) === String(v.id))
+          .map(r => CRM.kandidaat(r.kandidaat_id)).filter(Boolean);
+        return soll.length ? `
+          <div class="label" style="margin-bottom:8px">Ook in beeld · ${soll.length}</div>
+          <div class="card ovd-lijstje" style="margin-bottom:18px">${soll.map(c => `
+            <div class="ovd-krij" data-cand="${h(c.id)}">
+              <b>${h(c.naam)}</b>
+              <span class="meta">${h([CRM.faseNorm(c.fase) || 'geen fase', c.klant ? 'traject bij ' + c.klant : ''].filter(Boolean).join(' · '))}</span>
+              <span class="spacer"></span>
+              ${c.beschikbaar ? `<span class="chip">${h(c.beschikbaar)}</span>` : ''}
+            </div>`).join('')}</div>` : '';
+      })()}
       <div class="label" style="margin-bottom:8px">Zou hierop passen · uit de kaartenbak</div>
       <div class="card ovd-lijstje">
         ${!t.teVullen

@@ -1090,6 +1090,12 @@ function kaart(mount, acties, id){
      doen toch?") */
   klik('#c_getekend', () => CRM.kandidaatFase && CRM.kandidaatFase(c.id, 'Contract getekend'));
   klik('#c_vac', () => vacatureKoppelen(c));
+  klik('#c_sollplus', () => sollKiesModal(c));
+  mount.querySelectorAll('[data-sollhoofd]').forEach(b => b.onclick = () =>
+    sollHoofdMaken(c, sollVan(c).find(r => String(r.id) === b.dataset.sollhoofd)));
+  mount.querySelectorAll('[data-sollweg]').forEach(b => b.onclick = async () => {
+    await sollWeg(b.dataset.sollweg); CRM.render();
+  });
   klik('#kd_lnotmeer', () => {
     tabActief = 'notities';
     mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'notities'));
@@ -1782,7 +1788,7 @@ function kansenHtml(c){
     </div>`;
   }).join('');
 
-  return `${lopendHtml}<div class="card">
+  return `${lopendHtml}${ookInBeeldHtml(c)}<div class="card">
     <div class="card-h"><div class="h2">Kansen</div>
       <span class="spacer"></span>
       <span class="meta">${lijst.length ? lijst.length + ' passende vacature' + (lijst.length===1?'':'s') : ''}</span></div>
@@ -1906,6 +1912,104 @@ function veldRij(c, f){
    ATS, of een golden candidate) heeft contract- en salarisinvoer geen zin
    en houden we de kaart rustig. */
 const inTraject = c => !!c.fase;
+
+/* ─── Ook in beeld voor — meerdere vacatures per kandidaat ────────
+   Stap 1 van "één persoon, meerdere sollicitaties" (Tjeerd, 4 aug 2026,
+   antwoord 6 én expliciet: "je moet een kandidaat op meerdere vacatures
+   kunnen zetten, ook over klanten heen"). Het hoofdtraject
+   (c.vacatureId/klant) blijft de fase dragen — alle borden en tellingen
+   rekenen daarop en blijven dus kloppen. Daarnaast kan een kandidaat op
+   elke andere vacature "in beeld" staan (crm_sollicitaties), en is het
+   hoofdtraject omhangen een wissel in plaats van afvallen: de oude
+   hoofdvacature schuift automatisch de in-beeld-lijst in.
+   Stap 2 — een eigen fase per traject — volgt met de uitval-verbouwing. */
+const sollVan = c => (CRM.state.sollicitaties || [])
+  .filter(r => String(r.kandidaat_id) === String(c.id));
+
+async function sollToevoegen(c, vacId){
+  const rij = {id:CRM.uid(), kandidaat_id:String(c.id), vacature_id:String(vacId),
+               door:CRM.me(), op:new Date().toISOString()};
+  CRM.state.sollicitaties.unshift(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_sollicitaties').insert(rij);
+    if(error){ CRM.state.sollicitaties.shift(); return CRM.fout('Opslaan mislukt', error); }
+  }
+  return rij;
+}
+async function sollWeg(id){
+  CRM.state.sollicitaties = CRM.state.sollicitaties.filter(r => String(r.id) !== String(id));
+  if(!CRM.demo) await CRM.sb.from('crm_sollicitaties').delete().eq('id', id);
+}
+
+/* Hoofdtraject omhangen: de gekozen in-beeld-vacature wordt het traject, de
+   oude hoofdvacature (als die er was) wordt een in-beeld-regel. De FASE
+   blijft staan — dat is het hele punt: wisselen is geen afvallen. */
+async function sollHoofdMaken(c, rij){
+  const v = (CRM.state.vacs || []).find(x => String(x.id) === String(rij.vacature_id));
+  if(!v) return CRM.toast('Die vacature bestaat niet meer', 'err');
+  const oudeVac = c.vacatureId ? String(c.vacatureId) : '';
+  const patch = {vacature_id:String(v.id), klant:v.klant || ''};
+  const kopie = CRM.state.cands.find(x => String(x.id) === String(c.id));
+  if(kopie) Object.assign(kopie, patch);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('candidates').update(patch).eq('id', c.id);
+    if(error) return CRM.fout('Opslaan mislukt', error);
+  }
+  await sollWeg(rij.id);
+  if(oudeVac && oudeVac !== String(v.id)) await sollToevoegen(c, oudeVac);
+  await CRM.logActiviteit('kandidaat', c.id, 'systeem',
+    `Hoofdtraject omgehangen naar ${v.functie || 'vacature'} · ${v.klant || '—'} — fase bleef ${CRM.faseNorm(c.fase) || 'leeg'}`);
+  CRM.render();
+}
+
+function sollKiesModal(c){
+  const al = new Set(sollVan(c).map(r => String(r.vacature_id)));
+  if(c.vacatureId) al.add(String(c.vacatureId));
+  const vs = (CRM.state.vacs || [])
+    .filter(v => v && v.klant && (v.status || 'Open') !== 'Gesloten' && !al.has(String(v.id)));
+  if(!vs.length) return CRM.toast('Geen andere openstaande vacatures om aan te koppelen', 'err');
+  const perKlant = {};
+  vs.forEach(v => { (perKlant[v.klant] = perKlant[v.klant] || []).push(v); });
+  const opties = Object.keys(perKlant).sort((a,b)=>a.localeCompare(b,'nl')).map(k =>
+    `<optgroup label="${h(k)}">${perKlant[k].map(v =>
+      `<option value="${h(v.id)}">${h(v.functie || '(geen functie)')}</option>`).join('')}</optgroup>`).join('');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Ook in beeld voor…</div>
+      <p class="sub" style="margin:6px 0 0">${h(c.naam)} blijft gewoon in zijn huidige traject staan —
+        dit zet hem daarnaast op de kaart van een tweede vacature, ook bij een andere klant.</p></div>
+    <div class="modal-b"><div class="f-row"><label for="so_vac">Vacature</label>
+      <select id="so_vac">${opties}</select></div></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="so_ok">Toevoegen</button></div>`, {onOpen(m){
+      m.querySelector('#so_ok').onclick = async () => {
+        const id = m.querySelector('#so_vac').value;
+        CRM.modal.close();
+        if(await sollToevoegen(c, id)){
+          const v = (CRM.state.vacs||[]).find(x => String(x.id) === String(id));
+          await CRM.logActiviteit('kandidaat', c.id, 'systeem',
+            `Ook in beeld gezet voor ${v ? (v.functie || 'vacature') + ' · ' + (v.klant || '—') : 'vacature'}`);
+          CRM.render();
+        }
+      };
+    }});
+}
+
+function ookInBeeldHtml(c){
+  const rijen = sollVan(c);
+  const rij = r => {
+    const v = (CRM.state.vacs || []).find(x => String(x.id) === String(r.vacature_id));
+    return `<div class="kd-sollrij">
+      <span class="trunc">${v ? `<b>${h(v.functie || '(geen functie)')}</b> · ${h(v.klant || '—')}` : '<span class="meta">vacature bestaat niet meer</span>'}</span>
+      <span class="spacer"></span>
+      ${v ? `<button class="btn ghost sm" data-sollhoofd="${h(r.id)}" title="Deze vacature wordt het hoofdtraject; de fase blijft staan">Maak hoofd</button>` : ''}
+      <button class="btn sub sm" data-sollweg="${h(r.id)}" title="Van deze vacaturekaart af">×</button>
+    </div>`;
+  };
+  return `<div class="card"><div class="card-h"><div class="h2">Ook in beeld voor</div>
+      <span class="spacer"></span><button class="btn sub sm" id="c_sollplus">+ Vacature</button></div>
+    <div class="card-b">${rijen.length ? rijen.map(rij).join('')
+      : '<p class="meta" style="margin:0">Nog niets — zet deze kandidaat hier op extra vacatures, ook bij andere klanten. Zijn huidige traject loopt gewoon door.</p>'}</div></div>`;
+}
 
 function trajectHtml(c){
   const idx = CRM.faseIdx(c.fase);

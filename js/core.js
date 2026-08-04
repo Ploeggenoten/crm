@@ -26,7 +26,7 @@ const CRM = window.CRM = {
   modules:{},           // key -> {title, icon, group, render, adminOnly, badge}
   view:null,            // huidige module-key
   state:{               // gedeelde data (via CRM.load())
-    cands:[], clients:[], vacs:[], profiles:[], targets:[], afspraken:[], trajecten:[],
+    cands:[], clients:[], vacs:[], profiles:[], targets:[], afspraken:[], trajecten:[], sollicitaties:[],
     leads:[], activiteiten:[], taken:[], documenten:[], kansen:[], contacten:[], meldingen:[], ooSessions:[],
     _loaded:false
   },
@@ -383,7 +383,7 @@ async function veilig(promise, naam){
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
   CRM.laadfouten = [];
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten] = await Promise.all([
+  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, sollicitaties] = await Promise.all([
     veilig(sb.from('candidates').select('*'), 'candidates'),
     veilig(sb.from('clients').select('*'), 'clients'),
     veilig(sb.from('vacatures').select('*'), 'vacatures'),
@@ -407,9 +407,10 @@ CRM.load = async (force=false) => {
        vertrouwen op sneuvelt: het scherm liegt en niemand kan zien dat het
        liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
     veilig(sb.from('crm_afspraken').select('*'), 'crm_afspraken'),
-    veilig(sb.from('crm_trajecten').select('*').order('op',{ascending:false}), 'crm_trajecten')
+    veilig(sb.from('crm_trajecten').select('*').order('op',{ascending:false}), 'crm_trajecten'),
+    veilig(sb.from('crm_sollicitaties').select('*').order('op',{ascending:false}), 'crm_sollicitaties')
   ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, _loaded:true});
+  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, sollicitaties, _loaded:true});
   /* Ging het bij álles mis, dan is dit geen leeg systeem maar een kapotte
      verbinding. Dat verschil moet op het scherm staan, niet alleen in de
      console. `_loaded` blijft dan false zodat "Opnieuw proberen" echt
