@@ -374,19 +374,19 @@ function kaartHTML(k, lc, act, vandaag){
   ].filter(Boolean).join('');
   /* Op een kaart zónder lijf is de eigenaar het enige dat verloren zou gaan;
      die verhuist dan als gedempte toevoeging in de kop. */
-  const leeg = !waarom && !vac && !kans;
-  /* Leads zijn microkaarten, hoe dan ook: die fase is voorraad, geen werk.
-     (Tjeerd, 4 aug 2026: "de kaart verdient zijn ruimte — leads veel
-     kleiner dan andere.") */
-  const mini = faseVan(k) === 'Lead';
+  /* Leeg = er is écht niets voor het lijf — ook geen eigenaar of plaats.
+     Leads houden zo hun eigenaar-regel ("ik moet alles kunnen zien vanuit
+     de kaart"); alleen een kaart zonder enige inhoud is een kale kop. */
+  const leeg = !waarom && !vac && !kans && !k.eigenaar && !k.locatie;
+  /* Alle kaarten dezelfde opzet (besluit Tjeerd, 4 aug 2026, na drie kleur-
+     rondes): leads dragen gewoon minder in het lijf, geen aparte microvorm. */
+  const mini = false;
   const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn${hangt?' stil':''}</span>`;
   /* Ook een microlead toont zijn kern: eigenaar en plaats als tweede regel
      ín de kop. Minder dan de andere fases, niet niets. */
-  const miniSub = mini && (k.eigenaar || k.locatie)
-    ? `<span class="bc-mini-s trunc">${h([k.eigenaar, k.locatie].filter(Boolean).join(' · '))}</span>` : '';
-  return `<div class="bcard bck${mini ? ' mini' : ''}${leeg || mini ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
-    <div class="bc-kop"><b>${h(k.naam)}</b>${dgn}${miniSub}</div>
-    ${leeg || mini ? '' : `<div class="bc-lijf">${lijf}</div>`}
+  return `<div class="bcard bck${leeg ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
+    <div class="bc-kop"><b>${h(k.naam)}</b>${dgn}</div>
+    ${leeg ? '' : `<div class="bc-lijf">${lijf}</div>`}
   </div>`;
 }
 
@@ -406,7 +406,7 @@ function bordHTML(klanten){
                die de hele kolom (of het bord) leegtrekt. */
             try{ return kaartHTML(k, contact.get(k.naam) || '', act.get(k.naam) || null, vandaag); }
             catch(e){ console.error('kaart', k && k.naam, e);
-              return `<div class="bcard bck mini" data-klant="${h(k.naam)}"><div class="bc-kop"><b>${h(k.naam||'?')}</b></div></div>`; }
+              return `<div class="bcard bck" data-klant="${h(k.naam)}"><div class="bc-kop"><b>${h(k.naam||'?')}</b></div></div>`; }
           }).join('')
                      : `<div class="s-kolomleeg">${h(f.hint||'Nog leeg')}</div>`}
       </div></div>`;

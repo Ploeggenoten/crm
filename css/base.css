@@ -409,27 +409,20 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
    .bck zet de vorm; producenten leveren .bc-kop (+ evt. .bc-lijf) en de
    klasse .vol zodra er een lijf is. .frand blijft gewoon werken (border-left). */
 .bcard.bck{padding:0;overflow:hidden}
-/* Halfdoorzichtig zakelijk olijf (Tjeerd, 4 aug 2026, derde ronde: de volle
-   olijf was "te aanwezig, geen prettige kleur" en wit-op-groen las niet).
-   Merk-olijf op lage dekking over wit — genoeg om elke kaart een merkvlak te
-   geven, licht genoeg voor gewone donkere tekst. Leesbaarheid wint. */
-.bck .bc-kop{background:rgba(61,100,0,.15);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
-.bck .bc-kop b{color:var(--ink)}
-.bck .bc-dgn{color:var(--muted)}
-.bck .bc-dgn.let{color:var(--amber);font-weight:700}
-.bck .bc-dgn.rood{color:var(--red);font-weight:700}
+/* Definitieve keuze (Tjeerd, 4 aug 2026, vierde ronde — "optie B: alleen de
+   header heeft kleur"): de kop draagt het merk op 75%, de naam staat er wit
+   en vet op, en álle informatie staat op wit eronder in gewone donkere
+   tekst. Kleur waar het merk hoort, leesbaarheid waar de inhoud staat.
+   Urgentie is een witte pil met rode tekst — die knalt op het olijf. */
+.bck .bc-kop{background:rgba(61,100,0,.75);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
+.bck .bc-kop b{color:#fff;font-weight:700;font-size:14px;flex:1;min-width:0;line-height:1.35;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bck .bc-dgn{color:rgba(255,255,255,.92);white-space:nowrap}
+.bck .bc-dgn.let{background:#fff;color:var(--amber);border-radius:999px;padding:0 8px;font-weight:700}
+.bck .bc-dgn.rood{background:#fff;color:var(--red);border-radius:999px;padding:0 8px;font-weight:700}
 .bck .bc-lijf{padding:9px 13px 11px}
-/* Leads: kleiner dan de rest, maar mét informatie — "ik moet alles kunnen
-   zien vanuit de kaart, alleen leads hoeft minder info" (Tjeerd). Dus één
-   compacte kop met naam, dagen én een tweede regel eigenaar · plaats. */
-.bck.mini .bc-kop{padding:6px 11px;flex-wrap:wrap;row-gap:0}
-.bck.mini .bc-kop b{font-size:12.5px;font-weight:600}
-.bck.mini .bc-dgn{font-size:10.5px}
-.bck.mini .bc-mini-s{flex-basis:100%;font-size:11px;color:var(--txt-2);margin-top:1px}
-.bck .bc-s{margin-top:0}
-.bck .bc-f{margin-top:8px}
-.bck .bc-f:first-child{margin-top:0}
-
+/* Alle kaarten dezelfde opzet — ook leads. Die hebben alleen minder in het
+   lijf (eigenaar · plaats), geen aparte microvorm meer. */
 .bcard .bc-t{display:flex;align-items:flex-start;gap:8px}
 .bcard .bc-n{font-weight:600;font-size:13.5px;color:var(--ink);line-height:1.3;flex:1;min-width:0}
 .bcard .bc-s{font-size:11.5px;color:var(--txt-2);margin-top:1px}
