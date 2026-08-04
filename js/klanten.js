@@ -2866,7 +2866,15 @@ ${c.mij || ''}` }
 /* Eén rustige regel per mail; klikbaar naar Outlook (alleen https). */
 function mailRegelHtml(m){
   const url = /^https:\/\//i.test(String(m.link||'')) ? String(m.link) : '';
-  const richting = m.uitgaand
+  /* Uitgaand herkennen aan meer dan het exacte accountadres: wie via een
+     alias verstuurt (tjeerd@… terwijl het inlogadres anders luidt) zag
+     zijn eigen mail als "ontvangen" staan — dezelfde aliaskwestie als bij
+     de Outlook-koppeling zelf. Alles wat van ons eigen domein komt is
+     verstuurd. (Mail aan Donna, 4 aug 2026.) */
+  const eigenDomein = String(CRM.user?.email || '').split('@')[1] || '';
+  const uitgaand = m.uitgaand
+    || (eigenDomein && String(m.van || '').toLowerCase().endsWith('@' + eigenDomein));
+  const richting = uitgaand
     ? 'verstuurd'
     : 'ontvangen' + (m.vanNaam ? ' van ' + m.vanNaam : '');
   const binnen = `<b class="trunc">${h(m.onderwerp || '(geen onderwerp)')}</b>

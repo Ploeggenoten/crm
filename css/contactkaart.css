@@ -174,3 +174,8 @@ a.ck-rij.klik:hover{border-color:var(--olive-l);text-decoration:none}
   .ck-mobfunctie{display:block}
   .ck-tbl td{padding:10px 12px}
 }
+
+/* ─── Snel vastleggen ────────────────────────────────────────────
+   Het invoerveld ís de uitnodiging: geen knop-eerst-venster-daarna. */
+.ck-vastleg textarea{width:100%;resize:vertical;min-height:52px}
+.ck-vastleg .lnk{font-size:12px}

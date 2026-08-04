@@ -474,13 +474,17 @@ function kaart(mount, acties, id){
         </aside>
         <div class="ck-werk">
           <div class="ck-kol">
+            ${vastlegHtml(ct)}
             ${signalenHtml(ct, klant, lc)}
             ${tijdlijnHtml(ct)}
           </div>
           <div class="ck-kol">
+            ${/* Mail bovenaan de kolom: het gesprek van vandaag zegt meer
+                 over deze relatie dan de jaarcijfers eronder — en onderaan
+                 werd het blok simpelweg niet gezien (Tjeerd, 4 aug 2026). */''}
+            ${CRM.mailUI ? CRM.mailUI.blokHtml(ct.email, 'ck_mailblok') : ''}
             ${werkHtml(ct, werk)}
             ${jaarHtml(ct, werk)}
-            ${CRM.mailUI ? CRM.mailUI.blokHtml(ct.email, 'ck_mailblok') : ''}
           </div>
         </div>
       </div>
@@ -528,6 +532,26 @@ function heroHtml(ct, klant){
           ? '<button class="btn sub sm" id="ck_outlook" title="Zet deze persoon in je Outlook-adresboek, dan ziet je telefoon wie er belt">Naar Outlook</button>' : ''}
       </div>
     </div></div>`;
+}
+
+/* ─── Snel vastleggen ─────────────────────────────────────────────
+   Tjeerd (3 aug 2026): "dat ik bovenaan een notitie kan maken die meer
+   prominent aanwezig is en dat ik snel een opvolgtaak kan maken." De
+   notitieknop zat verstopt tussen vijf knopjes in de kop en opende eerst
+   nog een venster — twee stappen vóór je kon typen. Dit blok staat
+   bovenaan de tijdlijn en ís meteen het invoerveld; de opvolgtaak zit
+   ernaast zodat vastleggen en opvolgen één beweging is. */
+function vastlegHtml(ct){
+  return `<div class="card ck-vastleg"><div class="card-b">
+    <textarea id="ck_snelnotitie" rows="2"
+      placeholder="Wat is er besproken of afgesproken met ${h(ct.naam)}?"></textarea>
+    <div class="row tight" style="margin-top:8px">
+      <button class="btn sm" id="ck_snelbewaar">Notitie opslaan</button>
+      <button class="btn ghost sm" id="ck_snelopvolg">Opslaan + opvolgtaak</button>
+      <span class="spacer"></span>
+      <button class="lnk" id="ck_snelverslag">uitgebreid gespreksverslag →</button>
+    </div>
+  </div></div>`;
 }
 
 /* Kerncijfers. "Laatste contact" staat vooraan omdat dat het getal is
@@ -811,6 +835,31 @@ function bindKaart(mount, ct, klant){
   }).then(r => { if(r) opnieuw(); });
   mount.querySelector('#ck_taak').onclick  = taak;
   mount.querySelector('#ck_rtaak').onclick = taak;
+
+  /* Snel vastleggen. Opslaan + opvolgtaak bewaart éérst de notitie: ook
+     als de taak daarna wordt geannuleerd is het gesprek vastgelegd — de
+     notitie is het geheugen, de taak alleen het vervolg. */
+  { const veld = mount.querySelector('#ck_snelnotitie');
+    const bewaarNotitie = async () => {
+      const tekst = (veld.value || '').trim();
+      if(!tekst){ CRM.toast('Schrijf eerst je notitie','err'); return false; }
+      await CRM.logActiviteit('contact', String(ct.id), 'notitie', tekst);
+      return true;
+    };
+    mount.querySelector('#ck_snelbewaar').onclick = async () => {
+      if(await bewaarNotitie()){ CRM.toast('Notitie vastgelegd','ok'); opnieuw(); }
+    };
+    mount.querySelector('#ck_snelopvolg').onclick = async () => {
+      if(!(await bewaarNotitie())) return;
+      CRM.toast('Notitie vastgelegd','ok');
+      taak();
+    };
+    mount.querySelector('#ck_snelverslag').onclick = () => verslagModal(ct, opnieuw);
+    /* Cmd/Ctrl+Enter = opslaan, net als overal in de app. */
+    veld.onkeydown = e => {
+      if((e.metaKey || e.ctrlKey) && e.key === 'Enter') mount.querySelector('#ck_snelbewaar').click();
+    };
+  }
 
   mount.querySelector('#ck_gbewerk').onclick = () => bewerk(ct.klant, ct);
   const meer = mount.querySelector('#ck_meer');
