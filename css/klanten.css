@@ -414,3 +414,8 @@ a.ob-i:hover b{text-decoration:underline}
 /* De bewerk-knop in tijdlijnregels: aanwezig maar stil, tot je hem zoekt. */
 .tl-bewerk{font-size:11px;color:var(--muted);margin-left:auto;padding-left:8px}
 .tl-i:hover .tl-bewerk{color:var(--olive,#3D6400)}
+
+/* Meerdere afspraken naast elkaar in de rail (4 aug 2026): een kopregeltje
+   per soort en een dun scheidsel ertussen. */
+.kl-af-soortkop{margin:2px 0 7px}
+.kl-af-scheiding{border-top:1px solid var(--line);margin:12px 0}

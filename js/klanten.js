@@ -1081,7 +1081,13 @@ function railAfspraak(mount, k){
   if(beheer) beheer.onclick = () => afspraakDrawer(k);
 
   const alle = afsprakenVan(k.naam);
-  const huidig = CRM.fee.voorKlant(k.naam);
+  /* Eén klant, meerdere afspraken naast elkaar (Thermon: 23% W&S én
+     uitzenden met factor 2,4 en overname na 1200 uur — 4 aug 2026). De rail
+     toont per soort de actieve; voorheen stond hier alleen de nieuwste en
+     verdween de rest stilletjes in het archief. */
+  const perSoort = CRM.fee.actievePerSoort(k.naam);
+  const soorten = CRM.fee.SOORTEN.filter(s => perSoort[s.k]);
+  const huidig = soorten.length ? perSoort[soorten[0].k] : null;
   if(!huidig){
     body.innerHTML = (_afsprTabelMist
         ? '<div class="note warn kl-af-note">De tabel <code>crm_afspraken</code> bestaat nog niet — draai eerst supabase/schema.sql.</div>'
@@ -1092,27 +1098,47 @@ function railAfspraak(mount, k){
     return;
   }
 
-  const a = CRM.fee.normaliseer(huidig);
   const rij = (lbl, val) => `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
     <span class="kl-gg-val trunc">${val || '<span class="meta">—</span>'}</span></div>`;
-  const bereik = feeBereik(a);
-  const verlopen = !CRM.fee.geldigOp(huidig, CRM.todayISO()) || !a.actief;
-  const ouder = alle.length - 1;
 
-  body.innerHTML = `
-    ${verlopen ? '<div class="note warn kl-af-note">Deze afspraak loopt vandaag niet — leg de nieuwe voorwaarden vast.</div>' : ''}
-    <div class="kl-gg">
-      ${rij('Dienstverlening', h(soortLbl(a.soort)))}
-      ${rij('Fee', bereik ? `<span class="num">${h(bereik)}</span>` : '')}
-      ${rij('Functiegroepen', a.fee_regels.length ? `<span class="num">${a.fee_regels.length}</span>` : '<span class="meta">alleen standaard</span>')}
-      ${rij('Factuurmoment', h(factuurLbl(a.factuurmoment)))}
-      ${rij('Betaaltermijn', `<span class="num">${a.betaaltermijn}</span> dagen`)}
-      ${rij('Garantie', a.garantie_soort === 'geen' ? h(garantieLbl(a.garantie_soort))
-          : `<span class="num">${a.garantie_mnd}</span> mnd · ${h(garantieLbl(a.garantie_soort))}`)}
-      ${rij('Exclusiviteit', a.exclusiviteit_wkn != null ? `<span class="num">${a.exclusiviteit_wkn}</span> wkn` : '')}
-      ${rij('Looptijd', h(looptijdTekst(a)))}
-    </div>
-    ${ouder > 0 ? `<p class="meta kl-af-ouder">${ouder} eerdere afspraak${ouder===1?'':'en'} in het archief</p>` : ''}`;
+  /* Eén blok per soort. W&S en detachering praten in procenten; uitzenden
+     praat in een factor en een overnamegrens — andere taal, andere regels. */
+  const blok = soort => {
+    const ruw = perSoort[soort];
+    const a = CRM.fee.normaliseer(ruw);
+    const verlopen = !CRM.fee.geldigOp(ruw, CRM.todayISO()) || !a.actief;
+    const uitzend = a.soort === 'uitzenden';
+    const bereik = uitzend ? factorBereik(a) : feeBereik(a);
+    return `
+      ${verlopen ? '<div class="note warn kl-af-note">Deze afspraak loopt vandaag niet — leg de nieuwe voorwaarden vast.</div>' : ''}
+      <div class="kl-af-soortkop label">${h(soortLbl(a.soort))}</div>
+      <div class="kl-gg">
+        ${rij(uitzend ? 'Factor' : 'Fee', bereik ? `<span class="num">${h(bereik)}</span>` : '')}
+        ${rij('Functiegroepen', a.fee_regels.length ? `<span class="num">${a.fee_regels.length}</span>` : '<span class="meta">alleen standaard</span>')}
+        ${uitzend
+          ? rij('Overname na', a.overname_uren != null ? `<span class="num">${a.overname_uren}</span> uur` : '')
+          : rij('Factuurmoment', h(factuurLbl(a.factuurmoment)))}
+        ${rij('Betaaltermijn', `<span class="num">${a.betaaltermijn}</span> dagen`)}
+        ${uitzend ? '' : rij('Garantie', a.garantie_soort === 'geen' ? h(garantieLbl(a.garantie_soort))
+            : `<span class="num">${a.garantie_mnd}</span> mnd · ${h(garantieLbl(a.garantie_soort))}`)}
+        ${uitzend || a.exclusiviteit_wkn == null ? '' : rij('Exclusiviteit', `<span class="num">${a.exclusiviteit_wkn}</span> wkn`)}
+        ${rij('Looptijd', h(looptijdTekst(a)))}
+      </div>`;
+  };
+
+  const ouder = alle.length - soorten.length;
+  body.innerHTML = soorten.map(s => blok(s.k)).join('<div class="kl-af-scheiding"></div>')
+    + (ouder > 0 ? `<p class="meta kl-af-ouder">${ouder} eerdere afspraak${ouder===1?'':'en'} in het archief</p>` : '');
+}
+
+/* "2,40×" of "2,20 – 2,60×" — de factortaal van uitzenden. */
+function factorBereik(a){
+  const f = a.fee_regels.map(r => r.pct).filter(x => x != null);
+  if(a.fee_standaard != null) f.push(a.fee_standaard);
+  if(!f.length) return '';
+  const fmt = n => n.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const min = Math.min(...f), max = Math.max(...f);
+  return (min === max ? fmt(min) : fmt(min) + ' – ' + fmt(max)) + '×';
 }
 
 /* ─── Beheerpaneel: formulier + voorbeeldberekening + historie ──── */
@@ -1159,12 +1185,15 @@ function afspraakDrawer(k, id, nieuw){
         <label class="check"><input type="checkbox" id="af_actief"${a.actief === false ? '' : ' checked'}> Deze afspraak is actief</label>
         </div></div>
 
-      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Fee per functiegroep</div><span class="spacer"></span>
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2" id="af_tariefkop">Fee per functiegroep</div><span class="spacer"></span>
           <button class="btn sub sm" id="af_regel_add">+ Regel</button></div>
         <div class="card-b">
           <div id="af_regels" class="kl-af-regels"></div>
-          <div class="f-row kl-af-std"><label for="af_std">Standaardpercentage <span class="meta">(als geen functiegroep past)</span></label>
+          <div class="f-row kl-af-std"><label for="af_std" id="af_stdlbl">Standaardpercentage <span class="meta">(als geen functiegroep past)</span></label>
             <input type="number" id="af_std" min="0" max="100" step="0.1" value="${nr(a.fee_standaard)}"></div>
+          <div class="f-row" id="af_ovnrij" hidden><label for="af_ovn">Overname na (gewerkte uren)
+              <span class="meta">(daarna mag de klant kosteloos overnemen)</span></label>
+            <input type="number" id="af_ovn" min="0" step="10" value="${nr(a.overname_uren)}" placeholder="1200"></div>
         </div></div>
 
       <div class="card kl-af-sec"><div class="card-h"><div class="h2">Grondslag</div></div>
@@ -1225,6 +1254,38 @@ function afspraakDrawer(k, id, nieuw){
       <button class="btn" id="af_ok">Opslaan</button>
     </div>`, {onOpen(dr){
 
+      /* ── De soort bepaalt de taal van het formulier ────────────
+         W&S en detachering rekenen in procenten over een grondslag;
+         uitzenden rekent in een factor over het uurloon, met een
+         overnamegrens in uren (Thermon: 2,4 en 1200 uur). Grondslag,
+         garantie en voorbeeldberekening zijn W&S-begrippen en verdwijnen
+         bij uitzenden — een leeg formulier onderhouden is ruis. */
+      const zetSoort = () => {
+        const uitzend = dr.querySelector('#af_soort').value === 'uitzenden';
+        dr.querySelector('#af_tariefkop').textContent = uitzend ? 'Factor per functiegroep' : 'Fee per functiegroep';
+        dr.querySelector('#af_stdlbl').innerHTML = uitzend
+          ? 'Standaardfactor <span class="meta">(als geen functiegroep past, bijv. 2,4)</span>'
+          : 'Standaardpercentage <span class="meta">(als geen functiegroep past)</span>';
+        const std = dr.querySelector('#af_std');
+        std.max = uitzend ? 10 : 100; std.step = uitzend ? 0.05 : 0.1;
+        dr.querySelector('#af_ovnrij').hidden = !uitzend;
+        dr.querySelectorAll('.kl-af-sec').forEach(sec => {
+          const kop = sec.querySelector('.h2');
+          if(kop && /Grondslag|Facturatie en garantie|Voorbeeldberekening/.test(kop.textContent))
+            sec.hidden = uitzend && kop.textContent !== 'Facturatie en garantie';
+        });
+        /* Betaaltermijn geldt óók bij uitzenden; alleen de garantievelden
+           erin niet. Die twee demp je, in plaats van de hele sectie. */
+        const gs = dr.querySelector('#af_gs'), gm = dr.querySelector('#af_gm'), fm = dr.querySelector('#af_fm');
+        [gs, gm, fm].forEach(el => { if(el) el.closest('.f-row').hidden = uitzend; });
+      };
+      /* addEventListener, geen onchange-toewijzing: verderop hangt de
+         voorbeeldberekening zich met `el.onchange = voorbeeld` aan álle
+         velden, en die zou een onchange-property hier stilletjes
+         overschrijven. Zo draaien ze allebei. */
+      dr.querySelector('#af_soort').addEventListener('change', zetSoort);
+      zetSoort();
+
       /* ── Fee-regels: rijen toevoegen en verwijderen ───────────── */
       const regelsEl = dr.querySelector('#af_regels');
       const tekenRegels = () => {
@@ -1272,6 +1333,7 @@ function afspraakDrawer(k, id, nieuw){
         a.garantie_soort = v('#af_gs').value;
         a.garantie_mnd   = num('#af_gm') != null ? num('#af_gm') : 0;
         a.notitie        = v('#af_note').value.trim();
+        a.overname_uren  = num('#af_ovn');
         a.fee_regels     = a.fee_regels
           .map(r => ({functiegroep:String(r.functiegroep || r.functie || '').trim(), pct:r.pct == null || r.pct === '' ? null : Number(r.pct)}));
       }
@@ -1341,7 +1403,7 @@ function afspraakDrawer(k, id, nieuw){
         lees();
         a.fee_regels = a.fee_regels.filter(r => r.functiegroep || r.pct != null);
         if(a.fee_standaard == null && !a.fee_regels.some(r => r.pct != null))
-          return CRM.toast('Vul minstens één percentage in','err');
+          return CRM.toast(a.soort === 'uitzenden' ? 'Vul minstens één factor in' : 'Vul minstens één percentage in','err');
         if(a.ingang && a.einde && a.einde < a.ingang)
           return CRM.toast('De einddatum ligt vóór de ingangsdatum','err');
         if(!a.door) a.door = CRM.me();

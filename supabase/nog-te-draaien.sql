@@ -304,3 +304,14 @@ alter table vacatures add column if not exists contact_id    text default '';
 -- Documenten en historie hebben geen nieuwe tabel nodig: crm_documenten en
 -- crm_activiteiten kennen allebei al entiteit/ref, en js/hot.js schrijft daar
 -- nu al activiteiten weg met entiteit='vacature'.
+
+
+-- ─── 10. Overnamegrens bij een uitzendafspraak ────────────────
+-- Eén klant kan meerdere commerciële afspraken naast elkaar hebben (Thermon:
+-- 23% W&S én uitzenden met factor 2,4) — dat kon de tabel al aan, één rij
+-- per afspraak met een soort erop. Wat ontbrak is de overnamegrens van een
+-- uitzendafspraak: na zoveel gewerkte uren mag de klant kosteloos overnemen
+-- (Thermon: 1200 uur). De factor zelf staat in fee_standaard/fee_regels,
+-- hetzelfde regels-per-functiegroep-mechanisme als de W&S-percentages.
+-- De app blijft werken zolang deze kolom ontbreekt: het veld toont dan leeg.
+alter table crm_afspraken add column if not exists overname_uren int;

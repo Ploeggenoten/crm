@@ -166,6 +166,9 @@ function normaliseer(afspraak){
     garantie_mnd:   getal(a.garantie_mnd) ?? STANDAARD_AFSPRAAK.garantie_mnd,
     garantie_soort: GARANTIESOORTEN.some(x => x.k === a.garantie_soort) ? a.garantie_soort : 'vervanging',
     exclusiviteit_wkn: getal(a.exclusiviteit_wkn),
+    /* Alleen zinvol bij uitzenden: na zoveel gewerkte uren mag de klant de
+       kracht kosteloos overnemen (Thermon: 1200 uur). */
+    overname_uren:  getal(a.overname_uren),
     ingang:  datum(a.ingang),
     einde:   datum(a.einde),
     stuk_id: a.stuk_id || '',
@@ -454,18 +457,33 @@ function bereken(kandidaat, afspraak){
    alleen winst en cashflow niet), zowel in de database als hier. De
    controle blijft staan voor wie niet is ingelogd.
    ═══════════════════════════════════════════════════════════════ */
-function voorKlant(klant, op){
+/* Eén klant kan meerdere afspraken náást elkaar hebben — Thermon heeft
+   23% W&S én uitzenden met factor 2,4 (4 aug 2026). Daarom kiest deze
+   functie per SOORT: het derde argument. Zonder soort geldt 'ws', want elke
+   bestaande aanroep bedoelt de W&S-fee — en de uitzendfactor mag nooit
+   stilletjes als percentage in een feeberekening belanden. */
+function voorKlant(klant, op, soort){
   if(typeof CRM === 'undefined' || typeof CRM.magOpbrengstZien !== 'function' || !CRM.magOpbrengstZien()) return null;
   const naam = String(klant || '').trim().toLowerCase();
   if(!naam) return null;
+  const wil = soort || 'ws';
   const alle = (CRM.state && Array.isArray(CRM.state.afspraken) ? CRM.state.afspraken : [])
-    .filter(a => String(a.klant || '').trim().toLowerCase() === naam);
+    .filter(a => String(a.klant || '').trim().toLowerCase() === naam
+              && (a.soort || 'ws') === wil);
   if(!alle.length) return null;
   const peil = datum(op) || (typeof CRM.todayISO === 'function' ? CRM.todayISO() : isoLoc(new Date()));
   const passend = alle.filter(a => a.actief !== false && geldigOp(a, peil));
   const kies = (passend.length ? passend : alle).slice().sort((x, y) =>
     String(datum(y.ingang) || y.created_at || '').localeCompare(String(datum(x.ingang) || x.created_at || '')));
   return kies[0] || null;
+}
+
+/* Alle actieve afspraken van een klant, één per soort — voor de klantkaart,
+   die het hele commerciële beeld toont in plaats van alleen de W&S-kant. */
+function actievePerSoort(klant, op){
+  const uit = {};
+  SOORTEN.forEach(s => { const a = voorKlant(klant, op, s.k); if(a) uit[s.k] = a; });
+  return uit;
 }
 
 /* Kale afspraak volgens de standaardtekst van de overeenkomst. */
@@ -489,7 +507,7 @@ window.CRM.fee = {
   /* rekenwerk */
   grondslag, bereken, watMist, pctVoor, geenFeeReden,
   /* hulpstukken die modules delen */
-  normaliseer, geldigOp, voorKlant, leegAfspraak,
+  normaliseer, geldigOp, voorKlant, actievePerSoort, leegAfspraak,
   getal, pctGetal, plusDagen, plusMaanden,
   SOORTEN, FACTUURMOMENTEN, GARANTIESOORTEN,
   STANDAARD_GRONDSLAG
