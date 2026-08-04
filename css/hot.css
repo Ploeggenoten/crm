@@ -342,20 +342,16 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
    hot-signaal is een gevulde olijven pil met witte tekst. */
 .ovcard.ov2{padding:0;overflow:hidden}
 .ovcard.ov2.frand{padding-left:0}
+/* Vacatures dragen het merkoranje, niet het olijf — "hier mag die de oranje
+   kleur in onze huisstijl hebben, groen hoeft hier niet" (Tjeerd, 4 aug
+   2026). Zelfde recept als de borden: halfdoorzichtig over wit, donkere
+   tekst. Hot is dezelfde tint één stap dieper; het woord hot zit in de pil. */
 .ov2-kop{
-  background:#4d7a14;border-bottom:1px solid var(--line);
+  background:rgba(212,82,42,.14);border-bottom:1px solid var(--line);
   padding:12px 16px;display:flex;align-items:center;gap:14px;
 }
-.ov2-kop .ov-functie{color:#fff}
-.ov2-kop .ov-klant{color:rgba(246,247,241,.75)}
-.ov2-kop .ov-klant .ov-punt{color:rgba(246,247,241,.4)}
-.ov2-kop .ov-getal{color:#fff}
-.ov2-kop .ov-vlbl{color:rgba(246,247,241,.7)}
-/* Hot is de diepste variant — het vlak van de huisstijl-olijf, en dus de
-   enige plek waar lime het kerngetal mag zijn (zoals op het ploegvlak). */
-.ov2-kop.hot{background:linear-gradient(135deg,var(--olive) 0%,var(--olive-d) 100%)}
-.ov2-kop.hot .ov-getal{color:var(--lime)}
 .ov2-wie{flex:1;min-width:0}
+.ov2-kop.hot{background:rgba(212,82,42,.26)}
 /* Hot = het merkoranje (Tjeerd, 4 aug 2026: "in onze oranje kleur") — de
    secundaire-actiekleur uit de huisstijl, en hij leest op olijf én op de
    diepe hot-kop. */

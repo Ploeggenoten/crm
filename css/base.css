@@ -409,29 +409,23 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
    .bck zet de vorm; producenten leveren .bc-kop (+ evt. .bc-lijf) en de
    klasse .vol zodra er een lijf is. .frand blijft gewoon werken (border-left). */
 .bcard.bck{padding:0;overflow:hidden}
-/* Echte olijf, strak en vol — Tjeerd (4 aug 2026, wijzend naar de donkere
-   hot-kaart): "wel zoals de kaart, maar ietsje lichter". Dus één toon
-   lichter dan --olive, effen, met witte tekst. Waarschuwingskleuren zijn op
-   dit vlak lichte varianten — amber en rood van het lichte thema verzuipen
-   op olijf. Dit is een dónker vlak in de zin van de huisstijl. */
-.bck .bc-kop{background:#4d7a14;padding:8px 13px;display:flex;align-items:baseline;gap:10px}
-.bck .bc-kop b{color:#fff}
-.bck .bc-dgn{color:rgba(246,247,241,.78)}
-.bck .bc-dgn.let{color:#ffd08a}
-.bck .bc-dgn.rood{color:#ffb8ab}
-.bck.vol .bc-kop{border-bottom:1px solid var(--line)}
-.bck .bc-kop b{font-weight:600;font-size:13.5px;color:var(--ink);flex:1;min-width:0;line-height:1.35;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bc-dgn{font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
-.bc-dgn.let{color:var(--amber);font-weight:700}
-.bc-dgn.rood{color:var(--red);font-weight:700}
+/* Halfdoorzichtig zakelijk olijf (Tjeerd, 4 aug 2026, derde ronde: de volle
+   olijf was "te aanwezig, geen prettige kleur" en wit-op-groen las niet).
+   Merk-olijf op lage dekking over wit — genoeg om elke kaart een merkvlak te
+   geven, licht genoeg voor gewone donkere tekst. Leesbaarheid wint. */
+.bck .bc-kop{background:rgba(61,100,0,.15);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
+.bck .bc-kop b{color:var(--ink)}
+.bck .bc-dgn{color:var(--muted)}
+.bck .bc-dgn.let{color:var(--amber);font-weight:700}
+.bck .bc-dgn.rood{color:var(--red);font-weight:700}
 .bck .bc-lijf{padding:9px 13px 11px}
-/* Leads verdienen hun ruimte nog niet (Tjeerd: "leads veel kleiner dan
-   andere") — een microkaart: alleen de kop, strakker, kleiner. Zo is een
-   kolom met 96 geïmporteerde leads een lijst en geen muur. */
-.bck.mini .bc-kop{padding:5px 11px}
-.bck.mini .bc-kop b{font-size:12px;font-weight:500}
-.bck.mini .bc-dgn{font-size:10px}
+/* Leads: kleiner dan de rest, maar mét informatie — "ik moet alles kunnen
+   zien vanuit de kaart, alleen leads hoeft minder info" (Tjeerd). Dus één
+   compacte kop met naam, dagen én een tweede regel eigenaar · plaats. */
+.bck.mini .bc-kop{padding:6px 11px;flex-wrap:wrap;row-gap:0}
+.bck.mini .bc-kop b{font-size:12.5px;font-weight:600}
+.bck.mini .bc-dgn{font-size:10.5px}
+.bck.mini .bc-mini-s{flex-basis:100%;font-size:11px;color:var(--txt-2);margin-top:1px}
 .bck .bc-s{margin-top:0}
 .bck .bc-f{margin-top:8px}
 .bck .bc-f:first-child{margin-top:0}

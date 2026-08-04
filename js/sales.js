@@ -325,8 +325,12 @@ function kaartHTML(k, lc, vandaag){
      kleiner dan andere.") */
   const mini = faseVan(k) === 'Lead';
   const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn${hangt?' stil':''}</span>`;
+  /* Ook een microlead toont zijn kern: eigenaar en plaats als tweede regel
+     ín de kop. Minder dan de andere fases, niet niets. */
+  const miniSub = mini && (k.eigenaar || k.locatie)
+    ? `<span class="bc-mini-s trunc">${h([k.eigenaar, k.locatie].filter(Boolean).join(' · '))}</span>` : '';
   return `<div class="bcard bck${mini ? ' mini' : ''}${leeg || mini ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
-    <div class="bc-kop"><b>${h(k.naam)}</b>${dgn}</div>
+    <div class="bc-kop"><b>${h(k.naam)}</b>${dgn}${miniSub}</div>
     ${leeg || mini ? '' : `<div class="bc-lijf">${lijf}</div>`}
   </div>`;
 }
@@ -339,7 +343,15 @@ function bordHTML(klanten){
     return `<div class="bcol" data-fase="${h(f.k)}">
       <div class="bcol-h" style="--ph:${f.c}"><b>${h(f.k)}</b><span class="cnt num">${in_.length}</span></div>
       <div class="bcol-b" data-drop="${h(f.k)}">
-        ${in_.length ? in_.map(k => kaartHTML(k, contact.get(k.naam) || '', vandaag)).join('')
+        ${in_.length ? in_.map(k => {
+            /* Sinds Tjeerds bord één keer een lege Lead-kolom toonde terwijl
+               er 118 in zaten: een kaart die om wélke reden dan ook niet wil
+               renderen, wordt een kale naamkaart in plaats van een exception
+               die de hele kolom (of het bord) leegtrekt. */
+            try{ return kaartHTML(k, contact.get(k.naam) || '', vandaag); }
+            catch(e){ console.error('kaart', k && k.naam, e);
+              return `<div class="bcard bck mini" data-klant="${h(k.naam)}"><div class="bc-kop"><b>${h(k.naam||'?')}</b></div></div>`; }
+          }).join('')
                      : `<div class="s-kolomleeg">${h(f.hint||'Nog leeg')}</div>`}
       </div></div>`;
   }).join('')}</div>`;
