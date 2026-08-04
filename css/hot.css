@@ -321,3 +321,16 @@
   .ovd-werk{position:static}
   .ovd-kols2{grid-template-columns:1fr}
 }
+
+/* Inline bewerken op de vacaturekaart: een waarde is klikbaar, en dat mag je
+   zien — lichte hover, potloodloze uitnodiging via de cursor. Het invoerveld
+   neemt de plek van de waarde in; geen formulier ertussen. */
+.ovd-klik{cursor:pointer;border-radius:6px;margin:-2px -6px;padding:2px 6px;transition:background .1s}
+.ovd-klik:hover,.ovd-klik:focus-visible{background:var(--card-2)}
+.ovd-inline{
+  width:100%;font-family:var(--body);font-size:13px;color:var(--ink);
+  border:1px solid var(--olive-l);border-radius:6px;padding:5px 8px;background:#fff;
+}
+textarea.ovd-inline{resize:vertical;line-height:1.5}
+.ovd-tinhoud{cursor:pointer;border-radius:6px;margin:-4px -6px;padding:4px 6px}
+.ovd-tinhoud:hover{background:var(--card-2)}

@@ -1068,13 +1068,50 @@
     if(at) at.onclick = () => { S.afvalOpen = !S.afvalOpen; tabKandidaten(el, v); };
   }
 
+  /* ── Inline bewerken op de kaart ──────────────────────────────
+     Elke waarde op Voorwaarden en elk tekstblok is klikbaar en verandert ter
+     plekke in een invoerveld — geen formulier ertussen. (Tjeerd, 4 aug 2026:
+     "dit kan je niet aanpassen en is niet aanklikbaar. De vacaturekaart moet
+     invulbaar zijn dus.") Zelfde patroon als de kandidatenkaart: klik, typ,
+     Enter of blur = opslaan, Escape = annuleren. */
+  function inlineVeld(el, v, veld, type, naKlaar){
+    const oud = v[veld] == null ? '' : String(v[veld]);
+    const inp = document.createElement(type === 'tekst' ? 'textarea' : 'input');
+    if(type === 'tekst'){ inp.rows = Math.max(3, oud.split('\n').length + 1); }
+    else inp.type = type === 'getal' ? 'number' : 'text';
+    if(type === 'getal') inp.step = 'any';
+    inp.value = oud;
+    inp.className = 'ovd-inline';
+    el.replaceChildren(inp);
+    inp.focus();
+    if(inp.select) try{ inp.select(); }catch(e){}
+    let klaar = false;
+    const bewaar = async () => {
+      if(klaar) return; klaar = true;
+      const ruw = inp.value;
+      const waarde = type === 'getal' ? (String(ruw).trim() === '' ? null : Number(ruw)) : ruw.trim();
+      if(String(waarde == null ? '' : waarde) === oud){ naKlaar(); return; }
+      await bewaarVac(v, {[veld]: waarde});
+      naKlaar();
+    };
+    inp.onkeydown = e => {
+      if(e.key === 'Escape'){ klaar = true; naKlaar(); }
+      /* In een textarea is Enter een nieuwe regel; opslaan is daar Cmd/Ctrl+Enter. */
+      if(e.key === 'Enter' && (type !== 'tekst' || e.metaKey || e.ctrlKey)){ e.preventDefault(); bewaar(); }
+    };
+    inp.onblur = bewaar;
+  }
+
   /* ── Tab: Voorwaarden ── */
   function tabVoorwaarden(el, v){
     const geld = CRM.magOpbrengstZien();
     const {a, wijkt, heeftKlantAfspraak} = feeAfspraak(v);
     const fs = geld ? feeSchatting(v) : null;
-    const rij = (lbl, val, leeg='invullen…') => `<div class="ovd-veld"><span class="label">${h(lbl)}</span>
-      <span>${val || `<span class="meta" style="font-style:italic">${h(leeg)}</span>`}</span></div>`;
+    /* `veld` erbij maakt een rij klikbaar-bewerkbaar; zonder veld (de
+       afgeleide waarden zoals de grondslag) blijft hij alleen-lezen. */
+    const rij = (lbl, val, leeg='invullen…', veld='', type='') => `<div class="ovd-veld"><span class="label">${h(lbl)}</span>
+      <span${veld ? ` class="ovd-klik" data-vv="${h(veld)}|${h(type||'tekst1')}" tabindex="0" role="button" title="Klik om te bewerken"` : ''}>${
+        val || `<span class="meta" style="font-style:italic">${h(leeg)}</span>`}</span></div>`;
     const num = w => (w == null || w === '') ? '' : `<span class="num">${h(String(w))}</span>`;
     const euroBereik = (a2, b2) => (a2 == null && b2 == null) ? ''
       : `<span class="num">${a2 != null ? CRM.euro(a2) : '…'} – ${b2 != null ? CRM.euro(b2) : '…'}</span>`;
@@ -1087,93 +1124,128 @@
       <div class="ovd-kols2">
         <div>
           <div class="label" style="margin-bottom:6px">Salaris</div>
-          ${rij('Uurloon', euroBereik(v.uurloon_min, v.uurloon_max))}
-          ${rij('Bruto maand', euroBereik(v.sal_min, v.sal_max))}
-          ${rij('Vakantiegeld', v.vt_pct != null ? num(v.vt_pct + '%') : '')}
-          ${rij('Ploegentoeslag', v.toeslag_pct != null ? num(v.toeslag_pct + '%') : '')}
-          ${rij('13e maand / eju', v.eju_pct != null ? num(v.eju_pct + '%') : '')}
-          ${rij('Reiskosten', v.reiskosten ? h(v.reiskosten) : '')}
+          ${rij('Uurloon vanaf', v.uurloon_min != null ? num(CRM.euro(v.uurloon_min)) : '', 'invullen…', 'uurloon_min', 'getal')}
+          ${rij('Uurloon tot', v.uurloon_max != null ? num(CRM.euro(v.uurloon_max)) : '', 'invullen…', 'uurloon_max', 'getal')}
+          ${rij('Maandloon vanaf', v.sal_min != null ? num(CRM.euro(v.sal_min)) : '', 'invullen…', 'sal_min', 'getal')}
+          ${rij('Maandloon tot', v.sal_max != null ? num(CRM.euro(v.sal_max)) : '', 'invullen…', 'sal_max', 'getal')}
+          ${rij('Vakantiegeld %', v.vt_pct != null ? num(v.vt_pct + '%') : '', 'invullen…', 'vt_pct', 'getal')}
+          ${rij('Ploegentoeslag %', v.toeslag_pct != null ? num(v.toeslag_pct + '%') : '', 'invullen…', 'toeslag_pct', 'getal')}
+          ${rij('13e maand / eju %', v.eju_pct != null ? num(v.eju_pct + '%') : '', 'invullen…', 'eju_pct', 'getal')}
+          ${rij('Reiskosten', v.reiskosten ? h(v.reiskosten) : '', 'invullen…', 'reiskosten')}
           <div class="label" style="margin:16px 0 6px">Rooster en contract</div>
-          ${rij('Werktijden', v.werktijden ? h(v.werktijden) : '')}
-          ${rij('Uren per week', v.uren ? h(v.uren) : '')}
-          ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '')}
-          ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '')}
-          ${rij('Soort opdracht', v.type ? h(v.type) : '')}
+          ${rij('Werktijden', v.werktijden ? h(v.werktijden) : '', '06:00–14:30, ma t/m vr', 'werktijden')}
+          ${rij('Uren per week', v.uren ? h(v.uren) : '', 'invullen…', 'uren')}
+          ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '', 'geen / 2 / 3 / wisselend', 'ploegendienst')}
+          ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '', 'invullen…', 'contractvorm')}
+          ${rij('Soort opdracht', v.type ? h(v.type) : '', 'W&S / Flex', 'type')}
         </div>
         <div>
           ${geld ? `<div class="label" style="margin-bottom:6px">Afspraak met de klant</div>
-          ${rij('Fee', (a.pct != null ? num(a.pct + '%') : '') + afwChip('fee'), 'geen afspraak')}
-          ${rij('Garantie', (a.garantie_mnd ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'geen')}
-          ${rij('Betaaltermijn', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14')}
+          ${rij('Fee %', (a.pct != null ? num(a.pct + '%') : '') + afwChip('fee'), 'geen afspraak', 'fee_pct', 'getal')}
+          ${rij('Garantie (mnd)', (a.garantie_mnd ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'geen', 'garantie_mnd', 'getal')}
+          ${rij('Betaaltermijn (dgn)', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14', 'betaaltermijn_dgn', 'getal')}
           ${fs && fs.fee != null ? rij('Grondslag (schatting)', num(CRM.euro(fs.grondslag))) + rij('Fee per plaatsing', num(CRM.euro(fs.fee))) : ''}
           <p class="meta" style="margin:10px 0 16px">NULL = geërfd van de klantafspraak. Wijk je hier af, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>` : ''}
           <div class="label" style="margin-bottom:6px">Eisen</div>
-          ${rij('Ervaring en certificaten', v.eisen ? h(v.eisen).replace(/\n/g,'<br>') : '')}
-          ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '')}
+          ${rij('Ervaring en certificaten', v.eisen ? h(v.eisen).replace(/\n/g,'<br>') : '', 'één eis per regel', 'eisen', 'tekst')}
+          ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '', 'invullen…', 'bereikbaarheid')}
         </div>
       </div>
-      <div class="row tight" style="margin-top:16px">
-        <button class="btn sm" id="ovd_bewerk">Bewerken</button>
-        <span class="meta">Bewerken opent het vacatureformulier — zelfde formulier als op de klantkaart.</span>
-      </div>`;
+      <p class="meta" style="margin-top:16px">Klik op een waarde om hem te bewerken — Enter of wegklikken is opslaan, Escape is annuleren.</p>`;
 
-    const bw = el.querySelector('#ovd_bewerk');
-    if(bw) bw.onclick = () => CRM.vacatureModal
-      ? CRM.vacatureModal(v.klant, v)
-      : CRM.toast('Het vacatureformulier is nog niet geladen', 'err');
+    /* Klik op een waarde → invoerveld ter plekke. Na het opslaan hertekent
+       het tabblad, zodat de afgeleide regels (grondslag, fee, chips
+       standaard/afwijkend) meteen meebewegen. */
+    CRM.$$('[data-vv]', el).forEach(sp => {
+      const start = () => {
+        const [veld, type] = sp.dataset.vv.split('|');
+        inlineVeld(sp, v, veld, type === 'tekst1' ? '' : type, () => tabVoorwaarden(el, v));
+      };
+      sp.onclick = start;
+      sp.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); start(); } };
+    });
   }
 
   /* ── Tab: Vacaturetekst ── */
+  /* Elk blok is klikbaar en verandert ter plekke in een tekstveld — ook een
+     leeg blok, want juist dáár begint het invullen. De blokken staan er dus
+     altijd alle vijf, in de volgorde van de website. Alleen de salarisregel
+     is niet bewerkbaar: die komt uit het salarisveld op Voorwaarden, zodat
+     de website nooit iets anders kan zeggen dan het CRM. */
   function tabTekst(el, v){
-    const blok = (lbl, binnen, bron) => !binnen ? '' : `<div class="ovd-tblok">
-      <div class="ovd-tblokkop"><span class="label">${h(lbl)}</span>
-        <button class="btn ghost sm" data-kopieer="${h(bron)}">Kopieer</button></div>
-      ${binnen}
-    </div>`;
-
+    const BLOKKEN = [
+      ['openingszin',  'Openingszin',      '',       'De regel die op de website direct onder de functietitel staat.'],
+      ['over_bedrijf', 'Over het bedrijf', 'tekst',  'Lopende tekst — wie de klant is, zonder de naam te noemen.'],
+      ['de_baan',      'Dit is de baan',   'lijst',  'Eén punt per regel.'],
+      ['eisen',        'Wat wij vragen',   'lijst',  'Eén punt per regel. Staat er niets? "Geen ervaring nodig" is ook informatie.'],
+      ['wat_krijg_je', 'Wat krijg je',     'lijst',  'Eén punt per regel — het salaris komt er vanzelf boven uit Voorwaarden.']
+    ];
     const salaris = salarisRegel(v);
-    const krijgRegels = regels(v.wat_krijg_je);
-    const krijgHtml = (salaris || krijgRegels.length)
-      ? `<ul>${salaris ? `<li>${h(salaris)}<span class="meta"> — uit het salarisveld</span></li>` : ''}${
-          krijgRegels.map(x => `<li>${h(x)}</li>`).join('')}</ul>` : '';
 
-    const stukken = [
-      blok('Openingszin', v.openingszin ? `<p>${h(v.openingszin)}</p>` : '', 'openingszin'),
-      blok('Over het bedrijf', v.over_bedrijf ? `<p>${h(v.over_bedrijf).replace(/\n/g,'<br>')}</p>` : '', 'over_bedrijf'),
-      blok('Dit is de baan', lijstHtml(v.de_baan), 'de_baan'),
-      blok('Wat wij vragen', lijstHtml(v.eisen), 'eisen'),
-      blok('Wat krijg je', krijgHtml, 'wat_krijg_je')
-    ].filter(Boolean);
+    const blokHtml = ([veld, lbl, vorm, hint]) => {
+      const w = String(v[veld] || '').trim();
+      let binnen;
+      if(!w){
+        binnen = `<p class="meta" style="font-style:italic;margin:0">invullen… <span style="font-style:normal">— ${h(hint)}</span></p>`;
+      }else if(vorm === 'lijst'){
+        const extra = veld === 'wat_krijg_je' && salaris
+          ? `<li>${h(salaris)}<span class="meta"> — uit het salarisveld</span></li>` : '';
+        binnen = `<ul>${extra}${regels(w).map(x => `<li>${h(x)}</li>`).join('')}</ul>`;
+      }else{
+        binnen = `<p>${h(w).replace(/\n/g,'<br>')}</p>`;
+      }
+      /* De salarisregel hoort óók zichtbaar te zijn als het blok verder leeg
+         is — anders lijkt het alsof er geen salaris op de site komt. */
+      if(veld === 'wat_krijg_je' && !w && salaris)
+        binnen = `<ul><li>${h(salaris)}<span class="meta"> — uit het salarisveld</span></li></ul>` + binnen;
+      return `<div class="ovd-tblok">
+        <div class="ovd-tblokkop"><span class="label">${h(lbl)}</span>
+          <span class="row tight">
+            ${w ? `<button class="btn ghost sm" data-kopieer="${h(veld)}">Kopieer</button>` : ''}
+            <button class="btn ghost sm" data-bewerk="${h(veld)}">${w ? 'Bewerken' : 'Invullen'}</button>
+          </span></div>
+        <div class="ovd-tinhoud" data-blok="${h(veld)}">${binnen}</div>
+      </div>`;
+    };
 
     el.innerHTML = `
-      ${stukken.length ? `<p class="meta" style="margin:0 0 12px">Dit zijn de blokken zoals ze op ploeggenoten.nl staan. De salarisregel in "Wat krijg je" komt uit het salarisveld op Voorwaarden — één bron, dus de website kan nooit iets anders zeggen dan het CRM.</p>` : ''}
-      ${stukken.join('') || `<p class="meta" style="margin:0">Er is nog geen vacaturetekst. Vul de blokken in via Bewerken op het tabblad Voorwaarden — of begin met de omschrijving${v.omschrijving ? ' hieronder' : ''}.</p>
-        ${v.omschrijving ? `<div class="ovd-tblok" style="margin-top:12px"><div class="ovd-tblokkop"><span class="label">Omschrijving (oud veld)</span></div><p>${h(v.omschrijving).replace(/\n/g,'<br>')}</p></div>` : ''}`}
-      ${stukken.length ? `<div class="row tight" style="margin-top:14px">
+      <p class="meta" style="margin:0 0 12px">De blokken zoals ze op ploeggenoten.nl staan — klik op een blok om het in te vullen. De salarisregel in "Wat krijg je" komt uit het salarisveld op Voorwaarden: één bron, dus de website kan nooit iets anders zeggen dan het CRM.</p>
+      ${BLOKKEN.map(blokHtml).join('')}
+      ${v.omschrijving && !BLOKKEN.some(([veld]) => String(v[veld]||'').trim())
+        ? `<div class="ovd-tblok"><div class="ovd-tblokkop"><span class="label">Omschrijving (oud veld)</span></div><p>${h(v.omschrijving).replace(/\n/g,'<br>')}</p></div>` : ''}
+      <div class="row tight" style="margin-top:14px">
         <button class="btn sm" id="ovd_kopalles">Kopieer de hele tekst</button>
-        <span class="meta">Voor Bryan: alles onder elkaar, met de koppen erbij.</span>
-      </div>` : ''}`;
+        <span class="meta">Voor de website: alles onder elkaar, met de koppen erbij.</span>
+      </div>`;
 
-    const pak = bron => {
-      if(bron === 'wat_krijg_je'){
-        const r = [salarisRegel(v)].filter(Boolean).concat(regels(v.wat_krijg_je));
-        return r.join('\n');
-      }
-      return String(v[bron] || '');
+    const bewerk = veld => {
+      const doel = el.querySelector(`[data-blok="${veld}"]`);
+      if(!doel) return;
+      inlineVeld(doel, v, veld, veld === 'openingszin' ? '' : 'tekst', () => tabTekst(el, v));
     };
-    CRM.$$('[data-kopieer]', el).forEach(b => b.onclick = async () => {
-      try{ await navigator.clipboard.writeText(pak(b.dataset.kopieer)); CRM.toast('Gekopieerd', 'ok'); }
-      catch(e){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf', 'err'); }
+    CRM.$$('[data-bewerk]', el).forEach(b => b.onclick = () => bewerk(b.dataset.bewerk));
+    CRM.$$('.ovd-tinhoud', el).forEach(d => d.onclick = e => {
+      if(e.target.closest('.ovd-inline')) return;   // al aan het typen
+      bewerk(d.dataset.blok);
     });
-    const ka = el.querySelector('#ovd_kopalles');
-    if(ka) ka.onclick = async () => {
+
+    const pak = veld => veld === 'wat_krijg_je'
+      ? [salaris].filter(Boolean).concat(regels(v.wat_krijg_je)).join('\n')
+      : String(v[veld] || '');
+    CRM.$$('[data-kopieer]', el).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      try{ await navigator.clipboard.writeText(pak(b.dataset.kopieer)); CRM.toast('Gekopieerd', 'ok'); }
+      catch(err){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf', 'err'); }
+    });
+    el.querySelector('#ovd_kopalles').onclick = async () => {
       const alles = [
-        v.openingszin && v.openingszin.trim(),
-        'OVER HET BEDRIJF\n' + String(v.over_bedrijf||'').trim(),
-        'DIT IS DE BAAN\n' + regels(v.de_baan).join('\n'),
-        'WAT WIJ VRAGEN\n' + regels(v.eisen).join('\n'),
-        'WAT KRIJG JE\n' + [salarisRegel(v)].filter(Boolean).concat(regels(v.wat_krijg_je)).join('\n')
-      ].filter(x => x && !/\n$/.test(x)).join('\n\n');
+        String(v.openingszin||'').trim(),
+        String(v.over_bedrijf||'').trim() ? 'OVER HET BEDRIJF\n' + String(v.over_bedrijf).trim() : '',
+        regels(v.de_baan).length ? 'DIT IS DE BAAN\n' + regels(v.de_baan).join('\n') : '',
+        regels(v.eisen).length ? 'WAT WIJ VRAGEN\n' + regels(v.eisen).join('\n') : '',
+        (salaris || regels(v.wat_krijg_je).length)
+          ? 'WAT KRIJG JE\n' + [salaris].filter(Boolean).concat(regels(v.wat_krijg_je)).join('\n') : ''
+      ].filter(Boolean).join('\n\n');
       try{ await navigator.clipboard.writeText(alles); CRM.toast('Hele tekst gekopieerd', 'ok'); }
       catch(e){ CRM.toast('Kopiëren lukte niet', 'err'); }
     };

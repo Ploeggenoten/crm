@@ -2464,7 +2464,58 @@ function klantModal(k){
 /* k mag null zijn: dan vraagt het venster zelf om de klant. Zo kun je ook
    vanaf het scherm Vacatures een nieuwe opdracht aanmaken, en niet alleen
    vanaf de kaart van één klant. (Tjeerd, 3 aug 2026.) */
+function vacatureSnel(k){
+  const kiesKlant = !k;
+  const klanten = (CRM.state.clients||[]).map(x=>x.naam).filter(Boolean).sort((a,b)=>a.localeCompare(b,'nl'));
+  if(kiesKlant && !klanten.length) return CRM.toast('Maak eerst een klant aan bij Relaties','err');
+  k = k || CRM.klant(klanten[0]) || {naam:klanten[0], locatie:'', eigenaar:CRM.me()};
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe vacature</div>
+      <p class="sub" style="margin:6px 0 0">Alleen het begin — daarna sta je op de vacaturekaart en vul je daar alles in.</p></div>
+    <div class="modal-b">
+      ${kiesKlant ? `<div class="f-row"><label for="vs_klant">Klant</label>
+        <select id="vs_klant">${klanten.map(x =>
+          `<option${x===k.naam?' selected':''}>${h(x)}</option>`).join('')}</select></div>` : `<p class="sub" style="margin:0 0 10px"><b>${h(k.naam)}</b></p>`}
+      <div class="f-grid">
+        <div class="f-row"><label>Functie</label><input type="text" id="vs_functie" placeholder="Bijv. CNC Draaier"></div>
+        <div class="f-row"><label>Aantal posities</label><input type="number" id="vs_aantal" min="1" value="1"></div>
+      </div>
+      <div class="note err" id="vs_err" style="display:none"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="vs_ok">Aanmaken — kaart invullen →</button>
+    </div>`, {onOpen(m){
+    setTimeout(()=>m.querySelector('#vs_functie').focus(), 60);
+    m.querySelector('#vs_ok').onclick = async () => {
+      const functie = m.querySelector('#vs_functie').value.trim();
+      if(!functie){ const e=m.querySelector('#vs_err'); e.style.display=''; e.textContent='Vul de functie in.'; return; }
+      const kSel = m.querySelector('#vs_klant');
+      if(kSel && kSel.value){ k = CRM.klant(kSel.value) || {naam:kSel.value}; }
+      const rij = {klant:k.naam, functie, locatie:k.locatie||'', aantal:Number(m.querySelector('#vs_aantal').value)||1,
+        status:'Open', type:'W&S', eigenaar:k.eigenaar||CRM.me(), aangemaakt:CRM.todayISO(),
+        sal_min:null, sal_max:null, omschrijving:''};
+      /* In productie genereert de database het uuid; in demo maken we er zelf
+         een, anders is de kaart niet te openen. */
+      if(CRM.demo) rij.id = k.naam + '::' + functie;
+      CRM.modal.close();
+      await bewaarRij('vacatures','vacs', rij, false);
+      await CRM.logActiviteit('klant', k.naam, 'systeem', 'Vacature ' + functie + ' aangemaakt');
+      await meldNieuweVacature(k, rij);
+      /* Meteen naar de kaart — daar gebeurt het invullen. */
+      if(rij.id) CRM.ga('hot', {id:String(rij.id)});
+      else CRM.render();
+    };
+  }});
+}
+
 function vacatureModal(k, v, opts){
+  /* NIEUW aanmaken is sinds 4 aug 2026 een klein venster: klant + functie,
+     en dan stá je op de vacaturekaart en vul je dáár alles in — de kaart is
+     inline bewerkbaar. (Tjeerd: "ik wil dat het de kaart meteen aanmaakt en
+     dat je de vacaturekaart meteen kan invullen.") Het grote formulier
+     hieronder blijft bestaan voor Bewerken vanaf de klantkaart. */
+  if(!v) return vacatureSnel(k, opts);
   const extra = heeftVacInfoVelden();
   const kaart = heeftVacKaartVelden();
   const kiesKlant = !k;
