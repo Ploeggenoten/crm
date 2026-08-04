@@ -834,17 +834,32 @@
      echte fee kunnen niet uiteenlopen. Per vacature mag het percentage, de
      garantie en de betaaltermijn afwijken van de klantafspraak — NULL in die
      kolommen betekent "erf van de klant". */
+
+  /* Soort opdracht → welke klantafspraak erft deze vacature. Eén klant kan
+     W&S én uitzenden én detachering naast elkaar hebben; de vacature zegt
+     via `type` welke hier geldt (feedback Tjeerd, 4 aug 2026: "dit moet
+     gekoppeld zijn aan de afspraken met de klant"). 'Flex' is in het hele
+     CRM het woord voor uitzendwerk — de opbrengst loopt via gewerkte uren. */
+  const AFSPRAAKSOORT = t => t === 'Flex' ? 'uitzenden' : (t === 'Detachering' ? 'detachering' : 'ws');
+  const soortLbl = k => ((CRM.fee && CRM.fee.SOORTEN || []).find(s => s.k === k) || {lbl:k}).lbl;
   function feeAfspraak(v){
-    const basis = (CRM.fee && CRM.fee.voorKlant) ? CRM.fee.voorKlant(v.klant, CRM.todayISO()) : null;
+    const soort = AFSPRAAKSOORT(v.type);
+    const basis = (CRM.fee && CRM.fee.voorKlant) ? CRM.fee.voorKlant(v.klant, CRM.todayISO(), soort) : null;
     const a = Object.assign({}, basis || (CRM.fee ? CRM.fee.leegAfspraak() : {}));
+    if(!basis) a.fee_regels = [];               /* leegAfspraak heeft 23%-vulling; zonder afspraak niets tonen */
+    if(!basis) a.fee_standaard = null;
     const wijkt = [];
     if(v.fee_pct != null && v.fee_pct !== ''){ a.pct = Number(v.fee_pct); a.soort = 'vast_pct'; wijkt.push('fee'); }
     if(v.garantie_mnd != null && v.garantie_mnd !== ''){ a.garantie_mnd = Number(v.garantie_mnd); wijkt.push('garantie'); }
     if(v.betaaltermijn_dgn != null && v.betaaltermijn_dgn !== ''){ a.betaaltermijn = Number(v.betaaltermijn_dgn); wijkt.push('betaaltermijn'); }
-    return {a, wijkt, heeftKlantAfspraak: !!basis};
+    return {a, wijkt, heeftKlantAfspraak: !!basis, soort};
   }
   function feeSchatting(v){
     if(!CRM.magOpbrengstZien() || !CRM.fee) return null;
+    /* Flex: de opbrengst is marge over gewerkte uren, geen eenmalige fee —
+       een W&S-schatting zou hier een bedrag beloven dat nooit gefactureerd
+       wordt (zelfde les als CRM.fee.geenFeeReden). */
+    if(v.type === 'Flex') return {fee:null, flex:true};
     try{
       const {a} = feeAfspraak(v);
       const pseudo = { maandloon: v.sal_max != null ? Number(v.sal_max) : (v.sal_min != null ? Number(v.sal_min) : null),
@@ -887,6 +902,8 @@
     /* ── Linkerkolom: het werk ── */
     const fs = geld ? feeSchatting(v) : null;
     const feeRij = !geld ? ''
+      : (fs && fs.flex)
+        ? `<div class="ovd-mini"><span>Opbrengst</span><span class="meta">flex — marge via gewerkte uren</span></div>`
       : (fs && fs.fee != null)
         ? `<div class="ovd-mini"><span>Fee bij vulling</span><span class="num">${h(CRM.euro(fs.fee * Math.max(1, t.teVullen)))}</span></div>`
         : `<div class="ovd-mini"><span>Fee bij vulling</span><span class="meta">vul salaris in</span></div>`;
@@ -1109,10 +1126,18 @@
      Enter of blur = opslaan, Escape = annuleren. */
   function inlineVeld(el, v, veld, type, naKlaar){
     const oud = v[veld] == null ? '' : String(v[veld]);
-    const inp = document.createElement(type === 'tekst' ? 'textarea' : 'input');
-    if(type === 'tekst'){ inp.rows = Math.max(3, oud.split('\n').length + 1); }
+    /* 'keuze:A,B,C' → een select in plaats van vrije tekst. Voor velden
+       waar alleen vaste waarden kloppen (soort opdracht: de rest van het
+       CRM herkent precies W&S, Detachering en Flex). */
+    const keuzes = type && type.startsWith('keuze') ? type.slice(6).split(',') : null;
+    const inp = document.createElement(keuzes ? 'select' : type === 'tekst' ? 'textarea' : 'input');
+    if(keuzes){
+      inp.innerHTML = [''].concat(keuzes).map(o =>
+        `<option value="${h(o)}"${o === oud ? ' selected' : ''}>${o ? h(o) : '—'}</option>`).join('');
+    }
+    else if(type === 'tekst'){ inp.rows = Math.max(3, oud.split('\n').length + 1); }
     else inp.type = type === 'getal' ? 'number' : 'text';
-    if(type === 'getal') inp.step = 'any';
+    if(!keuzes && type === 'getal') inp.step = 'any';
     inp.value = oud;
     inp.className = 'ovd-inline';
     el.replaceChildren(inp);
@@ -1132,13 +1157,15 @@
       /* In een textarea is Enter een nieuwe regel; opslaan is daar Cmd/Ctrl+Enter. */
       if(e.key === 'Enter' && (type !== 'tekst' || e.metaKey || e.ctrlKey)){ e.preventDefault(); bewaar(); }
     };
+    if(keuzes) inp.onchange = bewaar;      /* kiezen = klaar, niet nog eens wegklikken */
     inp.onblur = bewaar;
   }
 
   /* ── Tab: Voorwaarden ── */
   function tabVoorwaarden(el, v){
     const geld = CRM.magOpbrengstZien();
-    const {a, wijkt, heeftKlantAfspraak} = feeAfspraak(v);
+    const {a, wijkt, heeftKlantAfspraak, soort} = feeAfspraak(v);
+    const flex = v.type === 'Flex';
     const fs = geld ? feeSchatting(v) : null;
     /* `veld` erbij maakt een rij klikbaar-bewerkbaar; zonder veld (de
        afgeleide waarden zoals de grondslag) blijft hij alleen-lezen. */
@@ -1153,7 +1180,7 @@
       : (heeftKlantAfspraak ? ' <span class="chip">standaard</span>' : '');
 
     el.innerHTML = `
-      ${heeftKlantAfspraak || !geld ? '' : `<div class="note warn" style="margin-bottom:14px">Er is nog geen fee-afspraak met ${h(v.klant || 'deze klant')} vastgelegd. Zolang die ontbreekt valt er hier niets te erven — leg hem vast op de klantkaart.</div>`}
+      ${heeftKlantAfspraak || !geld ? '' : `<div class="note warn" style="margin-bottom:14px">Er is nog geen ${h(soortLbl(soort))}-afspraak met ${h(v.klant || 'deze klant')} vastgelegd. Zolang die ontbreekt valt er hier niets te erven — leg hem vast op de klantkaart bij Commerciële afspraken.</div>`}
       <div class="ovd-kols2">
         <div>
           <div class="label" style="margin-bottom:6px">Salaris</div>
@@ -1170,15 +1197,23 @@
           ${rij('Uren per week', v.uren ? h(v.uren) : '', 'invullen…', 'uren')}
           ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '', 'geen / 2 / 3 / wisselend', 'ploegendienst')}
           ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '', 'invullen…', 'contractvorm')}
-          ${rij('Soort opdracht', v.type ? h(v.type) : '', 'W&S / Flex', 'type')}
         </div>
         <div>
-          ${geld ? `<div class="label" style="margin-bottom:6px">Afspraak met de klant</div>
+          <div class="label" style="margin-bottom:6px">Afspraak met de klant</div>
+          ${rij('Dienstverlening', (v.type ? h(v.type) : '') + (heeftKlantAfspraak && geld
+              ? ` <span class="chip green">volgt ${h(soortLbl(soort))}-afspraak</span>` : ''),
+            'kiezen…', 'type', 'keuze:W&S,Detachering,Flex')}
+          ${!geld ? '' : flex ? `
+          ${rij('Factor', a.pct != null ? num(String(a.pct).replace('.', ',') + '×')
+              : (heeftKlantAfspraak && CRM.fee.pctVoor ? (x => x != null ? num(String(x).replace('.', ',') + '×') : '')(CRM.fee.pctVoor({functie:v.functie}, a).pct) : ''), 'geen afspraak')}
+          ${rij('Overname na', a.overname_uren != null ? num(a.overname_uren + ' uur') : '', 'geen grens')}
+          ${rij('Betaaltermijn (dgn)', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14', 'betaaltermijn_dgn', 'getal')}
+          <p class="meta" style="margin:10px 0 16px">Flex: de opbrengst loopt via de marge op gewerkte uren, niet via een eenmalige fee. Factor en overnamegrens komen uit de uitzendafspraak op de klantkaart.</p>` : `
           ${rij('Fee %', (a.pct != null ? num(a.pct + '%') : '') + afwChip('fee'), 'geen afspraak', 'fee_pct', 'getal')}
           ${rij('Garantie (mnd)', (a.garantie_mnd ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'geen', 'garantie_mnd', 'getal')}
           ${rij('Betaaltermijn (dgn)', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14', 'betaaltermijn_dgn', 'getal')}
           ${fs && fs.fee != null ? rij('Grondslag (schatting)', num(CRM.euro(fs.grondslag))) + rij('Fee per plaatsing', num(CRM.euro(fs.fee))) : ''}
-          <p class="meta" style="margin:10px 0 16px">NULL = geërfd van de klantafspraak. Wijk je hier af, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>` : ''}
+          <p class="meta" style="margin:10px 0 16px">NULL = geërfd van de ${h(soortLbl(soort))}-afspraak met de klant. Wijk je hier af, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>`}
           <div class="label" style="margin-bottom:6px">Eisen</div>
           ${rij('Ervaring en certificaten', v.eisen ? h(v.eisen).replace(/\n/g,'<br>') : '', 'één eis per regel', 'eisen', 'tekst')}
           ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '', 'invullen…', 'bereikbaarheid')}
@@ -1192,7 +1227,11 @@
     CRM.$$('[data-vv]', el).forEach(sp => {
       const start = () => {
         const [veld, type] = sp.dataset.vv.split('|');
-        inlineVeld(sp, v, veld, type === 'tekst1' ? '' : type, () => tabVoorwaarden(el, v));
+        /* De dienstverlening stuurt óók de linkerkolom (fee bij vulling) —
+           daarna dus de hele kaart hertekenen, niet alleen dit tabblad.
+           S.dtab onthoudt dat we op Voorwaarden staan. */
+        const naKlaar = veld === 'type' ? () => detail(v) : () => tabVoorwaarden(el, v);
+        inlineVeld(sp, v, veld, type === 'tekst1' ? '' : type, naKlaar);
       };
       sp.onclick = start;
       sp.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); start(); } };

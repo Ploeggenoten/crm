@@ -414,6 +414,40 @@ async function bewaarKlant(naam, wijziging){
   }
   CRM.toast('Opgeslagen','ok');
 }
+/* ─── Relatie wordt vanzelf klant ─────────────────────────────────
+   Staat er een kandidaat geplaatst (Contract getekend of Gestart), dan
+   is de fase geen mening meer: dit ís een klant. De pijplijn, een import
+   of een andere module kan die plaatsing gedaan hebben zonder de relatie
+   aan te raken — daarom controleert deze module het zelf bij elke render
+   (goedkoop: leest de bestaande index). Fase 'Afgerond' = actieve klant
+   (CRM.SALES_KLANT in js/data.js). Tjeerd, 4 aug 2026: "relaties moeten
+   de status klant krijgen als er kandidaten zijn geplaatst." */
+let _autoKlantLoopt = false;
+async function autoKlantFase(){
+  if(_autoKlantLoopt) return;
+  const ix = index();
+  const doen = (CRM.state.clients || []).filter(k =>
+    !CRM.SALES_KLANT.includes(k.fase)
+    && (ix.kand.get(k.naam) || []).some(c => CRM.PLACED.includes(c.fase)));
+  if(!doen.length) return;
+  _autoKlantLoopt = true;
+  try{
+    for(const k of doen){
+      const oud = k.fase || '—';
+      const wijziging = {fase:'Afgerond', fase_sinds:CRM.todayISO()};
+      Object.assign(k, wijziging);
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('clients').update(wijziging).eq('naam', k.naam);
+        if(error){ console.warn('autoKlantFase', k.naam, error); continue; }
+      }
+      CRM.logActiviteit('klant', k.naam, 'fase',
+        `Fase automatisch op Afgerond gezet (was: ${oud}) — er staat een kandidaat geplaatst`);
+      CRM.toast(`${k.naam} staat nu als klant (Afgerond) — er is een kandidaat geplaatst`, 'ok');
+    }
+  }finally{ _autoKlantLoopt = false; }
+  if(CRM.view === 'klanten') CRM.render();
+}
+
 /* Team opslaan — clients.team bestaat pas na supabase/import-aanvulling.sql.
    Ontbreekt de kolom nog, dan lokaal bijhouden en netjes uitleggen in
    plaats van een kale databasefout. */
@@ -3738,6 +3772,7 @@ CRM.registerModule('klanten', {
     zorgFee();               // rekenmotor js/fee.js
     zorgAfspraken();         // alleen als deze gebruiker geld mag zien
     verversIndex();          // data kan buiten deze module gewijzigd zijn
+    autoKlantFase();         // geplaatste kandidaat → relatie is klant (Afgerond)
     if(params && params.id) kaart(mount, acties, String(params.id));
     else overzicht(mount, acties);
   }
