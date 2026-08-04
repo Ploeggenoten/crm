@@ -344,6 +344,66 @@ function cijfers(naam){
 }
 
 /* ─── Opslaan ─────────────────────────────────────────────────── */
+/* ─── Relatie hernoemen ───────────────────────────────────────────
+   De klantnaam is in dit systeem overal de koppelsleutel: kandidaten,
+   vacatures, contactpersonen, kansen, taken en de hele geschiedenis
+   wijzen met de náám naar de klant. Daarom stond er geen naamveld in het
+   bewerkvenster — een losse naamswijziging zou al die koppelingen
+   doorsnijden. Hernoemen kan dus alleen als één beweging over alle
+   tabellen tegelijk, en dat is precies wat deze functie doet.
+   (Tjeerd, 4 aug 2026: "als ik de naam van een relatie wil aanpassen,
+   hoe doe ik dit dan?")
+
+   Volgorde: eerst de klant zelf, dan de verwijzingen. Mislukt de eerste
+   stap, dan is er niets aangeraakt; mislukt een verwijzing daarna, dan
+   melden we per tabel wat er niet mee kon in plaats van stil half werk
+   op te leveren. */
+async function hernoemKlant(k, nieuw){
+  const oud = k.naam;
+  nieuw = String(nieuw||'').trim();
+  if(!nieuw || nieuw === oud) return false;
+  if(CRM.state.clients.some(c => c.naam !== oud && c.naam.trim().toLowerCase() === nieuw.toLowerCase())){
+    CRM.toast('Er bestaat al een relatie met die naam','err'); return false;
+  }
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('clients').update({naam:nieuw}).eq('naam', oud);
+    if(error){ CRM.fout('Hernoemen mislukt', error); return false; }
+    const stappen = [
+      ['candidates',       t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['vacatures',        t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['crm_contacten',    t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['crm_kansen',       t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['crm_leads',        t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['crm_stukken',      t => t.update({klant:nieuw}).eq('klant', oud)],
+      ['crm_taken',        t => t.update({ref:nieuw}).eq('entiteit','klant').eq('ref', oud)],
+      ['crm_activiteiten', t => t.update({ref:nieuw}).eq('entiteit','klant').eq('ref', oud)],
+      ['crm_meldingen',    t => t.update({ref:nieuw}).eq('entiteit','klant').eq('ref', oud)],
+      ['crm_documenten',   t => t.update({ref:nieuw}).eq('entiteit','klant').eq('ref', oud)]
+    ];
+    const mislukt = [];
+    for(const [tabel, fn] of stappen){
+      const {error: e} = await fn(CRM.sb.from(tabel));
+      if(e) mislukt.push(tabel);
+    }
+    /* Fee-afspraken en finance: daar mag alleen de eigenaar schrijven
+       (RLS). Stil proberen — hernoemt een teamlid, dan houdt finance de
+       oude naam en is dat iets voor Tjeerd, geen blokkade voor het CRM. */
+    await CRM.sb.from('crm_afspraken').update({klant:nieuw}).eq('klant', oud).then(()=>{}, ()=>{});
+    await CRM.sb.from('fin_placements').update({klant:nieuw}).eq('klant', oud).then(()=>{}, ()=>{});
+    if(mislukt.length) CRM.toast('Hernoemd, maar niet alles kon mee: ' + mislukt.join(', '), 'err');
+  }
+  /* En dan het geheugen van de app zelf, zodat het scherm meteen klopt. */
+  const zet = (lijst, veld) => (CRM.state[lijst]||[]).forEach(r => { if(r[veld] === oud) r[veld] = nieuw; });
+  zet('clients','naam'); zet('cands','klant'); zet('vacs','klant');
+  zet('contacten','klant'); zet('kansen','klant'); zet('leads','klant');
+  (CRM.state.taken||[]).concat(CRM.state.activiteiten||[], CRM.state.documenten||[])
+    .forEach(r => { if(r.entiteit === 'klant' && r.ref === oud) r.ref = nieuw; });
+  k.naam = nieuw;
+  CRM.logActiviteit('klant', nieuw, 'notitie', `Relatie hernoemd: "${oud}" → "${nieuw}"`);
+  CRM.toast('Relatie hernoemd — alle koppelingen zijn mee','ok');
+  return true;
+}
+
 async function bewaarKlant(naam, wijziging){
   const i = CRM.state.clients.findIndex(c => c.naam === naam);
   if(i < 0) return;
@@ -660,6 +720,7 @@ function kaart(mount, acties, naam){
           ${afspraakBlokHtml()}
           ${CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml()}
           ${afsprakenBlokHtml()}
+          ${mailwisselingBlokHtml(k)}
           ${takenBlokHtml()}
         </aside>
         <div class="kl-werk">
@@ -767,6 +828,7 @@ function kaart(mount, acties, naam){
 
   /* Rail: komende afspraken (alleen met gekoppelde Outlook) */
   railAfspraken(mount, k);
+  railMailwisseling(mount, k);
 
   /* Rail: open taken */
   mount.querySelector('#rt_nieuw').onclick = () => nieuweTaak(k);
@@ -851,6 +913,57 @@ function railAfspraken(root, k){
     }).join('')}</div>`;
   }).catch(e => console.warn('agenda klantkaart', e));
 }
+/* ─── Rail: mailwisseling met de hele organisatie ─────────────────
+   Tjeerd (4 aug 2026): "je kijkt eerst altijd op de klantenkaart, dat is
+   de overview, daarna druk je op de contactpersoon die je moet hebben."
+   Het mailblok per contactpersoon bestond al (in het dossier), maar de
+   overview toonde niets — dus zag je pas dat er gemaild was als je al
+   wist bij wíe je moest kijken. Dit blok bundelt de wisseling met het
+   klantadres én alle contactpersonen, nieuwste bovenaan, met de naam
+   erbij zodat je weet met wie het gesprek loopt. */
+function mailwisselingBlokHtml(k){
+  if(!mailAan()) return '';
+  const adressen = klantAdressen(k);
+  if(!adressen.length) return '';
+  return `<div class="card kl-railkaart kl-r-ml" id="ml_kaart" hidden>
+    <div class="card-h"><div class="h2">Mailwisseling</div></div>
+    <div class="card-b" id="ml_klijst"></div></div>`;
+}
+/* Alle e-mailadressen van deze relatie: het klantadres + contactpersonen.
+   Hooguit zes — meer adressen betekent meer Graph-aanroepen, en een
+   relatie met méér dan zes mailende contacten is er in dit bestand niet. */
+function klantAdressen(k){
+  const uniek = new Map();
+  const zet = (adres, naam) => { const a = String(adres||'').trim().toLowerCase();
+    if(a && !uniek.has(a)) uniek.set(a, naam || ''); };
+  zet(k.email, '');
+  (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+    .forEach(ct => zet(ct.email, ct.naam));
+  return [...uniek.entries()].slice(0, 6);
+}
+function railMailwisseling(root, k){
+  const kaart = root.querySelector('#ml_kaart'); if(!kaart) return;
+  const lijst = kaart.querySelector('#ml_klijst');
+  const adressen = klantAdressen(k);
+  Promise.all(adressen.map(([adres, naam]) =>
+    Promise.resolve(CRM.outlook.mailMet(adres, 5))
+      .then(rijen => (Array.isArray(rijen) ? rijen : []).map(m => ({...m, wieNaam: naam})))
+      .catch(() => [])
+  )).then(groepen => {
+    /* Dezelfde mail kan bij twee adressen matchen (cc) — ontdubbelen op de
+       Outlook-link, en anders op onderwerp + tijdstip. */
+    const gezien = new Set();
+    const alle = groepen.flat().filter(m => {
+      const sleutel = m.link || (m.onderwerp + '|' + m.op);
+      if(gezien.has(sleutel)) return false;
+      gezien.add(sleutel); return true;
+    }).sort((a,b) => new Date(b.op) - new Date(a.op)).slice(0, 8);
+    if(!alle.length) return;                 // blok blijft weg — geen lege belofte
+    kaart.hidden = false;
+    lijst.innerHTML = `<div class="ml-lijst">${alle.map(m => mailRegelHtml(m)).join('')}</div>`;
+  });
+}
+
 /* Na het inplannen: het blokje bijwerken als de klantkaart openstaat.
    Eerst de gedeelde cache legen, anders toont de kaart de zojuist
    ingeplande afspraak pas na vijf minuten. */
@@ -2400,6 +2513,9 @@ function klantModal(k){
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Klantgegevens</div></div>
     <div class="modal-b">
+      <div class="f-row" style="margin-bottom:12px"><label>Naam</label>
+        <input type="text" id="g_naam" value="${h(k.naam||'')}">
+        <div class="hint">Hernoemen neemt álles mee: kandidaten, vacatures, contactpersonen, taken en de geschiedenis.</div></div>
       <div class="f-grid">
         <div class="f-row"><label>Fase</label><select id="g_fase">
           <option value=""${!k.fase?' selected':''}>Zonder fase</option>
@@ -2450,11 +2566,22 @@ function klantModal(k){
       /* Team los opslaan: de kolom kan ontbreken zolang de aanvulling-SQL
          niet gedraaid is — dan mag de rest van de wijziging niet sneuvelen. */
       const team = m.querySelector('#g_team').value.trim();
+      const nieuweNaam = m.querySelector('#g_naam').value.trim();
       CRM.modal.close();
+      /* Eerst de gewone velden onder de huidige naam, dán pas hernoemen —
+         andersom zoekt bewaarKlant een rij die net van naam veranderd is. */
       await bewaarKlant(k.naam, w);
       if(faseGewisseld)
         CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oudeFase||'—'} → ${nieuweFase||'—'}`);
       if(team !== (k.team||'')) await bewaarTeam(k, team);
+      if(nieuweNaam && nieuweNaam !== k.naam){
+        const ok = await CRM.bevestig(`"${k.naam}" hernoemen naar "${nieuweNaam}"? Alle koppelingen — kandidaten, vacatures, contactpersonen, taken en geschiedenis — verhuizen mee.`);
+        if(ok && await hernoemKlant(k, nieuweNaam)){
+          klantOpen = k.naam;
+          CRM.ga('klanten', {id: k.naam});
+          return;
+        }
+      }
       CRM.render();
     };
   }});
@@ -2874,9 +3001,13 @@ function mailRegelHtml(m){
   const eigenDomein = String(CRM.user?.email || '').split('@')[1] || '';
   const uitgaand = m.uitgaand
     || (eigenDomein && String(m.van || '').toLowerCase().endsWith('@' + eigenDomein));
+  /* In het gebundelde klantblok lopen meerdere personen door elkaar; de
+     naam erbij ("verstuurd aan Donna") maakt het gesprek herkenbaar. In
+     het blok van één contactpersoon blijft wieNaam leeg en staat er
+     gewoon "verstuurd". */
   const richting = uitgaand
-    ? 'verstuurd'
-    : 'ontvangen' + (m.vanNaam ? ' van ' + m.vanNaam : '');
+    ? 'verstuurd' + (m.wieNaam ? ' aan ' + m.wieNaam : '')
+    : 'ontvangen' + (m.vanNaam ? ' van ' + m.vanNaam : (m.wieNaam ? ' van ' + m.wieNaam : ''));
   const binnen = `<b class="trunc">${h(m.onderwerp || '(geen onderwerp)')}</b>
       <div class="meta">${h(richting)} · <span class="num">${h(CRM.geleden(m.op) || '')}</span></div>
       ${m.fragment ? `<p class="ml-frag">${h(String(m.fragment).slice(0,220))}</p>` : ''}`;

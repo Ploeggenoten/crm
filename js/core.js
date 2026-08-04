@@ -685,7 +685,17 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
             `<option value="${h(n)}"${n===CRM.me()?' selected':''}>${h(n)}${n===CRM.me()?' (ik)':''}</option>`).join('')}
           </select></div>
         <div class="f-row"><label>Datum</label>
-          <input type="date" id="tk_datum" value="${h(opts.datum || CRM.todayISO())}"></div>
+          <input type="date" id="tk_datum" value="${h(opts.datum || CRM.todayISO())}">
+          <!-- Snelkeuzes vóór het datumveld langs: een opvolgtaak is bijna
+               altijd "over een week of twee" — dat moet één klik zijn, de
+               kalender blijft er voor de uitzondering. (Tjeerd, 4 aug 2026:
+               "dit zorgt dat ik sneller kan schakelen.") -->
+          <div class="row tight" style="margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="chip btn-like" data-tksnel="1">morgen</button>
+            <button type="button" class="chip btn-like" data-tksnel="7">1 week</button>
+            <button type="button" class="chip btn-like" data-tksnel="14">2 weken</button>
+            <button type="button" class="chip btn-like" data-tksnel="m">1 maand</button>
+          </div></div>
         <!-- Een tijd erbij. Zonder tijd staat "Tomasz voorbereiden" ergens op
              morgen en weet je niet of dat vóór of ná het gesprek van 10:00
              moet. Leeg laten mag: niet elke taak hoort op een klok. -->
@@ -702,6 +712,16 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
     </div>`, {onOpen(m){
       const inp = m.querySelector('#tk_tekst'); setTimeout(()=>inp.focus(),60);
       m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
+      /* Snelkeuzes: lokaal rekenen, niet via toISOString — dat is UTC en
+         zet 's avonds de verkeerde dag neer. */
+      const isoLokaal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      m.querySelectorAll('[data-tksnel]').forEach(b => b.onclick = () => {
+        const d = new Date();
+        if(b.dataset.tksnel === 'm') d.setMonth(d.getMonth() + 1);
+        else d.setDate(d.getDate() + Number(b.dataset.tksnel));
+        m.querySelector('#tk_datum').value = isoLokaal(d);
+        m.querySelectorAll('[data-tksnel]').forEach(x => x.classList.toggle('sel', x === b));
+      });
       m.querySelector('#tk_save').onclick = async () => {
         const tekst = inp.value.trim();
         if(!tekst){ inp.focus(); return; }

@@ -221,16 +221,24 @@ function kpiHTML(alle){
    250 kaarten en er staan tot 2.000 activiteiten in het geheugen. */
 function contactIndex(){
   const soort = new Set(CRM.opvolging.CONTACT);
+  /* Een gesprek mét Donna ís een gesprek met Spanbeton. Contactmomenten
+     worden óók op de contactpersoon vastgelegd (contactkaart), en die
+     telden hier niet mee — dus zei het bord "nog nooit gesproken" over
+     een klant waar gisteren nog een gespreksverslag bij lag. */
+  const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
   const m = new Map();
   for(const a of (CRM.state.activiteiten || [])){
-    if(a.entiteit !== 'klant' || !soort.has(a.soort)) continue;
+    if(!soort.has(a.soort)) continue;
+    const naam = a.entiteit === 'klant' ? a.ref
+               : a.entiteit === 'contact' ? klantVan.get(String(a.ref)) : '';
+    if(!naam) continue;
     /* a.op en niets anders — exact zoals 'Blijft liggen' (contactVan) en de
        klantenlijst het doen. Zou hier ook extra.datum meetellen, dan noemt
        het bord een andere dag dan de lijst eronder over dezelfde klant. */
     const dag = lokaleDag(a.op);
     if(!dag) continue;
-    const v = m.get(a.ref);
-    if(!v || dag > v) m.set(a.ref, dag);
+    const v = m.get(naam);
+    if(!v || dag > v) m.set(naam, dag);
   }
   /* clients.laatst_contact is het veld dat een AM met de hand bijwerkt; het
      mag winnen als het jonger is dan wat er in de log staat. */
@@ -1664,6 +1672,15 @@ function tekenInhoud(){
     /* Ná de render, zonder erop te wachten: het bord staat er meteen en de
        afspraken schuiven in zodra de agenda binnen is (uit cache: direct). */
     if(!leegBord) agendaOpBord();
+    /* En stil de verzonden mail verwerken: heeft die het veld
+       laatst_contact ergens bijgewerkt, dan tekent het bord zich één keer
+       opnieuw met de verse "gesproken"-regels. De cache in opvolging.js
+       zorgt dat dit hooguit eens per vijf minuten écht iets doet — geen
+       renderlus. */
+    if(!leegBord && CRM.opvolging.contactUitMail)
+      CRM.opvolging.contactUitMail().then(gewijzigd => {
+        if(gewijzigd && CRM.view === 'sales') tekenInhoud();
+      }).catch(()=>{});
   }
   bindInhoud();
 }

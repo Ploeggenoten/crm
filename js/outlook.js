@@ -432,6 +432,27 @@ CRM.outlook = {
     }catch(e){ console.warn('mailMet', e); return null; }
   },
 
+  /* Wie heb ik recent gemaild? Alleen adressen en tijdstippen uit de map
+     Verzonden — geen onderwerpen of inhoud, want dit dient één doel: het
+     veld "laatste contact" automatisch bij laten lopen (Tjeerd, 4 aug
+     2026: "het systeem moet zelf herkennen dat ik contact heb gehad").
+     Stil: vraagt nooit om login. */
+  async mailVerzonden({aantal = 50, sindsDagen = 14} = {}){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const sinds = new Date(Date.now() - sindsDagen*86400000).toISOString();
+    try{
+      const d = await graph('/me/mailFolders/sentitems/messages' +
+        `?$filter=${encodeURIComponent('sentDateTime ge ' + sinds)}` +
+        `&$orderby=sentDateTime desc&$top=${aantal}` +
+        '&$select=toRecipients,ccRecipients,sentDateTime', {}, false);
+      return (d?.value||[]).map(m => ({
+        aan: (m.toRecipients||[]).concat(m.ccRecipients||[])
+          .map(r => r.emailAddress?.address).filter(Boolean),
+        op: m.sentDateTime
+      }));
+    }catch(e){ console.warn('mailVerzonden', e); return null; }
+  },
+
   /* Inbox-overzicht voor het dashboard: wat kwam er binnen en wat is nog
      ongelezen. Alleen koppen en een kort fragment — geen volledige mails
      in beeld terwijl er iemand meekijkt. Stil: vraagt nooit om login. */

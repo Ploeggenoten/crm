@@ -910,6 +910,8 @@ function klantRondeVenster(vrijdag, na){
 let agLezing = null;    // {op, dagen, index} — alleen een geslaagde lezing
 let agBezig  = null;    // lopende ophaalactie; parallelle aanroepen liften mee
 let agFoutOp = 0;       // tijdstip van de laatste mislukte lezing
+let mailLezing = 0;     // laatste keer dat de verzonden mail is gelezen
+let mailFoutOp = 0;
 const AG_VERS = 5*60000, AG_FOUT_WACHT = 60000;
 
 /* De matchregel van de klantkaart, ongewijzigd hierheen verhuisd:
@@ -957,9 +959,57 @@ const OPV = CRM.opvolging = {
     return agBezig;
   },
 
-  /* Na het inplannen van een afspraak: cache weg, zodat het volgende
-     scherm de nieuwe afspraak meteen ziet in plaats van over vijf minuten. */
-  agendaVervers(){ agLezing = null; agFoutOp = 0; },
+  /* Na het inplannen van een afspraak of het versturen van een mail:
+     caches weg, zodat het volgende scherm het meteen ziet in plaats van
+     over vijf minuten. */
+  agendaVervers(){ agLezing = null; agFoutOp = 0; mailLezing = 0; mailFoutOp = 0; },
+
+  /* "Laatste contact" laten meelopen met de mail die je buiten het CRM om
+     verstuurt. Eén stille lezing van de map Verzonden (adressen en
+     tijdstippen, niets meer), gematcht op het klantadres en de
+     contactpersonen; is dat jonger dan clients.laatst_contact, dan wordt
+     het veld bijgewerkt. Dat veld is precies wat het Sales-bord, het
+     dashboard en de lijsten al lezen — één schrijfplek, overal effect.
+     (Tjeerd, 4 aug 2026: "het systeem moet zelf herkennen dat ik contact
+     heb gehad, en dat moet snel te zien zijn in mijn sales pijplijn.")
+     Geeft true terug als er iets veranderd is, zodat een scherm zich kan
+     herrenderen. Cache van vijf minuten + een minuut wachten na een fout,
+     zelfde ritme als de agenda hierboven. */
+  async contactUitMail(){
+    if(!(CRM.outlook?.verbonden?.()) || !CRM.outlook.mailVerzonden) return false;
+    const nu = Date.now();
+    if(mailLezing && nu - mailLezing < AG_VERS) return false;
+    if(mailFoutOp && nu - mailFoutOp < AG_FOUT_WACHT) return false;
+    mailLezing = nu;
+    let mails = null;
+    try{ mails = await CRM.outlook.mailVerzonden({aantal: 50, sindsDagen: 14}); }catch(e){ mails = null; }
+    if(!Array.isArray(mails)){ mailFoutOp = nu; return false; }
+    /* Per adres de jongste verzenddag — lokaal gerekend, geen UTC-schuif. */
+    const dagVan = op => { const d = new Date(op); return isNaN(d) ? '' :
+      d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+    const perAdres = new Map();
+    mails.forEach(m => { const dg = dagVan(m.op); if(!dg) return;
+      (m.aan||[]).forEach(a => { const s = String(a).toLowerCase();
+        if(!perAdres.has(s) || dg > perAdres.get(s)) perAdres.set(s, dg); }); });
+    if(!perAdres.size) return false;
+    let gewijzigd = false;
+    (CRM.state.clients||[]).forEach(k => {
+      const adressen = [String(k.email||'').toLowerCase()]
+        .concat((CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+          .map(x => String(x.email||'').toLowerCase()))
+        .filter(Boolean);
+      let jongste = '';
+      adressen.forEach(a => { const dg = perAdres.get(a); if(dg && dg > jongste) jongste = dg; });
+      if(jongste && jongste > String(k.laatst_contact||'')){
+        k.laatst_contact = jongste;
+        gewijzigd = true;
+        if(!CRM.demo)
+          CRM.sb.from('clients').update({laatst_contact: jongste}).eq('naam', k.naam)
+            .then(()=>{}, e => console.warn('laatst_contact bijwerken', e));
+      }
+    });
+    return gewijzigd;
+  },
 
   /* Wat als contact telt. Gedeeld, want de kandidatenlijst filtert en
      sorteert op dezelfde vraag ("hoe lang niet gesproken"). Stond daar

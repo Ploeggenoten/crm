@@ -523,7 +523,7 @@ function heroHtml(ct, klant){
                 : '<div class="ck-contact meta">Geen telefoonnummer of e-mailadres vastgelegd</div>'}
       </div>
       <div class="row tight ck-snel">
-        ${ct.telefoon ? `<a class="btn ghost sm" href="${h(telHref(ct.telefoon))}">Bellen</a>` : ''}
+        ${ct.telefoon ? `<a class="btn ghost sm" id="ck_bel" href="${h(telHref(ct.telefoon))}">Bellen</a>` : ''}
         ${ct.email ? '<button class="btn ghost sm" id="ck_mail">Mailen</button>' : ''}
         <button class="btn ghost sm" id="ck_notitie">Notitie</button>
         <button class="btn ghost sm" id="ck_verslag">Gespreksverslag</button>
@@ -835,6 +835,17 @@ function bindKaart(mount, ct, klant){
   }).then(r => { if(r) opnieuw(); });
   mount.querySelector('#ck_taak').onclick  = taak;
   mount.querySelector('#ck_rtaak').onclick = taak;
+
+  /* Bellen vanaf de kaart telt als belpoging. Tjeerd (4 aug 2026): het
+     systeem moet "zelf herkennen dat ik contact heb gehad" — wie hier op
+     Bellen drukt, is aan het bellen, en dat hoort in "laatste contact"
+     zonder dat er nog een formulier tussen zit. De tel:-link doet gewoon
+     zijn werk; wij leggen alleen stil het moment vast. */
+  const belKnop = mount.querySelector('#ck_bel');
+  if(belKnop) belKnop.addEventListener('click', () => {
+    CRM.logActiviteit('contact', String(ct.id), 'bel', 'Belpoging vanaf de kaart');
+    setTimeout(opnieuw, 400);
+  });
 
   /* Snel vastleggen. Opslaan + opvolgtaak bewaart éérst de notitie: ook
      als de taak daarna wordt geannuleerd is het gesprek vastgelegd — de
