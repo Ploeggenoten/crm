@@ -438,10 +438,11 @@ function kaartHtml(c){
      op drie andere plekken nét anders herhaald. Nu één bron —
      js/opvolging.js — die ook het warm houden vóór de start en de
      verjaardag meeneemt. Zonder dat bestand blijft de kaart gewoon leeg. */
-  if(CRM.opvolging){
-    const oc = CRM.opvolging.chipHtml(c);
-    if(oc) chips.push(oc);
-  }
+  /* Geen opvolgingschips ("stuur een succesje", "bel · nu") meer op de
+     kaart — dat werk krijgt de AM in zijn taken en op het dashboard, waar
+     het afvinkbaar is. De kaart is voor het overzicht (Tjeerd, 4 aug 2026:
+     "de kaart moet vooral overzichtelijk zijn"). js/opvolging.js blijft de
+     ene bron; hier verdween alleen de derde herhaling van hetzelfde. */
   let when = '';
   if(dd){
     const lbl = placed ? ((c.fase==='Gestart' && dd <= CRM.todayISO()) ? 'Gestart' : 'Start') : 'Afspraak';

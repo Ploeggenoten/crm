@@ -91,8 +91,12 @@
 .rc-when.gemist{color:var(--txt-2)}
 .rc-when.start{color:var(--green)}
 .rc-when.verw{font-weight:500;color:var(--muted);margin-top:3px}
-/* Vandaag = groen kader (de 'groene schaduw' van het bord, in dunne-rand-stijl). */
-.bcard.vandaag{border-color:var(--green-line);background:var(--green-bg)}
+/* Vandaag = dezelfde fasekleur, één slag dieper (Tjeerd, 4 aug 2026: "een
+   iets diepere kleur in dezelfde kleur" — geen groen kader meer, dat was
+   een tweede kleurtaal). Kop en kaart verdiepen allebei; de kiel blijft. */
+.bcard.bck.vandaag{background:color-mix(in srgb, var(--ph, #9aa3b2) 9%, #fff);
+  border-color:color-mix(in srgb, var(--ph, #9aa3b2) 45%, #fff)}
+.bcard.bck.vandaag .bc-kop{background:color-mix(in srgb, var(--ph, #9aa3b2) 32%, #fff)}
 /* Geen rood kader meer om een gemiste afspraak — de regel op de kaart
    draagt het woord 'gemist' al. */
 .bcard.gemist{border-color:var(--line)}
