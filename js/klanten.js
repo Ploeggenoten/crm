@@ -1321,7 +1321,9 @@ function afsprakenUitParse(p, klant){
 }
 
 /* ─── Beheerpaneel: formulier + voorbeeldberekening + historie ──── */
-function afspraakDrawer(k, id, nieuw){
+/* `soortNieuw`: bij een nieuwe afspraak alvast deze soort voorselecteren
+   (vanuit de dienstverleningsknoppen of '+ Nieuwe versie'). */
+function afspraakDrawer(k, id, nieuw, soortNieuw){
   if(!feeAan()) return;
   const alle = afsprakenVan(k.naam);
   const huidig = id ? alle.find(a => String(a.id) === String(id))
@@ -1330,6 +1332,7 @@ function afspraakDrawer(k, id, nieuw){
   /* Op een kopie werken: annuleren mag niets veranderd hebben. */
   const a = huidig ? JSON.parse(JSON.stringify(huidig)) : CRM.fee.leegAfspraak(k.naam);
   a.klant = k.naam;
+  if(!bestaat && soortNieuw) a.soort = soortNieuw;
   if(!Array.isArray(a.fee_regels)) a.fee_regels = [];
   if(!a.grondslag || typeof a.grondslag !== 'object') a.grondslag = {};
   const g = a.grondslag;
@@ -1338,26 +1341,12 @@ function afspraakDrawer(k, id, nieuw){
   const opt = (lijst, gekozen) => lijst.map(s =>
     `<option value="${h(s.k)}"${s.k === gekozen ? ' selected' : ''}>${h(s.lbl)}</option>`).join('');
 
-  /* ── Wissel tussen naast elkaar lopende afspraken ───────────────
-     Eén klant kan uitzenden én W&S tegelijk hebben; de klant kiest per
-     functie of plaatsing welke voorwaarden gelden. Voorheen was er geen
-     knop om een tweede soort vast te leggen zodra er één afspraak
-     bestond — die zat alleen in de lege staat van de rail (4 aug 2026). */
+  /* Welke soorten lopen er al? Eén klant kan uitzenden én W&S tegelijk
+     hebben; de klant kiest per functie of plaatsing welke voorwaarden
+     gelden. De dienstverleningsknoppen in het formulier tonen dat en
+     schakelen ertussen — een keuzelijst suggereerde dat je er één moest
+     kiezen (feedback Tjeerd, 4 aug 2026). */
   const perSoort = CRM.fee.actievePerSoort(k.naam);
-  const wisselItems = CRM.fee.SOORTEN.map(s => perSoort[s.k]).filter(Boolean);
-  if(bestaat && !wisselItems.some(x => String(x.id) === String(huidig.id))) wisselItems.push(huidig);
-  const wisselHtml = `
-    <div class="kl-af-wissel">
-      <div class="seg">${wisselItems.map(x => {
-        const n = CRM.fee.normaliseer(x);
-        const b = n.soort === 'uitzenden' ? factorBereik(n) : feeBereik(n);
-        return `<button data-wissel="${h(String(x.id))}"${bestaat && String(x.id) === String(a.id) ? ' class="on"' : ''}>
-          ${h(soortLbl(n.soort))}${b ? ' · <span class="num">' + h(b) + '</span>' : ''}</button>`;
-      }).join('')}<button data-wissel=""${bestaat ? '' : ' class="on"'}>+ Nieuwe afspraak</button></div>
-      <p class="meta kl-af-wisseluitleg">Uitzenden én W&amp;S naast elkaar? Leg per soort dienstverlening
-        een eigen afspraak vast — ook bij één functie kan de klant dan per plaatsing kiezen
-        welke voorwaarden gelden.</p>
-    </div>`;
 
   CRM.drawer.open(`
     <div class="drawer-h">
@@ -1370,7 +1359,6 @@ function afspraakDrawer(k, id, nieuw){
     <div class="drawer-b">
       <p class="sub kl-af-intro">Wat hier staat, gebruikt het systeem om na een getekend contract
         zelf de fee te berekenen. De grondslag volgt de tekst van de samenwerkingsovereenkomst.</p>
-      ${wisselHtml}
 
       <div class="card kl-af-sec kl-af-import"><div class="card-h"><div class="h2">Overeenkomst inlezen</div><span class="spacer"></span>
           <button class="btn sub sm" id="af_imp_knop">Tekst plakken</button></div>
@@ -1385,9 +1373,15 @@ function afspraakDrawer(k, id, nieuw){
         </div></div>
 
       <div class="card kl-af-sec"><div class="card-h"><div class="h2">Dienstverlening en looptijd</div></div>
-        <div class="card-b"><div class="f-grid">
-          <div class="f-row"><label for="af_soort">Soort dienstverlening</label>
-            <select id="af_soort">${opt(CRM.fee.SOORTEN, a.soort || 'ws')}</select></div>
+        <div class="card-b">
+        <div class="f-row kl-af-soortrij"><label>Dienstverlening</label>
+          <div class="seg" id="af_soortseg"></div>
+          <p class="meta kl-af-soortuitleg">Doen jullie meerdere soorten voor deze klant? Elke soort heeft
+            een eigen afspraak — klik erop om die te openen of vast te leggen (✓ = ligt al vast).
+            Bij een plaatsing kies je per functie welke voorwaarden gelden.</p>
+          <div id="af_soortnote"></div>
+        </div>
+        <div class="f-grid">
           <div class="f-row"><label for="af_ingang">Ingangsdatum</label>
             <input type="date" id="af_ingang" value="${nr(String(a.ingang||'').slice(0,10))}"></div>
           <div class="f-row"><label for="af_einde">Einddatum <span class="meta">(leeg = doorlopend)</span></label>
@@ -1457,7 +1451,8 @@ function afspraakDrawer(k, id, nieuw){
           <div id="vb_uit"></div>
         </div></div>
 
-      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Eerdere afspraken</div></div>
+      <div class="card kl-af-sec"><div class="card-h"><div class="h2">Eerdere afspraken</div><span class="spacer"></span>
+          ${bestaat ? '<button class="btn sub sm" id="af_hist_nieuw">+ Nieuwe versie</button>' : ''}</div>
         <div class="card-b" id="af_hist"></div></div>
     </div>
     <div class="drawer-f">
@@ -1474,7 +1469,7 @@ function afspraakDrawer(k, id, nieuw){
          garantie en voorbeeldberekening zijn W&S-begrippen en verdwijnen
          bij uitzenden — een leeg formulier onderhouden is ruis. */
       const zetSoort = () => {
-        const uitzend = dr.querySelector('#af_soort').value === 'uitzenden';
+        const uitzend = a.soort === 'uitzenden';
         dr.querySelector('#af_tariefkop').textContent = uitzend ? 'Factor per functiegroep' : 'Fee per functiegroep';
         dr.querySelector('#af_stdlbl').innerHTML = uitzend
           ? 'Standaardfactor <span class="meta">(als geen functiegroep past, bijv. 2,4)</span>'
@@ -1492,11 +1487,34 @@ function afspraakDrawer(k, id, nieuw){
         const gs = dr.querySelector('#af_gs'), gm = dr.querySelector('#af_gm'), fm = dr.querySelector('#af_fm');
         [gs, gm, fm].forEach(el => { if(el) el.closest('.f-row').hidden = uitzend; });
       };
-      /* addEventListener, geen onchange-toewijzing: verderop hangt de
-         voorbeeldberekening zich met `el.onchange = voorbeeld` aan álle
-         velden, en die zou een onchange-property hier stilletjes
-         overschrijven. Zo draaien ze allebei. */
-      dr.querySelector('#af_soort').addEventListener('change', zetSoort);
+
+      /* ── Dienstverleningsknoppen: geen exclusieve keuze ─────────
+         Elke soort is een eigen afspraak. Klik op een soort die al
+         loopt → die afspraak opent; op een soort zonder afspraak →
+         nieuwe vastleggen. Alleen een vers, nog niet opgeslagen
+         concept wisselt gewoon van soort, zodat je niets kwijtraakt. */
+      const soortSeg = dr.querySelector('#af_soortseg');
+      const tekenSoortSeg = () => {
+        soortSeg.innerHTML = CRM.fee.SOORTEN.map(s => {
+          const loopt = perSoort[s.k] && String(perSoort[s.k].id) !== String(a.id);
+          return `<button data-soort="${h(s.k)}"${s.k === a.soort ? ' class="on"' : ''}>${h(s.lbl)}${
+            loopt ? ' <span class="kl-af-vinkje">✓</span>' : ''}</button>`;
+        }).join('');
+        soortSeg.querySelectorAll('[data-soort]').forEach(b => b.onclick = () => kiesSoort(b.dataset.soort));
+        const nieuweVersie = !bestaat && perSoort[a.soort] && String(perSoort[a.soort].id) !== String(a.id);
+        dr.querySelector('#af_soortnote').innerHTML = nieuweVersie
+          ? `<div class="note info kl-af-note">Er loopt al een afspraak voor ${h(soortLbl(a.soort))} —
+              je legt nu een nieuwe versie vast. De oude schuift naar het archief.</div>` : '';
+      };
+      function kiesSoort(sk){
+        if(sk === a.soort) return;
+        const er = perSoort[sk];
+        if(er && String(er.id) !== String(a.id)) return afspraakDrawer(k, er.id);
+        if(bestaat) return afspraakDrawer(k, null, true, sk);
+        a.soort = sk;
+        tekenSoortSeg(); zetSoort(); voorbeeld();
+      }
+      tekenSoortSeg();
       zetSoort();
 
       /* ── Fee-regels: rijen toevoegen en verwijderen ───────────── */
@@ -1528,7 +1546,8 @@ function afspraakDrawer(k, id, nieuw){
       const v = sel => dr.querySelector(sel);
       const num = sel => { const x = v(sel).value; return x === '' ? null : Number(x); };
       function lees(){
-        a.soort = v('#af_soort').value;
+        /* a.soort staat al goed: de dienstverleningsknoppen schrijven
+           direct op het object. */
         a.ingang = v('#af_ingang').value || null;
         a.einde  = v('#af_einde').value || null;
         a.exclusiviteit_wkn = num('#af_excl');
@@ -1596,13 +1615,6 @@ function afspraakDrawer(k, id, nieuw){
           if(el.closest('.kl-af-import')) return;
           el.oninput = traag; el.onchange = voorbeeld;
         });
-
-      /* ── Wissel tussen afspraken van deze klant ───────────────── */
-      dr.querySelectorAll('[data-wissel]').forEach(b => b.onclick = () => {
-        const naar = b.dataset.wissel;
-        if(bestaat && naar === String(a.id)) return;      /* al open */
-        afspraakDrawer(k, naar || null, !naar);
-      });
 
       /* ── Overeenkomst inlezen ─────────────────────────────────── */
       const impVak = dr.querySelector('#af_imp_vak');
@@ -1681,6 +1693,10 @@ function afspraakDrawer(k, id, nieuw){
         </div>`;
       }).join('')}</div>` : '<p class="meta kl-af-leeg">Dit is de eerste vastgelegde afspraak met deze klant.</p>';
       hist.querySelectorAll('[data-open]').forEach(b => b.onclick = () => afspraakDrawer(k, b.dataset.open));
+      /* Nieuwe versie van déze soort — voor als de voorwaarden opnieuw
+         onderhandeld zijn; de huidige afspraak schuift dan naar het archief. */
+      const histNieuw = dr.querySelector('#af_hist_nieuw');
+      if(histNieuw) histNieuw.onclick = () => afspraakDrawer(k, null, true, a.soort);
 
       /* ── Opslaan / verwijderen ────────────────────────────────── */
       dr.querySelector('#af_ok').onclick = async () => {
