@@ -402,3 +402,7 @@ a.ob-i:hover b{text-decoration:underline}
    schrijven. Een streep ertussen zodat het niet als volgende notitie leest. */
 .kl-ntinvoer{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .kl-r-nt .card-b > #rn_lijst:empty + .kl-ntinvoer{margin-top:0;padding-top:0;border-top:none}
+
+/* Het uitkomst-invulveld dat na een klik op Gebeld/Geen gehoor/… opent. */
+.kl-uitveld{margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--well-2, #f7f8ef)}
+.kl-uitveld textarea{width:100%;resize:vertical}

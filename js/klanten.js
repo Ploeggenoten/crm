@@ -675,6 +675,16 @@ function lijst(mount){
    ═══════════════════════════════════════════════════════════════ */
 const TABS = ['vacatures','kandidaten','activiteiten','evaluaties','documenten'];
 let klantOpen = null, tabActief = 'vacatures', groepeer = P.get('groepeer','fase');
+
+/* ─── Twee indelingen van de kaart (Tjeerd, 4 aug 2026) ───────────
+   Bij een relatie zónder vacatures ben je aan het bellen en noteren: de
+   kaart opent dan op Activiteiten & notities (volle breedte) en de
+   contactpersonen staan linksboven — daar wil je snel naartoe. Zodra er
+   een vacature is, draait het om de opdrachten en opent de kaart zoals
+   vanouds op Vacatures, met het compacte activiteitenblok links. De
+   kaart kiest zelf; er valt niets in te stellen. */
+const salesModus = naam => !(CRM.vacaturesVan?.(naam) || []).length;
+const eersteTab  = naam => salesModus(naam) ? 'activiteiten' : 'vacatures';
 let contactZoek = '', contactAlles = false;
 
 function kaart(mount, acties, naam){
@@ -686,8 +696,8 @@ function kaart(mount, acties, naam){
     mount.querySelector('#kl_terug').onclick = () => CRM.ga('klanten');
     return;
   }
-  if(klantOpen !== naam){ klantOpen = naam; tabActief = 'vacatures'; contactZoek = ''; contactAlles = false; }
-  if(!TABS.includes(tabActief)) tabActief = 'vacatures';
+  if(klantOpen !== naam){ klantOpen = naam; tabActief = eersteTab(naam); contactZoek = ''; contactAlles = false; }
+  if(!TABS.includes(tabActief)) tabActief = eersteTab(naam);
 
   const c = cijfers(naam);
 
@@ -708,17 +718,22 @@ function kaart(mount, acties, naam){
       ${kopHtml(k, c)}
       <div class="kl-dossier">
         <aside class="kl-rail">
-          ${/* Notities staan bovenaan. Ze stonden onderaan de zijbalk, onder de
-               gegevens, de afspraak, de contactpersonen en de taken — dus je
-               moest scrollen om te zien waar een collega mee bezig was. Terwijl
-               dát het eerste is wat je wilt weten als je een kaart opent van een
-               relatie waar Tjerk en Rajesh allebei aan werken.
-               (Tjeerd, 3 aug 2026: "iedereen moet direct zien waar iedereen mee
-               bezig is in de eerste oogopslag.") */
-            notitiesBlokHtml()}
+          ${/* Twee indelingen (Tjeerd, 4 aug 2026). Bij een sales-relatie
+               zonder vacatures staat de hele activiteitenstroom al groot in
+               het hoofdvlak (eerste tab) — het compacte blok hier zou
+               hetzelfde twee keer tonen. Linksboven staan dan de
+               contactpersonen: daar wil je snel naartoe. Bij een klant mét
+               vacatures blijft het activiteitenblok bovenaan, zodat je ziet
+               waar een collega mee bezig is (Tjeerd, 3 aug 2026: "iedereen
+               moet direct zien waar iedereen mee bezig is"). */
+            salesModus(k.naam)
+              ? (CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml())
+              : notitiesBlokHtml()}
           ${gegevensHtml(k)}
           ${afspraakBlokHtml()}
-          ${CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml()}
+          ${salesModus(k.naam)
+            ? ''
+            : (CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml())}
           ${afsprakenBlokHtml()}
           ${mailwisselingBlokHtml(k)}
           ${takenBlokHtml()}
@@ -1375,13 +1390,57 @@ const SNEL_UITKOMSTEN = [
   ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten'],
   ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd']
 ];
+/* De knoppenrij plus het invulveldje dat ná een klik verschijnt. Eén klik
+   en Enter is genoeg ("Gebeld, geen gehoor" staat er dan), maar wíe wil,
+   typt eerst wat er besproken is — dat komt achter de uitkomst te staan.
+   (Tjeerd, 4 aug 2026: "dat je wel erbij kan zetten wat er besproken is.") */
+function uitkomstenHtml(){
+  return `<div class="row tight kl-uitkomsten">${SNEL_UITKOMSTEN.map(([,lbl], i) =>
+      `<button type="button" class="chip btn-like" data-uitkomst="${i}">${h(lbl)}</button>`).join('')}
+    </div>
+    <div class="kl-uitveld" data-uitveld hidden>
+      <div class="label" data-uitkop style="margin-bottom:4px"></div>
+      <textarea rows="2" data-uittekst placeholder="Wat is er besproken? Leeg laten mag — Enter legt vast."></textarea>
+      <div class="row tight" style="margin-top:6px">
+        <button type="button" class="btn sm" data-uitok>Vastleggen</button>
+        <button type="button" class="btn ghost sm" data-uitweg>Annuleren</button>
+      </div>
+    </div>`;
+}
+function bindUitkomsten(root, k, na){
+  const veld = root.querySelector('[data-uitveld]'); if(!veld) return;
+  const tekst = veld.querySelector('[data-uittekst]');
+  let keuze = null;
+  const toon = i => { keuze = i;
+    veld.hidden = false;
+    veld.querySelector('[data-uitkop]').textContent = SNEL_UITKOMSTEN[i][2];
+    tekst.value = ''; tekst.focus(); };
+  const dicht = () => { veld.hidden = true; keuze = null; };
+  const vastleggen = async () => {
+    if(keuze == null) return;
+    const [soort,, standaard] = SNEL_UITKOMSTEN[keuze];
+    const extra = tekst.value.trim();
+    const regel = extra ? standaard + ': ' + extra : standaard;
+    dicht();
+    await CRM.logActiviteit('klant', k.naam, soort, regel);
+    if(extra) CRM.verwerkTags(extra, 'klant', k.naam);
+    /* Een uitkomst is een echt contactmoment — het bord moet het zien. */
+    await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
+    na();
+  };
+  CRM.$$('[data-uitkomst]', root).forEach(b => b.onclick = () => toon(+b.dataset.uitkomst));
+  veld.querySelector('[data-uitok]').onclick = vastleggen;
+  veld.querySelector('[data-uitweg]').onclick = dicht;
+  tekst.onkeydown = e => {
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); vastleggen(); }
+    if(e.key === 'Escape') dicht();
+  };
+}
 function notitiesBlokHtml(){
   return `<div class="card kl-railkaart kl-r-nt">
     <div class="card-h"><div class="h2">Activiteiten & notities</div></div>
     <div class="card-b">
-      <div class="row tight kl-uitkomsten">${SNEL_UITKOMSTEN.map(([,lbl], i) =>
-        `<button type="button" class="chip btn-like" data-uitkomst="${i}">${h(lbl)}</button>`).join('')}
-      </div>
+      ${uitkomstenHtml()}
       <div id="rn_lijst"></div>
       <div class="f-row kl-ntinvoer">
         <textarea id="rn_tekst" rows="2" placeholder="Korte notitie… (@naam meldt een collega)"></textarea>
@@ -1419,16 +1478,8 @@ function railNotities(mount, k){
     if(alleBtn) alleBtn.onclick = naarTijdlijn;
     CRM.$$('[data-rnitem]', el).forEach(d => d.onclick = naarTijdlijn);
   };
-  /* De uitkomstknoppen: één klik, meteen vastgelegd, en omdat het echte
-     contactmomenten zijn schuift laatst_contact mee — het bord ziet het. */
-  CRM.$$('[data-uitkomst]', mount).forEach(b => b.onclick = async () => {
-    const [soort,, tekst] = SNEL_UITKOMSTEN[+b.dataset.uitkomst];
-    b.disabled = true;
-    await CRM.logActiviteit('klant', k.naam, soort, tekst);
-    await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
-    b.disabled = false;
-    teken();
-  });
+  const blok = mount.querySelector('.kl-r-nt');
+  if(blok) bindUitkomsten(blok, k, teken);
   const inp = mount.querySelector('#rn_tekst');
   mount.querySelector('#rn_opslaan').onclick = async () => {
     const tekst = inp.value.trim(); if(!tekst) return;
@@ -1842,15 +1893,18 @@ function tabsHtml(k, c){
   const acts  = CRM.activiteitenVoor('klant', k.naam);
   const docs  = (CRM.state.documenten||[]).filter(x => x.entiteit === 'klant' && x.ref === k.naam);
   const evals = acts.filter(a => a.extra && a.extra.evaluatie);
+  /* Deze tab was de enige zonder teller (stond hard op 0). Daardoor moest
+     je hem openklikken om te zien of er íets was vastgelegd, terwijl het
+     detailpaneel in Sales die teller wél laat zien. */
+  const actTab = ['activiteiten','Activiteiten & notities',
+    acts.length + (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+      .reduce((n,ct) => n + CRM.activiteitenVoor('contact', ct.id).length, 0)];
+  const vacTab = ['vacatures','Vacatures', c.vs.length];
   return [
-    ['vacatures','Vacatures', c.vs.length],
+    /* Zonder vacatures voorop wat er dan speelt: het gesprek. */
+    ...(salesModus(k.naam) ? [actTab, vacTab] : [vacTab]),
     ['kandidaten','Kandidaten', c.cs.length],
-    /* Deze tab was de enige zonder teller (stond hard op 0). Daardoor moest
-       je hem openklikken om te zien of er íets was vastgelegd, terwijl het
-       detailpaneel in Sales die teller wél laat zien. */
-    ['activiteiten','Activiteiten & notities',
-      acts.length + (CRM.state.contacten||[]).filter(x => x.klant === k.naam)
-        .reduce((n,ct) => n + CRM.activiteitenVoor('contact', ct.id).length, 0)],
+    ...(salesModus(k.naam) ? [] : [actTab]),
     ['evaluaties','Evaluaties', evals.length],
     ['documenten','Documenten', docs.length]
   ].map(([kk,lbl,n]) => `<button class="tab${tabActief===kk?' on':''}" data-t="${kk}">${h(lbl)}${n?`<span class="cnt num">${n}</span>`:''}</button>`).join('');
@@ -2147,7 +2201,9 @@ function tabActiviteiten(el, k){
         <div class="row tight">${['bel','mail','whatsapp','gesprek','bezoek','notitie'].map(s =>
           `<button class="btn ghost sm" data-log="${s}">${h((CRM.ACT_SOORTEN[s]||{}).lbl||s)}</button>`).join('')}</div>
       </div>
-      <div class="card-b">${CRM.ui.tijdlijn(items)}</div>
+      <div class="card-b">
+        ${uitkomstenHtml()}
+        ${CRM.ui.tijdlijn(items)}</div>
     </div>
     <div class="card">
       <div class="card-h"><div class="h2">Accountnotitie</div></div>
@@ -2159,6 +2215,9 @@ function tabActiviteiten(el, k){
   </div>`;
 
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logVia(k, b.dataset.log, 'Wat leg je vast? Tip: @collega stuurt diegene een melding.'));
+  /* Dezelfde uitkomstknoppen als in het zijbalkblok — in de sales-indeling
+     is deze tab het hoofdscherm, dus hier moet vastleggen net zo snel. */
+  bindUitkomsten(el, k, () => tabActiviteiten(el, k));
   el.querySelector('#n_bewaar').onclick = () => bewaarKlant(k.naam, {note: el.querySelector('#n_note').value.trim()});
 }
 
