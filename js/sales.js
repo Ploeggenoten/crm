@@ -381,7 +381,11 @@ function kaartHTML(k, lc, act, vandaag){
   /* Alle kaarten dezelfde opzet (besluit Tjeerd, 4 aug 2026, na drie kleur-
      rondes): leads dragen gewoon minder in het lijf, geen aparte microvorm. */
   const mini = false;
-  const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn${hangt?' stil':''}</span>`;
+  /* De dagen terug in de kop ("alleen die dgn stil mag wel" — Tjeerd,
+     4 aug 2026, bij ontwerp 3A): gedempt als getal, rood mét het woord
+     'stil' zodra het traject echt hangt. Het stil-filter in de balk blijft
+     de manier om erop te selecteren. */
+  const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span>${hangt ? ' dgn stil' : ''}</span>`;
   /* Ook een microlead toont zijn kern: eigenaar en plaats als tweede regel
      ín de kop. Minder dan de andere fases, niet niets. */
   return `<div class="bcard bck${leeg ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
@@ -1002,9 +1006,9 @@ function radarRijen(){
     || String(a.bedrijf).localeCompare(String(b.bedrijf)));
 }
 
-const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig', osm:'OpenStreetMap'};
+const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig', osm:'OpenStreetMap', website:'Website'};
 const bronChip = b => {
-  const kleur = b==='claude-research' ? ' purple' : b==='handmatig' ? ' blue' : '';
+  const kleur = b==='claude-research' ? ' purple' : (b==='handmatig' || b==='website') ? ' blue' : '';
   return `<span class="chip${kleur}">${h(BRON_LBL[b]||b||'—')}</span>`;
 };
 

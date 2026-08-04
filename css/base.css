@@ -399,33 +399,34 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 .bcard:hover{border-color:var(--olive-l)}
 .bcard:active{cursor:grabbing}
 .bcard.drag{opacity:.4}
-/* ─── Kaart met merkkop (optie 2, gekozen door Tjeerd 4 aug 2026) ────
-   Elke bordkaart draagt een getinte kop — dezelfde tint als de zijbalk
-   (--card-2; "zachter olijfgroen, zoals de zijbalk") — met de naam en één
-   kerngetal. De inhoud is een wit lijf ónder die kop, en een kaart zonder
-   inhoud heeft GÉÉN lijf: afwezigheid in plaats van honderd keer dezelfde
-   grijze regel "gesproken: nog nooit". Dat was de echte oorzaak van "saai
-   en te wit" op een bord met 223 geïmporteerde klanten.
-   .bck zet de vorm; producenten leveren .bc-kop (+ evt. .bc-lijf) en de
-   klasse .vol zodra er een lijf is. .frand blijft gewoon werken (border-left). */
-/* flex-shrink:0 is hier de belangrijkste regel: de kolom is een flexkolom
-   en kinderen mógen krimpen vóór er gescrold wordt. Met overflow:hidden op
-   de kaart betekende dat: 30 kaarten worden 30 platte reepjes, en 118 leads
-   werden onzichtbare slivers — Tjeerds "lege" Lead-kolom van vandaag. Een
-   kaart krimpt nooit; de kolom scrolt. */
-.bcard.bck{padding:0;overflow:hidden;flex-shrink:0}
-/* Definitieve keuze (Tjeerd, 4 aug 2026, vierde ronde — "optie B: alleen de
-   header heeft kleur"): de kop draagt het merk op 75%, de naam staat er wit
-   en vet op, en álle informatie staat op wit eronder in gewone donkere
-   tekst. Kleur waar het merk hoort, leesbaarheid waar de inhoud staat.
-   Dekking op 100% (Tjeerd, 4 aug 2026): het volle merk-olijf. */
-.bck .bc-kop{background:var(--olive);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
-.bck .bc-kop b{color:#fff;font-weight:700;font-size:14px;flex:1;min-width:0;line-height:1.35;
+/* ─── Bordkaart 3A: "tint met kleurkiel" (Tjeerd, 4 aug 2026, na vijf
+   ontwerprondes — de definitieve). Elke kaart leest de fasekleur van zijn
+   kolom (--ph, die de kolommen al droegen) en maakt daar zelf twee dingen
+   van: een lichte tint voor de kop (color-mix) en de vólle kleur als kiel
+   van 3px links. Naam dónker op de tint — leesbaarheid was de harde eis —
+   en compacter dan de vorige ronde ("de header is wat groot").
+   Sales geeft --ph via css/sales.css (data-fase); Klanttrajecten en het
+   Recruitment-leadbord zetten hem al op de kolom. Zonder --ph valt de kop
+   terug op neutraal grijs — een kaart zonder fase liegt dan tenminste niet. */
+.bcard.bck{padding:0;overflow:hidden;flex-shrink:0;
+  border-left:3px solid var(--ph, var(--line-2))}
+/* De hover kleurt de rand olijf — maar de kiel blijft van de fase. */
+.bcard.bck:hover{border-left-color:var(--ph, var(--line-2))}
+.bck .bc-kop{
+  background:color-mix(in srgb, var(--ph, #9aa3b2) 18%, #fff);
+  padding:6px 11px;display:flex;align-items:baseline;gap:8px;
+}
+.bck .bc-kop b{color:var(--ink);font-weight:700;font-size:13px;flex:1;min-width:0;line-height:1.4;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bck .bc-dgn{color:rgba(255,255,255,.92);white-space:nowrap}
-.bck .bc-dgn.let{background:#fff;color:var(--amber);border-radius:999px;padding:0 8px;font-weight:700}
-.bck .bc-dgn.rood{background:#fff;color:var(--red);border-radius:999px;padding:0 8px;font-weight:700}
-.bck .bc-lijf{padding:9px 13px 11px}
+.bc-dgn{font-size:10.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bc-dgn.let{color:var(--amber);font-weight:700}
+.bc-dgn.rood{color:var(--red);font-weight:700}
+.bck.vol .bc-kop{border-bottom:1px solid var(--line)}
+.bck .bc-lijf{padding:7px 11px 9px}
+.bck .bc-s{margin-top:0;font-size:11.5px}
+.bck .bc-f{margin-top:7px}
+.bck .bc-f:first-child{margin-top:0}
+
 /* Alle kaarten dezelfde opzet — ook leads. Die hebben alleen minder in het
    lijf (eigenaar · plaats), geen aparte microvorm meer. */
 .bcard .bc-t{display:flex;align-items:flex-start;gap:8px}
