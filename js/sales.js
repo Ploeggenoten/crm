@@ -18,9 +18,13 @@ const V = {
   zet(sleutel, waarde){ try{ localStorage.setItem('crm_sales_'+sleutel, JSON.stringify(waarde)); }catch(e){} }
 };
 
-let tab      = V.get('tab','pijplijn');          // pijplijn | activiteit | kansen | radar
-if(!['pijplijn','activiteit','kansen','radar'].includes(tab)) tab = 'pijplijn';
+let tab      = V.get('tab','pijplijn');          // pijplijn | opvolg | activiteit | radar
+if(!['pijplijn','opvolg','activiteit','radar'].includes(tab)) tab = 'pijplijn';
 let weergave = V.get('weergave','bord');         // bord | lijst
+/* Stiltefilter: '' | c14 | c30 | a14 | a30 — (c)ontact of (a)ctiviteit,
+   met het aantal dagen. Tjeerd (4 aug 2026): "filterknoppen met 30 dagen
+   niet gesproken, 30 dagen geen activiteit, 14 dagen etc." */
+let stilF    = V.get('stil','');
 let zoek     = V.get('zoek','');
 let mijn     = V.get('mijn',false);
 let eigFilter= V.get('eigenaar','');
@@ -192,10 +196,11 @@ function kpiHTML(alle){
   const hangen = actief.filter(k=>{ if(faseVan(k)==='Lead') return false;
     const d=CRM.dagenGeleden(k.fase_sinds); return d!=null && d>HANGT_NA; }).length;
 
-  const inBeeld = new Set(alle.map(k=>k.naam));
-  const open = (CRM.state.kansen||[]).filter(o=>(o.status||'open')==='open' && inBeeld.has(o.klant));
-  const posities = open.reduce((s,o)=>s+(Number(o.aantal)||0),0);
-  const gewogen  = open.reduce((s,o)=>s+((Number(o.waarde)||0)*(Number(o.kans_pct)||0)/100),0);
+  /* De kanswaarde-tegel is met de kansen mee verdwenen; in de plaats staat
+     de werkvoorraad die Tjeerd dagelijks wil bijhouden: open opvolgingen,
+     met de verlopen taken als signaal. */
+  const opv = openOpvolgingen();
+  const verlopen = opv.filter(t => t.datum && t.datum < CRM.todayISO()).length;
 
   const tegels = [
     CRM.ui.kpi('Actieve trajecten', `<span class="num">${actief.length}</span>`,
@@ -203,9 +208,8 @@ function kpiHTML(alle){
     CRM.ui.kpi('Gesprekken ingepland', `<span class="num">${gespr.length}</span>`,
       gem==null ? 'kennismakingen in de agenda' : `kennismakingen · gemiddeld <span class="num">${gem}</span> dgn in fase`),
     CRM.ui.kpi('Conversie naar klant', `<span class="num">${conv}%</span>`, `${klant.length} van ${alle.length} bedrijven in beeld`),
-    CRM.canSeeMoney()
-      ? CRM.ui.kpi('Gewogen kanswaarde', `<span class="num">${CRM.euro(gewogen)}</span>`, `${open.length} open kansen`)
-      : CRM.ui.kpi('Open posities', `<span class="num">${posities}</span>`, `${open.length} open kansen`)
+    CRM.ui.kpi('Open opvolgingen', `<span class="num">${opv.length}</span>`,
+      verlopen ? `<span style="color:var(--red)">${verlopen} verlopen</span>` : 'niets verlopen')
   ];
   return `<div class="grid c3 s-kpi">${tegels.join('')}</div>`;
 }
@@ -249,6 +253,41 @@ function contactIndex(){
   return m;
 }
 
+/* Naast contact ("echt gesproken") staat sinds 4 aug 2026 een tweede
+   begrip: ACTIVITEIT — élke vastlegging bij de klant of een van zijn
+   contactpersonen. Tjeerd: "activiteit moet gekoppeld zijn aan dingen die
+   ik invoer op de klantenkaart of contactpersoonkaart, zoals een notitie
+   of taak." Een kaart met een verse notitie is een traject waar iemand
+   mee bezig is, ook als het laatste gesprek langer geleden was — dat
+   verschil wil je op het bord zien én erop kunnen filteren. */
+function activiteitIndex(){
+  const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
+  const m = new Map();                             // naam → {dag, wat}
+  const zet = (naam, dag, wat) => {
+    if(!naam || !dag) return;
+    const v = m.get(naam);
+    if(!v || dag > v.dag) m.set(naam, {dag, wat});
+  };
+  for(const a of (CRM.state.activiteiten || [])){
+    const naam = a.entiteit === 'klant' ? a.ref
+               : a.entiteit === 'contact' ? klantVan.get(String(a.ref)) : '';
+    zet(naam, lokaleDag(a.op), ((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort || 'activiteit');
+  }
+  /* Een taak aanmaken is óók bezig zijn met de klant. */
+  for(const t of (CRM.state.taken || [])){
+    const naam = t.entiteit === 'klant' ? t.ref
+               : t.entiteit === 'contact' ? klantVan.get(String(t.ref)) : '';
+    zet(naam, lokaleDag(t.created_at), 'taak');
+  }
+  /* En gesproken hébben is per definitie ook activiteit: zonder deze regel
+     toonde het filter "30 dagen geen activiteit" bedrijven waar vorige
+     week nog gebeld was — omdat dat contact alleen in het veld
+     laatst_contact stond en niet in de activiteitenlog. */
+  for(const k of (CRM.state.clients || []))
+    zet(k.naam, lokaleDag(k.laatst_contact), 'contact');
+  return m;
+}
+
 /* De onderste regel van een bordkaart: waarom staat dit stil?
    Tot 3 aug 2026 stonden er naam, eigenaar en het aantal dagen in de fase.
    Dat vertelt dát iets stilstaat, niet waarom — en dus moest een AM elke
@@ -258,7 +297,7 @@ function contactIndex(){
    De belangrijkste regel is de LEGE: staat er geen vervolgstap gepland, dan
    zeggen we dat met zoveel woorden. Een kaart zonder taak zag er tot nu toe
    precies zo uit als een kaart waar alles onder controle is. */
-function waaromHTML(k, lc, vandaag){
+function waaromHTML(k, lc, act, vandaag){
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   const dgn = lc ? dagenTussen(lc, vandaag) : null;
   /* Op Lead zwijgen we over contact: 117 geïmporteerde bedrijven waar nooit
@@ -269,9 +308,22 @@ function waaromHTML(k, lc, vandaag){
   const stil = meldContact && (dgn == null || dgn >= STIL_CONTACT);
   const taak = volgendeTaak(k.naam);
 
+  /* Twee regels, twee begrippen (Tjeerd, 4 aug 2026): CONTACT is echt
+     gesproken — bel, mail, WhatsApp, bezoek. ACTIVITEIT is de laatste keer
+     dat íemand iets heeft vastgelegd: notitie, taak, verslag. Een verse
+     notitie betekent "hier wordt aan gewerkt", ook als het laatste gesprek
+     ouder is. De activiteitregel staat alleen op de kaart als hij iets
+     tóevoegt — anders zegt hij twee keer hetzelfde als contact. */
+  const aDgn = act ? dagenTussen(act.dag, vandaag) : null;
+  const activiteitRegel = (act && (lc == null || act.dag > lc))
+    ? `<div class="s-w-r"><span class="s-w-l">activiteit</span>
+        <span class="s-w-v trunc">${h(act.wat)} · ${aDgn === 0 ? 'vandaag'
+          : `${aDgn} ${aDgn===1?'dag':'dagen'} geleden`}</span></div>`
+    : '';
+
   const contactRegel = !meldContact ? ''
     : `<div class="s-w-r${stil?' let':''}">
-        <span class="s-w-l">gesproken</span>
+        <span class="s-w-l">contact</span>
         <span class="s-w-v">${dgn == null ? 'nog nooit'
           : dgn === 0 ? 'vandaag' : `${dgn} ${dgn===1?'dag':'dagen'} geleden`}</span>
       </div>`;
@@ -296,16 +348,19 @@ function waaromHTML(k, lc, vandaag){
     : ((stil || hangt) ? `<div class="s-w-r geen s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v">niets gepland</span></div>` : '');
 
-  return (contactRegel || stapRegel) ? `<div class="s-waarom">${contactRegel}${stapRegel}</div>` : '';
+  return (activiteitRegel || contactRegel || stapRegel)
+    ? `<div class="s-waarom">${activiteitRegel}${contactRegel}${stapRegel}</div>` : '';
 }
 
-function kaartHTML(k, lc, vandaag){
+function kaartHTML(k, lc, act, vandaag){
   const d = CRM.dagenGeleden(k.fase_sinds);
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
   const vac = openVacatures(k.naam);
-  const kans = openKansen(k.naam).length;
-  const waarom = waaromHTML(k, lc, vandaag);
+  /* Kansen zijn als apart begrip afgeschaft (Tjeerd, 4 aug 2026: "alles
+     wat ik in het systeem zet is een kans") — geen chip meer. */
+  const kans = 0;
+  const waarom = waaromHTML(k, lc, act, vandaag);
   /* De merkkop draagt naam + dagen; "X dgn stil" in rood is het enige alarm
      en het staat maar op de kaarten die het verdienen. Alles daaronder is
      het lijf — en een geïmporteerde lead zonder gesprek, taak of vacature
@@ -337,6 +392,7 @@ function kaartHTML(k, lc, vandaag){
 
 function bordHTML(klanten){
   const contact = contactIndex();
+  const act = activiteitIndex();
   const vandaag = CRM.todayISO();
   return `<div class="board" id="s_board">${CRM.SALES_FASES.map(f => {
     const in_ = klanten.filter(k => faseVan(k)===f.k);
@@ -348,7 +404,7 @@ function bordHTML(klanten){
                er 118 in zaten: een kaart die om wélke reden dan ook niet wil
                renderen, wordt een kale naamkaart in plaats van een exception
                die de hele kolom (of het bord) leegtrekt. */
-            try{ return kaartHTML(k, contact.get(k.naam) || '', vandaag); }
+            try{ return kaartHTML(k, contact.get(k.naam) || '', act.get(k.naam) || null, vandaag); }
             catch(e){ console.error('kaart', k && k.naam, e);
               return `<div class="bcard bck mini" data-klant="${h(k.naam)}"><div class="bc-kop"><b>${h(k.naam||'?')}</b></div></div>`; }
           }).join('')
@@ -424,12 +480,10 @@ const LIJST_KOLOMMEN = [
   {k:'fase',  lbl:'Fase'},
   {k:'eigenaar', lbl:'Eigenaar'},
   {k:'branche',  lbl:'Branche'},
-  {k:'laatst_contact', lbl:'Laatste contact'},
-  {k:'kansen', lbl:'Open kansen', n:true}
+  {k:'laatst_contact', lbl:'Laatste contact'}
 ];
 function lijstWaarde(k, veld){
   if(veld==='fase')   return CRM.SALES_FASES.findIndex(f=>f.k===faseVan(k));
-  if(veld==='kansen') return openKansen(k.naam).length;
   if(veld==='laatst_contact') return k.laatst_contact || '';
   return String(k[veld]||'').toLowerCase();
 }
@@ -456,9 +510,57 @@ function lijstHTML(klanten){
         <td>${h(k.eigenaar||'—')}</td>
         <td>${h(k.branche||'—')}</td>
         <td class="num">${k.laatst_contact?h(CRM.fmtDate(k.laatst_contact)):'—'}
-          ${k.laatst_contact?`<div class="rowsub">${h(CRM.geleden(k.laatst_contact))}</div>`:''}</td>
-        <td class="n num">${openKansen(k.naam).length||'—'}</td></tr>`;
+          ${k.laatst_contact?`<div class="rowsub">${h(CRM.geleden(k.laatst_contact))}</div>`:''}</td></tr>`;
     }).join('')}</tbody></table></div>`;
+}
+
+/* ─── Opvolgingen ─────────────────────────────────────────────────
+   De dagelijkse werklijst (Tjeerd, 4 aug 2026: "een apart tabblad met
+   opvolgingen, die moet ik dagelijks bijhouden"): alle open taken die aan
+   een klant of een contactpersoon hangen, gegroepeerd op urgentie.
+   Verlopen bovenaan — dat is wat je vandaag als eerste inhaalt. */
+function openOpvolgingen(){
+  const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
+  return (CRM.state.taken||[]).filter(t => !t.klaar).map(t => {
+    const klant = t.entiteit === 'klant' ? t.ref
+                : t.entiteit === 'contact' ? klantVan.get(String(t.ref)) : '';
+    return klant ? Object.assign({}, t, {klantNaam: klant}) : null;
+  }).filter(Boolean)
+    .filter(t => !mijn || t.voor === CRM.me())
+    .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
+}
+function opvolgHTML(){
+  const alle = openOpvolgingen();
+  if(!alle.length) return CRM.ui.leeg('Geen open opvolgingen',
+    mijn ? 'Er staat niets open op jouw naam. Zet "Mijn klanten" uit om die van collega\'s te zien.'
+         : 'Elke afspraak die je maakt — "volgende week terugbellen" — hoort hier als taak te staan.',
+    '<button class="btn" data-nieuwtaak>+ Opvolgtaak</button>');
+  const vandaag = CRM.todayISO();
+  const week = (() => { const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
+  const groepen = [
+    ['Verlopen',     alle.filter(t => t.datum && t.datum < vandaag), 'let'],
+    ['Vandaag',      alle.filter(t => t.datum === vandaag), ''],
+    ['Deze week',    alle.filter(t => t.datum && t.datum > vandaag && t.datum <= week), ''],
+    ['Later',        alle.filter(t => t.datum && t.datum > week), ''],
+    ['Zonder datum', alle.filter(t => !t.datum), '']
+  ].filter(([,ts]) => ts.length);
+  return `<div class="card"><div class="card-b" style="padding-top:6px">${groepen.map(([lbl, ts, extra]) => `
+    <div class="label" style="margin:12px 0 6px${extra?';color:var(--red)':''}">${h(lbl)} · <span class="num">${ts.length}</span></div>
+    ${ts.map(t => `<div class="s-ct">
+      <label class="check" style="margin:0"><input type="checkbox" data-opvink="${h(t.id)}"></label>
+      <div style="flex:1;min-width:0">
+        <b class="trunc">${h(t.tekst)}</b>
+        <div class="meta">${t.datum ? `<span class="num">${h(CRM.fmtDateShort(t.datum))}${t.tijd?' '+h(t.tijd):''}</span> · ` : ''}${h(t.voor||'')}</div>
+      </div>
+      <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}">${h(t.klantNaam)}</button>
+    </div>`).join('')}`).join('')}</div></div>`;
+}
+function bindOpvolg(){
+  CRM.$$('[data-opvink]', mountEl).forEach(c => c.onchange = async () => {
+    await taakKlaar(c.dataset.opvink, c.checked);
+    tekenInhoud();
+  });
+  CRM.$$('[data-opklant]', mountEl).forEach(b => b.onclick = () => openKlant(b.dataset.opklant));
 }
 
 /* ─── Kansen-weergave ──────────────────────────────────────────── */
@@ -566,11 +668,12 @@ function tekenDrawer(dr, naam){
   const k = CRM.klant(naam); if(!k) return;
   const acts = CRM.activiteitenVoor('klant', naam);
   const taken = takenVan(naam);
+  /* Geen kansen-tab meer: kansen zijn als apart begrip afgeschaft
+     (Tjeerd, 4 aug 2026). */
   const telling = {
     activiteiten: acts.length,
     taken: taken.filter(t=>!t.klaar).length,
-    documenten: docsVan(naam).length,
-    kansen: openKansen(naam).length
+    documenten: docsVan(naam).length
   };
   dr.innerHTML = `
     <div class="drawer-h">
@@ -586,8 +689,7 @@ function tekenDrawer(dr, naam){
     <div class="drawer-b">
       <div class="tabs" id="sd_tabs">
         ${[['overzicht','Overzicht',null],['activiteiten','Activiteiten',telling.activiteiten],
-           ['taken','Taken',telling.taken],['documenten','Documenten',telling.documenten],
-           ['kansen','Kansen',telling.kansen]]
+           ['taken','Taken',telling.taken],['documenten','Documenten',telling.documenten]]
           .map(([k2,lbl,n])=>`<button class="tab${dTab===k2?' on':''}" data-dtab="${k2}">${h(lbl)}${
             n?`<span class="cnt num">${n}</span>`:''}</button>`).join('')}
       </div>
@@ -1602,10 +1704,27 @@ let mountEl = null, actiesEl = null;
 
 function gefilterd(){
   const q = zoek.trim().toLowerCase();
+  /* Het stiltefilter kijkt naar dezelfde indexen als de bordkaarten, zodat
+     het filter en de regel op de kaart nooit iets anders beweren. "Geen
+     contact/activiteit" (datum onbekend) telt mee als oneindig stil — dat
+     zijn juist de bedrijven die je met dit filter zoekt. */
+  let stilTest = null;
+  if(stilF){
+    const dagen = +stilF.slice(1);
+    const idx = stilF[0] === 'a' ? activiteitIndex() : contactIndex();
+    const vandaag = CRM.todayISO();
+    stilTest = k => {
+      const v = idx.get(k.naam);
+      const dag = v && (v.dag || v);
+      const d = dag ? dagenTussen(dag, vandaag) : null;
+      return d == null || d >= dagen;
+    };
+  }
   return CRM.state.clients.filter(k => {
     if(mijn && !CRM.isVanMij(k)) return false;
     if(eigFilter && k.eigenaar !== eigFilter) return false;
     if(q && !(`${k.naam} ${k.branche||''} ${k.locatie||''} ${k.eigenaar||''}`).toLowerCase().includes(q)) return false;
+    if(stilTest && !stilTest(k)) return false;
     return true;
   });
 }
@@ -1622,7 +1741,14 @@ function tekenActies(){
       ${eigenaren().map(e=>`<option value="${h(e)}"${eigFilter===e?' selected':''}>${h(e)}</option>`).join('')}
     </select>
     <button type="button" class="chip btn-like${mijn?' on':''}" id="s_mijn" aria-pressed="${mijn}">Mijn klanten</button>
-    <div class="seg" id="s_seg"${tab==='kansen'||tab==='activiteit'?' style="display:none"':''}>
+    <select id="s_stil" style="width:auto"${stilF?' class="on"':''}>
+      <option value="">Alle bedrijven</option>
+      <option value="c14"${stilF==='c14'?' selected':''}>14+ dgn geen contact</option>
+      <option value="c30"${stilF==='c30'?' selected':''}>30+ dgn geen contact</option>
+      <option value="a14"${stilF==='a14'?' selected':''}>14+ dgn geen activiteit</option>
+      <option value="a30"${stilF==='a30'?' selected':''}>30+ dgn geen activiteit</option>
+    </select>
+    <div class="seg" id="s_seg"${tab==='opvolg'||tab==='activiteit'?' style="display:none"':''}>
       <button data-w="bord" class="${weergave==='bord'?'on':''}">Bord</button>
       <button data-w="lijst" class="${weergave==='lijst'?'on':''}">Lijst</button>
     </div>`;
@@ -1630,6 +1756,7 @@ function tekenActies(){
   const inp = actiesEl.querySelector('#s_zoek');
   inp.oninput = CRM.debounce(()=>{ zoek = inp.value; V.zet('zoek',zoek); tekenInhoud(); }, 220);
   actiesEl.querySelector('#s_eig').onchange = e => { eigFilter = e.target.value; V.zet('eigenaar',eigFilter); tekenInhoud(); };
+  actiesEl.querySelector('#s_stil').onchange = e => { stilF = e.target.value; V.zet('stil',stilF); tekenInhoud(); };
   actiesEl.querySelector('#s_mijn').onclick = () => { mijn = !mijn; V.zet('mijn',mijn); tekenActies(); tekenInhoud(); };
   CRM.$$('#s_seg button', actiesEl).forEach(b=>b.onclick=()=>{ weergave=b.dataset.w; V.zet('weergave',weergave); tekenActies(); tekenInhoud(); });
 }
@@ -1637,29 +1764,27 @@ function tekenActies(){
 function tekenInhoud(){
   if(!mountEl) return;
   const klanten = gefilterd();
-  const kansenN = (CRM.state.kansen||[]).filter(o=>(o.status||'open')==='open').length;
+  /* De tab Kansen is vervallen (Tjeerd, 4 aug 2026: "alles wat ik in het
+     systeem zet is namelijk een kans") en Opvolgingen kwam ervoor in de
+     plaats: de open klanttaken, dagelijks bij te houden. */
+  const opvolgN = openOpvolgingen().filter(t => !t.datum || t.datum <= CRM.todayISO()).length;
 
   const radarN = radarNieuwN();
   const kop = `<div class="s-wrap">
     <div class="s-top">
       <div class="tabs">
         <button class="tab${tab==='pijplijn'?' on':''}" data-tab="pijplijn">Klantpijplijn<span class="cnt num">${klanten.length}</span></button>
+        <button class="tab${tab==='opvolg'?' on':''}" data-tab="opvolg">Opvolgingen${opvolgN?`<span class="cnt num">${opvolgN}</span>`:''}</button>
         <button class="tab${tab==='activiteit'?' on':''}" data-tab="activiteit">Activiteit</button>
-        <button class="tab${tab==='kansen'?' on':''}" data-tab="kansen">Kansen<span class="cnt num">${kansenN}</span></button>
         <button class="tab${tab==='radar'?' on':''}" data-tab="radar">Leadradar${radarN?`<span class="cnt num">${radarN}</span>`:''}</button>
       </div>
       <div class="row tight s-acts">${tab==='radar'
         ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>
            <button class="btn" data-rzoek${rZoeken?' disabled':''}>${rZoeken?'Bezig met zoeken…':'↻ Nu zoeken'}</button>`
-        /* Hier stond ook nog een knop "Leadradar", vlak naast de tab die
-           precies hetzelfde doet en er precies hetzelfde heet. Twee keer
-           dezelfde weg naast elkaar laat je aarzelen of ze wel hetzelfde
-           doen, en hij trok aandacht weg van de enige echte actie op dit
-           scherm. De tab blijft; de knop is weg. */
         /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
            knop die iets nieuws maakt. */
         : tab==='activiteit' ? ''
-        : `<button class="btn" data-nieuwekans>+ Nieuwe kans</button>`}
+        : `<button class="btn" data-nieuwtaak>+ Opvolgtaak</button>`}
       </div>
     </div>`;
 
@@ -1667,8 +1792,8 @@ function tekenInhoud(){
     mountEl.innerHTML = kop + radarHTML() + '</div>';
   } else if(tab==='activiteit'){
     mountEl.innerHTML = kop + activiteitHTML() + '</div>';
-  } else if(tab==='kansen'){
-    mountEl.innerHTML = kop + kansenHTML() + '</div>';
+  } else if(tab==='opvolg'){
+    mountEl.innerHTML = kop + opvolgHTML() + '</div>';
   } else if(weergave==='lijst'){
     mountEl.innerHTML = kop + kpiHTML(klanten) + '<div style="height:16px"></div>' + lijstHTML(klanten) + '</div>';
   } else {
@@ -1700,12 +1825,17 @@ function tekenInhoud(){
 function bindInhoud(){
   CRM.$$('[data-tab]', mountEl).forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
   CRM.$$('[data-radar]', mountEl).forEach(b=>b.onclick=()=>{ tab='radar'; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
-  CRM.$$('[data-nieuwekans]', mountEl).forEach(b=>b.onclick=()=>nieuweKans(null));
+  /* Het gedeelde taakvenster — mét de snelkeuzes morgen/1w/2w/1m. */
+  CRM.$$('[data-nieuwtaak]', mountEl).forEach(b=>b.onclick=async ()=>{
+    const rij = await CRM.taakModal({});
+    if(rij) tekenInhoud();
+  });
   bindRadar();
   if(tab==='activiteit') bindActiviteit();
+  if(tab==='opvolg') bindOpvolg();
   CRM.$$('[data-wis]', mountEl).forEach(b=>b.onclick=()=>{
-    zoek=''; mijn=false; eigFilter='';
-    V.zet('zoek',''); V.zet('mijn',false); V.zet('eigenaar','');
+    zoek=''; mijn=false; eigFilter=''; stilF='';
+    V.zet('zoek',''); V.zet('mijn',false); V.zet('eigenaar',''); V.zet('stil','');
     tekenActies(); tekenInhoud();
   });
   CRM.$$('[data-klant]', mountEl).forEach(r=>{ if(!r.classList.contains('bcard')) r.onclick=()=>openKlant(r.dataset.klant); });
@@ -1757,7 +1887,7 @@ function teken(){ tekenInhoud(); CRM.navBadges(); }
 
 /* ─── Registratie ──────────────────────────────────────────────── */
 CRM.registerModule('sales', {
-  title:'Sales', icon:'◈', onderschrift:'Klantpijplijn, kansen en leadradar',
+  title:'Sales', icon:'◈', onderschrift:'Klantpijplijn, opvolgingen en leadradar',
   volleBreedte:true,
   badge(){
     const vandaag = CRM.todayISO();
