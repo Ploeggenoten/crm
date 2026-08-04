@@ -1,8 +1,21 @@
 # Ploeggenoten CRM — Chrome-extensie (Lead-knop)
 
-Voeg vanaf **LinkedIn** en **Sales Navigator** met één klik leads toe aan je CRM:
+Voeg vanaf **LinkedIn**, **Sales Navigator** én **elke bedrijfswebsite** met één klik leads toe aan je CRM:
 - **Kandidaat-lead** → komt binnen bij *Recruitment → Inkomende sollicitanten* (tabel `crm_leads`).
-- **Sales-lead** → komt binnen bij *Sales → Leadradar*, waar je hem met één klik in de pijplijn zet (tabel `crm_leadradar`).
+- **Sales-lead** → komt binnen bij *Sales → **Zelf gevonden***, waar je hem met één klik in de pijplijn zet (tabel `crm_leadradar`).
+
+> **Waarom een eigen tab?** Alles wat jij zelf toevoegt staat bij *Zelf gevonden*,
+> gescheiden van de *Leadradar* — die houdt alleen wat de ochtendroutine
+> automatisch vindt. Anders moet je je eigen vondsten ertussenuit zoeken.
+
+**Dubbelcheck.** Zodra het paneel opent kijkt de extensie of dit bedrijf of deze
+persoon al in het CRM staat: in je vondsten, in de Leadradar, in de klantpijplijn
+of bij de sollicitanten. Staat er iets, dan zie je bovenin een rode melding met
+wát er al is (inclusief fase en eigenaar). Hij blokkeert niets — soms wil je een
+tweede ingang bij dezelfde klant — maar je weet het vóórdat je belt. Pas je de
+bedrijfsnaam aan, dan checkt hij opnieuw. Namen worden vergeleken zonder B.V.,
+hoofdletters en leestekens, dus "Bakker Barendrecht B.V." en "bakker barendrecht"
+gelden als hetzelfde bedrijf.
 
 Alles gratis: je laadt de extensie *unpacked*, er zijn geen Web Store-kosten en geen betaalde API's.
 
@@ -28,6 +41,39 @@ Alles gratis: je laadt de extensie *unpacked*, er zijn geen Web Store-kosten en 
 4. Je ziet meteen een bevestiging. Ververs je CRM om de lead te zien staan.
 
 > Tip: op een persoon staat de knop standaard op *Kandidaat*, op een bedrijf op *Sales*. Je kunt altijd wisselen — een contactpersoon bij een prospect sla je bijvoorbeeld op als *Sales-lead* met dat bedrijf erbij.
+
+## Een gewone website uitlezen (elke bedrijfssite)
+
+Sta je op de "werken bij"- of contactpagina van een bedrijf? Dan hoef je niets
+over te typen.
+
+1. Klik op het extensie-icoon 🧩 → **📄 Lees deze pagina uit**.
+2. Hetzelfde paneel opent, al ingevuld. Controleer, vul aan, **Opslaan in CRM**.
+3. Het bedrijf staat als sales-lead in de **Leadradar**, met bron *Website*.
+
+Wat hij van de pagina haalt:
+
+| Veld | Waar het vandaan komt |
+|---|---|
+| Bedrijfsnaam | schema.org-gegevens, anders `og:site_name` of de paginatitel, anders de domeinnaam |
+| Plaats | het adres in de schema.org-gegevens, anders een Nederlandse postcode in de tekst, anders "Rozenburg, Zuid-Holland"-achtige regels |
+| Functie(s) + aantal | vacaturetitels op de pagina die passen bij ons werk (operator, orderpicker, heftruck…) |
+| Salaris | alleen als het bedrijf het in zijn vacaturegegevens zet |
+| E-mail | `mailto:`-links en tekst; voorkeur voor een wervingsadres (`werken@`, `sollicitatie@`, `hr@`) boven `info@` |
+| Telefoon | `tel:`-link, anders een Nederlands nummer uit de tekst |
+| Contactpersoon | alléén als het bedrijf zelf een naam noemt ("Neem contact op met …", "t.a.v. …"), met de functie die erbij staat |
+
+Twee dingen om te weten:
+
+- **Leeg is bewust.** Wat niet zeker op de pagina staat, vult hij niet in — dan
+  zie jij meteen dat je het zelf moet opzoeken. Liever een leeg veld dan een
+  verkeerde naam onder je neus.
+- **Vacatures staan zelden op de homepage.** Sta je op "werken bij" of op de
+  vacature zelf, dan is de oogst het grootst. Mist e-mail of telefoon? Ga even
+  naar de contactpagina en lees die opnieuw uit.
+
+De knop verschijnt bewust *niet* vanzelf op elke website die je bezoekt — alleen
+als jij erom vraagt via het icoon.
 
 ## Daglijst + connectieverzoeken (beslissers werven)
 

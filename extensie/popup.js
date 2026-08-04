@@ -40,6 +40,20 @@ $('login').addEventListener('click', async () => {
 
 $('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('login').click(); });
 
+// Injecteert het lees-paneel in de pagina die je open hebt staan.
+// Bewust op jouw klik: zo staat er geen knop op élke website die je bezoekt.
+$('lees').addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) { melden('Geen actieve pagina gevonden.', 'err'); return; }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+    window.close();                       // paneel opent zich in de pagina zelf
+  } catch (e) {
+    // Chrome blokkeert injectie op chrome://-pagina's, de Web Store en PDF-viewers.
+    melden('Kan deze pagina niet uitlezen (' + (e.message || 'geblokkeerd door Chrome') + ').', 'err');
+  }
+});
+
 $('logout').addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ action: 'logout' });
   melden('Uitgelogd.', 'ok'); toon(false);

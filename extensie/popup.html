@@ -18,7 +18,7 @@
 </head>
 <body>
   <h1>Ploeggenoten CRM</h1>
-  <p class="sub">Log één keer in met je CRM-account. Daarna voeg je op LinkedIn met de knop rechtsonder leads toe.</p>
+  <p class="sub">Log één keer in met je CRM-account. Op LinkedIn verschijnt de knop rechtsonder vanzelf; op elke andere website lees je de pagina uit met de knop hieronder.</p>
 
   <div id="uitgelogd">
     <label>E-mail</label>
@@ -30,6 +30,9 @@
 
   <div id="ingelogd" class="verborgen">
     <div class="status">Ingelogd als <b id="wie"></b></div>
+
+    <button id="lees">📄 Lees deze pagina uit</button>
+    <div style="font-size:11px;color:#777;margin-top:4px;">Werkt op elke bedrijfssite: haalt bedrijfsnaam, plaats, contactgegevens en de vacatures van de pagina. Op LinkedIn gebruik je de groene knop rechtsonder.</div>
 
     <label>Jouw naam (voor <code>{mij}</code> in het connectie-bericht)</label>
     <input id="s_naam" placeholder="bv. Tjeerd" />
