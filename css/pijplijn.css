@@ -79,19 +79,23 @@
 .rc-rec{background:var(--card-2);border:1px solid var(--line);border-radius:5px;font-size:10px;
   font-weight:600;color:var(--txt-2);padding:2px 5px;letter-spacing:.03em;flex:0 0 auto}
 .bcard .bc-act{margin-top:7px;font-size:11.5px;color:var(--txt-2);border-top:1px solid var(--line);padding-top:6px}
-.bcard .bc-act.over{color:var(--red);font-weight:600}
+.bcard .bc-act.over{color:var(--txt-2);font-weight:600}
 .bcard .rc-intakebtn{margin-top:8px;width:100%;justify-content:center;padding:4px 8px;font-size:11.5px}
 
 /* ─── Kaart: afspraak/start-regel + vandaag/gemist ───────────── */
 .rc-when{margin-top:7px;font-size:12px;font-weight:600;color:var(--txt-2)}
 .rc-when.vandaag{color:var(--green)}
 .rc-when.morgen{color:var(--green)}
-.rc-when.gemist{color:var(--red)}
+/* Gemist: het wóórd zegt het al — geen rood ("de rode signalen zijn teveel,
+   houd het clean", Tjeerd 4 aug 2026). Zelfde besluit als de dagenteller. */
+.rc-when.gemist{color:var(--txt-2)}
 .rc-when.start{color:var(--green)}
 .rc-when.verw{font-weight:500;color:var(--muted);margin-top:3px}
 /* Vandaag = groen kader (de 'groene schaduw' van het bord, in dunne-rand-stijl). */
 .bcard.vandaag{border-color:var(--green-line);background:var(--green-bg)}
-.bcard.gemist{border-color:var(--red-line)}
+/* Geen rood kader meer om een gemiste afspraak — de regel op de kaart
+   draagt het woord 'gemist' al. */
+.bcard.gemist{border-color:var(--line)}
 
 /* ─── Week-indeling, klantgroepen en startnotitie in kolommen ── */
 .rc-wdiv{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;

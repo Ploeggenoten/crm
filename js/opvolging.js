@@ -1549,7 +1549,9 @@ function chipHtml(c){
   const r = OPV.voorKandidaat(c);
   if(!r.actief) return '';
   const open = r.open[0];
-  if(open) return `<span class="chip red num" title="${h(SOORT_LBL[open.soort] || 'Opvolging')} — ${h(open.titel)}">${
+  /* Amber, geen rood: op het bord is dit een aanwijzing, geen alarm —
+     rood op kaarten is per 4 aug 2026 uitgezet ("houd het clean"). */
+  if(open) return `<span class="chip amber num" title="${h(SOORT_LBL[open.soort] || 'Opvolging')} — ${h(open.titel)}">${
       open.soort === 'verjaardag' ? 'jarig vandaag'
     : open.soort === 'afspraak'   ? 'stuur een succesje'
     : h(open.kort) + ' · nu'}</span>`;

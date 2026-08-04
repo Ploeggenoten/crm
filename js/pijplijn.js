@@ -423,7 +423,7 @@ function kaartHtml(c){
     if(loc) chips.push(`<span class="chip" title="Locatie">${h(loc)}</span>`); }
   if(c.herstartVan) chips.push(`<span class="chip purple" title="Heraangeboden — de eerdere uitkomst blijft op de oude kaart geregistreerd">herstart</span>`);
   if(c.vervangt) chips.push(`<span class="chip blue" title="Vervanger voor een gestopte plaatsing">vervanger</span>`);
-  if(c.noShows) chips.push(`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`);
+  if(c.noShows) chips.push(`<span class="chip num" title="No-shows">${h(c.noShows)}× no-show</span>`);
   /* De dagen-in-fase zijn naar de merkkop verhuisd (bc-dgn) — als chip én
      als kopgetal zou hetzelfde er twee keer staan. De stilstandsnorm en de
      reden reizen mee in de tooltip van de kop. */
