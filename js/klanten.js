@@ -2411,9 +2411,14 @@ function tabVacatures(el, k, c){
 
   ooBlokBind(el, k);
   el.querySelector('#v_nieuw').onclick = () => vacatureModal(k, null);
+  /* Bewerken gaat naar de vacaturekaart zelf, niet naar het formulier.
+     Tjeerd (4 aug 2026): "dan wil ik doorgestuurd worden naar de
+     vacaturepagina en kan ik het daar aanpassen, niet via een form." De
+     kaart toont alles in samenhang; het formulier blijft alleen bestaan
+     voor snel aanmaken en voor het aanvullen van marketeer-info. */
   el.querySelectorAll('[data-vbew]').forEach(b => b.onclick = e => {
     e.preventDefault(); e.stopPropagation();
-    vacatureModal(k, c.vs.find(v => String(v.id) === b.dataset.vbew));
+    CRM.ga('hot', {id: b.dataset.vbew});
   });
   /* Overleg over déze vacature inplannen — zelfde venster, ander onderwerp. */
   el.querySelectorAll('[data-vplan]').forEach(b => b.onclick = e => {
