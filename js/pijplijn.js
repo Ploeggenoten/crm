@@ -409,9 +409,11 @@ function kaartHtml(c){
      kandidaatkaart, waar de rest van de gegevens ook staat.
      (Tjeerd, 2 aug 2026: "hier is al een videointake gedaan. We stellen ze
      pas voor als dit voldaan is.") */
-  const intakeMist = CRM.faseIs(c.fase, 'Voorgesteld') && !d.intakeDone(c);
+  /* De intake-chips ("intake 8/10", "intake?") zijn van de kaart af
+     (Tjeerd, 4 aug 2026): of de kandidaat compleet in het systeem staat
+     bewaakt de kandidatenkaart met zijn volledigheidsmeter, en de poort in
+     faseWissel() laat een kaart zonder intake toch al niet zomaar door. */
   const chips = [];
-  if(intakeMist) chips.push(`<span class="chip amber" title="Deze kandidaat staat bij de klant zonder vastgelegde video-intake. Vastleggen doe je op de kandidaatkaart.">intake?</span>`);
   if(c.type) chips.push(`<span class="chip">${h(c.type)}</span>`);
   else if(placed) chips.push(`<span class="chip amber" title="Type W&S of Flex ontbreekt — nodig voor de facturatie">type?</span>`);
   if(c.bron) chips.push(`<span class="chip">${h(c.bron)}</span>`);
@@ -428,9 +430,7 @@ function kaartHtml(c){
      als kopgetal zou hetzelfde er twee keer staan. De stilstandsnorm en de
      reden reizen mee in de tooltip van de kop. */
   const sfKop = stilstandFase(c.fase, dg);
-  if(d.intakeDone(c)){ const ic = c.intake.cijfer;
-    chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+h(ic)+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
-  }
+
   if(placed && c.garantieMnd > 0){ const ge = d.garantieEnd(c);
     if(ge && ge >= CRM.todayISO()) chips.push(`<span class="chip green num" title="Garantietermijn">garantie t/m ${h(CRM.fmtDateShort(ge))}</span>`);
   }
