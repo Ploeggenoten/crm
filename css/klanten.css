@@ -243,10 +243,15 @@ label.kl-taak input{margin-top:3px}
 }
 
 /* Rail: notities — gezamenlijk geheugen, altijd in beeld */
-.rn-item{padding:8px 0;border-bottom:1px solid var(--line)}
+.rn-item{padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .rn-item:last-of-type{border-bottom:none}
-.rn-item .rn-tekst{font-size:12.5px;line-height:1.45;word-break:break-word}
+.rn-item .rn-kop{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+/* Drie regels en dan afkappen: een uitgebreid gespreksverslag maakte de
+   hele zijbalk metershoog. De volledige tekst staat één klik verderop in
+   de tijdlijn. */
+.rn-item .rn-tekst{font-size:12.5px;line-height:1.45;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .rn-item .meta{margin-top:3px}
+.kl-uitkomsten{flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 #rn_tekst{font-size:12.5px;min-height:52px}
 
 /* ─── Inplannen-venster ────────────────────────────────────────── */

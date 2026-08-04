@@ -1359,16 +1359,29 @@ function takenBlokHtml(){
 }
 
 /* ─── Rail: notities — het gezamenlijke geheugen van de relatie ── */
+/* Het linksboven-blok is sinds 4 aug 2026 niet meer "Notities" maar de
+   héle activiteitenstroom. Tjeerd: "ik wil meteen de activiteiten &
+   notities naar links, zodat je dit meteen ziet — en vanuit daar wil ik
+   alles noteren." Twee dingen veranderden mee:
+   - Lange gespreksverslagen worden op drie regels afgekapt (klik = de
+     volledige tekst in de tijdlijn). Eén uitgebreid verslag maakte de
+     hele zijbalk anders metershoog.
+   - Wat je het vaakst vastlegt is de úitkomst van een poging: gebeld,
+     geen gehoor, voicemail, appje gestuurd. Dat zijn nu knoppen van één
+     klik — allemaal echte contactmomenten, dus laatst_contact loopt mee. */
+const SNEL_UITKOMSTEN = [
+  ['bel',      'Gebeld',       'Gebeld'],
+  ['bel',      'Geen gehoor',  'Gebeld, geen gehoor'],
+  ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten'],
+  ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd']
+];
 function notitiesBlokHtml(){
   return `<div class="card kl-railkaart kl-r-nt">
-    <div class="card-h"><div class="h2">Notities</div></div>
+    <div class="card-h"><div class="h2">Activiteiten & notities</div></div>
     <div class="card-b">
-      <!-- Wat er al staat, komt eerst. Het invoerveld stond bovenaan en de
-           notities eronder, dus je zag als eerste een leeg vak in plaats van
-           wat een collega had opgeschreven. Bij een klant waar Tjerk en
-           Rajesh allebei aan werken is dat precies het verkeerde om: je wilt
-           lézen voordat je schrijft. (Tjeerd, 3 aug 2026: "notities moeten
-           meteen te zien zijn, ook als andere AM's erin hebben gewerkt.") -->
+      <div class="row tight kl-uitkomsten">${SNEL_UITKOMSTEN.map(([,lbl], i) =>
+        `<button type="button" class="chip btn-like" data-uitkomst="${i}">${h(lbl)}</button>`).join('')}
+      </div>
       <div id="rn_lijst"></div>
       <div class="f-row kl-ntinvoer">
         <textarea id="rn_tekst" rows="2" placeholder="Korte notitie… (@naam meldt een collega)"></textarea>
@@ -1379,29 +1392,43 @@ function notitiesBlokHtml(){
 
 function railNotities(mount, k){
   const el = mount.querySelector('#rn_lijst'); if(!el) return;
+  const naarTijdlijn = () => {
+    tabActief = 'activiteiten';
+    mount.querySelectorAll('#k_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'activiteiten'));
+    tabInhoud(mount, k);
+  };
   const teken = () => {
-    /* Notities én gespreksverslagen, ook die bij contactpersonen van deze
-       relatie — iedereen ziet hetzelfde beeld. */
+    /* Alle soorten, ook die bij contactpersonen van deze relatie —
+       iedereen ziet hetzelfde beeld, en "Gebeld · geen gehoor" hoort er
+       net zo goed bij als een verslag. */
     const ctIds = new Set((CRM.state.contacten||[]).filter(x => x.klant === k.naam).map(c => String(c.id)));
     const alle = CRM.state.activiteiten
-      .filter(a => (a.entiteit==='klant' && a.ref===k.naam && ['notitie','gesprek'].includes(a.soort))
-                || (a.entiteit==='contact' && ctIds.has(String(a.ref)) && ['notitie','gesprek'].includes(a.soort)))
+      .filter(a => (a.entiteit==='klant' && a.ref===k.naam)
+                || (a.entiteit==='contact' && ctIds.has(String(a.ref))))
       .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
     const top = alle.slice(0, 5);
     el.innerHTML = top.length ? top.map(a => `
-      <div class="rn-item">
+      <div class="rn-item" data-rnitem title="Klik voor de volledige tijdlijn">
+        <div class="rn-kop">${h(((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort)}${a.extra?.verslag?' · verslag':''}</div>
         <div class="rn-tekst">${h(a.tekst)}</div>
-        <div class="meta num">${h(a.door||'—')} · ${h(CRM.geleden(a.op))}${a.extra?.verslag?' · verslag':''}</div>
+        <div class="meta num">${h(a.door||'—')} · ${h(CRM.geleden(a.op))}</div>
       </div>`).join('') + (alle.length > 5
         ? `<button class="btn sub sm" id="rn_alle">Alle ${alle.length} in de tijdlijn →</button>` : '')
-      : `<div class="meta">Nog geen notities — wat hier staat ziet het hele team.</div>`;
+      : `<div class="meta">Nog niets vastgelegd — wat hier staat ziet het hele team.</div>`;
     const alleBtn = el.querySelector('#rn_alle');
-    if(alleBtn) alleBtn.onclick = () => {
-      tabActief = 'activiteiten';
-      mount.querySelectorAll('#k_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'activiteiten'));
-      tabInhoud(mount, k);
-    };
+    if(alleBtn) alleBtn.onclick = naarTijdlijn;
+    CRM.$$('[data-rnitem]', el).forEach(d => d.onclick = naarTijdlijn);
   };
+  /* De uitkomstknoppen: één klik, meteen vastgelegd, en omdat het echte
+     contactmomenten zijn schuift laatst_contact mee — het bord ziet het. */
+  CRM.$$('[data-uitkomst]', mount).forEach(b => b.onclick = async () => {
+    const [soort,, tekst] = SNEL_UITKOMSTEN[+b.dataset.uitkomst];
+    b.disabled = true;
+    await CRM.logActiviteit('klant', k.naam, soort, tekst);
+    await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
+    b.disabled = false;
+    teken();
+  });
   const inp = mount.querySelector('#rn_tekst');
   mount.querySelector('#rn_opslaan').onclick = async () => {
     const tekst = inp.value.trim(); if(!tekst) return;
