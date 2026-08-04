@@ -749,7 +749,19 @@ function kaart(mount, acties, naam){
     </div>`;
 
   /* Snelacties in de kop */
-  mount.querySelector('#k_bel').onclick     = () => logVia(k,'bel','Wat is er besproken?');
+  /* Bellen: eerst écht bellen (tel: opent FaceTime, die het gesprek naar de
+     iPhone doorzet), en daarna meteen het venster om vast te leggen wat er
+     besproken is — zo is één klik het hele ritueel: bellen én loggen. Het
+     nummer komt van de klant, en anders van het hoofdcontact — dezelfde
+     terugval als de knop Mailen hieronder. Geen nummer? Dan alleen het
+     logvenster, zoals voorheen. */
+  mount.querySelector('#k_bel').onclick     = () => {
+    const hoofd = (CRM.state.contacten||[]).filter(x => x.klant === k.naam && x.telefoon)
+      .sort((a,b) => (b.hoofd?1:0) - (a.hoofd?1:0))[0];
+    const nummer = k.telefoon || (hoofd && hoofd.telefoon) || '';
+    if(nummer) location.href = 'tel:' + String(nummer).replace(/[^\d+]/g,'');
+    logVia(k,'bel','Wat is er besproken?');
+  };
   /* Mailen: met Outlook-koppeling schrijf je de mail hier (en wordt hij
      vanzelf gelogd); zonder koppeling leg je vast wat je buiten het CRM
      hebt gemaild. Handmatig loggen blijft in de tab Activiteiten. */

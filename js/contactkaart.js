@@ -393,7 +393,9 @@ function tekenLijst(mount){
         <td>${h(c.functie||'—')}</td>
         <td>${h(c.klant||'—')}</td>
         <td class="ck-bereik">${[
-          c.telefoon ? `<span class="num">${h(c.telefoon)}</span>` : '',
+          /* Een link, geen platte tekst: tel: opent FaceTime en die zet het
+             gesprek door naar de iPhone — zelfde telHref als de rail. */
+          c.telefoon ? `<a class="num" href="${h(telHref(c.telefoon))}">${h(c.telefoon)}</a>` : '',
           c.email ? `<span class="trunc">${h(c.email)}</span>` : ''
         ].filter(Boolean).join('') || '<span class="meta">geen gegevens</span>'}</td>
         <td>${stilteHtml(c)}</td>
@@ -404,7 +406,12 @@ function tekenLijst(mount){
       </tr>`;
     }).join('')}
     </tbody></table></div>`;
-  el.querySelectorAll('[data-ct]').forEach(r => r.onclick = () => open(r.dataset.ct));
+  /* De rij opent de contactkaart — behálve als je op de bellink klikt:
+     anders belt één klik én navigeert hij weg van waar je was. */
+  el.querySelectorAll('[data-ct]').forEach(r => r.onclick = e => {
+    if(e.target.closest('a')) return;
+    open(r.dataset.ct);
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
