@@ -157,43 +157,116 @@
   .pl-filrij select{flex:1 1 46%;min-width:0}
 }
 
-/* ─── Actiestrook ────────────────────────────────────────────────
-   Drie chips die niet met je filter meebewegen. Ze stonden hier als vier
-   KPI-tegels van 350×90px voor vier getallen van één cijfer; hun functie was
-   alarm en een alarm is een regel, geen banner. Een chip met nul is niet weg
-   maar gedempt en uitgeschakeld: "er staat niets open" is ook informatie, en
-   een strook die van lengte verandert leest onrustig. */
-.pl-acts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-.pl-act{
-  display:inline-flex;align-items:baseline;gap:7px;cursor:pointer;
-  background:var(--card);border:1px solid var(--line);border-radius:999px;
-  padding:6px 14px;font-family:var(--body);font-size:12.5px;color:var(--txt-2);
-  transition:border-color .12s,background .12s;
+/* ─── Het ploegvlak ──────────────────────────────────────────────
+   Het enige donkere vlak van dit scherm, en dus de enige plek waar lime mag
+   (huisstijl). Drie zones: de twee grote cijfers, de eerstvolgende start, en
+   de alarmchips — die laatste zijn dezelfde filters als voorheen, maar op
+   donker springen ze eindelijk uit het crème. */
+.pl-ploeg{
+  display:flex;align-items:center;gap:26px;flex-wrap:wrap;
+  background:var(--dark-card);border:1px solid var(--dark-line);border-radius:var(--r-l);
+  padding:16px 22px;margin-bottom:14px;color:var(--dark-txt);
 }
-.pl-act .num{font-weight:700;font-size:14px;color:var(--ink)}
-.pl-act:hover{border-color:var(--olive-l);background:#f7f9f1}
-.pl-act.leeg{opacity:.5;cursor:default;background:transparent}
-.pl-act.leeg:hover{border-color:var(--line);background:transparent}
-.pl-act.amber{border-color:var(--amber-line);background:var(--amber-bg)}
-.pl-act.amber .num{color:var(--amber)}
-.pl-act.rood{border-color:var(--red-line);background:var(--red-bg)}
-.pl-act.rood .num{color:var(--red)}
+.pl-ploegcijfers{display:flex;gap:24px}
+.pl-pc{display:flex;flex-direction:column;align-items:flex-start}
+.pl-pgroot{font-family:var(--disp);font-weight:400;font-size:40px;line-height:1;letter-spacing:.5px;color:var(--dark-txt)}
+.pl-pgroot.lime{color:var(--lime)}
+.pl-plbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dark-muted);margin-top:5px}
+.pl-ploegstart{flex:1;min-width:220px;border-left:1px solid var(--dark-line);padding-left:22px}
+.pl-dlabel{color:var(--dark-muted)}
+.pl-pstart{font-size:13.5px;margin-top:4px;color:var(--dark-txt)}
+.pl-pstart b{font-weight:700}
+.pl-pstart b.lime{color:var(--lime)}
+.pl-pstart.sub2{font-size:12px;color:var(--dark-muted);margin-top:2px}
+.pl-pstart.sub2 b{color:var(--dark-txt);font-weight:600}
+.pl-ploegchips{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.pl-dchip{
+  display:inline-flex;align-items:baseline;gap:6px;cursor:pointer;
+  background:#fff;border:1px solid #fff;border-radius:999px;
+  padding:4px 13px;font-family:var(--body);font-size:12px;color:var(--txt-2);
+}
+.pl-dchip .num{font-weight:700;color:var(--ink)}
+.pl-dchip.leeg{background:transparent;border-color:var(--dark-line);color:var(--dark-muted);cursor:default}
+.pl-dchip.leeg .num{color:var(--dark-muted)}
+.pl-dchip.amber{background:var(--amber-bg);border-color:var(--amber-bg)}
+.pl-dchip.amber .num{color:var(--amber)}
+.pl-dchip.rood{background:var(--red-bg);border-color:var(--red-bg)}
+.pl-dchip.rood .num{color:var(--red)}
+.pl-dchip.aan{background:var(--lime);border-color:var(--lime);color:#171d08}
+.pl-dchip.aan .num{color:#171d08}
 
-/* ─── De tabel ───────────────────────────────────────────────────
+/* ─── Startkalender ──────────────────────────────────────────────
+   Veertien weekcellen, één blokje per persoon die die week begint. Planning
+   vooruit, geen trend. De noten links en rechts zijn de niemand-valt-weg-
+   garantie van de strip zelf. */
+.pl-kal{
+  display:flex;align-items:center;gap:14px;padding:10px 18px;margin-bottom:14px;
+  overflow-x:auto;
+}
+.pl-kallbl{flex:0 0 auto}
+.pl-kaleerder,.pl-kalzonder{flex:0 0 auto;font-size:11px;max-width:150px}
+.pl-kwrap{display:flex;gap:2px;flex:1;justify-content:space-between;min-width:420px}
+.pl-kw{
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  gap:3px;min-width:30px;padding:16px 3px 4px;border:none;background:none;cursor:pointer;
+  border-radius:var(--r-s);font-family:var(--body);
+}
+.pl-kw:hover{background:var(--card-2)}
+.pl-kw.nu{background:var(--well)}
+.pl-kmnd{position:absolute;top:1px;font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--txt-2)}
+.pl-kblok{display:flex;flex-direction:column-reverse;gap:2px;min-height:10px}
+.pl-kblok i{width:9px;height:9px;border-radius:2.5px;display:block}
+.pl-kblok i.werkt{background:var(--green)}
+.pl-kblok i.komt{background:#5b8bbf}
+.pl-kwk{font-size:10px;color:var(--muted)}
+.pl-kw.nu .pl-kwk{font-weight:700;color:var(--olive)}
+.pl-knu{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--olive)}
+
+/* ─── Selectieregel ──────────────────────────────────────────────
+   De optelsom van precies wat er in de tabel staat — de vervanger van de
+   vier KPI-tegels, en hij beweegt wél met elk filter mee. */
+.pl-selregel{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding:9px 16px;border-bottom:1px solid var(--line);
+  font-size:12.5px;color:var(--txt-2);background:var(--card);
+}
+.pl-selregel b{color:var(--ink);font-weight:700}
+
+/* ─── De tabel ─/* ─── De tabel ───────────────────────────────────────────────────
    Vaste kolombreedtes, zodat de datums en bedragen over de hele lijst onder
    elkaar staan en je verticaal kunt scannen. De naam- en klantkolom mogen
    rekken; de rest niet — anders danst een getal per rij mee met de lengte van
    een naam ernaast. */
 .pl-tbl{table-layout:fixed}
-.pl-tbl th:nth-child(1),.pl-tbl td:nth-child(1){width:22%}
-.pl-tbl th:nth-child(2),.pl-tbl td:nth-child(2){width:22%}
-.pl-tbl th:nth-child(3),.pl-tbl td:nth-child(3){width:104px}
-.pl-tbl th:nth-child(4),.pl-tbl td:nth-child(4){width:128px}
-.pl-tbl th:nth-child(5),.pl-tbl td:nth-child(5){width:78px}
-.pl-tbl th:nth-child(7),.pl-tbl td:nth-child(7){width:112px}
-.pl-tbl td{vertical-align:top}
+.pl-tblwrap{border:none;border-radius:0 0 var(--r-l) var(--r-l)}
+.pl-tbl th:nth-child(1),.pl-tbl td:nth-child(1){width:15%}
+.pl-tbl th:nth-child(2),.pl-tbl td:nth-child(2){width:16%}
+.pl-tbl th:nth-child(3),.pl-tbl td:nth-child(3){width:92px}
+.pl-tbl th:nth-child(4),.pl-tbl td:nth-child(4){width:100px}
+.pl-tbl th:nth-child(5),.pl-tbl td:nth-child(5){width:108px}
+.pl-tbl th:nth-child(6),.pl-tbl td:nth-child(6){width:17%}
+.pl-tbl th:nth-child(8),.pl-tbl td:nth-child(8){width:104px}
+/* Krant, geen dashboard: dichter op elkaar dan de standaardtabel. */
+.pl-tbl td{vertical-align:top;padding:9px 12px}
+.pl-tbl th{padding:8px 12px}
 .pl-tbl td b{font-weight:600}
 .pl-tbl .pl-let{font-size:11.5px}
+.pl-amber{color:var(--amber);font-weight:600}
+/* Garantie: het verloopbalkje. Grijs spoor, olijfgroen gevuld deel — hoe
+   voller, hoe dichter bij het einde van de garantie. */
+.pl-gbalk{height:3px;background:var(--card-2);border-radius:99px;margin-top:4px;overflow:hidden;max-width:80px;margin-left:auto}
+.pl-gbalk i{display:block;height:100%;background:var(--green);border-radius:99px}
+.pl-gplicht{color:var(--red);font-weight:600;font-size:12.5px}
+.pl-cplicht{color:var(--amber);font-weight:600;font-size:12.5px}
+.pl-cnu{color:var(--red);font-weight:600;font-size:12.5px}
+/* Een gestopte buiten de plicht dringt niet meer aan. */
+.pl-tbl tr.pl-wegr{opacity:.62}
+/* Groepskop-staafje: werkt/komt/gestopt in 56px. */
+.pl-gstaaf{display:inline-flex;width:56px;height:5px;border-radius:99px;overflow:hidden;gap:1px;margin:0 10px;vertical-align:middle}
+.pl-gstaaf i{display:block;height:100%}
+.pl-gstaaf i.werkt{background:var(--green)}
+.pl-gstaaf i.komt{background:#5b8bbf}
+.pl-gstaaf i.weg{background:var(--line-2)}
 /* Een fee die niet te berekenen valt is geen gat maar een to-do: de reden
    staat er, afgekapt, met het hele verhaal in de tooltip. */
 .pl-feeleeg{font-size:11px;font-style:italic;display:block;overflow:hidden;
@@ -229,8 +302,3 @@
      horizontaal binnen .tblwrap in plaats van de cellen te persen. */
   .pl-tbl{table-layout:auto;min-width:900px}
 }
-/* Een chip die aanstaat is een filter, en dat moet je kunnen zien — anders
-   kijk je naar drie van de zes zonder te weten waarom. */
-.pl-act.aan{background:var(--olive);border-color:var(--olive);color:#fff}
-.pl-act.aan .num{color:#fff}
-.pl-act.aan:hover{background:var(--olive-d);border-color:var(--olive-d)}

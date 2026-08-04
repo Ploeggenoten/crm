@@ -967,10 +967,11 @@ function kaart(mount, acties, id){
     <button class="btn ghost sm" id="c_app">Geappt</button>
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
     <button class="btn ghost sm" id="c_taak">Taak</button>
-    <button class="btn ghost sm" id="c_profiel">Kandidaatprofiel</button>
+    <button class="btn ghost sm" id="c_profiel">Genereer CV</button>
     <button class="btn sm" id="c_video">Videocall inplannen</button>`;
   acties.querySelector('#c_terug').onclick   = () => CRM.ga(vanBord ? 'pijplijn' : 'kandidaten');
-  /* Kandidaatprofiel in huisstijl (js/cv.js): het vel dat naar de klant gaat.
+  /* "Genereer CV" (naam: Tjeerd, 4 aug 2026) — het kandidaatprofiel in
+     huisstijl uit js/cv.js, het vel dat naar de klant gaat.
      De vacature gaat mee zodat "voorgesteld voor" en de reisafstand kloppen. */
   acties.querySelector('#c_profiel').onclick = () => CRM.cvGen.open(c, {
     vacature: c.vacatureId || null, klant: c.klant || ''
