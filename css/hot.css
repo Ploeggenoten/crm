@@ -346,7 +346,7 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
    alle inhoud op wit. Hot is de pil (wit met oranje tekst — knalt op de
    gekleurde kop). */
 .ov2-kop{
-  background:rgba(212,82,42,.75);border-bottom:1px solid var(--line);
+  background:var(--oranje);border-bottom:1px solid var(--line);
   padding:12px 16px;display:flex;align-items:center;gap:14px;
 }
 .ov2-wie{flex:1;min-width:0}
@@ -355,7 +355,8 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
 .ov2-kop .ov-klant .ov-punt{color:rgba(255,255,255,.55)}
 .ov2-kop .ov-getal{color:#fff}
 .ov2-kop .ov-vlbl{color:rgba(255,255,255,.9)}
-.ov2-kop.hot{background:rgba(212,82,42,.9)}
+/* Hot: een slag dieper dan het gewone oranje. */
+.ov2-kop.hot{background:#b8431f}
 .ov2-hotchip{
   display:inline-flex;align-items:center;background:#fff;color:var(--oranje);
   border-radius:999px;padding:1px 9px;font-size:10.5px;font-weight:800;margin-top:6px;

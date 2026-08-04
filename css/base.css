@@ -408,13 +408,18 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
    en te wit" op een bord met 223 geïmporteerde klanten.
    .bck zet de vorm; producenten leveren .bc-kop (+ evt. .bc-lijf) en de
    klasse .vol zodra er een lijf is. .frand blijft gewoon werken (border-left). */
-.bcard.bck{padding:0;overflow:hidden}
+/* flex-shrink:0 is hier de belangrijkste regel: de kolom is een flexkolom
+   en kinderen mógen krimpen vóór er gescrold wordt. Met overflow:hidden op
+   de kaart betekende dat: 30 kaarten worden 30 platte reepjes, en 118 leads
+   werden onzichtbare slivers — Tjeerds "lege" Lead-kolom van vandaag. Een
+   kaart krimpt nooit; de kolom scrolt. */
+.bcard.bck{padding:0;overflow:hidden;flex-shrink:0}
 /* Definitieve keuze (Tjeerd, 4 aug 2026, vierde ronde — "optie B: alleen de
    header heeft kleur"): de kop draagt het merk op 75%, de naam staat er wit
    en vet op, en álle informatie staat op wit eronder in gewone donkere
    tekst. Kleur waar het merk hoort, leesbaarheid waar de inhoud staat.
-   Urgentie is een witte pil met rode tekst — die knalt op het olijf. */
-.bck .bc-kop{background:rgba(61,100,0,.75);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
+   Dekking op 100% (Tjeerd, 4 aug 2026): het volle merk-olijf. */
+.bck .bc-kop{background:var(--olive);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
 .bck .bc-kop b{color:#fff;font-weight:700;font-size:14px;flex:1;min-width:0;line-height:1.35;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bck .bc-dgn{color:rgba(255,255,255,.92);white-space:nowrap}
