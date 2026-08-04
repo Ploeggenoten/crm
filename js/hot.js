@@ -159,11 +159,18 @@
      streep en het woord iets anders over dezelfde vacature. Op koers is
      groen en niet niets: op een grid van dertig vacatures wil je "hier is
      alles goed" kunnen zíén, niet afleiden uit de afwezigheid van kleur. */
+  /* Kleurmodel afgestemd met Tjeerd (4 aug 2026, met visualisatie vooraf):
+     rood is gereserveerd voor hot met deadline — toen "niets op deze
+     vacature" óók rood kleurde was vrijwel het hele bord rood en betekende
+     rood niets meer. Amber = knelt (hier moet iemand iets doen), géén rand
+     = loopt gezond, en vervuld vraagt geen kleur: "een vervulde vacature
+     hoeft geen aandacht". Grijs voor incompleet zit in kaartOpen, want dat
+     is geen knelniveau maar een eigenschap van de vacaturetekst. */
   const KNEL = [
-    {lbl:'niets op deze vacature',  kleur:'red',   rand:'var(--red)'},
+    {lbl:'niets op deze vacature',  kleur:'amber', rand:'var(--amber)'},
     {lbl:'nog niemand voorgesteld', kleur:'amber', rand:'var(--amber)'},
     {lbl:'te weinig in de pijplijn',kleur:'amber', rand:'var(--amber)'},
-    {lbl:'', kleur:'',                             rand:'var(--green)'}
+    {lbl:'', kleur:'',                             rand:''}
   ];
   function knelNiveau(t){
     if(!t.lopend.length)   return 0;
@@ -173,6 +180,28 @@
   }
 
   const dagenOpen = v => CRM.dagenGeleden(v.aangemaakt);
+
+  /* Hetzelfde kleurmodel voor élke plek waar een vacature staat (Tjeerd,
+     4 aug 2026: "koppel deze kleuren ook mee in de klantenkaart"). Eén
+     functie, dus het bord en de klantkaart kunnen nooit iets anders
+     beweren. Geeft {rand, lbl, kleur}: rand voor de streep, lbl+kleur voor
+     een chip. Vervuld en gesloten zijn bewust kleurloos-gedempt. */
+  CRM.vacSignaal = v => {
+    const status = v.status || 'Open';
+    if(status === 'Vervuld' || status === 'Gesloten')
+      return {rand:'', lbl: status.toLowerCase(), kleur:'', gedempt:true};
+    if(status === 'On hold') return {rand:'var(--amber)', lbl:'on hold', kleur:'amber'};
+    const t = telling(v);
+    if(v.hot) return {rand:'var(--red)', lbl:hotTekst(v), kleur:'red'};
+    const niveau = knelNiveau(t);
+    if(t.teVullen === 0) return {rand:'', lbl:'alle posities gevuld', kleur:'', gedempt:true};
+    if(niveau < 3) return {rand:'var(--amber)', lbl:KNEL[niveau].lbl, kleur:'amber'};
+    const mist = [];
+    if(!String(v.locatie||'').trim()) mist.push('locatie');
+    if(!salarisTekst(v)) mist.push('salaris');
+    if(mist.length) return {rand:'#c2c2ba', lbl:'incompleet · ' + mist.join(' en ') + (mist.length>1?' missen':' mist'), kleur:''};
+    return {rand:'', lbl:'', kleur:''};
+  };
 
   /* ─── Hot ───────────────────────────────────────────────────────── */
   const hotVacs = () => CRM.state.vacs.filter(v => v.hot)
@@ -365,6 +394,17 @@
     const knel = KNEL[niveau];
     const dgn = dagenOpen(v);
     const oud = dgn != null && dgn >= 45;
+    /* Incompleet: de vacature mist wat de marketeer en de kandidaat nodig
+       hebben. Grijs, en alleen als er verder niets knelt — een knelpunt
+       weegt zwaarder dan een gat in de tekst. */
+    const mist = [];
+    if(!String(v.locatie||'').trim()) mist.push('locatie');
+    if(!salarisTekst(v)) mist.push('salaris');
+    /* Randprioriteit: rood (hot) > amber (knelt) > grijs (incompleet) >
+       niets (loopt). Eén rand, één betekenis. */
+    const rand = v.hot ? 'var(--red)'
+               : niveau < 3 ? knel.rand
+               : mist.length ? '#c2c2ba' : '';
 
     // Balk: geplaatst / in procedure / nog open, als deel van het gevraagde aantal
     const pct = n => Math.max(0, Math.min(100, n / t.gevraagd * 100));
@@ -384,7 +424,8 @@
       ploeg && ploeg !== 'geen' ? `<span class="chip">${h(ploeg)}</span>` : '',
       sal ? `<span class="chip num">${h(sal)}</span>` : '',
       t.over ? `<span class="chip amber">${t.over} meer geplaatst dan gevraagd</span>` : '',
-      !t.aantalBekend ? `<span class="chip amber">aantal niet ingevuld</span>` : ''
+      !t.aantalBekend ? `<span class="chip amber">aantal niet ingevuld</span>` : '',
+      mist.length ? `<span class="chip">incompleet · ${h(mist.join(' en '))} ${mist.length>1?'missen':'mist'}</span>` : ''
     ].filter(Boolean).join('');
 
     const stand = [
@@ -402,7 +443,7 @@
        kerngetal rechts, op een getinte kop — hot in een zachte olijftint
        ("zachter, zoals de zijbalk"), niet donker. De knelchip en de balk
        leven in het witte lijf. */
-    return `<article${CRM.ui.frand(knel.rand, 'ovcard ov2' + (v.hot?' hot':''))} data-id="${h(v.id)}" tabindex="0" role="button">
+    return `<article${CRM.ui.frand(rand, 'ovcard ov2' + (v.hot?' hot':''))} data-id="${h(v.id)}" tabindex="0" role="button">
       <div class="ov2-kop${v.hot?' hot':''}">
         <div class="ov2-wie">
           <div class="ov-functie">${h(v.functie || 'functie niet ingevuld')}</div>
@@ -509,6 +550,11 @@
             <b>${h(v.functie || 'functie niet ingevuld')}</b>
             <span class="meta">${h(klantLabel(v))} · ${h(locLabel(v))}</span>
             <span class="chip">${h(reden)}</span>
+            ${/* Eén klik om de administratie kloppend te maken: zolang de
+                 status Open blijft, telt deze vacature overal mee als open
+                 werk. (Tjeerd, 4 aug 2026 — er stonden er zestien zo.) */
+              (v.status||'Open') === 'Open'
+                ? `<button class="btn sub sm ov-vervul" data-vervul>✓ Zet op Vervuld</button>` : ''}
             <span class="ov-ga">→</span></div>`;
         }).join('')}</div>` : ''}
       </div>`;
@@ -528,6 +574,16 @@
     if(am) am.onchange = () => { S.am = am.value; tekenOpen(); };
     const restknop = mount.querySelector('#ov_restknop');
     if(restknop) restknop.onclick = () => { S.toonRest = !S.toonRest; tekenOpen(); };
+    CRM.$$('[data-vervul]', mount).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const id = b.closest('[data-id]').dataset.id;
+      const v = CRM.state.vacs.find(x => String(x.id) === String(id));
+      if(!v) return;
+      if(await bewaarVac(v, {status:'Vervuld'})){
+        CRM.toast('Status op Vervuld gezet','ok');
+        tekenOpen();
+      }
+    });
 
     CRM.$$('.ovcard, .ov-restrij', mount).forEach(el => {
       const ga = e => { if(e && e.target.closest('button')) return; naarDetail(el.dataset.id); };

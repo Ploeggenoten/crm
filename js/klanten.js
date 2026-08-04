@@ -2450,14 +2450,22 @@ function vacatureHtml(v, k){
   const lopend = kandidaten.filter(c => !!c.fase && !CRM.DONE.includes(c.fase));
   const sal = (v.sal_min || v.sal_max)
     ? `<span class="chip num">${CRM.euro(v.sal_min)} – ${CRM.euro(v.sal_max)}</span>` : '';
-  return `<details class="kl-vac"${open?' open':''}>
+  /* Zelfde kleurtaal als het Vacatures-bord (CRM.vacSignaal, js/hot.js):
+     rode streep = hot, amber = knelt of on hold, grijs = incompleet, geen
+     streep = loopt — en vervuld gedempt, want dat vraagt geen aandacht.
+     Eén gedeelde functie, dus kaart en bord zeggen nooit iets anders. */
+  const sig = CRM.vacSignaal ? CRM.vacSignaal(v) : {rand:'', lbl:'', kleur:''};
+  return `<details${CRM.ui.frand(sig.rand, 'kl-vac' + (sig.gedempt ? ' kl-vac-stil' : ''))}${open?' open':''}>
     <summary>
       <div style="min-width:0;flex:1">
         <b>${h(v.functie)}</b>
         <div class="meta">${h(v.locatie||k.locatie||'—')} · <span class="num">${Number(v.aantal)||1}</span> gevraagd · <span class="num">${lopend.length}</span> in traject</div>
       </div>
       ${sal}
-      <span class="chip${open?' green':''}">${h(v.status||'Open')}</span>
+      ${sig.lbl && !sig.gedempt ? `<span class="chip ${sig.kleur}">${h(sig.lbl)}</span>` : ''}
+      ${/* Status is een wóórd, geen kleur — groen op "Open" suggereerde
+           dat open goed nieuws is, terwijl open gewoon werk is. */''}
+      <span class="chip">${h(v.status||'Open')}</span>
       ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
       ${webChip(v, open, dg)}
       <button class="btn sub sm" data-vplan="${h(String(v.id))}">Inplannen</button>

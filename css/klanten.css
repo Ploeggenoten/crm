@@ -438,3 +438,8 @@ a.ob-i:hover b{text-decoration:underline}
    per soort en een dun scheidsel ertussen. */
 .kl-af-soortkop{margin:2px 0 7px}
 .kl-af-scheiding{border-top:1px solid var(--line);margin:12px 0}
+
+/* Vervulde/gesloten vacatures op de klantkaart: gedempt — klaar werk
+   vraagt geen aandacht (Tjeerd, 4 aug 2026). */
+.kl-vac-stil > summary{opacity:.55}
+.kl-vac-stil[open] > summary{opacity:.75}
