@@ -1280,9 +1280,8 @@ function leadKaartHtml(l){
   /* Merkkop (optie 2, 4 aug 2026): naam op de zijbalktint, de rest in het
      witte lijf. De leeftijd van de lead staat als dagen in de kop zodra hij
      te lang ligt — zelfde taal als het Sales-bord. */
-  const stil2 = stilstand(l);
   return `<div class="bcard bck vol rc-leadkaart" draggable="true" data-id="${h(l.id)}">
-    <div class="bc-kop"><b>${h(leadNaam(l))}</b>${stil2 ? `<span class="bc-dgn ${stil2.klas==='red'?'rood':'let'}">${h(stil2.label)}</span>` : ''}${
+    <div class="bc-kop"><b>${h(leadNaam(l))}</b>${
       l.eigenaar?`<span class="rc-rec" title="${h(l.eigenaar)}">${h(CRM.initialen(l.eigenaar))}</span>`:''}</div>
     <div class="bc-lijf">
       <div class="bc-s">${v ? h(v.functie) + ' · ' + h(v.klant) : (losFunctie(l) ? h(losFunctie(l)) : '<em>nog geen vacature</em>')}</div>

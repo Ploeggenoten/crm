@@ -18,7 +18,7 @@ const V = {
   zet(sleutel, waarde){ try{ localStorage.setItem('crm_sales_'+sleutel, JSON.stringify(waarde)); }catch(e){} }
 };
 
-let tab      = V.get('tab','pijplijn');          // pijplijn | opvolg | activiteit | radar
+let tab      = V.get('tab','pijplijn');          // pijplijn | opvolg | activiteit | radar | vondsten
 if(!['pijplijn','opvolg','activiteit','radar'].includes(tab)) tab = 'pijplijn';
 let weergave = V.get('weergave','bord');         // bord | lijst
 /* Stiltefilter: '' | c14 | c30 | a14 | a30 — (c)ontact of (a)ctiviteit,
@@ -381,11 +381,10 @@ function kaartHTML(k, lc, act, vandaag){
   /* Alle kaarten dezelfde opzet (besluit Tjeerd, 4 aug 2026, na drie kleur-
      rondes): leads dragen gewoon minder in het lijf, geen aparte microvorm. */
   const mini = false;
-  /* De dagen terug in de kop ("alleen die dgn stil mag wel" — Tjeerd,
-     4 aug 2026, bij ontwerp 3A): gedempt als getal, rood mét het woord
-     'stil' zodra het traject echt hangt. Het stil-filter in de balk blijft
-     de manier om erop te selecteren. */
-  const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span>${hangt ? ' dgn stil' : ''}</span>`;
+  /* Geen dagen op de kaart — "teveel ruis" (Tjeerd, 4 aug 2026, definitief
+     na één dag heen en weer). Stilstand zie je via het stil-filter in de
+     balk, de teller boven het bord en de lijstweergave. */
+  const dgn = '';
   /* Ook een microlead toont zijn kern: eigenaar en plaats als tweede regel
      ín de kop. Minder dan de andere fases, niet niets. */
   return `<div class="bcard bck${leeg ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
@@ -980,7 +979,14 @@ function demoRadar(){
     ['PalletPoint Ridderkerk','Ridderkerk','verlader, magazijnmedewerker',1,'adzuna','','nieuw',''],
     ['Snackfood Partners','Zoetermeer','inpakmedewerker',1,'adzuna','€2.400–2.700','nieuw',''],
     ['Retour Matras','Waddinxveen','productiemedewerker, verlader',2,'adzuna','','toegevoegd',''],
-    ['Kartonnage Van Deursen','Delft','machinebediende',1,'adzuna','€2.800–3.200','genegeerd','Te klein, één vestiging']
+    ['Kartonnage Van Deursen','Delft','machinebediende',1,'adzuna','€2.800–3.200','genegeerd','Te klein, één vestiging'],
+    /* Zelf toegevoegd (tab "Zelf gevonden"): via de extensie op een website,
+       op LinkedIn, en met plakken. Eén ervan staat óók in de demo-pijplijn,
+       zodat de dubbel-melding zichtbaar is. */
+    ['Diepvries Depot Rijnmond','Schiedam','orderpicker, heftruckchauffeur',3,'website','€2.600–3.000','nieuw','Van website diepvriesdepot.nl · 3 passende vacatures op deze pagina'],
+    ['Grondstoffen Verwerking Maasvlakte','Rotterdam','procesoperator',2,'website','','nieuw','Van website · Contactpersoon: R. de Wit (Manager Productie)'],
+    ['Van Vliet Zoetwaren B.V.','Katwijk','productiemedewerker',1,'linkedin','','nieuw','Contactpersoon: HR-manager · LinkedIn'],
+    ['Transportbedrijf Van Kooten','Alblasserdam','chauffeur, verlader',2,'handmatig','','nieuw','Branche: Transport']
   ].map(([bedrijf,plaats,functies,vacatures,bron,sal,status,notitie],i)=>({
     id:'lrdemo'+i, bedrijf, plaats, functies, vacatures, bron,
     url:'https://www.adzuna.nl/land/ad/demo'+i, salaris_ind:sal,
@@ -989,12 +995,25 @@ function demoRadar(){
   }));
 }
 
-const radarNieuwN = () => radar.filter(r=>(r.status||'nieuw')==='nieuw').length;
+/* Twee soorten vondsten in één tabel, maar niet in één tab (Tjeerd, 4 aug 2026:
+   "anders moet ik ze helemaal zoeken"). Wat jíj zelf toevoegt — via de
+   extensie op LinkedIn of een website, of met plakken — hoort bij elkaar;
+   de Leadradar houdt alleen wat de motor 's ochtends zelf vindt. */
+const ZELF_BRONNEN = ['website','linkedin','handmatig'];
+const isZelf = r => ZELF_BRONNEN.includes(r.bron||'');
 
-function radarRijen(){
+const radarNieuwN  = () => radar.filter(r=>!isZelf(r) && (r.status||'nieuw')==='nieuw').length;
+const vondstNieuwN = () => radar.filter(r=> isZelf(r) && (r.status||'nieuw')==='nieuw').length;
+
+/* Staat dit bedrijf al in de klantpijplijn? Dan wil je dat zien vóór je
+   het nog een keer als lead opvoert. */
+const alKlant = bedrijf => CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, bedrijf));
+
+function radarRijen(zelf){
   const q = rZoek.trim().toLowerCase();
   const rang = {nieuw:0, toegevoegd:1, genegeerd:2};
   return radar.filter(r=>{
+    if(isZelf(r) !== !!zelf) return false;
     const st = r.status||'nieuw';
     if(rFilter!=='alles' && st!==rFilter) return false;
     if(rBron && (r.bron||'')!==rBron) return false;
@@ -1006,17 +1025,18 @@ function radarRijen(){
     || String(a.bedrijf).localeCompare(String(b.bedrijf)));
 }
 
-const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig', osm:'OpenStreetMap', website:'Website'};
+const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig',
+                  osm:'OpenStreetMap', website:'Website', linkedin:'LinkedIn'};
 const bronChip = b => {
-  const kleur = b==='claude-research' ? ' purple' : (b==='handmatig' || b==='website') ? ' blue' : '';
+  const kleur = b==='claude-research' ? ' purple' : ZELF_BRONNEN.includes(b) ? ' blue' : '';
   return `<span class="chip${kleur}">${h(BRON_LBL[b]||b||'—')}</span>`;
 };
 
-function radarHTML(){
+function radarHTML(zelf){
   const delen = [];
   if(radarStatus===''){
-    laadRadar().then(()=>{ if(tab==='radar') tekenInhoud(); });
-    return CRM.ui.laden('Radar laden…');
+    laadRadar().then(()=>{ if(tab==='radar'||tab==='vondsten') tekenInhoud(); });
+    return CRM.ui.laden(zelf ? 'Vondsten laden…' : 'Radar laden…');
   }
   if(CRM.demo) delen.push(`<div class="note info" style="margin-bottom:14px">Demo-data — deze bedrijven zijn verzonnen; er wordt niets opgeslagen.</div>`);
   if(radarStatus==='mist')
@@ -1024,26 +1044,36 @@ function radarHTML(){
       Draai eerst supabase/schema.sql in de SQL-editor en volg daarna SETUP-LEADRADAR.md om de
       dagelijkse zoekmotor aan te zetten.</div>`);
 
-  delen.push(`<div class="sub" style="margin-bottom:14px;max-width:680px">De radar zoekt elke ochtend
-    naar bedrijven in productie, logistiek en industrie die nú zelf personeel werven.
-    Beoordeel ze hier: één klik en het bedrijf staat als lead in je pijplijn.</div>`);
+  delen.push(`<div class="sub" style="margin-bottom:14px;max-width:680px">${zelf
+    ? `Bedrijven die jíj zelf hebt toegevoegd — met de CRM-knop op LinkedIn of op een
+       bedrijfswebsite, of door een lijst te plakken. Ze blijven hier staan tot je ze
+       beoordeelt, zodat ze niet ondersneeuwen tussen de automatische vondsten.`
+    : `De radar zoekt elke ochtend naar bedrijven in productie, logistiek en industrie die nú
+       zelf personeel werven. Beoordeel ze hier: één klik en het bedrijf staat als lead in je
+       pijplijn.`}</div>`);
 
-  const week = radar.filter(r=>{ const dg = CRM.dagenGeleden(r.gevonden_op); return dg!=null && dg>=0 && dg<=7; }).length;
-  const toegevoegd = radar.filter(r=>r.status==='toegevoegd').length;
+  const eigen = radar.filter(r=>isZelf(r) === !!zelf);
+  const week = eigen.filter(r=>{ const dg = CRM.dagenGeleden(r.gevonden_op); return dg!=null && dg>=0 && dg<=7; }).length;
+  const toegevoegd = eigen.filter(r=>r.status==='toegevoegd').length;
+  /* Op de eigen tab is "staat al in de pijplijn" het nuttigste getal: dat is
+     precies het dubbele werk dat je wilt zien vóór je gaat bellen. */
+  const dubbel = zelf ? eigen.filter(r=>(r.status||'nieuw')==='nieuw' && alKlant(r.bedrijf)).length : 0;
   delen.push(`<div class="grid c3 s-kpi">
-    ${CRM.ui.kpi('Nieuw te beoordelen', `<span class="num">${radarNieuwN()}</span>`, 'wachten op jouw oordeel', 'accent')}
-    ${CRM.ui.kpi('Deze week gevonden', `<span class="num">${week}</span>`, 'bedrijven die nu werven')}
-    ${CRM.ui.kpi('Toegevoegd als lead', `<span class="num">${toegevoegd}</span>`, 'totaal via de radar')}
+    ${CRM.ui.kpi('Nieuw te beoordelen', `<span class="num">${zelf?vondstNieuwN():radarNieuwN()}</span>`, 'wachten op jouw oordeel', 'accent')}
+    ${zelf
+      ? CRM.ui.kpi('Al in de pijplijn', `<span class="num">${dubbel}</span>`, dubbel?'dubbel — hier al klant':'geen dubbelen gevonden')
+      : CRM.ui.kpi('Deze week gevonden', `<span class="num">${week}</span>`, 'bedrijven die nu werven')}
+    ${CRM.ui.kpi('Toegevoegd als lead', `<span class="num">${toegevoegd}</span>`, zelf?'totaal vanuit je eigen vondsten':'totaal via de radar')}
   </div>`);
 
-  const telStatus = s => radar.filter(r=>(r.status||'nieuw')===s).length;
+  const telStatus = s => eigen.filter(r=>(r.status||'nieuw')===s).length;
   /* <button>, geen <span>: dit is een filter dat je aan- en uitzet, dus je
      moet er met Tab bij kunnen en aria-pressed moet de stand vertellen. */
   const chips = [['nieuw','Nieuw'],['toegevoegd','Toegevoegd'],['genegeerd','Genegeerd'],['alles','Alles']]
     .map(([k,l])=>`<button type="button" class="chip btn-like${rFilter===k?' on':''}" data-rstatus="${k}"
       aria-pressed="${rFilter===k}">${l}${
       k==='alles'?'':` <span class="num">${telStatus(k)}</span>`}</button>`).join('');
-  const bronnen = [...new Set(radar.map(r=>r.bron).filter(Boolean))].sort();
+  const bronnen = [...new Set(eigen.map(r=>r.bron).filter(Boolean))].sort();
   delen.push(`<div class="row r-bar">
     ${chips}
     <div class="spacer"></div>
@@ -1054,21 +1084,29 @@ function radarHTML(){
     <div class="searchbox"><input type="search" id="r_zoek" placeholder="Zoek bedrijf, plaats of functie" value="${h(rZoek)}"></div>
   </div>`);
 
-  delen.push(radarTabelHTML(radarRijen()));
+  delen.push(radarTabelHTML(radarRijen(zelf), zelf, eigen.length));
 
-  delen.push(`<div class="note info" style="margin-top:18px">
-    <b>Waarom geen live LinkedIn- of Indeed-zoekactie?</b> Beide hebben geen open API en verbieden
-    geautomatiseerd uitlezen. De radar gebruikt daarom Adzuna (open vacature-API die veel van
-    hetzelfde aanbod indexeert) en optioneel een wekelijkse Claude-research-routine — zie
-    SETUP-LEADRADAR.md. Een export uit LinkedIn Sales Navigator kun je wel gewoon inlezen via
-    "Handmatig toevoegen" hierboven.</div>`);
+  delen.push(zelf
+    ? `<div class="note info" style="margin-top:18px"><b>Hoe komt hier iets bij?</b> Klik op LinkedIn
+       rechtsonder op "Naar CRM", of gebruik op een bedrijfssite het extensie-icoon → "Lees deze
+       pagina uit". De extensie waarschuwt daar al als een bedrijf hier of in je pijplijn staat;
+       glipt er toch een dubbele doorheen, dan zie je dat in de kolom Bedrijf.</div>`
+    : `<div class="note info" style="margin-top:18px">
+       <b>Waarom geen live LinkedIn- of Indeed-zoekactie?</b> Beide hebben geen open API en verbieden
+       geautomatiseerd uitlezen. De radar gebruikt daarom Adzuna (open vacature-API die veel van
+       hetzelfde aanbod indexeert) en optioneel een wekelijkse Claude-research-routine — zie
+       SETUP-LEADRADAR.md. Een export uit LinkedIn Sales Navigator lees je in via "Handmatig
+       toevoegen"; die komt in de tab Zelf gevonden.</div>`);
   return delen.join('');
 }
 
-function radarTabelHTML(rijen){
-  if(!radar.length && radarStatus==='ok')
-    return `<div class="card"><div class="card-b">${CRM.ui.leeg('De radar heeft nog niets gevonden',
-      'Draai de eerste zoekactie met "Nu zoeken", of wacht op de ochtendrun. Een eigen lijst inlezen kan via "Handmatig toevoegen".')}</div></div>`;
+function radarTabelHTML(rijen, zelf, totaal){
+  if(!totaal && radarStatus==='ok')
+    return `<div class="card"><div class="card-b">${zelf
+      ? CRM.ui.leeg('Je hebt zelf nog niets toegevoegd',
+          'Gebruik op LinkedIn de knop "Naar CRM", of op een bedrijfssite het extensie-icoon → "Lees deze pagina uit". Een lijst plakken kan met "Handmatig toevoegen".')
+      : CRM.ui.leeg('De radar heeft nog niets gevonden',
+          'Draai de eerste zoekactie met "Nu zoeken", of wacht op de ochtendrun.')}</div></div>`;
   if(!rijen.length)
     return `<div class="card"><div class="card-b">${CRM.ui.leeg('Niets binnen deze filters',
       'Pas de status, bron of zoekopdracht aan.',
@@ -1082,8 +1120,13 @@ function radarTabelHTML(rijen){
       const st = r.status||'nieuw';
       const url = veiligeHttp(r.url);
       const fns = String(r.functies||'').split(',').map(s=>s.trim()).filter(Boolean);
+      /* Dubbel in beeld brengen op de plek waar je kijkt: naast de naam.
+         Niet blokkeren — soms wíl je een tweede ingang bij dezelfde klant. */
+      const bestaand = st==='nieuw' ? alKlant(r.bedrijf) : null;
       return `<tr${st!=='nieuw'?' class="s-dicht"':''}>
         <td><div style="font-weight:600">${h(r.bedrijf)}${url?` <a href="${h(url)}" target="_blank" rel="noopener" title="Vacature bekijken" class="r-link">↗</a>`:''}</div>
+          ${bestaand?`<div class="rowsub"><span class="chip amber">staat al in de pijplijn${
+            bestaand.fase?` — ${h(bestaand.fase)}`:''}</span> <button class="btn sm ghost" data-rpijp="${h(bestaand.naam)}">open klant →</button></div>`:''}
           ${r.notitie?`<div class="rowsub">${h(r.notitie)}</div>`:''}</td>
         <td>${h(r.plaats||'—')}</td>
         <td>${fns.length?`<div class="r-func">${fns.slice(0,3).map(f=>`<span class="chip">${h(f)}</span>`).join('')}${
@@ -1210,7 +1253,7 @@ function handmatigToevoegen(){
     <div class="modal-b">
       <div class="f-row"><label for="hm_plak">Plak bedrijfsnamen of CSV</label>
         <textarea id="hm_plak" style="min-height:140px" placeholder="Eén bedrijf per regel. Optioneel met branche en plaats, gescheiden door ; of komma:&#10;&#10;Van der Windt Verpakking; Verpakkingen; Honselersdijk&#10;Bakker Barendrecht; AGF; Barendrecht&#10;Verhoeven Metaal"></textarea>
-        <span class="hint">Werkt met een kolomkop-regel uit Sales Navigator en met een simpele lijst namen. De bedrijven komen als "nieuw" in de radar, bron Handmatig.</span></div>
+        <span class="hint">Werkt met een kolomkop-regel uit Sales Navigator en met een simpele lijst namen. De bedrijven komen als "nieuw" in de tab <b>Zelf gevonden</b>. Namen die al in het CRM staan worden overgeslagen.</span></div>
     </div>
     <div class="modal-f">
       <button class="btn ghost" data-mclose>Annuleren</button>
@@ -1238,7 +1281,10 @@ function handmatigToevoegen(){
         radar = nieuw.concat(radar);
         CRM.modal.close();
         rFilter = 'nieuw'; V.zet('r_status', rFilter);
-        CRM.toast(`${nieuw.length} bedrijven in de radar gezet${over.length?` — ${over.length} overgeslagen (al bekend)`:''}`,'ok');
+        /* Wat je zelf inleest hoort bij je eigen vondsten — daar ook naartoe,
+           anders zoek je ze alsnog tussen de radar-rijen. */
+        tab = 'vondsten'; V.zet('tab', tab); tekenActies();
+        CRM.toast(`${nieuw.length} bedrijven bij Zelf gevonden gezet${over.length?` — ${over.length} overgeslagen (al bekend)`:''}`,'ok');
         teken();
       };
     }});
@@ -1737,7 +1783,7 @@ function tekenActies(){
   if(!actiesEl) return;
   /* De Leadradar heeft eigen filters in de tab zelf; de pijplijnfilters
      hierboven zouden daar niets doen en alleen verwarren. */
-  if(tab==='radar'){ actiesEl.innerHTML = ''; return; }
+  if(tab==='radar' || tab==='vondsten'){ actiesEl.innerHTML = ''; return; }
   actiesEl.innerHTML = `
     <div class="searchbox"><input type="search" id="s_zoek" placeholder="Zoek bedrijf, branche of plaats" value="${h(zoek)}"></div>
     <select id="s_eig" style="width:auto;min-width:140px">
@@ -1774,6 +1820,7 @@ function tekenInhoud(){
   const opvolgN = openOpvolgingen().filter(t => !t.datum || t.datum <= CRM.todayISO()).length;
 
   const radarN = radarNieuwN();
+  const vondstN = vondstNieuwN();
   const kop = `<div class="s-wrap">
     <div class="s-top">
       <div class="tabs">
@@ -1781,8 +1828,11 @@ function tekenInhoud(){
         <button class="tab${tab==='opvolg'?' on':''}" data-tab="opvolg">Opvolgingen${opvolgN?`<span class="cnt num">${opvolgN}</span>`:''}</button>
         <button class="tab${tab==='activiteit'?' on':''}" data-tab="activiteit">Activiteit</button>
         <button class="tab${tab==='radar'?' on':''}" data-tab="radar">Leadradar${radarN?`<span class="cnt num">${radarN}</span>`:''}</button>
+        <button class="tab${tab==='vondsten'?' on':''}" data-tab="vondsten">Zelf gevonden${vondstN?`<span class="cnt num">${vondstN}</span>`:''}</button>
       </div>
-      <div class="row tight s-acts">${tab==='radar'
+      <div class="row tight s-acts">${tab==='vondsten'
+        ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>`
+        : tab==='radar'
         ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>
            <button class="btn" data-rzoek${rZoeken?' disabled':''}>${rZoeken?'Bezig met zoeken…':'↻ Nu zoeken'}</button>`
         /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
@@ -1793,7 +1843,9 @@ function tekenInhoud(){
     </div>`;
 
   if(tab==='radar'){
-    mountEl.innerHTML = kop + radarHTML() + '</div>';
+    mountEl.innerHTML = kop + radarHTML(false) + '</div>';
+  } else if(tab==='vondsten'){
+    mountEl.innerHTML = kop + radarHTML(true) + '</div>';
   } else if(tab==='activiteit'){
     mountEl.innerHTML = kop + activiteitHTML() + '</div>';
   } else if(tab==='opvolg'){
@@ -1862,7 +1914,7 @@ function bindRadar(){
   /* De knoppen Handmatig/Nu zoeken staan in de kop en bestaan alleen op de radar-tab. */
   CRM.$$('[data-rzoek]', mountEl).forEach(b=>b.onclick=radarZoeken);
   CRM.$$('[data-rhand]', mountEl).forEach(b=>b.onclick=handmatigToevoegen);
-  if(tab!=='radar') return;
+  if(tab!=='radar' && tab!=='vondsten') return;
   CRM.$$('[data-rstatus]', mountEl).forEach(c=>c.onclick=()=>{ rFilter=c.dataset.rstatus; V.zet('r_status',rFilter); tekenInhoud(); });
   const rb = mountEl.querySelector('#r_bron');
   if(rb) rb.onchange = e => { rBron = e.target.value; tekenInhoud(); };

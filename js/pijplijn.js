@@ -454,8 +454,9 @@ function kaartHtml(c){
   /* Merkkop (optie 2, 4 aug 2026): naam + dagen-in-fase op de zijbalktint;
      functie, chips, afspraak en actie in het witte lijf. isVandaag/gemist
      kleuren de kaart als geheel, precies zoals voorheen. */
-  const dgnKop = dg == null ? '' : `<span class="bc-dgn${sfKop ? (sfKop.klas==='red'?' rood':' let') : ''}"${
-    sfKop ? ` title="${h(dg + ' dagen in deze fase. ' + sfKop.waarom)}"` : ' title="Dagen in deze fase"'}><span class="num">${dg}</span> dgn${sfKop?' stil':''}</span>`;
+  /* Geen dagen in de kop — zelfde besluit als op Sales ("teveel ruis").
+     De stilstandsnorm leeft door in de lijstweergave en de sortering. */
+  const dgnKop = '';
   return `<div class="bcard bck vol ${isVandaag?'vandaag':''} ${gemist?'gemist':''}" draggable="true" data-id="${h(c.id)}">
     <div class="bc-kop"><b>${h(c.naam)}</b>${dgnKop}${c.rec?`<span class="rc-rec" title="${h(c.rec)}">${h(CRM.initialen(c.rec))}</span>`:''}</div>
     <div class="bc-lijf">
