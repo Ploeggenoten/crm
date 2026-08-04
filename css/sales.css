@@ -185,3 +185,22 @@ table.tbl td.s-balk .bar{height:6px;min-width:40px}
   .grid.c3.s-kpi .kpi .big{font-size:21px}
   .grid.c3.s-kpi .kpi .kd{font-size:11.5px}
 }
+
+/* ─── Kaartkop in de fasekleur (Tjeerd, 4 aug 2026) ──────────────
+   "Prospect blauwe header, lead grijs, voorstel gedaan geel" — de kop van
+   elke kaart draagt de kleur van zijn fase, dezelfde kleuren die al boven
+   de kolom staan (CRM.SALES_FASES in js/data.js; wijzigt daar iets, dan
+   hier meebewegen). Via de kolom (data-fase) en niet via de kaart, zodat
+   js/sales.js hier niets voor hoeft te doen.
+   Let op het onderscheid met de rest van de app: op de andere borden is de
+   kop het mérk (olijf); hier is hij de fáse — dat is wat dit bord vertelt. */
+.bcol[data-fase="Lead"] .bc-kop{background:#9aa3b2}
+.bcol[data-fase="Suspect"] .bc-kop{background:#7f93b8}
+.bcol[data-fase="Prospect"] .bc-kop{background:#5b8bbf}
+.bcol[data-fase="In afwachting kennismaking"] .bc-kop{background:#4a9d9d}
+.bcol[data-fase="Gesprek ingepland"] .bc-kop{background:#5a9bd4}
+.bcol[data-fase="Voorstel gedaan"] .bc-kop{background:#d9a441}
+.bcol[data-fase="SWO gestuurd"] .bc-kop{background:#d97941}
+.bcol[data-fase="Onderhandeling"] .bc-kop{background:#c98a2e}
+.bcol[data-fase="Afgerond"] .bc-kop{background:#3d9968}
+.bcol[data-fase="Project uitgesteld"] .bc-kop{background:#8a8f7a}
