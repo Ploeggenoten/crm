@@ -2178,6 +2178,44 @@ function tabKandidaten(el, k, c){
    Taken staan hier bewust NIET meer — de zijrail is dé takenplek.
    Afgeronde taken die als activiteit gelogd zijn verschijnen wel
    gewoon in de tijdlijn. ─────────────────────────────────────── */
+/* ─── Opgeslagen activiteit bewerken ─────────────────────────────
+   Tjeerd (4 aug 2026): "ik wil notities kunnen aanpassen als ze al
+   opgeslagen zijn." Een typefout of een vergeten detail hoort geen tweede
+   notitie te worden. Alleen handmatige soorten zijn bewerkbaar —
+   systeemregels (fasewissels) en evaluaties niet, die zijn een meting.
+   Wie bewerkt wordt vastgelegd in extra.bewerkt; de tijdlijn toont
+   "· bewerkt" zodat niemand denkt dat dit de oorspronkelijke tekst is.
+   Gedeeld via CRM.bewerkActiviteit: de contactkaart gebruikt hem ook. */
+const BEWERKBAAR = new Set(['notitie','gesprek','bel','mail','whatsapp','bezoek']);
+CRM.magBewerken = a => a && BEWERKBAAR.has(a.soort) && !(a.extra && a.extra.evaluatie);
+CRM.bewerkActiviteit = (a, na) => {
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Notitie aanpassen</div>
+      <p class="sub" style="margin:6px 0 0">${h(((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort)} · ${h(a.door||'—')} · ${h(CRM.fmtDate(a.op))}</p></div>
+    <div class="modal-b">
+      <div class="f-row"><textarea id="ab_tekst" rows="6">${h(a.tekst||'')}</textarea></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ab_ok">Opslaan</button></div>`, {onOpen(m){
+    const veld = m.querySelector('#ab_tekst'); setTimeout(() => veld.focus(), 60);
+    m.querySelector('#ab_ok').onclick = async () => {
+      const tekst = veld.value.trim();
+      if(!tekst) return CRM.toast('Een lege notitie kun je beter verwijderen dan leegmaken — dat kan nu nog niet, dus laat er iets in staan','err');
+      const oud = {tekst: a.tekst, extra: a.extra};
+      a.tekst = tekst;
+      a.extra = Object.assign({}, a.extra, {bewerkt: CRM.me() + ' · ' + CRM.todayISO()});
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('crm_activiteiten')
+          .update({tekst: a.tekst, extra: a.extra}).eq('id', a.id);
+        if(error){ Object.assign(a, oud); return CRM.fout('Aanpassen mislukt', error); }
+      }
+      CRM.modal.close();
+      CRM.toast('Notitie aangepast','ok');
+      if(na) na();
+    };
+  }});
+};
+
 function tabActiviteiten(el, k){
   /* Klant-activiteiten + de notities/gespreksverslagen van al haar
      contactpersonen, gemengd op datum — zo blijft het klantbeeld compleet. */
@@ -2191,7 +2229,8 @@ function tabActiviteiten(el, k){
       ico: (CRM.ACT_SOORTEN[a.soort]||{}).ico || '•',
       titel: (a.extra && a.extra.verslag ? 'Gespreksverslag' : (CRM.ACT_SOORTEN[a.soort]||{}).lbl || a.soort)
              + (ct ? ' met ' + ct.naam : '') + (a.door ? ' · ' + a.door : ''),
-      wanneer: CRM.fmtDate(wanneer) + ' · ' + CRM.geleden(wanneer),
+      wanneer: CRM.fmtDate(wanneer) + ' · ' + CRM.geleden(wanneer)
+             + (a.extra && a.extra.bewerkt ? ' · bewerkt' : ''),
       tekst: (a.extra && a.extra.evaluatie) ? evalSamenvatting(a.extra.evaluatie) : a.tekst
     };
   });
@@ -2218,6 +2257,19 @@ function tabActiviteiten(el, k){
   /* Dezelfde uitkomstknoppen als in het zijbalkblok — in de sales-indeling
      is deze tab het hoofdscherm, dus hier moet vastleggen net zo snel. */
   bindUitkomsten(el, k, () => tabActiviteiten(el, k));
+  /* Bewerk-knop per regel, ná de render erin gehangen: de tijdlijn-helper
+     van core kent geen knoppen, en de regels staan in dezelfde volgorde
+     als `alle` — dus regel i hoort bij activiteit i. */
+  const tl = el.querySelector('.card-b .tl');
+  if(tl) [...tl.querySelectorAll(':scope > .tl-i')].forEach((node, i) => {
+    const a = alle[i] && alle[i].a;
+    if(!CRM.magBewerken(a)) return;
+    const top = node.querySelector('.tl-top');
+    if(top) top.insertAdjacentHTML('beforeend',
+      `<button type="button" class="lnk tl-bewerk" data-abewerk="${i}" title="Notitie aanpassen">bewerk</button>`);
+  });
+  el.querySelectorAll('[data-abewerk]').forEach(b => b.onclick = () =>
+    CRM.bewerkActiviteit(alle[+b.dataset.abewerk].a, () => tabActiviteiten(el, k)));
   el.querySelector('#n_bewaar').onclick = () => bewaarKlant(k.naam, {note: el.querySelector('#n_note').value.trim()});
 }
 

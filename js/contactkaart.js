@@ -697,7 +697,9 @@ function tijdlijnHtml(ct){
       <div class="tl-c">
         <div class="tl-top"><b>${h(soort)}${a.door ? ' · ' + h(a.door) : ''}</b>
           ${afgeleid ? '<span class="chip ck-afgchip" title="Deze activiteit staat bij de relatie en noemt deze persoon bij naam. Niet vastgelegd bij de persoon zelf.">afgeleid</span>' : ''}
-          <span class="tl-when">${h(CRM.fmtDate(w))} · ${h(CRM.geleden(w))}</span></div>
+          <span class="tl-when">${h(CRM.fmtDate(w))} · ${h(CRM.geleden(w))}${a.extra && a.extra.bewerkt ? ' · bewerkt' : ''}</span>
+          ${!afgeleid && CRM.magBewerken?.(a)
+            ? `<button type="button" class="lnk tl-bewerk" data-ckbewerk="${h(a.id)}" title="Notitie aanpassen">bewerk</button>` : ''}</div>
         ${a.tekst ? `<div class="tl-txt">${h(a.tekst)}</div>` : ''}
       </div></div>`;
   }).join('');
@@ -835,6 +837,13 @@ function bindKaart(mount, ct, klant){
   }).then(r => { if(r) opnieuw(); });
   mount.querySelector('#ck_taak').onclick  = taak;
   mount.querySelector('#ck_rtaak').onclick = taak;
+
+  /* Een opgeslagen notitie aanpassen — het venster is gedeeld met de
+     klantkaart (CRM.bewerkActiviteit, js/klanten.js). */
+  CRM.$$('[data-ckbewerk]', mount).forEach(b => b.onclick = () => {
+    const a = (CRM.state.activiteiten||[]).find(x => String(x.id) === b.dataset.ckbewerk);
+    if(a && CRM.bewerkActiviteit) CRM.bewerkActiviteit(a, opnieuw);
+  });
 
   /* Bellen vanaf de kaart telt als belpoging. Tjeerd (4 aug 2026): het
      systeem moet "zelf herkennen dat ik contact heb gehad" — wie hier op

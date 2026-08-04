@@ -406,3 +406,7 @@ a.ob-i:hover b{text-decoration:underline}
 /* Het uitkomst-invulveld dat na een klik op Gebeld/Geen gehoor/… opent. */
 .kl-uitveld{margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--well-2, #f7f8ef)}
 .kl-uitveld textarea{width:100%;resize:vertical}
+
+/* De bewerk-knop in tijdlijnregels: aanwezig maar stil, tot je hem zoekt. */
+.tl-bewerk{font-size:11px;color:var(--muted);margin-left:auto;padding-left:8px}
+.tl-i:hover .tl-bewerk{color:var(--olive,#3D6400)}
