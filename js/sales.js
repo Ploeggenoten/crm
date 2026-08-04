@@ -932,6 +932,9 @@ let radarBezigMet = null;    // lopende laad-belofte
 let rFilter = V.get('r_status','nieuw');   // nieuw | toegevoegd | genegeerd | alles
 if(!['nieuw','toegevoegd','genegeerd','alles'].includes(rFilter)) rFilter = 'nieuw';
 let rZoek = '', rBron = '';
+/* Welke rijen hun belteksten open hebben staan. In het geheugen, niet in
+   de opslag: bij een verse sessie begin je met een rustige tabel. */
+const rOpen = new Set();
 let rZoeken = false;         // "Nu zoeken" loopt
 
 /* Alleen echte weblinks in de tabel — een vacature-URL uit de database
@@ -991,8 +994,28 @@ function demoRadar(){
     id:'lrdemo'+i, bedrijf, plaats, functies, vacatures, bron,
     url:'https://www.adzuna.nl/land/ad/demo'+i, salaris_ind:sal,
     gevonden_op:d(-(i%9)), laatst_gezien:d(-(i%3)),
-    status, status_door: status==='nieuw'?'':'Tjeerd', notitie
+    status, status_door: status==='nieuw'?'':'Tjeerd', notitie,
+    /* De ochtendroutine levert bij haar eigen vondsten belteksten mee;
+       in demo tonen we dat bij de claude-research-rijen. */
+    concepten: bron==='claude-research' ? demoConcepten(bedrijf, plaats, functies) : null
   }));
+}
+
+function demoConcepten(bedrijf, plaats, functies){
+  const f = String(functies||'personeel').split(',')[0].trim();
+  return {
+    contactprofiel:`Zoek op LinkedIn bij ${bedrijf} op 'HR-adviseur', 'Corporate Recruiter' of aan de `
+      + `lijnkant 'Productiemanager' en 'Teamleider Productie'. Niet de directie.`,
+    opener:`Hoi, Tjeerd van Ploeggenoten. Ik zag dat jullie in ${plaats} een ${f} zoeken. `
+      + `Lukt het invullen daarvan een beetje?`,
+    connectie:`Hoi, ik zag jullie vacature voor ${f} in ${plaats}. Vanuit Ploeggenoten werk ik `
+      + `dagelijks met mensen voor productie en logistiek in die regio. Leek me nuttig om te connecten.`,
+    mail:`Hoi,\n\nIk zag dat jullie in ${plaats} een ${f} zoeken. Die functie is op dit moment `
+      + `lastig te vullen, zeker als je iemand wilt die blijft.\n\nIk ben Tjeerd van Ploeggenoten. Wij `
+      + `bemiddelen mensen voor productie, logistiek en industrie in deze regio. Liever twee kandidaten `
+      + `die passen dan tien die je zelf moet filteren.\n\nZal ik eens kijken wie ik nu beschikbaar heb, `
+      + `of hebben jullie het al rond?\n\nGroet,\nTjeerd\nPloeggenoten`
+  };
 }
 
 /* Twee soorten vondsten in één tabel, maar niet in één tab (Tjeerd, 4 aug 2026:
@@ -1100,6 +1123,71 @@ function radarHTML(zelf){
   return delen.join('');
 }
 
+/* De ochtendroutine schrijft per bedrijf vier kant-en-klare teksten weg in
+   het veld `concepten`. Die stonden tot nu toe alleen in de database — je
+   kon er in het CRM niet bij. Hier klap je ze open naast het bedrijf:
+   lezen, kopiëren, bellen. */
+const heeftConcepten = r => {
+  const c = r && r.concepten;
+  return !!(c && (c.opener || c.connectie || c.mail || c.contactprofiel));
+};
+
+/* Kopiëren met een terugval — zelfde aanpak als in intake.js: draait de app
+   zonder https (dev-server), dan bestaat de clipboard-api niet en doen we
+   het via een verborgen tekstvak. */
+async function kopieerTekst(tekst){
+  try{
+    if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(tekst); return true; }
+    throw new Error('geen clipboard-api');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = tekst; ta.setAttribute('readonly','');
+    ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    let gelukt = false;
+    try{ gelukt = document.execCommand('copy'); }catch(e2){}
+    ta.remove();
+    return gelukt;
+  }
+}
+
+/* Alles in één blok, voor wie liever in zijn eigen notitieblok plakt. */
+function conceptTekst(r){
+  const c = r.concepten || {};
+  return [
+    `${r.bedrijf}${r.plaats?` — ${r.plaats}`:''}`,
+    c.contactprofiel ? 'WIE JE ZOEKT\n' + c.contactprofiel : '',
+    c.opener         ? 'OPENINGSZIN\n' + c.opener : '',
+    c.connectie      ? 'LINKEDIN-CONNECTIEVERZOEK\n' + c.connectie : '',
+    c.mail           ? 'EERSTE MAIL\n' + c.mail : ''
+  ].filter(Boolean).join('\n\n');
+}
+
+function conceptHTML(r){
+  const c = r.concepten || {};
+  const blok = (veld, label, extra) => {
+    const tekst = String(c[veld]||'').trim();
+    if(!tekst) return '';
+    return `<div class="r-blok">
+      <div class="r-kop"><span class="r-lbl">${label}</span>${extra||''}
+        <button class="btn sm ghost" data-rkop="${h(r.id)}|${veld}">Kopieer</button></div>
+      <p>${h(tekst)}</p></div>`;
+  };
+  const prof = String(c.contactprofiel||'').trim();
+  /* De 280 is LinkedIns limiet voor een connectieverzoek met notitie —
+     eroverheen en je verzoek gaat er zónder tekst uit. */
+  const n = String(c.connectie||'').trim().length;
+  const teller = n ? `<span class="r-tel${n>280?' rood':''}">${n}/280</span>` : '';
+  return `<div class="r-con">
+    ${prof?`<div class="r-blok"><div class="r-kop"><span class="r-lbl">Wie je zoekt</span></div>
+      <p>${h(prof)}</p></div>`:''}
+    ${blok('opener','Openingszin aan de telefoon')}
+    ${blok('connectie','LinkedIn-connectieverzoek', teller)}
+    ${blok('mail','Eerste mail')}
+    <div class="r-alles"><button class="btn sm ghost" data-rkop="${h(r.id)}|alles">Alles kopiëren</button></div>
+  </div>`;
+}
+
 function radarTabelHTML(rijen, zelf, totaal){
   if(!totaal && radarStatus==='ok')
     return `<div class="card"><div class="card-b">${zelf
@@ -1123,11 +1211,14 @@ function radarTabelHTML(rijen, zelf, totaal){
       /* Dubbel in beeld brengen op de plek waar je kijkt: naast de naam.
          Niet blokkeren — soms wíl je een tweede ingang bij dezelfde klant. */
       const bestaand = st==='nieuw' ? alKlant(r.bedrijf) : null;
+      const conc = heeftConcepten(r), open = rOpen.has(r.id);
       return `<tr${st!=='nieuw'?' class="s-dicht"':''}>
         <td><div style="font-weight:600">${h(r.bedrijf)}${url?` <a href="${h(url)}" target="_blank" rel="noopener" title="Vacature bekijken" class="r-link">↗</a>`:''}</div>
           ${bestaand?`<div class="rowsub"><span class="chip amber">staat al in de pijplijn${
             bestaand.fase?` — ${h(bestaand.fase)}`:''}</span> <button class="btn sm ghost" data-rpijp="${h(bestaand.naam)}">open klant →</button></div>`:''}
-          ${r.notitie?`<div class="rowsub">${h(r.notitie)}</div>`:''}</td>
+          ${r.notitie?`<div class="rowsub">${h(r.notitie)}</div>`:''}
+          ${conc?`<div class="rowsub"><button class="btn sm ghost" data-rcon="${h(r.id)}"
+            aria-expanded="${open}">${open?'▾':'▸'} Belteksten</button></div>`:''}</td>
         <td>${h(r.plaats||'—')}</td>
         <td>${fns.length?`<div class="r-func">${fns.slice(0,3).map(f=>`<span class="chip">${h(f)}</span>`).join('')}${
           fns.length>3?`<span class="meta">+${fns.length-3}</span>`:''}</div>`:'—'}</td>
@@ -1146,7 +1237,8 @@ function radarTabelHTML(rijen, zelf, totaal){
           : `<div class="row tight r-acties">
               <span class="chip">genegeerd</span>
               <button class="btn sm sub" data-rher="${h(r.id)}">Herstellen</button></div>`
-        }</td></tr>`;
+        }</td></tr>${conc && open
+          ? `<tr class="r-conrij"><td class="r-cel" colspan="8">${conceptHTML(r)}</td></tr>` : ''}`;
     }).join('')}</tbody></table></div>`;
 }
 
@@ -1927,6 +2019,23 @@ function bindRadar(){
   }, 220);
   CRM.$$('[data-rwis]', mountEl).forEach(b=>b.onclick=()=>{
     rZoek=''; rBron=''; rFilter='alles'; V.zet('r_status',rFilter); tekenInhoud();
+  });
+  /* Belteksten open/dicht. Meerdere tegelijk open mag: je vergelijkt soms
+     twee bedrijven voor je besluit wie je eerst belt. */
+  CRM.$$('[data-rcon]', mountEl).forEach(b=>b.onclick=()=>{
+    const id = b.dataset.rcon;
+    rOpen.has(id) ? rOpen.delete(id) : rOpen.add(id);
+    tekenInhoud();
+  });
+  CRM.$$('[data-rkop]', mountEl).forEach(b=>b.onclick=async ()=>{
+    const [id, veld] = b.dataset.rkop.split('|');
+    const r = radar.find(x=>x.id===id); if(!r) return;
+    const tekst = veld==='alles' ? conceptTekst(r) : String((r.concepten||{})[veld]||'');
+    if(!tekst) return CRM.toast('Deze tekst is leeg','err');
+    const gelukt = await kopieerTekst(tekst);
+    CRM.toast(gelukt ? (veld==='alles' ? 'Alle teksten gekopieerd' : 'Gekopieerd')
+                     : 'Kopiëren lukte niet — selecteer de tekst zelf',
+              gelukt ? 'ok' : 'err');
   });
   CRM.$$('[data-rlead]', mountEl).forEach(b=>b.onclick=()=>radarNaarLead(b.dataset.rlead));
   CRM.$$('[data-rneg]',  mountEl).forEach(b=>b.onclick=()=>radarNegeren(b.dataset.rneg));
