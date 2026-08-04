@@ -381,7 +381,6 @@
     const ploeg = String(v.ploegendienst || '').trim();
 
     const chips = [
-      hotChip(v),
       ploeg && ploeg !== 'geen' ? `<span class="chip">${h(ploeg)}</span>` : '',
       sal ? `<span class="chip num">${h(sal)}</span>` : '',
       t.over ? `<span class="chip amber">${t.over} meer geplaatst dan gevraagd</span>` : '',
@@ -399,28 +398,45 @@
        maar een keuze van ons. Nu zegt hij waar deze vacature staat: rood als
        er niemand op zit, amber als het te dun is, groen als het loopt. Dat is
        dezelfde taal als de rand op een klant- of kandidaatrij. */
-    return `<article${CRM.ui.frand(knel.rand, 'ovcard' + (v.hot?' hot':''))} data-id="${h(v.id)}" tabindex="0" role="button">
-      <div class="ov-kop">
-        <div class="ov-wie">
-          <h3 class="ov-functie">${h(v.functie || 'functie niet ingevuld')}</h3>
+    /* Merkkop (optie 2, Tjeerd 4 aug 2026): functie + klant links, het
+       kerngetal rechts, op een getinte kop — hot in een zachte olijftint
+       ("zachter, zoals de zijbalk"), niet donker. De knelchip en de balk
+       leven in het witte lijf. */
+    return `<article${CRM.ui.frand(knel.rand, 'ovcard ov2' + (v.hot?' hot':''))} data-id="${h(v.id)}" tabindex="0" role="button">
+      <div class="ov2-kop${v.hot?' hot':''}">
+        <div class="ov2-wie">
+          <div class="ov-functie">${h(v.functie || 'functie niet ingevuld')}</div>
           <div class="ov-klant">${h(klantLabel(v))} <span class="ov-punt">·</span> ${h(locLabel(v))}</div>
+          ${v.hot ? `<span class="ov2-hotchip">${h(hotTekst(v))}</span>` : ''}
         </div>
         <div class="ov-vullen">
           <span class="ov-getal num">${t.teVullen}</span>
           <span class="ov-vlbl">van ${t.gevraagd} te vullen</span>
         </div>
       </div>
-      ${chips ? `<div class="ov-chips">${chips}</div>` : ''}
-      ${balk}
-      <div class="ov-voet">
-        <span class="ov-stand">${h(stand)}</span>
-        <span class="ov-meta${oud?' oud':''}">${dgn == null ? 'aanmaakdatum onbekend'
-          : dgn === 0 ? 'vandaag aangemaakt' : `${dgn} ${dgn===1?'dag':'dagen'} open`}${
-          v.eigenaar ? ' · ' + h(v.eigenaar) : ''}</span>
-        ${knel.lbl ? `<span class="chip ${knel.kleur} ov-knel">${h(knel.lbl)}</span>` : ''}
-        ${v.hot ? '' : `<button class="btn sub sm ov-hotknop" data-hot>Hot maken</button>`}
+      <div class="ov2-lijf">
+        ${chips ? `<div class="ov-chips">${chips}</div>` : ''}
+        ${balk}
+        <div class="ov-voet">
+          <span class="ov-stand">${h(stand)}</span>
+          <span class="ov-meta${oud?' oud':''}">${dgn == null ? 'aanmaakdatum onbekend'
+            : dgn === 0 ? 'vandaag aangemaakt' : `${dgn} ${dgn===1?'dag':'dagen'} open`}${
+            v.eigenaar ? ' · ' + h(v.eigenaar) : ''}</span>
+          ${knel.lbl ? `<span class="chip ${knel.kleur} ov-knel">${h(knel.lbl)}</span>` : ''}
+          ${v.hot ? '' : `<button class="btn sub sm ov-hotknop" data-hot>Hot maken</button>`}
+        </div>
       </div>
     </article>`;
+  }
+
+  /* De hot-tekst zonder chipmarkup — de kop draagt hem als eigen pil. */
+  function hotTekst(v){
+    const rest = restDagen(v);
+    return rest == null ? 'hot'
+      : rest < 0 ? 'hot · deadline gemist'
+      : rest === 0 ? 'hot · vandaag'
+      : rest === 1 ? 'hot · nog 1 dag'
+      : `hot · nog ${rest} dagen`;
   }
 
   function tekenOpen(){

@@ -334,3 +334,24 @@
 textarea.ovd-inline{resize:vertical;line-height:1.5}
 .ovd-tinhoud{cursor:pointer;border-radius:6px;margin:-4px -6px;padding:4px 6px}
 .ovd-tinhoud:hover{background:var(--card-2)}
+
+/* ─── Merkkop op de vacaturekaart (optie 2, 4 aug 2026) ──────────
+   Kop in de verdiepte tint met functie + kerngetal; het lijf is wit. Hot
+   draagt een zachte olijftint — Tjeerd wilde het olijf "een stuk zachter,
+   zoals de zijbalk", dus geen donker vlak en dus ook geen lime: het
+   hot-signaal is een gevulde olijven pil met witte tekst. */
+.ovcard.ov2{padding:0;overflow:hidden}
+.ovcard.ov2.frand{padding-left:0}
+.ov2-kop{
+  background:var(--well-2);border-bottom:1px solid var(--line);
+  padding:12px 16px;display:flex;align-items:center;gap:14px;
+}
+.ov2-kop.hot{background:linear-gradient(135deg,rgba(61,100,0,.16) 0%,rgba(43,71,0,.20) 100%)}
+.ov2-wie{flex:1;min-width:0}
+.ov2-hotchip{
+  display:inline-flex;align-items:center;background:var(--olive);color:#fff;
+  border-radius:999px;padding:1px 9px;font-size:10.5px;font-weight:700;margin-top:6px;
+}
+.ov2-lijf{padding:12px 16px 13px;display:flex;flex-direction:column;flex:1}
+.ov2-lijf .ov-chips{margin-top:0;margin-bottom:2px}
+.ov2-lijf .ov-voet{margin-top:auto;padding-top:9px}

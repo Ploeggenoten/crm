@@ -424,12 +424,10 @@ function kaartHtml(c){
   if(c.herstartVan) chips.push(`<span class="chip purple" title="Heraangeboden — de eerdere uitkomst blijft op de oude kaart geregistreerd">herstart</span>`);
   if(c.vervangt) chips.push(`<span class="chip blue" title="Vervanger voor een gestopte plaatsing">vervanger</span>`);
   if(c.noShows) chips.push(`<span class="chip red num" title="No-shows">${h(c.noShows)}× no-show</span>`);
-  { const sf = stilstandFase(c.fase, dg);
-    if(sf) chips.push(`<span class="chip ${sf.klas} num" title="${h(dg + ' dagen in deze fase. ' + sf.waarom)}">${dg}d in fase</span>`);
-    else if(dg != null && dg >= 14 && !CRM.DONE.includes(c.fase) && !FASE_NORM[CRM.faseNorm(c.fase)])
-      /* Fases zonder norm ('In de wacht', na het tekenen) horen niet te
-         kleuren — maar hoe lang iets er staat mag je wel zien. */
-      chips.push(`<span class="chip num" title="Dagen in deze fase — wachten hoort hier bij het werk">${dg}d</span>`); }
+  /* De dagen-in-fase zijn naar de merkkop verhuisd (bc-dgn) — als chip én
+     als kopgetal zou hetzelfde er twee keer staan. De stilstandsnorm en de
+     reden reizen mee in de tooltip van de kop. */
+  const sfKop = stilstandFase(c.fase, dg);
   if(d.intakeDone(c)){ const ic = c.intake.cijfer;
     chips.push(`<span class="chip ${ic&&ic<7?'amber':'green'} num" title="${ic&&ic<7?'Afhaakrisico — commitment '+h(ic)+'/10':'Intake gedaan'}">intake ${ic?h(ic)+'/10':'✓'}</span>`);
   }
@@ -453,16 +451,20 @@ function kaartHtml(c){
   }
   const verw = (['Meeloopdag','Offer','Contract ondertekenen'].includes(c.fase) && c.start)
     ? `<div class="rc-when verw"><span class="num">Verwachte start · ${h(CRM.fmtDay(c.start))}</span></div>` : '';
-  return `<div class="bcard ${isVandaag?'vandaag':''} ${gemist?'gemist':''}" draggable="true" data-id="${h(c.id)}">
-    <div class="bc-t">
-      <div class="bc-n">${h(c.naam)}
-        <div class="bc-s">${h(c.functie || (v?v.functie:'') || '—')}${c.klant?' @ '+h(c.klant):''}</div></div>
-      ${c.rec?`<span class="rc-rec" title="${h(c.rec)}">${h(CRM.initialen(c.rec))}</span>`:''}
+  /* Merkkop (optie 2, 4 aug 2026): naam + dagen-in-fase op de zijbalktint;
+     functie, chips, afspraak en actie in het witte lijf. isVandaag/gemist
+     kleuren de kaart als geheel, precies zoals voorheen. */
+  const dgnKop = dg == null ? '' : `<span class="bc-dgn${sfKop ? (sfKop.klas==='red'?' rood':' let') : ''}"${
+    sfKop ? ` title="${h(dg + ' dagen in deze fase. ' + sfKop.waarom)}"` : ' title="Dagen in deze fase"'}><span class="num">${dg}</span> dgn${sfKop?' stil':''}</span>`;
+  return `<div class="bcard bck vol ${isVandaag?'vandaag':''} ${gemist?'gemist':''}" draggable="true" data-id="${h(c.id)}">
+    <div class="bc-kop"><b>${h(c.naam)}</b>${dgnKop}${c.rec?`<span class="rc-rec" title="${h(c.rec)}">${h(CRM.initialen(c.rec))}</span>`:''}</div>
+    <div class="bc-lijf">
+      <div class="bc-s">${h(c.functie || (v?v.functie:'') || '—')}${c.klant?' @ '+h(c.klant):''}</div>
+      ${chips.length?`<div class="bc-f">${chips.join('')}</div>`:''}
+      ${when}${verw}
+      ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
+      <button class="btn ghost sm rc-move" data-move="${h(c.id)}">Volgende stap…</button>
     </div>
-    ${chips.length?`<div class="bc-f">${chips.join('')}</div>`:''}
-    ${when}${verw}
-    ${c.volgendeActie?`<div class="bc-act ${over?'over':''}">${h(c.volgendeActie)}${c.actieDatum?` <span class="num">· ${h(CRM.fmtDateShort(c.actieDatum))}</span>`:''}</div>`:''}
-    <button class="btn ghost sm rc-move" data-move="${h(c.id)}">Volgende stap…</button>
   </div>`;
 }
 

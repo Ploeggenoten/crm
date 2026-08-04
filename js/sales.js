@@ -294,26 +294,32 @@ function waaromHTML(k, lc, vandaag){
 function kaartHTML(k, lc, vandaag){
   const d = CRM.dagenGeleden(k.fase_sinds);
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
-  /* In de fase Lead is lang liggen normaal (117 stuks na de import) — daar
-     blijft de teller neutraal, anders is heel het bord oranje en betekent
-     oranje niets meer. Amber alleen bij actieve trajecten die stilvallen. */
   const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
   const vac = openVacatures(k.naam);
   const kans = openKansen(k.naam).length;
-  /* Geen .frand hier: de fasekleur staat al boven de kolom waar deze kaart in
-     zit. Een streep in dezelfde kleur zou hetzelfde twee keer zeggen. */
-  return `<div class="bcard" draggable="true" data-klant="${h(k.naam)}">
-    <div class="bc-t">
-      <div style="flex:1;min-width:0">
-        <div class="bc-n trunc">${h(k.naam)}</div>
-        <div class="bc-s trunc">${h(k.eigenaar||'geen eigenaar')}${k.locatie?' · '+h(k.locatie):''}</div>
-      </div></div>
-    <div class="bc-f">
+  const waarom = waaromHTML(k, lc, vandaag);
+  /* De merkkop draagt naam + dagen; "X dgn stil" in rood is het enige alarm
+     en het staat maar op de kaarten die het verdienen. Alles daaronder is
+     het lijf — en een geïmporteerde lead zonder gesprek, taak of vacature
+     hééft geen lijf. Dat is de hele oplossing voor 223 identieke kaarten. */
+  const lijf = [
+    (k.eigenaar || k.locatie) ? `<div class="bc-s trunc">${h(k.eigenaar||'geen eigenaar')}${k.locatie?' · '+h(k.locatie):''}</div>` : '',
+    waarom,
+    (vac || kans) ? `<div class="bc-f">
       ${vac?`<span class="chip">${vac} vacature${vac===1?'':'s'}</span>`:''}
-      ${kans?`<span class="chip blue">${kans} kans${kans===1?'':'en'}</span>`:''}
-      ${d==null?'':`<span class="chip${hangt?' amber':''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn</span>`}
-    </div>
-    ${waaromHTML(k, lc, vandaag)}
+      ${kans?`<span class="chip blue">${kans} kans${kans===1?'':'en'}</span>`:''}</div>` : ''
+  ].filter(Boolean).join('');
+  /* Op een kaart zónder lijf is de eigenaar het enige dat verloren zou gaan;
+     die verhuist dan als gedempte toevoeging in de kop. */
+  const leeg = !waarom && !vac && !kans;
+  /* Leads zijn microkaarten, hoe dan ook: die fase is voorraad, geen werk.
+     (Tjeerd, 4 aug 2026: "de kaart verdient zijn ruimte — leads veel
+     kleiner dan andere.") */
+  const mini = faseVan(k) === 'Lead';
+  const dgn = d==null ? '' : `<span class="bc-dgn${hangt ? ' rood' : ''}" title="Dagen in deze fase"><span class="num">${d}</span> dgn${hangt?' stil':''}</span>`;
+  return `<div class="bcard bck${mini ? ' mini' : ''}${leeg || mini ? '' : ' vol'}" draggable="true" data-klant="${h(k.naam)}">
+    <div class="bc-kop"><b>${h(k.naam)}</b>${dgn}</div>
+    ${leeg || mini ? '' : `<div class="bc-lijf">${lijf}</div>`}
   </div>`;
 }
 

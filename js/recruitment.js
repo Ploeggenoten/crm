@@ -1277,12 +1277,15 @@ function leadKaartHtml(l){
   if(bel) chips.push(`<span class="chip num" title="Belpogingen">${bel}× gebeld</span>`);
   if(dub > 1) chips.push(`<span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst">${dub}× in de lijst</span>`);
   if(ken.kands.length) chips.push(`<span class="chip purple" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>`);
-  return `<div class="bcard rc-leadkaart" draggable="true" data-id="${h(l.id)}">
-    <div class="bc-t">
-      <div class="bc-n">${h(leadNaam(l))}
-        <div class="bc-s">${v ? h(v.functie) + ' · ' + h(v.klant) : (losFunctie(l) ? h(losFunctie(l)) : '<em>nog geen vacature</em>')}</div></div>
-      ${l.eigenaar?`<span class="rc-rec" title="${h(l.eigenaar)}">${h(CRM.initialen(l.eigenaar))}</span>`:''}
-    </div>
+  /* Merkkop (optie 2, 4 aug 2026): naam op de zijbalktint, de rest in het
+     witte lijf. De leeftijd van de lead staat als dagen in de kop zodra hij
+     te lang ligt — zelfde taal als het Sales-bord. */
+  const stil2 = stilstand(l);
+  return `<div class="bcard bck vol rc-leadkaart" draggable="true" data-id="${h(l.id)}">
+    <div class="bc-kop"><b>${h(leadNaam(l))}</b>${stil2 ? `<span class="bc-dgn ${stil2.klas==='red'?'rood':'let'}">${h(stil2.label)}</span>` : ''}${
+      l.eigenaar?`<span class="rc-rec" title="${h(l.eigenaar)}">${h(CRM.initialen(l.eigenaar))}</span>`:''}</div>
+    <div class="bc-lijf">
+      <div class="bc-s">${v ? h(v.functie) + ' · ' + h(v.klant) : (losFunctie(l) ? h(losFunctie(l)) : '<em>nog geen vacature</em>')}</div>
     ${chips.length?`<div class="bc-f">${chips.join('')}</div>`:''}
     <div class="rc-kaarttel">${l.telefoon
       ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>${
@@ -1290,6 +1293,7 @@ function leadKaartHtml(l){
       : `<span class="meta">geen telefoonnummer</span>`}</div>
     ${!v ? `<button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Koppel vacature</button>` : ''}
     <button class="btn ghost sm rc-move" data-lstat="${h(l.id)}">Verplaatsen naar status…</button>
+    </div>
   </div>`;
 }
 

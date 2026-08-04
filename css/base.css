@@ -399,6 +399,34 @@ table.tbl .rowsub{font-size:11.5px;color:var(--muted)}
 .bcard:hover{border-color:var(--olive-l)}
 .bcard:active{cursor:grabbing}
 .bcard.drag{opacity:.4}
+/* ─── Kaart met merkkop (optie 2, gekozen door Tjeerd 4 aug 2026) ────
+   Elke bordkaart draagt een getinte kop — dezelfde tint als de zijbalk
+   (--card-2; "zachter olijfgroen, zoals de zijbalk") — met de naam en één
+   kerngetal. De inhoud is een wit lijf ónder die kop, en een kaart zonder
+   inhoud heeft GÉÉN lijf: afwezigheid in plaats van honderd keer dezelfde
+   grijze regel "gesproken: nog nooit". Dat was de echte oorzaak van "saai
+   en te wit" op een bord met 223 geïmporteerde klanten.
+   .bck zet de vorm; producenten leveren .bc-kop (+ evt. .bc-lijf) en de
+   klasse .vol zodra er een lijf is. .frand blijft gewoon werken (border-left). */
+.bcard.bck{padding:0;overflow:hidden}
+.bck .bc-kop{background:var(--card-2);padding:8px 13px;display:flex;align-items:baseline;gap:10px}
+.bck.vol .bc-kop{border-bottom:1px solid var(--line)}
+.bck .bc-kop b{font-weight:600;font-size:13.5px;color:var(--ink);flex:1;min-width:0;line-height:1.35;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-dgn{font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bc-dgn.let{color:var(--amber);font-weight:700}
+.bc-dgn.rood{color:var(--red);font-weight:700}
+.bck .bc-lijf{padding:9px 13px 11px}
+/* Leads verdienen hun ruimte nog niet (Tjeerd: "leads veel kleiner dan
+   andere") — een microkaart: alleen de kop, strakker, kleiner. Zo is een
+   kolom met 96 geïmporteerde leads een lijst en geen muur. */
+.bck.mini .bc-kop{padding:5px 11px}
+.bck.mini .bc-kop b{font-size:12px;font-weight:500}
+.bck.mini .bc-dgn{font-size:10px}
+.bck .bc-s{margin-top:0}
+.bck .bc-f{margin-top:8px}
+.bck .bc-f:first-child{margin-top:0}
+
 .bcard .bc-t{display:flex;align-items:flex-start;gap:8px}
 .bcard .bc-n{font-weight:600;font-size:13.5px;color:var(--ink);line-height:1.3;flex:1;min-width:0}
 .bcard .bc-s{font-size:11.5px;color:var(--txt-2);margin-top:1px}
