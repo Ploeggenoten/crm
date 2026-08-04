@@ -1128,6 +1128,7 @@ function railAfspraak(mount, k){
 
   const ouder = alle.length - soorten.length;
   body.innerHTML = soorten.map(s => blok(s.k)).join('<div class="kl-af-scheiding"></div>')
+    + (soorten.length > 1 ? '<p class="meta kl-af-ouder">Deze afspraken lopen naast elkaar — bij een plaatsing kies je per functie welke geldt.</p>' : '')
     + (ouder > 0 ? `<p class="meta kl-af-ouder">${ouder} eerdere afspraak${ouder===1?'':'en'} in het archief</p>` : '');
 }
 
@@ -1139,6 +1140,184 @@ function factorBereik(a){
   const fmt = n => n.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2});
   const min = Math.min(...f), max = Math.max(...f);
   return (min === max ? fmt(min) : fmt(min) + ' – ' + fmt(max)) + '×';
+}
+
+/* ─── Overeenkomst → afspraken ────────────────────────────────────
+   Leest de geplakte tekst van een getekende samenwerkingsovereenkomst
+   en haalt eruit wat het afsprakenformulier nodig heeft. De tekst komt
+   uit onze eigen documenten (pdf openen → alles kopiëren), dus de
+   structuur is bekend:
+
+     tarieventabel   "Operator  2,4  23%"   → functie · uitzendfactor · W&S-fee
+                     "Operator (verlading en proces)  23%"  → alleen W&S
+                     Een pdf-kopie zet cellen soms elk op een eigen regel
+                     ("Operator" / "2,4" / "23%") — ook dat wordt gelezen.
+     voorwaarden     "vakantiegeld (8%)", "twaalf (12) maal het … maandsalaris",
+                     "betaaltermijn van 30 dagen", "exclusiviteit … drie (3) weken",
+                     "proeftijd van twee (2) maanden … kosteloze vervanging",
+                     "na 1200 gewerkte uren … kosteloos overnemen",
+                     "gaat in op 1 september 2026".
+
+   Staan er factoren én percentages in, dan levert dit TWEE afspraken op
+   (uitzenden en W&S) — precies zoals de overeenkomst het bedoelt: de
+   klant kiest per functie of plaatsing welke voorwaarden gelden.
+   Wat niet herkend wordt blijft leeg; de preview benoemt dat en er wordt
+   niets opgeslagen zonder de knop Vastleggen. */
+const WOORDGETAL = {'een':1,'één':1,'twee':2,'drie':3,'vier':4,'vijf':5,'zes':6,
+  'zeven':7,'acht':8,'negen':9,'tien':10,'elf':11,'twaalf':12};
+const MAANDEN_NL = ['januari','februari','maart','april','mei','juni','juli',
+  'augustus','september','oktober','november','december'];
+/* "drie (3) weken" → 3; het cijfer tussen haakjes wint van het woord. */
+function aantalUit(zin){
+  if(!zin) return null;
+  const p = String(zin).match(/\((\d{1,3})\)/);
+  if(p) return +p[1];
+  const d = String(zin).match(/\b(\d{1,3})\b/);
+  if(d) return +d[1];
+  const w = String(zin).toLowerCase().match(/\b(één|een|twee|drie|vier|vijf|zes|zeven|acht|negen|tien|elf|twaalf)\b/);
+  return w ? WOORDGETAL[w[1]] : null;
+}
+
+function parseOvereenkomst(ruw){
+  const getal = CRM.fee.getal;
+  const tekst = String(ruw || '').replace(/ /g, ' ');
+  const laag  = tekst.toLowerCase();
+  const uit = {
+    ws:{regels:[], standaard:null}, uitzend:{regels:[], standaard:null},
+    overname_uren:null, vt_pct:null, maanden:null,
+    garantie_mnd:null, garantie_soort:null,
+    exclusiviteit_wkn:null, betaaltermijn:null,
+    ingang:null, factuurmoment:null
+  };
+
+  /* ── 1. De tarieventabel ─────────────────────────────────────────
+     Voorwaardenzinnen bevatten óók getallen ("vakantiegeld (8%)") en
+     mogen nooit als functieregel eindigen — vandaar de sleutelwoordrem. */
+  const SLA_OVER = /vakantiegeld|betaaltermijn|garantie|exclusiviteit|proeftijd|maandsalaris|jaarsalaris|btw|overname|\bu(?:ur|ren)\b|pagina|kvk|^functie(groep)?$|w\s*&\s*s|fee\b|factor\b|tarie/i;
+  const RIJ_BEIDE  = /^(.+?)\s+([1-9][.,]\d{1,2})\s*[x×]?\s+(\d{1,2}(?:[.,]\d{1,2})?)\s*%?$/;
+  const RIJ_PCT    = /^(.+?)\s+(\d{1,2}(?:[.,]\d{1,2})?)\s*%$/;
+  const RIJ_FACTOR = /^(.+?)\s+([1-9][.,]\d{1,2})\s*[x×]?$/;
+  const CEL_PCT    = /^(\d{1,2}(?:[.,]\d{1,2})?)\s*%$/;
+  const CEL_FACTOR = /^([1-9][.,]\d{1,2})\s*[x×]?$/;
+  const NAAM_OK = s => /[a-zà-ü]/i.test(s) && s.length >= 2 && s.length <= 60
+    && !SLA_OVER.test(s) && !/^\d/.test(s) && !/[.!?]$/.test(s);
+  const schoon = s => String(s).replace(/^[-–•*\s]+/, '').replace(/[;:.,]+\s*$/, '').trim();
+
+  const rijen = [];
+  let wacht = null;                       /* naam-cel die nog cijfers verwacht */
+  const rond = () => { if(wacht && (wacht.factor != null || wacht.pct != null)) rijen.push(wacht); wacht = null; };
+  for(const ruweRegel of tekst.split(/\r?\n/)){
+    const r = schoon(ruweRegel);
+    if(!r){ rond(); continue; }
+    let m;
+    if(m = r.match(CEL_PCT)){             /* losse pdf-cel: "23%" */
+      if(wacht){ wacht.pct = getal(m[1]); rijen.push(wacht); wacht = null; }
+      continue;
+    }
+    if(m = r.match(CEL_FACTOR)){          /* losse pdf-cel: "2,4" */
+      if(wacht && wacht.factor == null){ wacht.factor = getal(m[1]); continue; }
+      rond(); continue;
+    }
+    if(!SLA_OVER.test(r)){
+      if(m = r.match(RIJ_BEIDE)) { rond(); rijen.push({functie:schoon(m[1]), factor:getal(m[2]), pct:getal(m[3])}); continue; }
+      if(m = r.match(RIJ_PCT))   { rond(); rijen.push({functie:schoon(m[1]), factor:null, pct:getal(m[2])}); continue; }
+      if(m = r.match(RIJ_FACTOR)){ rond(); rijen.push({functie:schoon(m[1]), factor:getal(m[2]), pct:null}); continue; }
+    }
+    rond();
+    if(NAAM_OK(r)) wacht = {functie:r, factor:null, pct:null};
+  }
+  rond();
+
+  for(const r of rijen){
+    if(!r.functie || !NAAM_OK(r.functie)) continue;
+    if(r.pct != null && (r.pct <= 0 || r.pct > 60)) r.pct = null;
+    if(r.factor != null && (r.factor < 1 || r.factor >= 10)) r.factor = null;
+    const std = /^(alle|overige?\b|standaard|default)/i.test(r.functie);
+    if(r.pct != null){
+      if(std) uit.ws.standaard = r.pct;
+      else uit.ws.regels.push({functiegroep:r.functie, pct:r.pct});
+    }
+    if(r.factor != null){
+      if(std) uit.uitzend.standaard = r.factor;
+      else uit.uitzend.regels.push({functiegroep:r.functie, pct:r.factor});
+    }
+  }
+
+  /* ── 2. De voorwaarden uit de lopende tekst ───────────────────────
+     Een pdf-kopie breekt zinnen midden op de regel af ("proeftijd van twee
+     \n(2) maanden"), dus hier telt alleen de punt als zinsgrens — vandaar
+     eerst alle witruimte platslaan tot enkele spaties. */
+  const vloei = laag.replace(/\s+/g, ' ');
+  const vt = vloei.match(/vakantiegeld[^0-9%]{0,20}(\d{1,2}(?:[.,]\d{1,2})?)\s*%/);
+  if(vt) uit.vt_pct = getal(vt[1]);
+
+  const maal = vloei.match(/([^.]{0,40})maal het[^.]{0,60}maandsalaris/);
+  if(maal){ const n = aantalUit(maal[1]); if(n != null && n >= 6 && n <= 14) uit.maanden = n; }
+
+  const bt = vloei.match(/betaaltermijn[^.]{0,40}?(\d{1,3})\s*dagen/);
+  if(bt) uit.betaaltermijn = +bt[1];
+
+  const ex = vloei.match(/exclusivi\w*([^.]{0,60}?)\bweken\b/);
+  if(ex){ const n = aantalUit(ex[1]); if(n != null) uit.exclusiviteit_wkn = n; }
+
+  if(vloei.includes('kosteloze vervanging')){
+    uit.garantie_soort = 'vervanging';
+    const ver = vloei.match(/proeftijd van([^.]{0,40}?)\bmaand/) ||
+                vloei.match(/binnen([^.]{0,40}?)\bmaanden?\b/);
+    if(ver){ const n = aantalUit(ver[1]); if(n != null && n <= 24) uit.garantie_mnd = n; }
+  }else if(/recht op[^.]{0,40}restitutie/.test(vloei) && !/geen recht op[^.]{0,40}restitutie/.test(vloei)){
+    uit.garantie_soort = 'restitutie';
+  }
+
+  const ov = vloei.match(/(\d{3,5})\s*(?:gewerkte\s*)?u(?:ur|ren)\b[^.]{0,80}overn/) ||
+             vloei.match(/overn[^.]{0,80}?(\d{3,5})\s*(?:gewerkte\s*)?u(?:ur|ren)\b/);
+  if(ov) uit.overname_uren = +ov[1];
+
+  const ing = vloei.match(/(?:gaat in op|ingangsdatum\W{0,5}|per\s(?=\d))\s*(\d{1,2})[-\s]([a-z]+|\d{1,2})[-\s](\d{4})/);
+  if(ing){
+    const mnr = /^\d+$/.test(ing[2]) ? +ing[2] : MAANDEN_NL.indexOf(ing[2]) + 1;
+    if(mnr >= 1 && mnr <= 12)
+      uit.ingang = `${ing[3]}-${String(mnr).padStart(2,'0')}-${String(+ing[1]).padStart(2,'0')}`;
+  }
+
+  if(/factur[^.]{0,120}?(indiensttreding|startdatum|bij (de )?start)/.test(vloei)) uit.factuurmoment = 'start';
+  else if(/factur[^.]{0,120}?(ondertekening|getekend|bij contract)/.test(vloei)) uit.factuurmoment = 'contract';
+
+  return uit;
+}
+
+/* Van parse-resultaat naar één of twee kant-en-klare afspraken. */
+function afsprakenUitParse(p, klant){
+  const basis = a => {
+    a.klant = klant;
+    if(p.ingang) a.ingang = p.ingang;
+    if(p.betaaltermijn != null) a.betaaltermijn = p.betaaltermijn;
+    if(p.exclusiviteit_wkn != null) a.exclusiviteit_wkn = p.exclusiviteit_wkn;
+    a.notitie = 'Ingelezen uit de geplakte samenwerkingsovereenkomst';
+    return a;
+  };
+  const uit = [];
+  if(p.ws.regels.length || p.ws.standaard != null){
+    const a = basis(CRM.fee.leegAfspraak(klant));
+    a.soort = 'ws';
+    a.fee_regels = p.ws.regels.slice();
+    a.fee_standaard = p.ws.standaard;          /* null = geen vangnet gevonden */
+    if(p.maanden != null) a.grondslag.maanden = p.maanden;
+    if(p.vt_pct  != null) a.grondslag.vt_pct  = p.vt_pct;
+    if(p.garantie_soort)  a.garantie_soort = p.garantie_soort;
+    if(p.garantie_mnd != null) a.garantie_mnd = p.garantie_mnd;
+    if(p.factuurmoment) a.factuurmoment = p.factuurmoment;
+    uit.push(a);
+  }
+  if(p.uitzend.regels.length || p.uitzend.standaard != null){
+    const a = basis(CRM.fee.leegAfspraak(klant));
+    a.soort = 'uitzenden';
+    a.fee_regels = p.uitzend.regels.slice();
+    a.fee_standaard = p.uitzend.standaard;
+    if(p.overname_uren != null) a.overname_uren = p.overname_uren;
+    uit.push(a);
+  }
+  return uit;
 }
 
 /* ─── Beheerpaneel: formulier + voorbeeldberekening + historie ──── */
@@ -1159,6 +1338,27 @@ function afspraakDrawer(k, id, nieuw){
   const opt = (lijst, gekozen) => lijst.map(s =>
     `<option value="${h(s.k)}"${s.k === gekozen ? ' selected' : ''}>${h(s.lbl)}</option>`).join('');
 
+  /* ── Wissel tussen naast elkaar lopende afspraken ───────────────
+     Eén klant kan uitzenden én W&S tegelijk hebben; de klant kiest per
+     functie of plaatsing welke voorwaarden gelden. Voorheen was er geen
+     knop om een tweede soort vast te leggen zodra er één afspraak
+     bestond — die zat alleen in de lege staat van de rail (4 aug 2026). */
+  const perSoort = CRM.fee.actievePerSoort(k.naam);
+  const wisselItems = CRM.fee.SOORTEN.map(s => perSoort[s.k]).filter(Boolean);
+  if(bestaat && !wisselItems.some(x => String(x.id) === String(huidig.id))) wisselItems.push(huidig);
+  const wisselHtml = `
+    <div class="kl-af-wissel">
+      <div class="seg">${wisselItems.map(x => {
+        const n = CRM.fee.normaliseer(x);
+        const b = n.soort === 'uitzenden' ? factorBereik(n) : feeBereik(n);
+        return `<button data-wissel="${h(String(x.id))}"${bestaat && String(x.id) === String(a.id) ? ' class="on"' : ''}>
+          ${h(soortLbl(n.soort))}${b ? ' · <span class="num">' + h(b) + '</span>' : ''}</button>`;
+      }).join('')}<button data-wissel=""${bestaat ? '' : ' class="on"'}>+ Nieuwe afspraak</button></div>
+      <p class="meta kl-af-wisseluitleg">Uitzenden én W&amp;S naast elkaar? Leg per soort dienstverlening
+        een eigen afspraak vast — ook bij één functie kan de klant dan per plaatsing kiezen
+        welke voorwaarden gelden.</p>
+    </div>`;
+
   CRM.drawer.open(`
     <div class="drawer-h">
       <div style="min-width:0;flex:1">
@@ -1170,6 +1370,19 @@ function afspraakDrawer(k, id, nieuw){
     <div class="drawer-b">
       <p class="sub kl-af-intro">Wat hier staat, gebruikt het systeem om na een getekend contract
         zelf de fee te berekenen. De grondslag volgt de tekst van de samenwerkingsovereenkomst.</p>
+      ${wisselHtml}
+
+      <div class="card kl-af-sec kl-af-import"><div class="card-h"><div class="h2">Overeenkomst inlezen</div><span class="spacer"></span>
+          <button class="btn sub sm" id="af_imp_knop">Tekst plakken</button></div>
+        <div class="card-b" id="af_imp_vak" hidden>
+          <p class="meta kl-af-uitleg">Plak de volledige tekst van de getekende samenwerkingsovereenkomst
+            (pdf openen → alles selecteren → kopiëren). Het systeem leest de tarieventabel en de
+            voorwaarden en zet ze klaar — uitzenden en W&amp;S allebei, als ze er allebei in staan.
+            Je ziet eerst wat er gevonden is; er wordt niets opgeslagen zonder jouw akkoord.</p>
+          <textarea id="af_imp_tekst" placeholder="Plak hier de tekst van de overeenkomst…"></textarea>
+          <div class="kl-af-impknoppen"><button class="btn sm" id="af_imp_lees">Overeenkomst lezen</button></div>
+          <div id="af_imp_uit" class="kl-af-impuit"></div>
+        </div></div>
 
       <div class="card kl-af-sec"><div class="card-h"><div class="h2">Dienstverlening en looptijd</div></div>
         <div class="card-b"><div class="f-grid">
@@ -1377,7 +1590,78 @@ function afspraakDrawer(k, id, nieuw){
       const traag = CRM.debounce(voorbeeld, 220);
 
       dr.querySelectorAll('.drawer-b input, .drawer-b select, .drawer-b textarea')
-        .forEach(el => { el.oninput = traag; el.onchange = voorbeeld; });
+        .forEach(el => {
+          /* Het plak-vak hoort niet bij het formulier: elke toetsaanslag
+             daar zou anders de voorbeeldberekening laten draaien. */
+          if(el.closest('.kl-af-import')) return;
+          el.oninput = traag; el.onchange = voorbeeld;
+        });
+
+      /* ── Wissel tussen afspraken van deze klant ───────────────── */
+      dr.querySelectorAll('[data-wissel]').forEach(b => b.onclick = () => {
+        const naar = b.dataset.wissel;
+        if(bestaat && naar === String(a.id)) return;      /* al open */
+        afspraakDrawer(k, naar || null, !naar);
+      });
+
+      /* ── Overeenkomst inlezen ─────────────────────────────────── */
+      const impVak = dr.querySelector('#af_imp_vak');
+      dr.querySelector('#af_imp_knop').onclick = () => {
+        impVak.hidden = !impVak.hidden;
+        if(!impVak.hidden) dr.querySelector('#af_imp_tekst').focus();
+      };
+      const fmtFactor = n => n.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2}) + '×';
+      dr.querySelector('#af_imp_lees').onclick = () => {
+        const uitEl = dr.querySelector('#af_imp_uit');
+        const p = parseOvereenkomst(dr.querySelector('#af_imp_tekst').value);
+        const nieuwe = afsprakenUitParse(p, k.naam);
+        if(!nieuwe.length){
+          uitEl.innerHTML = '<div class="note warn kl-af-note">Geen tarieventabel herkend. Controleer of de tabel met functies en percentages (of factoren) in de geplakte tekst staat — of vul het formulier hieronder gewoon met de hand in.</div>';
+          return;
+        }
+        const blok = af => {
+          const uitzend = af.soort === 'uitzenden';
+          const rijen = af.fee_regels.map(r => `<tr><td>${h(r.functiegroep)}</td>
+              <td class="num n">${uitzend ? h(fmtFactor(r.pct)) : h(CRM.pct(r.pct, r.pct % 1 ? 1 : 0))}</td></tr>`).join('')
+            + (af.fee_standaard != null ? `<tr><td class="meta">Standaard (als geen functiegroep past)</td>
+              <td class="num n">${uitzend ? h(fmtFactor(af.fee_standaard)) : h(CRM.pct(af.fee_standaard, af.fee_standaard % 1 ? 1 : 0))}</td></tr>` : '');
+          const vw = [];
+          if(af.ingang) vw.push('ingang ' + CRM.fmtDate(af.ingang));
+          vw.push(`betaaltermijn <span class="num">${af.betaaltermijn}</span> dgn`);
+          if(uitzend){
+            if(af.overname_uren != null) vw.push(`overname na <span class="num">${af.overname_uren}</span> uur`);
+          }else{
+            vw.push(af.garantie_soort === 'geen' ? 'geen garantie'
+              : `garantie <span class="num">${af.garantie_mnd}</span> mnd (${garantieLbl(af.garantie_soort).toLowerCase()})`);
+            if(af.exclusiviteit_wkn != null) vw.push(`exclusiviteit <span class="num">${af.exclusiviteit_wkn}</span> wkn`);
+            if(af.grondslag.vt_pct != null) vw.push(`vakantiegeld <span class="num">${h(String(af.grondslag.vt_pct).replace('.', ','))}</span>%`);
+          }
+          const alBezig = perSoort[af.soort];
+          return `<div class="kl-af-impkop label">${h(soortLbl(af.soort))}</div>
+            <div class="tblwrap"><table class="tbl kl-af-tbl"><tbody>${rijen}</tbody></table></div>
+            <p class="meta kl-af-impvw">${vw.join(' · ')}</p>
+            ${alBezig ? `<div class="note info kl-af-note">Er loopt al een ${h(soortLbl(af.soort))}-afspraak; die schuift na het vastleggen naar het archief.</div>` : ''}`;
+        };
+        const mist = [];
+        if(p.vt_pct == null && nieuwe.some(x => x.soort !== 'uitzenden')) mist.push('vakantiegeld');
+        if(p.betaaltermijn == null) mist.push('betaaltermijn');
+        if(p.garantie_soort == null && nieuwe.some(x => x.soort !== 'uitzenden')) mist.push('garantieregeling');
+        if(p.ingang == null) mist.push('ingangsdatum');
+        uitEl.innerHTML = nieuwe.map(blok).join('')
+          + (mist.length ? `<p class="meta kl-af-impmis">Niet in de tekst gevonden (de standaardwaarde geldt): ${mist.join(', ')}.</p>` : '')
+          + `<div class="kl-af-impknoppen"><button class="btn" id="af_imp_ok">
+              ${nieuwe.length === 1 ? 'Afspraak vastleggen' : 'Beide afspraken vastleggen'}</button></div>`;
+        uitEl.querySelector('#af_imp_ok').onclick = async () => {
+          for(const af of nieuwe){
+            af.door = CRM.me();
+            await bewaarAfspraak(Object.assign({}, af), false);
+          }
+          CRM.logActiviteit('klant', k.naam, 'systeem',
+            'Commerciële afspraken ingelezen uit de overeenkomst (' + nieuwe.map(x => soortLbl(x.soort)).join(' en ') + ')');
+          CRM.drawer.close();
+          CRM.render();
+        };
+      };
 
       /* ── Historie ─────────────────────────────────────────────── */
       const hist = dr.querySelector('#af_hist');

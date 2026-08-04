@@ -368,6 +368,22 @@ a.ob-i:hover b{text-decoration:underline}
 .kl-af-fee td{background:var(--card-2);font-weight:700}
 .kl-af-waarom{margin:10px 0 0;line-height:1.55}
 
+/* Wissel tussen naast elkaar lopende afspraken (uitzenden én W&S). */
+.kl-af-wissel{margin:0 0 16px}
+.kl-af-wissel .seg{flex-wrap:wrap;row-gap:2px}
+.kl-af-wisseluitleg{margin:8px 0 0;max-width:64ch;line-height:1.5}
+
+/* Overeenkomst inlezen: plak-vak, gevonden afspraken, vastleggen. */
+.kl-af-import textarea{min-height:150px;font-size:12.5px;line-height:1.5}
+.kl-af-impknoppen{display:flex;gap:8px;margin-top:10px}
+.kl-af-impuit:empty{display:none}
+.kl-af-impuit{margin-top:14px}
+.kl-af-impkop{margin:14px 0 7px}
+.kl-af-impkop:first-child{margin-top:0}
+.kl-af-impuit .kl-af-tbl td:last-child{white-space:nowrap;text-align:right}
+.kl-af-impvw{margin:8px 0 0;line-height:1.5}
+.kl-af-impmis{margin:12px 0 0;line-height:1.5}
+
 /* Historie: één regel per eerdere afspraak, met looptijd. */
 .kl-af-hist{display:flex;flex-direction:column}
 .kl-af-hrij{display:flex;align-items:center;gap:10px;padding:10px 0;
