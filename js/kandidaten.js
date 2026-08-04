@@ -1064,6 +1064,9 @@ function kaart(mount, acties, id){
      knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
      naar het lege blok en niet naar de kopregel. */
   mount.querySelectorAll('#c_cvlees, #c_cvleeg').forEach(b => b.onclick = () => cvLezen(c));
+  const werkNieuw = mount.querySelector('#c_werknieuw');
+  if(werkNieuw) werkNieuw.onclick = () => werkModal(c, null);
+  mount.querySelectorAll('[data-cvwerk]').forEach(b => b.onclick = () => werkModal(c, +b.dataset.cvwerk));
   { const b = mount.querySelector('#c_cvclaude');
     if(b) b.onclick = () => CRM.cvClaude.open({kandidaat:c, onKlaar: x => CRM.ga('kandidaten', {id:x.id})}); }
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
@@ -1553,6 +1556,7 @@ function cvHtml(c){
       <!-- Toevoegen zit in de kop en niet bij het lijstje zelf: bij een kaart
            zónder certificaten is er geen lijstje, en dan moet je er alsnog
            eentje kwijt kunnen. -->
+      <button class="btn ghost sm" id="c_werknieuw">+ Werkervaring</button>
       <button class="btn ghost sm" id="c_certnieuw">Certificaat toevoegen</button>
       <!-- Is er nog niets, dan is dit de enige zinnige vervolgstap op dit
            blok en staat de knop gevuld in plaats van als randje. Zodra er
@@ -1570,8 +1574,12 @@ function cvHtml(c){
       '<button class="btn" id="c_cvleeg">CV inlezen</button>') : `
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
       ${werk.length?`<div class="label">Werkervaring</div>
-        <div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
-          <b>${h(w.functie||w.rol||'—')}</b>
+        <div class="kd-cvlijst">${werk.map((w, i) => `<div class="kd-cvrij">
+          <b>${h(w.functie||w.rol||'—')}
+            ${/* Ingelezen is een beginpunt, geen eindstand: de AM moet een
+                 dienstverband kunnen corrigeren of aanvullen (Tjeerd,
+                 4 aug 2026: "het moet aanpasbaar zijn, dat is nu niet"). */''}
+            <button type="button" class="lnk tl-bewerk" data-cvwerk="${i}" title="Aanpassen">bewerk</button></b>
           <span class="sub">${h(w.werkgever||w.bedrijf||'')}</span>
           <span class="meta num">${h([w.van,w.tot].filter(Boolean).join(' – '))||h(w.periode||'')}</span>
           ${Array.isArray(w.taken) && w.taken.length ? `<ul class="kd-cvtaken">${
@@ -1596,6 +1604,66 @@ function cvHtml(c){
    tijdelijke link. Zie js/cvparse.js. */
 function cvBestandHtml(c){
   return CRM.cvParse ? CRM.cvParse.bestandHtml(c) : '';
+}
+
+/* ─── Werkervaring handmatig toevoegen of aanpassen ───────────────
+   Wat de cv-lezer neerzet is een beginpunt, geen eindstand: een AM hoort
+   een dienstverband te kunnen corrigeren, aanvullen of toevoegen zonder
+   het cv opnieuw in te lezen. Zelfde veldnamen als de cv-lezer
+   (cv.werkgevers: functie, werkgever, periode, taken), dus de
+   kandidaatkaart én de cv-generator lezen het zonder onderscheid. */
+function werkModal(c, index){
+  const cv = c.cv || {};
+  const lijst = Array.isArray(cv.werkgevers) ? cv.werkgevers : [];
+  const w = index != null ? (lijst[index] || {}) : {};
+  const nieuw = index == null;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${nieuw ? 'Werkervaring toevoegen' : 'Werkervaring aanpassen'}</div></div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label>Functie</label><input type="text" id="wm_functie" value="${h(w.functie||w.rol||'')}" placeholder="Bijv. Procesoperator"></div>
+        <div class="f-row"><label>Werkgever</label><input type="text" id="wm_werkgever" value="${h(w.werkgever||w.bedrijf||'')}"></div>
+        <div class="f-row"><label>Periode</label><input type="text" id="wm_periode" value="${h(w.periode || [w.van,w.tot].filter(Boolean).join(' – '))}" placeholder="Bijv. 2019 – 2023 of mrt 2024 – heden"></div>
+      </div>
+      <div class="f-row" style="margin-top:10px"><label>Werkzaamheden <span class="meta">één per regel</span></label>
+        <textarea id="wm_taken" rows="5" placeholder="Instellen en bedienen van de productielijn&#10;Kwaliteitscontroles uitvoeren">${h((w.taken||[]).join('\n'))}</textarea></div>
+    </div>
+    <div class="modal-f">
+      ${nieuw ? '' : '<button class="btn ghost" id="wm_weg" style="color:var(--red)">Verwijderen</button>'}
+      <span class="spacer"></span>
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="wm_ok">${nieuw ? 'Toevoegen' : 'Opslaan'}</button>
+    </div>`, {onOpen(m){
+    setTimeout(() => m.querySelector('#wm_functie').focus(), 60);
+    const bewaar = async (nieuweLijst) => {
+      c.cv = Object.assign({}, cv, {werkgevers: nieuweLijst});
+      CRM.modal.close();
+      await bewaarKandidaat(c);
+      CRM.render();
+    };
+    m.querySelector('#wm_ok').onclick = async () => {
+      const v = id => m.querySelector('#' + id).value.trim();
+      if(!v('wm_functie') && !v('wm_werkgever'))
+        return CRM.toast('Vul minstens een functie of werkgever in','err');
+      const rij = Object.assign({}, w, {
+        functie: v('wm_functie'), werkgever: v('wm_werkgever'), periode: v('wm_periode'),
+        taken: m.querySelector('#wm_taken').value.split(/\r?\n/).map(t => t.trim()).filter(Boolean)
+      });
+      /* Vrije periode-tekst overschrijft de gestructureerde datums van de
+         lezer — anders toont de kaart straks de oude jaartallen naast de
+         nieuwe periode. */
+      if(rij.periode !== (w.periode || [w.van,w.tot].filter(Boolean).join(' – '))){ delete rij.van; delete rij.tot; }
+      const nieuweLijst = nieuw ? lijst.concat([rij]) : lijst.map((x, i) => i === index ? rij : x);
+      await bewaar(nieuweLijst);
+      CRM.toast(nieuw ? 'Werkervaring toegevoegd' : 'Werkervaring aangepast','ok');
+    };
+    const weg = m.querySelector('#wm_weg');
+    if(weg) weg.onclick = async () => {
+      if(!(await CRM.bevestig(`"${w.functie||w.werkgever||'dit dienstverband'}" verwijderen van de kaart?`))) return;
+      await bewaar(lijst.filter((x, i) => i !== index));
+      CRM.toast('Werkervaring verwijderd','ok');
+    };
+  }});
 }
 
 /* ─── CV inlezen ─────────────────────────────────────────────────
