@@ -840,6 +840,9 @@ function lijst(wrap){
    KANDIDATENKAART
    ═══════════════════════════════════════════════════════════════ */
 let kandOpen = null, tabActief = 'activiteiten';
+/* Welke helft van de kaart je open hebt staan: 'werken' of 'dossier'.
+   Onthouden per browser — je eigen manier van werken blijft zo staan. */
+let weergave = (() => { try{ return localStorage.getItem('kdWeergave') === 'dossier' ? 'dossier' : 'werken'; }catch(e){ return 'werken'; } })();
 
 /* Inline bewerkbare velden — pad 'cv.x' schrijft in het cv-jsonb.
    Beschikbaarheid, ploegen, talen, rijbewijs en vervoer zijn échte
@@ -998,39 +1001,79 @@ function kaart(mount, acties, id){
            gebeurt" (naam: Tjeerd, 5 aug 2026) — dus direct onder de kop, vóór
            de kolommen. De lijst zelf scrollt in eigen vlak, zodat een druk
            dossier de rest van de kaart niet naar beneden duwt. -->
-      <div class="kd-logboek">
-        <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
-        <div id="c_tabinhoud"></div>
+      <!-- Twee weergaven op één kaart (naam: Tjeerd, 5 aug 2026: "alle tools
+           hebben we nodig, maar het mag rustiger ogen"). Er verdwijnt niets:
+           "Werken" is wat je tijdens een belletje nodig hebt, "Dossier" is
+           alles om na te lezen en bij te werken. Beide vlakken worden
+           getekend en alleen verborgen — zo blijven alle knoppen gekoppeld
+           en is wisselen ogenblikkelijk, zonder hertekenen. -->
+      <div class="kd-schakel" role="tablist">
+        <button type="button" data-weergave="werken"${weergave==='werken'?' class="on"':''} role="tab">Werken</button>
+        <button type="button" data-weergave="dossier"${weergave==='dossier'?' class="on"':''} role="tab">Dossier</button>
+        <span class="meta">${weergave==='werken'
+          ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
+          : 'Gegevens, cv, intake en contract — bijwerken en nalezen'}</span>
       </div>
-      <div class="grid c2 kd-kolommen">
+
+      <div class="kd-vlak" data-vlak="werken"${weergave==='werken'?'':' hidden'}>
         <div class="stack">
-          ${gegevensHtml(c)}
-          ${situatieHtml(c)}
-          ${cvHtml(c)}
-          ${intakeHtml(c)}
-        </div>
-        <div class="stack">
-          ${kansenHtml(c)}
-          ${trajectHtml(c)}
-          <!-- Opvolging staat pal onder Traject: het is de voortzetting
-               daarvan. Nazorg ná de start, warm houden ervóór, plus de
-               verjaardag en de felicitatiemail. Opvolging en Uitval sluiten
-               elkaar grotendeels uit (Gestart/Contract getekend tegenover
-               Afgevallen/Gestopt), dus de kolom wordt er niet langer van.
-               Het ritme zelf staat in js/opvolging.js — die ene plek. -->
-          ${CRM.opvolging ? CRM.opvolging.kaartHtml(c) : ''}
-          ${uitvalHtml(c)}
-          ${contractHtml(c)}
-          ${factuurklaarHtml(c)}
-          ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
-          ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
+          <div class="kd-logboek">
+            <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
+            <div id="c_tabinhoud"></div>
+          </div>
+          <div class="grid c2 kd-kolommen">
+            <div class="stack">
+              ${trajectHtml(c)}
+              <!-- Opvolging staat pal onder Traject: het is de voortzetting
+                   daarvan. Nazorg ná de start, warm houden ervóór, plus de
+                   verjaardag en de felicitatiemail. Het ritme zelf staat in
+                   js/opvolging.js — die ene plek. -->
+              ${CRM.opvolging ? CRM.opvolging.kaartHtml(c) : ''}
+              ${uitvalHtml(c)}
+            </div>
+            <div class="stack">
+              ${kansenHtml(c)}
+            </div>
+          </div>
         </div>
       </div>
-      <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan de
-           kaart, want het is het einde van een dossier en geen dagelijkse
-           handeling. De regels wie wat mag wonen daar, niet hier. -->
-      ${CRM.kandVerwijder ? CRM.kandVerwijder.knopHtml(c) : ''}
+
+      <div class="kd-vlak" data-vlak="dossier"${weergave==='dossier'?'':' hidden'}>
+        <div class="stack">
+          <div class="grid c2 kd-kolommen">
+            <div class="stack">
+              ${gegevensHtml(c)}
+              ${situatieHtml(c)}
+              ${cvHtml(c)}
+              ${intakeHtml(c)}
+            </div>
+            <div class="stack">
+              ${contractHtml(c)}
+              ${factuurklaarHtml(c)}
+              ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
+              ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
+            </div>
+          </div>
+          <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan het
+               dossier, want het is het einde van een dossier en geen
+               dagelijkse handeling. De regels wie wat mag wonen daar. -->
+          ${CRM.kandVerwijder ? CRM.kandVerwijder.knopHtml(c) : ''}
+        </div>
+      </div>
     </div>`;
+
+  /* Wisselen tussen Werken en Dossier: alleen tonen en verbergen, en de
+     keuze onthouden — kom je morgen terug, dan sta je waar je gebleven was. */
+  mount.querySelectorAll('[data-weergave]').forEach(b => b.onclick = () => {
+    weergave = b.dataset.weergave;
+    try{ localStorage.setItem('kdWeergave', weergave); }catch(e){}
+    mount.querySelectorAll('[data-weergave]').forEach(x => x.classList.toggle('on', x.dataset.weergave === weergave));
+    mount.querySelectorAll('.kd-vlak').forEach(x => x.hidden = x.dataset.vlak !== weergave);
+    const uitleg = mount.querySelector('.kd-schakel .meta');
+    if(uitleg) uitleg.textContent = weergave === 'werken'
+      ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
+      : 'Gegevens, cv, intake en contract — bijwerken en nalezen';
+  });
 
   bindVelden(mount, c);
   bindSterren(mount, c);
@@ -1230,6 +1273,14 @@ function bindMist(root, c){
 function springNaarVeld(k, c){
   const span = document.querySelector('.kd-w[data-veld="' + CSS.escape(k) + '"]');
   if(!span) return;
+  /* Het veld kan in de andere helft van de kaart staan (Werken/Dossier).
+     Dan eerst omschakelen — anders scrollt de kaart naar iets onzichtbaars
+     en lijkt de chip kapot. */
+  const vlak = span.closest('.kd-vlak');
+  if(vlak && vlak.hidden){
+    const knop = document.querySelector('[data-weergave="' + vlak.dataset.vlak + '"]');
+    if(knop) knop.click();
+  }
   span.scrollIntoView({behavior:'smooth', block:'center'});
   span.classList.add('kd-wijs');
   setTimeout(() => span.classList.remove('kd-wijs'), 1500);

@@ -384,3 +384,17 @@ label.kd-taak input{margin-top:3px}
 /* Invoerregel bovenaan het notitietabblad: typen, Enter, klaar. */
 .kd-notinvoer{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
 .kd-notinvoer textarea{flex:1;resize:vertical}
+
+/* ─── Werken / Dossier (5 aug 2026) ───────────────────────────────
+   Twee weergaven op één kaart. Bewust géén tabbladen-uiterlijk: het
+   logboek daaronder heeft al tabs, en twee rijen tabs onder elkaar leest
+   als een doolhof. Dit is één schakelaar met twee standen. */
+.kd-schakel{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.kd-schakel button{
+  background:none;border:1px solid var(--line-2);color:var(--txt-2);
+  border-radius:999px;padding:6px 18px;font-family:var(--body);font-size:13px;
+  font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+.kd-schakel button:hover{border-color:var(--olive-l);color:var(--olive)}
+.kd-schakel button.on{background:var(--olive);border-color:var(--olive);color:#fff}
+.kd-schakel .meta{margin-left:8px}
+.kd-vlak[hidden]{display:none}
