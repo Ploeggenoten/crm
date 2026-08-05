@@ -288,6 +288,29 @@ function activiteitIndex(){
   return m;
 }
 
+/* Ingeplande gesprekken uit het CRM zelf: het inplanvenster logt een
+   activiteit met extra.afspraak {datum, tijd, titel} — op de klant of op
+   een contactpersoon. De eerstvolgende toekomstige per klant, zodat de
+   gespreksdatum op de kaart staat, óók zonder Outlook-koppeling.
+   (Tjeerd, 5 aug 2026: "bij gesprek ingepland wil ik meteen zien wanneer
+   dat gesprek plaatsvindt.") */
+function afspraakIndex(){
+  const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
+  const vandaag = CRM.todayISO();
+  const m = new Map();
+  for(const a of (CRM.state.activiteiten || [])){
+    const af = a.extra && a.extra.afspraak;
+    if(!af || !af.datum || af.datum < vandaag) continue;
+    const naam = a.entiteit === 'klant' ? a.ref
+               : a.entiteit === 'contact' ? klantVan.get(String(a.ref)) : '';
+    if(!naam) continue;
+    const v = m.get(naam);
+    if(!v || af.datum < v.datum || (af.datum === v.datum && String(af.tijd||'') < String(v.tijd||'')))
+      m.set(naam, af);
+  }
+  return m;
+}
+
 /* De onderste regel van een bordkaart: waarom staat dit stil?
    Tot 3 aug 2026 stonden er naam, eigenaar en het aantal dagen in de fase.
    Dat vertelt dát iets stilstaat, niet waarom — en dus moest een AM elke
@@ -297,7 +320,7 @@ function activiteitIndex(){
    De belangrijkste regel is de LEGE: staat er geen vervolgstap gepland, dan
    zeggen we dat met zoveel woorden. Een kaart zonder taak zag er tot nu toe
    precies zo uit als een kaart waar alles onder controle is. */
-function waaromHTML(k, lc, act, vandaag){
+function waaromHTML(k, lc, act, af, vandaag){
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   const dgn = lc ? dagenTussen(lc, vandaag) : null;
   /* Op Lead zwijgen we over contact: 117 geïmporteerde bedrijven waar nooit
@@ -341,7 +364,15 @@ function waaromHTML(k, lc, act, vandaag){
      regel — de taak is dan de terugval, niet andersom. */
   /* Datum voorop, net als bij de agenda-afspraak hieronder: achteraan
      verdween hij bij het afkappen van een lange taaktekst. */
-  const stapRegel = taak
+  /* Een in het CRM ingepland gesprek (met datum en tijd) gaat vóór de
+     handmatige taak — "gesprek ingepland" zonder wanneer is precies wat
+     Tjeerd miste (5 aug 2026). Outlook (agendaOpBord) mag deze regel
+     daarna nog vervangen. */
+  const stapRegel = af
+    ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
+        <span class="s-w-v trunc" title="${h(af.titel||'Afspraak')}"><span class="num">${
+          h(CRM.fmtDateShort(af.datum))}${af.tijd ? ' · ' + h(af.tijd) : ''}</span> ${h(af.titel||'Afspraak')}</span></div>`
+    : taak
     ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v trunc" title="${h(taak.tekst)}">${
           taak.datum ? `<span class="num">${h(CRM.fmtDateShort(taak.datum))}</span> ` : ''}${h(taak.tekst)}</span></div>`
@@ -352,7 +383,7 @@ function waaromHTML(k, lc, act, vandaag){
     ? `<div class="s-waarom">${activiteitRegel}${contactRegel}${stapRegel}</div>` : '';
 }
 
-function kaartHTML(k, lc, act, vandaag){
+function kaartHTML(k, lc, act, af, vandaag){
   const d = CRM.dagenGeleden(k.fase_sinds);
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
@@ -360,7 +391,7 @@ function kaartHTML(k, lc, act, vandaag){
   /* Kansen zijn als apart begrip afgeschaft (Tjeerd, 4 aug 2026: "alles
      wat ik in het systeem zet is een kans") — geen chip meer. */
   const kans = 0;
-  const waarom = waaromHTML(k, lc, act, vandaag);
+  const waarom = waaromHTML(k, lc, act, af, vandaag);
   /* De merkkop draagt naam + dagen; "X dgn stil" in rood is het enige alarm
      en het staat maar op de kaarten die het verdienen. Alles daaronder is
      het lijf — en een geïmporteerde lead zonder gesprek, taak of vacature
@@ -396,6 +427,7 @@ function kaartHTML(k, lc, act, vandaag){
 function bordHTML(klanten){
   const contact = contactIndex();
   const act = activiteitIndex();
+  const afspr = afspraakIndex();
   const vandaag = CRM.todayISO();
   return `<div class="board" id="s_board">${CRM.SALES_FASES.map(f => {
     const in_ = klanten.filter(k => faseVan(k)===f.k);
@@ -407,7 +439,7 @@ function bordHTML(klanten){
                er 118 in zaten: een kaart die om wélke reden dan ook niet wil
                renderen, wordt een kale naamkaart in plaats van een exception
                die de hele kolom (of het bord) leegtrekt. */
-            try{ return kaartHTML(k, contact.get(k.naam) || '', act.get(k.naam) || null, vandaag); }
+            try{ return kaartHTML(k, contact.get(k.naam) || '', act.get(k.naam) || null, afspr.get(k.naam) || null, vandaag); }
             catch(e){ console.error('kaart', k && k.naam, e);
               return `<div class="bcard bck" data-klant="${h(k.naam)}"><div class="bc-kop"><b>${h(k.naam||'?')}</b></div></div>`; }
           }).join('')

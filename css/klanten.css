@@ -454,3 +454,9 @@ a.ob-i:hover b{text-decoration:underline}
 .kl-drop{outline:2px dashed var(--olive,#3D6400);outline-offset:-2px;background:#f2f6e6}
 /* De vormkeuze in een fee-regel (%, € vast, × maandsalaris). */
 .kl-af-regel select{width:auto;min-width:130px}
+
+/* Gekozen chip (met-wie, snelkeuzes): de klasse .sel bestond wel in de
+   code maar had nergens een stijl — klikken "deed niets" terwijl de
+   selectie onder water gewoon stond (Tjeerd, 5 aug 2026). Globaal, want
+   ook de datum-snelkeuzes in het taakvenster gebruiken .sel. */
+.chip.btn-like.sel{background:var(--olive,#3D6400);border-color:var(--olive,#3D6400);color:#fff}
