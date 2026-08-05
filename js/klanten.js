@@ -2084,6 +2084,7 @@ function uitkomstenHtml(){
     </div>
     <div class="kl-uitveld" data-uitveld hidden>
       <div class="label" data-uitkop style="margin-bottom:4px"></div>
+      <div class="row tight kl-uitwie" data-uitwie style="margin-bottom:6px"></div>
       <textarea rows="2" data-uittekst placeholder="Wat is er besproken? Leeg laten mag — Enter legt vast."></textarea>
       <div class="row tight" style="margin-top:6px">
         <button type="button" class="btn sm" data-uitok>Vastleggen</button>
@@ -2094,19 +2095,44 @@ function uitkomstenHtml(){
 function bindUitkomsten(root, k, na){
   const veld = root.querySelector('[data-uitveld]'); if(!veld) return;
   const tekst = veld.querySelector('[data-uittekst]');
-  let keuze = null;
+  const wieEl = veld.querySelector('[data-uitwie]');
+  let keuze = null, wie = null;
+  /* Mét wie? Tjeerd (5 aug 2026): "ik werk vanuit de relatiekaart, maar
+     ik bel een specifieke contactpersoon — die moet ik kunnen aantikken
+     zonder naar de contactkaart te gaan." Kies je een persoon, dan wordt
+     de activiteit op díe persoon vastgelegd; zijn kaart en zijn "laatste
+     contact" lopen dan vanzelf mee, en de relatiekaart toont hem toch al
+     (die mengt contactpersoon-activiteiten mee). */
+  const tekenWie = () => {
+    const cts = (CRM.state.contacten||[]).filter(x => x.klant === k.naam);
+    if(!cts.length){ wieEl.hidden = true; wie = null; return; }
+    wieEl.hidden = false;
+    wieEl.innerHTML = `<span class="meta">met</span>
+      <button type="button" class="chip btn-like${!wie?' sel':''}" data-wie="">de klant algemeen</button>`
+      + cts.map(ct => `<button type="button" class="chip btn-like${wie && String(wie.id)===String(ct.id)?' sel':''}"
+          data-wie="${h(String(ct.id))}">${h(ct.naam)}</button>`).join('');
+    CRM.$$('[data-wie]', wieEl).forEach(b => b.onclick = () => {
+      const id = b.dataset.wie;
+      wie = id ? cts.find(ct => String(ct.id) === id) || null : null;
+      tekenWie();
+      tekst.focus();
+    });
+  };
   const toon = i => { keuze = i;
     veld.hidden = false;
     veld.querySelector('[data-uitkop]').textContent = SNEL_UITKOMSTEN[i][2];
+    tekenWie();
     tekst.value = ''; tekst.focus(); };
-  const dicht = () => { veld.hidden = true; keuze = null; };
+  const dicht = () => { veld.hidden = true; keuze = null; wie = null; };
   const vastleggen = async () => {
     if(keuze == null) return;
     const [soort,, standaard] = SNEL_UITKOMSTEN[keuze];
     const extra = tekst.value.trim();
     const regel = extra ? standaard + ': ' + extra : standaard;
+    const met = wie;
     dicht();
-    await CRM.logActiviteit('klant', k.naam, soort, regel);
+    if(met) await CRM.logActiviteit('contact', String(met.id), soort, regel);
+    else await CRM.logActiviteit('klant', k.naam, soort, regel);
     if(extra) CRM.verwerkTags(extra, 'klant', k.naam);
     /* Een uitkomst is een echt contactmoment — het bord moet het zien. */
     await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
@@ -3435,6 +3461,40 @@ function klantModal(k){
       <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="g_ok">Opslaan</button></div>`, {onOpen(m){
     m.querySelector('#g_opruim').onclick = () => { CRM.modal.close(); klantOpruimen(k); };
+    /* Postcode automatisch opzoeken zodra adres + plaats bekend zijn
+       (Tjeerd, 5 aug 2026: "dit invoeren kost allemaal teveel tijd").
+       PDOK Locatieserver: de officiële adressenbron van de overheid,
+       gratis en zonder sleutel. Alleen invullen zolang het veld leeg is
+       of eerder automatisch gevuld — wat de AM zelf typt blijft staan.
+       Een mislukte lookup is stil: het formulier mag er nooit last van
+       hebben. */
+    const pcVeld = m.querySelector('#g_pc');
+    if(pcVeld){
+      let autoPc = false;
+      const zoekPc = CRM.debounce(async () => {
+        const adres = (m.querySelector('#g_adres')?.value || '').trim();
+        const plaats = ((m.querySelector('#g_pl')?.value || m.querySelector('#g_loc')?.value) || '').trim();
+        if(!adres || !/\d/.test(adres) || !plaats) return;
+        if(pcVeld.value.trim() && !autoPc) return;
+        try{
+          const r = await fetch('https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?rows=1&fq=type:adres&q='
+            + encodeURIComponent(adres + ' ' + plaats));
+          const d = await r.json();
+          const doc = d && d.response && d.response.docs && d.response.docs[0];
+          if(doc && doc.postcode){
+            pcVeld.value = String(doc.postcode).replace(/^(\d{4})\s*([A-Za-z]{2})$/, '$1 $2').toUpperCase();
+            autoPc = true;
+            /* Plaats netjes meeschrijven als het veld nog leeg was. */
+            const pl = m.querySelector('#g_pl');
+            if(pl && !pl.value.trim() && doc.woonplaatsnaam) pl.value = doc.woonplaatsnaam;
+          }
+        }catch(e){ /* stil */ }
+      }, 600);
+      ['#g_adres','#g_pl','#g_loc'].forEach(s => {
+        const el = m.querySelector(s);
+        if(el) el.addEventListener('input', zoekPc);
+      });
+    }
     m.querySelector('#g_ok').onclick = async () => {
       const oudeFase = k.fase || '';
       const nieuweFase = m.querySelector('#g_fase').value;
