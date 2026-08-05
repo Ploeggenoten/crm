@@ -1535,7 +1535,17 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
             (pdf openen → alles selecteren → kopiëren). Het systeem leest de tarieventabel en de
             voorwaarden en zet ze klaar — uitzenden en W&amp;S allebei, als ze er allebei in staan.
             Je ziet eerst wat er gevonden is; er wordt niets opgeslagen zonder jouw akkoord.</p>
-          <textarea id="af_imp_tekst" placeholder="Plak hier de tekst van de overeenkomst…"></textarea>
+          ${/* Bestand kiezen kan ook: dezelfde pdf/Word-lezer als het
+               cv-inlezen haalt de tekst eruit, en het bestand zelf wordt
+               als SWO-document bij de klant bewaard — "dit is waardevolle
+               info" (Tjeerd, 5 aug 2026). Plakken blijft de terugval voor
+               een gescande pdf zonder tekstlaag. */''}
+          <div class="row tight" style="margin-bottom:8px">
+            <button class="btn ghost sm" id="af_imp_bestand">Bestand kiezen (pdf of Word)</button>
+            <input type="file" id="af_imp_file" accept=".pdf,.docx,.txt" hidden>
+            <span class="meta" id="af_imp_bstat"></span>
+          </div>
+          <textarea id="af_imp_tekst" placeholder="…of plak hier de tekst van de overeenkomst"></textarea>
           <div class="kl-af-impknoppen"><button class="btn sm" id="af_imp_lees">Overeenkomst lezen</button></div>
           <div id="af_imp_uit" class="kl-af-impuit"></div>
         </div></div>
@@ -1848,6 +1858,35 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
             CRM.render();
           }
         };
+      };
+
+      /* ── Overeenkomst als bestand: lezen én bewaren ────────────── */
+      const impFile = dr.querySelector('#af_imp_file');
+      const impBestandKnop = dr.querySelector('#af_imp_bestand');
+      if(impBestandKnop) impBestandKnop.onclick = () => impFile.click();
+      if(impFile) impFile.onchange = async () => {
+        const f = impFile.files[0]; if(!f) return;
+        impFile.value = '';
+        const stat = dr.querySelector('#af_imp_bstat');
+        stat.textContent = 'Bestand lezen…';
+        try{
+          if(!CRM.cvParse?.leesBestand) throw new Error('De bestandslezer is niet geladen — herlaad de pagina.');
+          /* Dezelfde lezer als het cv-inlezen: pdf via de tekstlaag, docx
+             via de eigen zip-lezer. */
+          const gel = await CRM.cvParse.leesBestand(f);
+          const tekst = String(gel && gel.tekst || '').trim();
+          dr.querySelector('#af_imp_vak').hidden = false;
+          dr.querySelector('#af_imp_tekst').value = tekst;
+          if(tekst) dr.querySelector('#af_imp_lees').click();
+          /* Het bestand zelf is het contract — dat hoort bij Documenten,
+             ook als de tarieventabel niet herkend wordt. */
+          const rij = await uploadKlantDoc(k, f, 'SWO');
+          stat.textContent = (tekst ? 'Gelezen' : 'Geen tekst gevonden — is dit een scan? Plak de tekst dan hieronder.')
+            + (rij ? ' · bewaard bij Documenten' : '');
+        }catch(e){
+          stat.textContent = '';
+          CRM.toast(String((e && e.message) || e), 'err');
+        }
       };
 
       /* ── Historie ─────────────────────────────────────────────── */
@@ -2991,23 +3030,67 @@ function tabDocumenten(el, k){
     await verwijderRij('crm_documenten','documenten', b.dataset.dweg); CRM.render();
   });
 }
+/* Een bestand uploaden naar de afgeschermde map en als document aan de
+   klant koppelen. Eén helper voor het Documenten-venster én de
+   overeenkomst-lezer: zelfde pad, zelfde rij, zelfde "Openen"-knop.
+   (Tjeerd, 5 aug 2026: "ik moet een document gewoon kunnen toevoegen als
+   bestand, nu kan ik alleen een link koppelen.") */
+async function uploadKlantDoc(k, file, soort, naam){
+  const rij = {id:CRM.uid(), entiteit:'klant', ref:k.naam,
+    naam: (naam||'').trim() || file.name, soort: soort || 'Overig',
+    url:'', grootte:file.size, door:CRM.me(), op:new Date().toISOString()};
+  if(file.size > 25*1024*1024){ CRM.toast('Groter dan 25 MB — dat is geen document meer','err'); return null; }
+  if(!CRM.demo){
+    const slug = String(k.naam).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'klant';
+    const pad = `klanten/${slug}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g,'_')}`;
+    const {error} = await CRM.sb.storage.from(CRM.opslag.map).upload(pad, file, {upsert:true});
+    if(error){ CRM.fout('Bestand opslaan mislukt', error); return null; }
+    rij.url = pad;
+  }
+  await bewaarRij('crm_documenten','documenten', rij, false);
+  return rij;
+}
 function docModal(k){
+  let gekozen = null;
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Document koppelen</div></div>
+    <div class="modal-h"><div class="h2">Document toevoegen</div></div>
     <div class="modal-b">
       <div class="f-row"><label>Naam</label><input type="text" id="d_naam" placeholder="SWO ${h(k.naam)}"></div>
       <div class="f-row"><label>Soort</label><select id="d_soort">
         ${['SWO','Offerte','Plan van aanpak','Contract','Overig'].map(s=>`<option>${s}</option>`).join('')}</select></div>
-      <div class="f-row"><label>Link</label><input type="url" id="d_url" placeholder="https://…">
-        <span class="hint">Plak de link naar het bestand (Drive, SharePoint of Supabase-opslag).</span></div>
+      <div class="f-row"><label>Bestand</label>
+        <div class="row tight">
+          <button type="button" class="btn ghost sm" id="d_kies">Bestand kiezen…</button>
+          <span class="meta" id="d_bstat">nog niets gekozen</span>
+        </div>
+        <input type="file" id="d_file" hidden></div>
+      <div class="f-row"><label>Of een link</label><input type="url" id="d_url" placeholder="https://…">
+        <span class="hint">Eén van beide is genoeg: een bestand van je computer, of een link (Drive, SharePoint).</span></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="d_ok">Koppelen</button></div>`, {onOpen(m){
+      <button class="btn" id="d_ok">Toevoegen</button></div>`, {onOpen(m){
+    const inp = m.querySelector('#d_file');
+    m.querySelector('#d_kies').onclick = () => inp.click();
+    inp.onchange = () => {
+      gekozen = inp.files[0] || null;
+      m.querySelector('#d_bstat').textContent = gekozen ? gekozen.name : 'nog niets gekozen';
+      const naamVeld = m.querySelector('#d_naam');
+      if(gekozen && !naamVeld.value.trim()) naamVeld.value = gekozen.name.replace(/\.[a-z0-9]+$/i,'');
+    };
     m.querySelector('#d_ok').onclick = async () => {
-      const rij = {id:CRM.uid(), entiteit:'klant', ref:k.naam,
-        naam:m.querySelector('#d_naam').value.trim(), soort:m.querySelector('#d_soort').value,
-        url:m.querySelector('#d_url').value.trim(), door:CRM.me(), op:new Date().toISOString()};
-      if(!rij.naam || !rij.url) return CRM.toast('Naam en link zijn nodig','err');
+      const naam = m.querySelector('#d_naam').value.trim();
+      const soort = m.querySelector('#d_soort').value;
+      const link = m.querySelector('#d_url').value.trim();
+      if(gekozen){
+        m.querySelector('#d_ok').disabled = true;
+        const rij = await uploadKlantDoc(k, gekozen, soort, naam);
+        CRM.modal.close();
+        if(rij) CRM.render();
+        return;
+      }
+      if(!naam || !link) return CRM.toast('Kies een bestand, of vul een naam en link in','err');
+      const rij = {id:CRM.uid(), entiteit:'klant', ref:k.naam, naam, soort,
+        url:link, door:CRM.me(), op:new Date().toISOString()};
       CRM.modal.close();
       await bewaarRij('crm_documenten','documenten', rij, false);
       CRM.render();
