@@ -974,6 +974,12 @@
       ? (t.teVullen ? `<span class="chip green">openstaand</span>` : `<span class="chip amber">vol, staat nog op Open</span>`)
       : `<span class="chip">${h(v.status)}</span>`;
 
+    /* Incompleet hoort op de kaart zélf te staan — niet meer als blok op
+       de relatiekaart (Tjeerd, 5 aug 2026: "hier is rust nodig"). */
+    const mist = [];
+    if(!String(v.locatie||'').trim()) mist.push('locatie');
+    if(!salarisTekst(v)) mist.push('salaris');
+
     const links = `
       <div class="card ovd-blok${CRM.ui && knel.rand ? '' : ''}"${knel.rand ? ` style="border-left:3px solid ${h(knel.rand)}"` : ''}>
         <div class="card-b">
@@ -981,16 +987,25 @@
           <div class="ovd-groot num">${t.teVullen}</div>
           <div class="meta" style="margin-top:4px">van ${t.gevraagd}${t.geplaatst ? ` · ${t.geplaatst} geplaatst` : ''}${
             t.aantalBekend ? '' : ' · aantal niet ingevuld'}</div>
-          ${knel.lbl ? `<div style="margin-top:9px"><span class="chip ${knel.kleur}">${h(knel.lbl)}</span></div>` : ''}
+          ${knel.lbl || mist.length ? `<div style="margin-top:9px" class="row tight">
+            ${knel.lbl ? `<span class="chip ${knel.kleur}">${h(knel.lbl)}</span>` : ''}
+            ${mist.length ? `<span class="chip">incompleet · ${h(mist.join(' en '))} ${mist.length>1?'missen':'mist'}</span>` : ''}
+          </div>` : ''}
         </div></div>
 
+      ${/* Alles hier is aan te passen door élke AM — er was geen poort,
+           er was gewoon geen invoer (Tjeerd, 5 aug 2026: "alles moet
+           aanpasbaar zijn in de vacature"). Klik op een waarde = bewerken,
+           Enter of wegklikken = opslaan, Escape = laten staan. */''}
       <div class="card ovd-blok"><div class="card-b">
         <div class="label">Deze vacature</div>
         <div class="ovd-minis">
+          <div class="ovd-mini"><span>Functie</span><span class="ovd-edit" data-vedit="functie" title="Klik om aan te passen">${h(v.functie || 'invullen…')}</span></div>
           <div class="ovd-mini"><span>Klant</span><span>${klantBestaat
             ? `<a href="#" id="ovd_klant">${h(v.klant)}</a>` : h(v.klant || '—')}</span></div>
-          <div class="ovd-mini"><span>Locatie</span><span>${h(locLabel(v))}</span></div>
-          <div class="ovd-mini"><span>Accountmanager</span><span>${h(v.eigenaar || '—')}</span></div>
+          <div class="ovd-mini"><span>Locatie</span><span class="ovd-edit" data-vedit="locatie" title="Klik om aan te passen">${h(locLabel(v))}</span></div>
+          <div class="ovd-mini"><span>Gevraagd</span><span class="ovd-edit num" data-vedit="aantal" data-num="1" title="Klik om aan te passen">${h(String(Number(v.aantal)||1))}</span></div>
+          <div class="ovd-mini"><span>Accountmanager</span><span class="ovd-edit" data-vedit="eigenaar" title="Klik om aan te passen">${h(v.eigenaar || 'invullen…')}</span></div>
           ${contact ? `<div class="ovd-mini"><span>Contactpersoon</span><span>${h(contact.naam)}</span></div>` : ''}
           <div class="ovd-mini"><span>Open sinds</span><span class="num">${
             v.aangemaakt ? h(CRM.fmtDateShort(v.aangemaakt)) + (dgn != null ? ` · ${dgn} dgn` : '') : '—'}</span></div>
@@ -1059,6 +1074,40 @@
     mount.querySelector('#ovd_notitie').onclick = () => notitieModal(v);
     mount.querySelector('#ovd_taak').onclick = () =>
       CRM.taakModal({entiteit:'vacature', ref:v.id, refLabel:`${v.klant||'vacature'} – ${v.functie||''}`});
+
+    /* Klik-om-te-bewerken op de zijbalk. Bewust géén modal en géén poort:
+       Tjerk en Rajesh moeten hier altijd bij kunnen, ook als de commerciële
+       afspraken nog niet staan (Tjeerd, 5 aug 2026). Enter/wegklikken =
+       opslaan, Escape = laten staan; daarna tekent de kaart opnieuw zodat
+       ook kop, signaalkleur en incompleet-chip meteen kloppen. */
+    CRM.$$('[data-vedit]', mount).forEach(el => el.onclick = () => {
+      const veld = el.dataset.vedit;
+      const inp = document.createElement('input');
+      inp.type = el.dataset.num ? 'number' : 'text';
+      if(el.dataset.num) inp.min = '1';
+      inp.className = 'ovd-inp';
+      inp.value = veld === 'aantal' ? String(Number(v.aantal)||1) : String(v[veld]||'');
+      el.replaceWith(inp);
+      inp.focus(); inp.select();
+      let klaar = false;
+      const sluit = async bewaren => {
+        if(klaar) return; klaar = true;
+        const w = inp.value.trim();
+        /* Alleen opslaan als er echt iets veranderde — anders geen
+           schrijfactie en geen hertekening nodig. */
+        const oud = veld === 'aantal' ? String(Number(v.aantal)||1) : String(v[veld]||'');
+        if(bewaren && w !== oud){
+          const patch = veld === 'aantal' ? {aantal: Math.max(1, Math.round(Number(w))||1)} : {[veld]: w};
+          await bewaarVac(v, patch);
+        }
+        detail(v);
+      };
+      inp.onblur = () => sluit(true);
+      inp.onkeydown = e => {
+        if(e.key === 'Enter'){ e.preventDefault(); sluit(true); }
+        if(e.key === 'Escape'){ e.preventDefault(); sluit(false); }
+      };
+    });
   }
 
   function tekenTab(v){

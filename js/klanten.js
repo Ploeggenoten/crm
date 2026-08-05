@@ -2769,18 +2769,21 @@ function vacatureHtml(v, k){
            dat open goed nieuws is, terwijl open gewoon werk is. */''}
       <span class="chip">${h(v.status||'Open')}</span>
       ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
-      ${webChip(v, open, dg)}
       <button class="btn sub sm" data-vplan="${h(String(v.id))}">Inplannen</button>
       <button class="btn sub sm" data-vbew="${h(String(v.id))}">Bewerken</button>
     </summary>
     <div class="kl-vac-b">
-      ${webBlokHtml(v, open)}
+      ${/* Het websiteblok ("voor de website · 0 van 8") is hier weg —
+           Tjeerd (5 aug 2026): "hier is rust nodig; op de vacaturekaart
+           moet zelf staan dat hij incompleet is." Dat staat daar nu ook. */''}
       ${v.omschrijving ? `<p class="sub" style="margin:0 0 10px">${h(v.omschrijving)}</p>` : ''}
       ${/* Afgevallen kandidaten niet tussen de lopende trajecten — dat is
            ruis op de kaart (Tjeerd, 5 aug 2026). Ze blijven bestaan (tab
-           Kandidaten, Uitval bij Recruitment); hier alleen de teller. */''}
+           Kandidaten, Uitval bij Recruitment); hier alleen de teller.
+           Sortering: wie het meest recent bewoog bovenaan. */''}
       ${(() => {
-        const actief = kandidaten.filter(c => c.fase !== 'Afgevallen');
+        const actief = kandidaten.filter(c => c.fase !== 'Afgevallen')
+          .sort((a,b) => String(laatsteKandContact(b)||'').localeCompare(String(laatsteKandContact(a)||'')));
         const afgevallen = kandidaten.length - actief.length;
         return (actief.length ? `<div class="kl-kandlijst">${actief.map(c=>kandRegel(c)).join('')}</div>`
             : '<p class="meta" style="margin:0">Nog geen kandidaten gekoppeld aan deze vacature.</p>')
@@ -2789,65 +2792,10 @@ function vacatureHtml(v, k){
     </div></details>`;
 }
 
-/* Chip in de samenvatting. Bewust karig: de samenvattingsregel heeft al drie
-   chips, en kleur hoort betekenis te hebben. Dus alleen als het iets zégt —
-   hij staat online, of hij staat er na een week nog steeds niet op. De
-   tussenstand ("net aangemeld") leest de AM in het blok eronder.
-   Alleen bij een open vacature: een vervulde vacature hoort er juist af. */
-const WEB_TRAAG_DAGEN = 7;
-function webChip(v, open, dg){
-  if(!heeftVacInfoVelden()) return '';
-  const st = v.web_status || 'Nog niet online';
-  /* Staat een vervulde vacature nog online, dan is dat juist wél nieuws:
-     dan komen er reacties op iets wat niet meer bestaat. */
-  if(st === 'Staat online')
-    return `<span class="chip${open?' green':' amber'}">${open?'op de website':'staat nog online'}</span>`;
-  if(st === 'Niet nodig' || !open) return '';
-  if(dg == null || dg < WEB_TRAAG_DAGEN) return '';
-  return `<span class="chip amber">nog niet online · <span class="num">${dg}</span> dgn</span>`;
-}
-
-/* Het blok waar de twee kanten van de lus samenkomen: hoeveel informatie de
-   marketeer al heeft, en of de vacature online staat. De AM leest hier of er
-   nog iets nagevraagd wordt; de marketeer legt hier vast dat het gedaan is. */
-function webBlokHtml(v, open){
-  if(!heeftVacInfoVelden()) return '';
-  const st = v.web_status || 'Nog niet online';
-  /* Bij een vervulde of gesloten vacature valt er niets meer te plaatsen —
-     dan hoort dit blok er ook niet te staan. Enige uitzondering: hij staat
-     nog online. Dat moet iemand er juist afhalen. */
-  if(!open && st !== 'Staat online') return '';
-  const info = vacInfo(v);
-  const id   = h(String(v.id));
-  /* Groen als het compleet is, anders oranje. Geen rood: een half ingevulde
-     vacature is werk in uitvoering, geen fout. */
-  const kl   = info.mist.length ? 'amber' : 'green';
-  const url  = veiligeUrl(v.web_url || '');
-  let regel;
-  if(st === 'Staat online'){
-    regel = `Staat online${v.web_online_op ? ' sinds ' + h(CRM.fmtDateShort(v.web_online_op)) : ''}`
-      + (v.web_door ? `, gezet door ${h(v.web_door)}` : '') + '.'
-      + (open ? '' : ` De vacature is ${h((v.status||'').toLowerCase())} — hij kan van de site af.`)
-      + (url ? ` <a href="${h(url)}" target="_blank" rel="noopener noreferrer">Bekijk de pagina</a>` : '');
-  }else if(st === 'Niet nodig'){
-    regel = 'Deze vacature hoeft niet op de website.';
-  }else{
-    regel = 'Nog niet online. ' + (info.mist.length
-      ? `De marketeer mist nog: ${h(mistTekst(info))}.`
-      : 'Alle informatie voor de tekst staat erin.');
-  }
-  return `<div class="kl-vweb">
-    <div class="kl-vweb-kop">
-      <span class="label">Voor de website</span>
-      <div class="bar kl-vweb-bar"><i class="${kl}" style="width:${info.pct}%"></i></div>
-      <span class="meta"><span class="num">${info.klaar}</span> van <span class="num">${info.totaal}</span></span>
-      <span class="spacer"></span>
-      <button class="btn sub sm" data-vinfo="${id}">${info.mist.length?'Info aanvullen':'Info bekijken'}</button>
-      <button class="btn sub sm" data-vweb="${id}">Websitestand</button>
-    </div>
-    <div class="meta kl-vweb-m">${regel}</div>
-  </div>`;
-}
+/* webChip en webBlokHtml zijn hier weggehaald (Tjeerd, 5 aug 2026): het
+   websiteblok gaf ruis op de relatiekaart. De onderliggende gegevens en
+   modals (vacInfo, mistTekst, data-vinfo/data-vweb) bestaan nog — de
+   marketeer werkt ermee via het marketingbord en de vacaturekaart. */
 
 function laatsteKandContact(c){
   let nieuwste = null;
@@ -2863,7 +2811,10 @@ function kandRegel(c){
     <div class="kl-kand-wie"><b class="trunc">${h(c.naam)}</b>
       <div class="meta trunc">${h(c.functie||'—')}${c.woonplaats?' · '+h(c.woonplaats):''}</div></div>
     ${c.fase
-      ? `<span class="chip"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>`
+      /* De chip in de tint van de fase — dezelfde kleurtaal als de
+         kolommen op het Klanttrajecten-bord, zodat je in één blik ziet
+         hoe ver iemand is (Tjeerd, 5 aug 2026). */
+      ? `<span class="chip" style="background:${CRM.faseKleur(c.fase)}22;border-color:${CRM.faseKleur(c.fase)}88"><i class="dot" style="background:${CRM.faseKleur(c.fase)}"></i>${h(c.fase)}</span>`
       /* Geïmporteerde kandidaten hebben geen fase; een lege chip met alleen
          een stip zegt niets — benoem het gewoon. */
       : '<span class="chip">zonder fase</span>'}
