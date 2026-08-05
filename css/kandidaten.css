@@ -352,9 +352,9 @@ label.kd-taak input{margin-top:3px}
    accent zit nu alleen in de olijfgroene stap-knop rechts, dezelfde
    als elke andere hoofdknop. */
 .kd-dealbalk{display:flex;align-items:center;gap:22px;flex-wrap:wrap;
-  background:var(--card);border:1px solid var(--line);
+  background:var(--well-2);border:1px solid var(--line-2);
   border-left:3px solid var(--olive);
-  border-radius:var(--r);padding:11px 18px;box-shadow:var(--sh-2)}
+  border-radius:var(--r);padding:11px 18px}
 .kd-dealcel{display:flex;flex-direction:column;gap:2px;font-size:13px;min-width:0;
   border:0;background:none;padding:0;text-align:left;font-family:inherit;color:var(--txt)}
 .kd-dealcel .dl{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted)}
