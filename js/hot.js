@@ -193,6 +193,11 @@
     if(status === 'On hold') return {rand:'var(--amber)', lbl:'on hold', kleur:'amber'};
     const t = telling(v);
     if(v.hot) return {rand:'var(--red)', lbl:hotTekst(v), kleur:'red'};
+    /* Er ligt een offer of het contract wordt getekend: bijna vervuld.
+       Groen — bewust het enige moment dat een ópen vacature groen kleurt
+       (naam: Tjeerd, 5 aug 2026). Vervuld zelf blijft gedempt. */
+    if(t.lopend.some(c => CRM.faseIn(c.fase, ['Offer','Contract ondertekenen'])))
+      return {rand:'var(--green)', lbl:'offer loopt — bijna vervuld', kleur:'green'};
     const niveau = knelNiveau(t);
     if(t.teVullen === 0) return {rand:'', lbl:'alle posities gevuld', kleur:'', gedempt:true};
     if(niveau < 3) return {rand:'var(--amber)', lbl:KNEL[niveau].lbl, kleur:'amber'};

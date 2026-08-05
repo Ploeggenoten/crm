@@ -2713,14 +2713,13 @@ function tabVacatures(el, k, c){
 
   ooBlokBind(el, k);
   el.querySelector('#v_nieuw').onclick = () => vacatureModal(k, null);
-  /* Bewerken gaat naar de vacaturekaart zelf, niet naar het formulier.
-     Tjeerd (4 aug 2026): "dan wil ik doorgestuurd worden naar de
-     vacaturepagina en kan ik het daar aanpassen, niet via een form." De
-     kaart toont alles in samenhang; het formulier blijft alleen bestaan
-     voor snel aanmaken en voor het aanvullen van marketeer-info. */
-  el.querySelectorAll('[data-vbew]').forEach(b => b.onclick = e => {
+  /* De functietitel is de doorklik naar de vacaturekaart (naam: Tjeerd,
+     5 aug 2026: "drukken op de vacature en doorgezet worden — niet via
+     bewerken"). De losse Bewerken-knop is daarmee vervallen; preventDefault
+     zodat de klik het blok niet óók uitklapt. */
+  el.querySelectorAll('[data-vopen]').forEach(b => b.onclick = e => {
     e.preventDefault(); e.stopPropagation();
-    CRM.ga('hot', {id: b.dataset.vbew});
+    CRM.ga('hot', {id: b.dataset.vopen});
   });
   /* Overleg over déze vacature inplannen — zelfde venster, ander onderwerp. */
   el.querySelectorAll('[data-vplan]').forEach(b => b.onclick = e => {
@@ -2757,10 +2756,13 @@ function vacatureHtml(v, k){
      streep = loopt — en vervuld gedempt, want dat vraagt geen aandacht.
      Eén gedeelde functie, dus kaart en bord zeggen nooit iets anders. */
   const sig = CRM.vacSignaal ? CRM.vacSignaal(v) : {rand:'', lbl:'', kleur:''};
-  return `<details${CRM.ui.frand(sig.rand, 'kl-vac' + (sig.gedempt ? ' kl-vac-stil' : ''))}${open?' open':''}>
+  /* Altijd dichtgeklapt (naam: Tjeerd, 5 aug 2026): open vacatures die
+     zichzelf uitklapten maakten de kaart te druk. De functietitel is de
+     doorklik naar de vacaturekaart; de rest van de regel klapt uit. */
+  return `<details${CRM.ui.frand(sig.rand, 'kl-vac' + (sig.gedempt ? ' kl-vac-stil' : ''))}>
     <summary>
       <div style="min-width:0;flex:1">
-        <b>${h(v.functie)}</b>
+        <b class="kl-vaclink" data-vopen="${h(String(v.id))}" title="Open de vacaturekaart">${h(v.functie)}</b>
         <div class="meta">${h(v.locatie||k.locatie||'—')} · <span class="num">${Number(v.aantal)||1}</span> gevraagd · <span class="num">${lopend.length}</span> in traject</div>
       </div>
       ${sal}
@@ -2770,7 +2772,6 @@ function vacatureHtml(v, k){
       <span class="chip">${h(v.status||'Open')}</span>
       ${open && dg!=null ? `<span class="chip${dg>30?' amber':''}">open <span class="num">${dg}</span> dgn</span>` : ''}
       <button class="btn sub sm" data-vplan="${h(String(v.id))}">Inplannen</button>
-      <button class="btn sub sm" data-vbew="${h(String(v.id))}">Bewerken</button>
     </summary>
     <div class="kl-vac-b">
       ${/* Het websiteblok ("voor de website · 0 van 8") is hier weg —

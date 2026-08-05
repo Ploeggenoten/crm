@@ -94,7 +94,7 @@ ul.kl-sig b{color:var(--ink)}
 
 /* ─── Vacatures: elk blok een witte kaart op het sectievlak, met een
    getinte kopregel (--card-2) en de uitklap met kandidaten op tint ── */
-details.kl-vac{border:1px solid var(--line-2);border-radius:var(--r);margin-bottom:12px;background:var(--card)}
+details.kl-vac{border:2px solid var(--line-2);border-radius:var(--r);margin-bottom:12px;background:var(--card)}
 details.kl-vac:last-child{margin-bottom:0}
 details.kl-vac > summary{
   list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:9px;
@@ -460,3 +460,10 @@ a.ob-i:hover b{text-decoration:underline}
    selectie onder water gewoon stond (Tjeerd, 5 aug 2026). Globaal, want
    ook de datum-snelkeuzes in het taakvenster gebruiken .sel. */
 .chip.btn-like.sel{background:var(--olive,#3D6400);border-color:var(--olive,#3D6400);color:#fff}
+
+/* Vacatureblokken op de relatiekaart duidelijker van elkaar gescheiden
+   (naam: Tjeerd, 5 aug 2026: "de omlijning een stuk dikgedrukter") en de
+   functietitel als doorklik naar de vacaturekaart. */
+details.kl-vac{box-shadow:var(--sh-2)}
+.kl-vaclink{cursor:pointer}
+.kl-vaclink:hover{color:var(--olive);text-decoration:underline}
