@@ -377,3 +377,10 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
    het rood van "dit is definitief". Zo staat hij er wel, maar schreeuwt
    hij niet. */
 .ovd-weg:hover{color:var(--red,#c0453b);border-color:var(--red,#c0453b)}
+
+/* Bijzonderheden op de vacaturekaart (5 aug 2026): de vacature-notities
+   in beeld in plaats van verstopt achter "+ Notitie" en Historie. */
+.ovd-bijzlijst{margin-top:10px;display:flex;flex-direction:column;gap:2px}
+.ovd-bijzrij{padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.45}
+.ovd-bijzrij:last-child{border-bottom:none}
+.ovd-bijzrij .meta{display:block;margin-top:1px;font-size:11px}

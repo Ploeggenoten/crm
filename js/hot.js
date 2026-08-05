@@ -1014,6 +1014,24 @@
         </div>
       </div></div>
 
+      <!-- Bijzonderheden: wat de AM moet onthouden bij déze vacature
+           (naam: Tjeerd, 5 aug 2026). Het zijn de gewone vacature-notities
+           (crm_activiteiten) — die stonden alleen verstopt achter "+ Notitie"
+           en het Historie-tabblad; nu staan ze in beeld en typ je er direct
+           in. Enter legt vast. -->
+      <div class="card ovd-blok"><div class="card-b">
+        <div class="label">Bijzonderheden</div>
+        <textarea id="ovd_bijz" rows="2" style="width:100%;margin-top:6px;resize:vertical;font-size:12.5px"
+          placeholder="Waar moet je aan denken bij deze vacature? Enter = vastleggen"></textarea>
+        ${(() => {
+          const nts = CRM.activiteitenVoor('vacature', v.id).filter(a => a.soort === 'notitie')
+            .slice().sort((a,b) => String(b.op||'').localeCompare(String(a.op||''))).slice(0, 5);
+          return nts.length ? `<div class="ovd-bijzlijst">${nts.map(n => `
+            <div class="ovd-bijzrij"><span>${h(n.tekst)}</span>
+              <span class="meta">${h(n.door||'')} · ${h(CRM.fmtDateShort(n.op))}</span></div>`).join('')}</div>` : '';
+        })()}
+      </div></div>
+
       <div class="card ovd-blok"><div class="card-b">
         <div class="label">Wie loopt er nu</div>
         ${t.lopend.length ? `<div class="ovd-namen">${t.lopend.map(c =>
@@ -1078,6 +1096,17 @@
     const hb = mount.querySelector('#ovd_hotbew'); if(hb) hb.onclick = () => instelModal(v, false);
     const ho = mount.querySelector('#ovd_hotop');  if(ho) ho.onclick = () => instelModal(v, true);
     mount.querySelector('#ovd_notitie').onclick = () => notitieModal(v);
+    /* Bijzonderheden: direct typen, Enter legt vast (Shift+Enter = nieuwe regel). */
+    { const bz = mount.querySelector('#ovd_bijz');
+      if(bz) bz.onkeydown = async e => {
+        if(e.key !== 'Enter' || e.shiftKey) return;
+        e.preventDefault();
+        const tekst = bz.value.trim();
+        if(!tekst) return;
+        await logActie(v, 'notitie', tekst);
+        CRM.toast('Vastgelegd','ok');
+        herteken();
+      }; }
     mount.querySelector('#ovd_taak').onclick = () =>
       CRM.taakModal({entiteit:'vacature', ref:v.id, refLabel:`${v.klant||'vacature'} – ${v.functie||''}`});
 
@@ -1371,12 +1400,59 @@
   }
 
   /* ── Tab: Vacaturetekst ── */
-  /* Elk blok is klikbaar en verandert ter plekke in een tekstveld — ook een
-     leeg blok, want juist dáár begint het invullen. De blokken staan er dus
-     altijd alle vijf, in de volgorde van de website. Alleen de salarisregel
-     is niet bewerkbaar: die komt uit het salarisveld op Voorwaarden, zodat
-     de website nooit iets anders kan zeggen dan het CRM. */
+  /* Eén vrij tekstveld in plaats van vijf vaste blokken (naam: Tjeerd,
+     5 aug 2026: "ik wil gewoon 1 leeg veld waarin ik alles kan plakken",
+     bijvoorbeeld een complete Indeed-tekst). De tekst leeft in de
+     bestaande kolom `omschrijving`; wat er eerder in de losse blokken
+     stond wordt bij de eerste keer openen samengevoegd voorgezet, zodat
+     er niets verloren gaat. Opslaan gaat vanzelf: twee tellen na het
+     laatste getypte teken, en meteen bij het verlaten van het veld. */
   function tabTekst(el, v){
+    const salaris = salarisRegel(v);
+    /* Oude blokken samenvoegen als er nog geen vrije tekst is. */
+    const oud = () => [
+      String(v.openingszin||'').trim(),
+      String(v.over_bedrijf||'').trim() ? 'OVER HET BEDRIJF\n' + String(v.over_bedrijf).trim() : '',
+      regels(v.de_baan).length ? 'DIT IS DE BAAN\n' + regels(v.de_baan).join('\n') : '',
+      regels(v.eisen).length ? 'WAT WIJ VRAGEN\n' + regels(v.eisen).join('\n') : '',
+      regels(v.wat_krijg_je).length ? 'WAT KRIJG JE\n' + regels(v.wat_krijg_je).join('\n') : ''
+    ].filter(Boolean).join('\n\n');
+    const start = String(v.omschrijving || '').trim() || oud();
+
+    el.innerHTML = `
+      <p class="meta" style="margin:0 0 12px">Plak of typ hier de volledige vacaturetekst — bijvoorbeeld rechtstreeks uit Indeed. Hij wordt vanzelf opgeslagen.${
+        salaris ? ` Het salarisveld op Voorwaarden zegt: <b>${h(salaris)}</b> — houd de tekst daarmee in lijn.` : ''}</p>
+      <textarea id="ovd_vrijtekst" rows="24" style="width:100%;resize:vertical;font-size:13px;line-height:1.55"
+        placeholder="Plak hier de hele vacaturetekst…">${h(start)}</textarea>
+      <div class="row tight" style="margin-top:12px">
+        <button class="btn sm" id="ovd_kopalles">Kopieer de hele tekst</button>
+        <span class="meta" id="ovd_tekststatus"></span>
+      </div>`;
+
+    const ta = el.querySelector('#ovd_vrijtekst');
+    const status = el.querySelector('#ovd_tekststatus');
+    let bewaard = start, timer = null;
+    const opslaan = async () => {
+      clearTimeout(timer); timer = null;
+      const tekst = ta.value;
+      if(tekst === bewaard) return;
+      if(await bewaarVac(v, {omschrijving: tekst})){
+        bewaard = tekst;
+        status.textContent = 'Opgeslagen · ' + new Date().toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
+      }
+    };
+    ta.oninput = () => { status.textContent = 'aan het typen…'; clearTimeout(timer); timer = setTimeout(opslaan, 2000); };
+    ta.onblur = opslaan;
+
+    el.querySelector('#ovd_kopalles').onclick = async () => {
+      try{ await navigator.clipboard.writeText(ta.value); CRM.toast('Hele tekst gekopieerd', 'ok'); }
+      catch(e){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf', 'err'); }
+    };
+  }
+
+  /* De oude blokweergave, bewaard onder een andere naam voor het geval we
+     ooit terug willen — wordt nergens meer aangeroepen. */
+  function tabTekstBlokkenOud(el, v){
     const BLOKKEN = [
       ['openingszin',  'Openingszin',      '',       'De regel die op de website direct onder de functietitel staat.'],
       ['over_bedrijf', 'Over het bedrijf', 'tekst',  'Lopende tekst — wie de klant is, zonder de naam te noemen.'],
