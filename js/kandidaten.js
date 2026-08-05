@@ -2543,13 +2543,33 @@ function laatsteNotitiesHtml(c){
 
 function tabNotities(el, c){
   const notities = (c.notities||[]).slice().sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+  /* Direct typen in plaats van eerst een venster openen: het logboek staat
+     nu bovenaan de kaart, dus dit is de plek waar je tijdens een gesprek
+     even iets kwijt wilt. Enter = vastleggen, Shift+Enter = nieuwe regel. */
   el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Notities</div><span class="spacer"></span>
-      <button class="btn sm" id="kn_nieuw">Notitie toevoegen</button></div>
-    <div class="card-b">${CRM.ui.tijdlijn(notities.map(n => ({
-      titel:n.door||'—', wanneer:CRM.fmtDate(n.op)+' · '+CRM.geleden(n.op), tekst:n.tekst
-    })))}</div></div>`;
-  el.querySelector('#kn_nieuw').onclick = () => notitieToevoegen(c);
+    <div class="card-h"><div class="h2">Notities</div></div>
+    <div class="card-b">
+      <div class="kd-notinvoer">
+        <textarea id="kn_tekst" rows="2"
+          placeholder="Typ je notitie en druk op Enter… Tip: @collega stuurt diegene een melding"></textarea>
+        <button class="btn sm" id="kn_opslaan">Vastleggen</button>
+      </div>
+      ${CRM.ui.tijdlijn(notities.map(n => ({
+        titel:n.door||'—', wanneer:CRM.fmtDate(n.op)+' · '+CRM.geleden(n.op), tekst:n.tekst
+      })))}</div></div>`;
+  const ta = el.querySelector('#kn_tekst');
+  const opslaan = async () => {
+    const tekst = ta.value.trim();
+    if(!tekst) return;
+    const nieuw = Object.assign({}, c, {
+      notities:[{op:new Date().toISOString(), door:CRM.me(), tekst}].concat(c.notities||[])
+    });
+    await bewaarKandidaat(nieuw);
+    CRM.verwerkTags(tekst, 'kandidaat', c.id);     // @collega → melding
+    tabActief = 'notities'; CRM.render();
+  };
+  el.querySelector('#kn_opslaan').onclick = opslaan;
+  ta.onkeydown = e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); opslaan(); } };
 }
 
 async function notitieToevoegen(c){
