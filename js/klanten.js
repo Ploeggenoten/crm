@@ -1227,12 +1227,22 @@ const garantieLbl = k => (CRM.fee.GARANTIESOORTEN.find(s => s.k === k) || {lbl:k
 const factuurLbl = k => (CRM.fee.FACTUURMOMENTEN.find(s => s.k === k) || {lbl:k||'—'}).lbl;
 /* "23%" of "20 – 25%" — één regel die het tariefbeeld samenvat. */
 function feeBereik(a){
-  const p = a.fee_regels.map(r => r.pct).filter(x => x != null);
+  const p = a.fee_regels.filter(r => (r.vorm||'pct') === 'pct').map(r => r.pct).filter(x => x != null);
   if(a.fee_standaard != null) p.push(a.fee_standaard);
-  if(!p.length) return '';
-  const min = Math.min(...p), max = Math.max(...p);
-  return min === max ? CRM.pct(min, min % 1 ? 1 : 0)
-    : CRM.pct(min, min % 1 ? 1 : 0) + ' – ' + CRM.pct(max, max % 1 ? 1 : 0);
+  /* Vaste bedragen en maandsalaris-regels naast de percentages — anders
+     toont het blok een leeg streepje bij een klant met alleen een fixed
+     fee. */
+  const extra = a.fee_regels.filter(r => r.vorm === 'vast' && r.bedrag != null)
+      .map(r => '€ ' + Number(r.bedrag).toLocaleString('nl-NL'))
+    .concat(a.fee_regels.filter(r => r.vorm === 'maanden' && r.maanden != null)
+      .map(r => String(r.maanden).replace('.', ',') + '× mnd'));
+  let uit = '';
+  if(p.length){
+    const min = Math.min(...p), max = Math.max(...p);
+    uit = min === max ? CRM.pct(min, min % 1 ? 1 : 0)
+      : CRM.pct(min, min % 1 ? 1 : 0) + ' – ' + CRM.pct(max, max % 1 ? 1 : 0);
+  }
+  return [uit].concat(extra).filter(Boolean).join(' · ');
 }
 function looptijdTekst(a){
   if(!a.ingang && !a.einde) return 'Zonder einddatum';
@@ -1451,6 +1461,26 @@ function parseOvereenkomst(ruw){
   if(/factur[^.]{0,120}?(indiensttreding|startdatum|bij (de )?start)/.test(vloei)) uit.factuurmoment = 'start';
   else if(/factur[^.]{0,120}?(ondertekening|getekend|bij contract)/.test(vloei)) uit.factuurmoment = 'contract';
 
+  /* ── Vaste bedragen en maandsalarissen ─────────────────────────
+     (Tjeerd, 5 aug 2026: "ik heb ook vaak een fixed fee, of 2× een
+     maandsalaris.") Alleen in de buurt van een fee-woord, anders wordt
+     "één maandsalaris proeftijd" ook een tarief. */
+  const mVast = vloei.match(/(?:vaste?\s+fee|fixed\s+fee|vast\s+(?:bedrag|tarief|honorarium))[^\d€]{0,40}€?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d{3,6})/);
+  if(mVast){
+    const bedrag = Number(String(mVast[1]).replace(/\./g,'').replace(',', '.'));
+    if(bedrag >= 250 && bedrag < 100000)
+      uit.ws.regels.push({functie:'', vorm:'vast', bedrag});
+  }
+  const WOORDGETAL = {'een':1,'één':1,'twee':2,'drie':3,'vier':4};
+  /* "twee (2) bruto maandsalarissen" — het getal mag als woord, cijfer of
+     allebei tussen haakjes staan (zo staat het letterlijk in de
+     Rijnbeek-overeenkomst, 5 aug 2026). */
+  const mMnd = vloei.match(/(?:fee|vergoeding|honorarium|tarief)[^.]{0,90}?(\d{1,2}(?:[.,]\d)?|één|een|twee|drie|vier)\s*(?:\(\s*\d+\s*\)\s*)?(?:x|×|maal|keer)?\s*(?:het\s+)?(?:bruto\s*)?maandsalaris(?:sen)?/);
+  if(mMnd){
+    const n = WOORDGETAL[mMnd[1]] ?? Number(String(mMnd[1]).replace(',', '.'));
+    if(n > 0 && n <= 12) uit.ws.regels.push({functie:'', vorm:'maanden', maanden:n});
+  }
+
   return uit;
 }
 
@@ -1528,7 +1558,8 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
       <p class="sub kl-af-intro">Wat hier staat, gebruikt het systeem om na een getekend contract
         zelf de fee te berekenen. De grondslag volgt de tekst van de samenwerkingsovereenkomst.</p>
 
-      <div class="card kl-af-sec kl-af-import"><div class="card-h"><div class="h2">Overeenkomst inlezen</div><span class="spacer"></span>
+      <div class="card kl-af-sec kl-af-import"><div class="card-h"><div class="h2">Overeenkomst inlezen</div>
+          <span class="meta">of sleep het bestand hierheen</span><span class="spacer"></span>
           <button class="btn sub sm" id="af_imp_knop">Tekst plakken</button></div>
         <div class="card-b" id="af_imp_vak" hidden>
           <p class="meta kl-af-uitleg">Plak de volledige tekst van de getekende samenwerkingsovereenkomst
@@ -1697,19 +1728,44 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
 
       /* ── Fee-regels: rijen toevoegen en verwijderen ───────────── */
       const regelsEl = dr.querySelector('#af_regels');
+      /* Per regel drie vormen (Tjeerd, 5 aug 2026: "ik heb ook vaak een
+         fixed fee, of 2× een maandsalaris"): percentage over de
+         grondslag, een vast bedrag, of n × het bruto maandsalaris. De
+         vormkeuze bepaalt welk invoerveld ernaast staat. */
       const tekenRegels = () => {
-        regelsEl.innerHTML = a.fee_regels.length ? a.fee_regels.map((r,i) => `
-          <div class="kl-af-regel">
+        regelsEl.innerHTML = a.fee_regels.length ? a.fee_regels.map((r,i) => {
+          const vorm = r.vorm === 'vast' || r.vorm === 'maanden' ? r.vorm : 'pct';
+          const veld = vorm === 'vast'
+            ? `<input type="number" data-rb="${i}" min="0" step="50" value="${nr(r.bedrag)}" placeholder="€ bedrag">`
+            : vorm === 'maanden'
+            ? `<input type="number" data-rm="${i}" min="0" max="12" step="0.5" value="${nr(r.maanden)}" placeholder="aantal">`
+            : `<input type="number" data-rp="${i}" min="0" max="100" step="0.1" value="${nr(r.pct)}" placeholder="%">`;
+          return `<div class="kl-af-regel">
             <input type="text" data-rf="${i}" value="${h(r.functiegroep || r.functie || '')}" placeholder="Functiegroep, bijv. Operator (verlading en proces)">
-            <input type="number" data-rp="${i}" min="0" max="100" step="0.1" value="${nr(r.pct)}" placeholder="%">
+            <select data-rv="${i}" title="Hoe rekent deze fee?">
+              <option value="pct"${vorm==='pct'?' selected':''}>%</option>
+              <option value="vast"${vorm==='vast'?' selected':''}>€ vast</option>
+              <option value="maanden"${vorm==='maanden'?' selected':''}>× maandsalaris</option>
+            </select>
+            ${veld}
             <button class="btn sub sm" data-rweg="${i}" title="Regel verwijderen" aria-label="Regel verwijderen">×</button>
-          </div>`).join('')
+          </div>`;
+        }).join('')
           : '<p class="meta kl-af-leeg">Nog geen functiegroepen — dan geldt het standaardpercentage voor alles.</p>';
         regelsEl.querySelectorAll('[data-rf]').forEach(inp => inp.oninput = () => {
           a.fee_regels[+inp.dataset.rf].functiegroep = inp.value; traag();
         });
+        regelsEl.querySelectorAll('[data-rv]').forEach(sel => sel.onchange = () => {
+          a.fee_regels[+sel.dataset.rv].vorm = sel.value; tekenRegels(); voorbeeld();
+        });
         regelsEl.querySelectorAll('[data-rp]').forEach(inp => inp.oninput = () => {
           a.fee_regels[+inp.dataset.rp].pct = inp.value === '' ? null : Number(inp.value); traag();
+        });
+        regelsEl.querySelectorAll('[data-rb]').forEach(inp => inp.oninput = () => {
+          a.fee_regels[+inp.dataset.rb].bedrag = inp.value === '' ? null : Number(inp.value); traag();
+        });
+        regelsEl.querySelectorAll('[data-rm]').forEach(inp => inp.oninput = () => {
+          a.fee_regels[+inp.dataset.rm].maanden = inp.value === '' ? null : Number(inp.value); traag();
         });
         regelsEl.querySelectorAll('[data-rweg]').forEach(b => b.onclick = () => {
           a.fee_regels.splice(+b.dataset.rweg, 1); tekenRegels(); voorbeeld();
@@ -1811,8 +1867,11 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         }
         const blok = af => {
           const uitzend = af.soort === 'uitzenden';
-          const rijen = af.fee_regels.map(r => `<tr><td>${h(r.functiegroep)}</td>
-              <td class="num n">${uitzend ? h(fmtFactor(r.pct)) : h(CRM.pct(r.pct, r.pct % 1 ? 1 : 0))}</td></tr>`).join('')
+          const rijen = af.fee_regels.map(r => `<tr><td>${h((r.functiegroep ?? r.functie) || 'Alle functies')}</td>
+              <td class="num n">${
+                r.vorm === 'vast' ? '€ ' + h(Number(r.bedrag).toLocaleString('nl-NL')) + ' vast'
+              : r.vorm === 'maanden' ? h(String(r.maanden).replace('.', ',')) + '× maandsalaris'
+              : uitzend ? h(fmtFactor(r.pct)) : h(CRM.pct(r.pct, r.pct % 1 ? 1 : 0))}</td></tr>`).join('')
             + (af.fee_standaard != null ? `<tr><td class="meta">Standaard (als geen functiegroep past)</td>
               <td class="num n">${uitzend ? h(fmtFactor(af.fee_standaard)) : h(CRM.pct(af.fee_standaard, af.fee_standaard % 1 ? 1 : 0))}</td></tr>` : '');
           const vw = [];
@@ -1863,10 +1922,8 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
       /* ── Overeenkomst als bestand: lezen én bewaren ────────────── */
       const impFile = dr.querySelector('#af_imp_file');
       const impBestandKnop = dr.querySelector('#af_imp_bestand');
-      if(impBestandKnop) impBestandKnop.onclick = () => impFile.click();
-      if(impFile) impFile.onchange = async () => {
-        const f = impFile.files[0]; if(!f) return;
-        impFile.value = '';
+      const leesOvereenkomstBestand = async f => {
+        if(!f) return;
         const stat = dr.querySelector('#af_imp_bstat');
         stat.textContent = 'Bestand lezen…';
         try{
@@ -1888,6 +1945,25 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           CRM.toast(String((e && e.message) || e), 'err');
         }
       };
+      if(impBestandKnop) impBestandKnop.onclick = () => impFile.click();
+      if(impFile) impFile.onchange = () => { const f = impFile.files[0]; impFile.value = ''; leesOvereenkomstBestand(f); };
+      /* Slepen mag ook (Tjeerd, 5 aug 2026): de hele importkaart is het
+         doel — laat het bestand vallen en het lezen begint. */
+      const impKaart = impBestandKnop ? impBestandKnop.closest('.card') : null;
+      if(impKaart){
+        ['dragenter','dragover'].forEach(ev => impKaart.addEventListener(ev, e => {
+          e.preventDefault(); impKaart.classList.add('kl-drop');
+        }));
+        impKaart.addEventListener('dragleave', e => {
+          if(e.relatedTarget && impKaart.contains(e.relatedTarget)) return;
+          impKaart.classList.remove('kl-drop');
+        });
+        impKaart.addEventListener('drop', e => {
+          e.preventDefault(); impKaart.classList.remove('kl-drop');
+          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+          if(f) leesOvereenkomstBestand(f);
+        });
+      }
 
       /* ── Historie ─────────────────────────────────────────────── */
       const hist = dr.querySelector('#af_hist');

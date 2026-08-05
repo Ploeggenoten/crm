@@ -144,9 +144,19 @@ function normaliseer(afspraak){
   const regels  = (Array.isArray(a.fee_regels) ? a.fee_regels : [])
     .map(r => ({
       functiegroep: String((r && (r.functiegroep ?? r.functie)) || '').trim(),
-      pct: pctGetal(r && r.pct)
+      pct: pctGetal(r && r.pct),
+      /* Drie vormen (Tjeerd, 5 aug 2026: "ik heb vaak een fixed fee, of
+         2× een maandsalaris"): 'pct' rekent over de jaargrondslag,
+         'vast' is een afgesproken bedrag in euro's, 'maanden' is n × het
+         bruto maandsalaris van de kandidaat. De vorm zit per regel in de
+         bestaande jsonb-kolom — geen schemawijziging nodig, en per
+         functiegroep mag hij verschillen ("operators 22%, teamleiders
+         vast € 6.000"). */
+      vorm: (r && (r.vorm === 'vast' || r.vorm === 'maanden')) ? r.vorm : 'pct',
+      bedrag:  getal(r && r.bedrag),
+      maanden: getal(r && r.maanden)
     }))
-    .filter(r => r.functiegroep || r.pct != null);
+    .filter(r => r.functiegroep || r.pct != null || r.bedrag != null || r.maanden != null);
   return {
     er:            !!afspraak,
     id:            a.id || '',
@@ -289,15 +299,30 @@ function pctVoor(kandidaat, afspraak){
             uitleg:'Er is nog geen commerciële afspraak vastgelegd bij deze klant.'};
 
   const functie = String(c.functie || '').trim();
+  /* Een regel is bruikbaar als zijn eigen vorm ingevuld is: een
+     percentage bij 'pct', een bedrag bij 'vast', een aantal bij
+     'maanden'. */
+  const bruikbaar = r => r.vorm === 'vast' ? r.bedrag != null
+                       : r.vorm === 'maanden' ? r.maanden != null
+                       : r.pct != null;
   let beste = null, besteScore = 0;
   for(const r of a.fee_regels){
-    if(r.pct == null) continue;
+    if(!bruikbaar(r)) continue;
     const s = scoreGroep(functie, r.functiegroep);
     if(s > besteScore){ besteScore = s; beste = r; }
   }
   if(beste)
-    return {pct:beste.pct, functiegroep:beste.functiegroep, bron:'regel',
+    return {pct:beste.pct, vorm:beste.vorm, bedrag:beste.bedrag, maanden:beste.maanden,
+            functiegroep:beste.functiegroep, bron:'regel',
             uitleg:`Functie "${functie}" valt onder de fee-regel "${beste.functiegroep}".`};
+
+  /* Een regel zónder functiegroep is het vangnet: zo staat "vaste fee
+     € 5.000 voor alles" of "2× maandsalaris" gewoon tussen de regels,
+     zonder aparte kolom in de tabel. */
+  const vangnet = a.fee_regels.find(r => !r.functiegroep && bruikbaar(r));
+  if(vangnet)
+    return {pct:vangnet.pct, vorm:vangnet.vorm, bedrag:vangnet.bedrag, maanden:vangnet.maanden,
+            functiegroep:'', bron:'regel', uitleg:'Deze afspraak geldt voor alle functies.'};
 
   if(a.fee_standaard != null){
     const uitleg = !functie
@@ -305,9 +330,9 @@ function pctVoor(kandidaat, afspraak){
       : a.fee_regels.length
         ? `Geen fee-regel past bij "${functie}" — het standaardpercentage uit de afspraak is gebruikt.`
         : 'Er zijn geen fee-regels per functiegroep vastgelegd — het standaardpercentage uit de afspraak geldt.';
-    return {pct:a.fee_standaard, functiegroep:'', bron:'standaard', uitleg};
+    return {pct:a.fee_standaard, vorm:'pct', functiegroep:'', bron:'standaard', uitleg};
   }
-  return {pct:null, functiegroep:'', bron:'geen',
+  return {pct:null, vorm:'pct', functiegroep:'', bron:'geen',
           uitleg:`In de afspraak staat geen percentage voor "${functie || 'deze functie'}" en ook geen standaardpercentage.`};
 }
 
@@ -431,14 +456,32 @@ function bereken(kandidaat, afspraak){
     geldig = false;
     waarschuwingen.push('Deze afspraak staat op niet-actief.');
   }
-  if(!gr.compleet) waarschuwingen.push('Zonder bruto maandsalaris is er geen grondslag om over te rekenen.');
-  if(p.pct == null) waarschuwingen.push(p.uitleg);
+  /* Drie vormen, drie sommen (5 aug 2026):
+       pct     → percentage over de jaargrondslag (het klassieke model);
+       vast    → het afgesproken bedrag, salaris niet nodig;
+       maanden → n × het bruto maandsalaris van de kandidaat. */
+  const vorm = p.vorm || 'pct';
+  if(vorm === 'pct'){
+    if(!gr.compleet) waarschuwingen.push('Zonder bruto maandsalaris is er geen grondslag om over te rekenen.');
+    if(p.pct == null) waarschuwingen.push(p.uitleg);
+  }else if(vorm === 'maanden' && gr.maandloon == null){
+    waarschuwingen.push('Zonder bruto maandsalaris valt "' + (getal(p.maanden) || '?') + '× maandsalaris" niet uit te rekenen.');
+  }
 
-  const fee = (gr.compleet && p.pct != null) ? rond(gr.jaarSalaris * p.pct / 100) : null;
+  const fee = vorm === 'vast'    ? (p.bedrag != null ? rond(p.bedrag) : null)
+            : vorm === 'maanden' ? (p.maanden != null && gr.maandloon != null ? rond(gr.maandloon * p.maanden) : null)
+            : (gr.compleet && p.pct != null) ? rond(gr.jaarSalaris * p.pct / 100) : null;
+
+  /* Kant-en-klaar label voor schermen die nu "23%" tonen — die kunnen
+     hier "€ 5.000 vast" of "2× maandsalaris" uit lezen. */
+  const feeLabel = vorm === 'vast'    ? (p.bedrag != null ? '€ ' + p.bedrag.toLocaleString('nl-NL') + ' vast' : '')
+                 : vorm === 'maanden' ? (p.maanden != null ? String(p.maanden).replace('.', ',') + '× maandsalaris' : '')
+                 : (p.pct != null ? String(p.pct).replace('.', ',') + '%' : '');
 
   return {
     grondslag: gr,
-    pct: p.pct, functiegroep: p.functiegroep, bron: p.bron, uitleg: p.uitleg,
+    pct: p.pct, vorm, bedrag: p.bedrag ?? null, maanden: p.maanden ?? null, feeLabel,
+    functiegroep: p.functiegroep, bron: p.bron, uitleg: p.uitleg,
     fee,
     soort: a.soort,
     factuurmoment: a.factuurmoment, factuurmomentLbl: fm.lbl,
