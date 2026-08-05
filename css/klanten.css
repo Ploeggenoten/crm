@@ -443,3 +443,8 @@ a.ob-i:hover b{text-decoration:underline}
    vraagt geen aandacht (Tjeerd, 4 aug 2026). */
 .kl-vac-stil > summary{opacity:.55}
 .kl-vac-stil[open] > summary{opacity:.75}
+
+/* De fasechip in de kop is een knop — zelfde wissel als in de zijbalk. */
+.kl-fasewissel{background:none;border:none;padding:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font:inherit}
+.kl-fasepijl{font-size:9px;color:var(--muted)}
+.kl-fasewissel:hover .kl-fasepijl{color:var(--olive,#3D6400)}

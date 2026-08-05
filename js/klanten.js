@@ -404,6 +404,116 @@ async function hernoemKlant(k, nieuw){
   return true;
 }
 
+/* ─── Dubbele relaties opruimen ───────────────────────────────────
+   Tjeerd (5 aug 2026): "we hebben veel dubbele klanten, die wil ik
+   verwijderen." Verwijderen is hier bijna nooit het echte werk: aan een
+   duplicaat hangen vaak kandidaten, vacatures en geschiedenis, en die
+   wil je niet kwijt — die wil je bij de goede kaart hebben. Daarom is
+   opruimen hier: alles verhuizen naar de goede kaart (zelfde machinerie
+   als hernoemen) en dan pas de lege kaart weghalen. Alleen een kaart
+   waar écht niets aan hangt mag direct weg. */
+async function voegKlantenSamen(bron, doelNaam){
+  const doel = CRM.klant(doelNaam);
+  if(!doel) return false;
+  if(!CRM.demo){
+    const stappen = [
+      ['candidates',       t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['vacatures',        t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['crm_contacten',    t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['crm_kansen',       t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['crm_leads',        t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['crm_stukken',      t => t.update({klant:doelNaam}).eq('klant', bron.naam)],
+      ['crm_taken',        t => t.update({ref:doelNaam}).eq('entiteit','klant').eq('ref', bron.naam)],
+      ['crm_activiteiten', t => t.update({ref:doelNaam}).eq('entiteit','klant').eq('ref', bron.naam)],
+      ['crm_meldingen',    t => t.update({ref:doelNaam}).eq('entiteit','klant').eq('ref', bron.naam)],
+      ['crm_documenten',   t => t.update({ref:doelNaam}).eq('entiteit','klant').eq('ref', bron.naam)]
+    ];
+    const mislukt = [];
+    for(const [tabel, fn] of stappen){
+      const {error} = await fn(CRM.sb.from(tabel));
+      if(error) mislukt.push(tabel);
+    }
+    if(mislukt.length){
+      CRM.toast('Samenvoegen gestopt — niet alles kon mee: ' + mislukt.join(', '), 'err');
+      return false;                               // bron laten staan: niets kwijt
+    }
+    await CRM.sb.from('crm_afspraken').update({klant:doelNaam}).eq('klant', bron.naam).then(()=>{}, ()=>{});
+    /* Lege velden van de goede kaart aanvullen met wat het duplicaat wél
+       wist — een dubbele kaart is vaak de completere van de twee. */
+    const aanvul = {};
+    ['telefoon','email','website','branche','locatie','eigenaar'].forEach(v => {
+      if(!String(doel[v]||'').trim() && String(bron[v]||'').trim()) aanvul[v] = bron[v];
+    });
+    if(Object.keys(aanvul).length)
+      await CRM.sb.from('clients').update(aanvul).eq('naam', doelNaam).then(()=>{}, ()=>{});
+    const {error: delErr} = await CRM.sb.from('clients').delete().eq('naam', bron.naam);
+    if(delErr){ CRM.fout('Duplicaat verwijderen mislukt', delErr); return false; }
+    Object.assign(doel, aanvul);
+  }
+  /* Het geheugen van de app. */
+  const zet = (lijst, veld) => (CRM.state[lijst]||[]).forEach(r => { if(r[veld] === bron.naam) r[veld] = doelNaam; });
+  zet('cands','klant'); zet('vacs','klant'); zet('contacten','klant'); zet('kansen','klant'); zet('leads','klant');
+  (CRM.state.taken||[]).concat(CRM.state.activiteiten||[], CRM.state.documenten||[])
+    .forEach(r => { if(r.entiteit === 'klant' && r.ref === bron.naam) r.ref = doelNaam; });
+  CRM.state.clients = CRM.state.clients.filter(c => c.naam !== bron.naam);
+  CRM.logActiviteit('klant', doelNaam, 'systeem', `Duplicaat "${bron.naam}" samengevoegd met deze kaart`);
+  CRM.toast('Samengevoegd — alles staat nu bij ' + doelNaam, 'ok');
+  return true;
+}
+async function verwijderLegeKlant(naam){
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('clients').delete().eq('naam', naam);
+    if(error){ CRM.fout('Verwijderen mislukt', error); return false; }
+  }
+  CRM.state.clients = CRM.state.clients.filter(c => c.naam !== naam);
+  CRM.toast('Relatie verwijderd','ok');
+  return true;
+}
+function klantOpruimen(k){
+  const n = {
+    kandidaten: CRM.kandidaten().filter(c => c.klant === k.naam).length,
+    vacatures: (CRM.state.vacs||[]).filter(v => v.klant === k.naam).length,
+    contactpersonen: (CRM.state.contacten||[]).filter(x => x.klant === k.naam).length,
+    activiteiten: (CRM.state.activiteiten||[]).filter(a => a.entiteit==='klant' && a.ref===k.naam).length
+  };
+  const delen = Object.entries(n).filter(([,x]) => x).map(([lbl,x]) => `${x} ${lbl}`);
+  const leeg = !delen.length;
+  const anderen = CRM.state.clients.map(c => c.naam).filter(x => x !== k.naam)
+    .sort((a,b) => a.localeCompare(b,'nl'));
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${h(k.naam)} opruimen</div></div>
+    <div class="modal-b">
+      ${leeg
+        ? `<p class="sub" style="margin:0 0 12px">Aan deze kaart hangt niets — geen kandidaten, vacatures, contactpersonen of geschiedenis. Hij kan veilig weg.</p>`
+        : `<p class="sub" style="margin:0 0 12px">Aan deze kaart hangt nog werk: <b>${h(delen.join(' · '))}</b>.
+             Verwijderen zou dat allemaal losknippen. Kies daarom de goede kaart — alles verhuist daarheen en dit duplicaat verdwijnt.</p>
+           <div class="f-row"><label for="opr_doel">Samenvoegen met</label>
+             <select id="opr_doel"><option value="">Kies de goede kaart…</option>
+               ${anderen.map(x => `<option>${h(x)}</option>`).join('')}</select></div>`}
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      ${leeg
+        ? `<button class="btn" id="opr_weg" style="background:var(--red)">Definitief verwijderen</button>`
+        : `<button class="btn" id="opr_ok">Samenvoegen en duplicaat verwijderen</button>`}
+    </div>`, {onOpen(m){
+    const weg = m.querySelector('#opr_weg');
+    if(weg) weg.onclick = async () => {
+      if(!(await CRM.bevestig(`"${k.naam}" definitief verwijderen?`))) return;
+      CRM.modal.close();
+      if(await verwijderLegeKlant(k.naam)) CRM.ga('klanten');
+    };
+    const ok = m.querySelector('#opr_ok');
+    if(ok) ok.onclick = async () => {
+      const doel = m.querySelector('#opr_doel').value;
+      if(!doel) return CRM.toast('Kies eerst de kaart waar alles heen moet','err');
+      if(!(await CRM.bevestig(`Alles van "${k.naam}" verhuizen naar "${doel}" en het duplicaat verwijderen?`))) return;
+      CRM.modal.close();
+      if(await voegKlantenSamen(k, doel)) CRM.ga('klanten', {id: doel});
+    };
+  }});
+}
+
 async function bewaarKlant(naam, wijziging){
   const i = CRM.state.clients.findIndex(c => c.naam === naam);
   if(i < 0) return;
@@ -498,25 +608,38 @@ async function verwijderRij(tabel, veld, id){
    database maar localStorage (de tabel bestaat daar niet). */
 async function bewaarAfspraak(rij, bestaat){
   /* Lezen mag het team, schrijven niet — zie de toelichting bij
-     zorgAfspraken(). De database weigert het ook. */
-  if(!CRM.canSeeMoney()) return;
+     zorgAfspraken(). De database weigert het ook. Maar dat moet HARDOP:
+     tot 5 aug 2026 keerde deze functie hier stil om, waarna de aanroeper
+     alsnog "Commerciële afspraak vastgelegd" in het logboek zette. Tjerk
+     dacht dat zijn afspraak stond; het blok bleef leeg en de vacature
+     erfde niets. Een geweigerde opslag hoort een melding én een `false`
+     te geven, geen stilte. */
+  if(!CRM.canSeeMoney()){
+    CRM.toast('Alleen de eigenaar kan commerciële afspraken vastleggen — vraag Tjeerd','err');
+    return false;
+  }
   const lijst = CRM.state.afspraken || (CRM.state.afspraken = []);
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
   if(i >= 0) Object.assign(lijst[i], rij); else lijst.unshift(rij);
-  if(CRM.demo){ P.set('afspraken', lijst); CRM.toast('Opgeslagen','ok'); return; }
+  if(CRM.demo){ P.set('afspraken', lijst); CRM.toast('Opgeslagen','ok'); return true; }
   const nu = new Date().toISOString();
   const q = bestaat
     ? CRM.sb.from('crm_afspraken').update(Object.assign({}, rij, {updated_at:nu})).eq('id', rij.id)
     : CRM.sb.from('crm_afspraken').insert(rij);
   const {error} = await q;
   if(error){
-    if(TABEL_WEG(error)) return CRM.toast('Tabel crm_afspraken bestaat nog niet — draai eerst supabase/schema.sql','err');
-    return CRM.fout('Opslaan mislukt', error);
+    if(TABEL_WEG(error)){ CRM.toast('Tabel crm_afspraken bestaat nog niet — draai eerst supabase/schema.sql','err'); return false; }
+    CRM.fout('Opslaan mislukt', error);
+    return false;
   }
   CRM.toast('Opgeslagen','ok');
+  return true;
 }
 async function verwijderAfspraak(id){
-  if(!CRM.canSeeMoney()) return;
+  if(!CRM.canSeeMoney()){
+    CRM.toast('Alleen de eigenaar kan commerciële afspraken wijzigen — vraag Tjeerd','err');
+    return;
+  }
   CRM.state.afspraken = (CRM.state.afspraken || []).filter(r => String(r.id) !== String(id));
   if(CRM.demo){ P.set('afspraken', CRM.state.afspraken); CRM.toast('Verwijderd','ok'); return; }
   const {error} = await CRM.sb.from('crm_afspraken').delete().eq('id', id);
@@ -819,15 +942,16 @@ function kaart(mount, acties, naam){
   /* Rail: gegevens bewerken */
   mount.querySelector('#gg_bewerk').onclick = () => klantModal(k);
 
-  /* Rail: fase wisselen — zelfde gedrag als het salesbord:
-     fase + fase_sinds bijwerken en de wissel loggen. */
-  const faseBtn = mount.querySelector('#gg_fase');
-  if(faseBtn) faseBtn.onclick = () => {
+  /* Fase wisselen — zelfde gedrag als het salesbord: fase + fase_sinds
+     bijwerken en de wissel loggen. Gedeeld tussen de chip in de zijbalk
+     én de chip in de kop naast de naam: Tjeerd zocht hem daar (4 aug
+     2026, "ik zie nergens dat ik de fase kan veranderen"). */
+  const bindFaseWissel = btn => { if(btn) btn.onclick = () => {
     const sel = document.createElement('select');
     sel.className = 'kl-fasesel';
     sel.innerHTML = `<option value=""${!k.fase?' selected':''}>Zonder fase</option>` +
       CRM.SALES_FASES.map(f => `<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('');
-    faseBtn.replaceWith(sel); sel.focus();
+    btn.replaceWith(sel); sel.focus();
     let klaar = false;
     const sluit = async bewaren => {
       if(klaar) return; klaar = true;
@@ -842,7 +966,9 @@ function kaart(mount, acties, naam){
     sel.onchange  = () => sluit(true);
     sel.onblur    = () => sluit(false);
     sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); sluit(false); } };
-  };
+  }; };
+  bindFaseWissel(mount.querySelector('#gg_fase'));
+  bindFaseWissel(mount.querySelector('#kop_fase'));
 
   /* Rail: team — inline bewerken in dezelfde stijl als de kandidaatvelden. */
   const teamEl = mount.querySelector('#gg_team');
@@ -923,7 +1049,10 @@ function kopHtml(k, c){
       <div style="min-width:0;flex:1">
         <div class="row tight" style="gap:10px;align-items:center">
           <div class="h1" style="font-size:24px">${h(k.naam)}</div>
-          ${faseChip(k.fase)}
+          ${/* De chip is een knop: hier zocht Tjeerd de fasewissel
+               (4 aug 2026), niet in de zijbalk. */''}
+          <button type="button" class="kl-fasewissel" id="kop_fase"
+            title="Klik om de fase te wisselen">${faseChip(k.fase)}<span class="kl-fasepijl">▾</span></button>
         </div>
         <div class="meta" style="margin-top:7px">${h([k.eigenaar?'AM '+k.eigenaar:'', k.locatie, k.branche].filter(Boolean).join(' · ')||'')}</div>
         ${feiten ? `<div class="meta kl-feiten">${feiten}</div>` : ''}
@@ -1126,7 +1255,11 @@ function railAfspraak(mount, k){
     body.innerHTML = (_afsprTabelMist
         ? '<div class="note warn kl-af-note">De tabel <code>crm_afspraken</code> bestaat nog niet — draai eerst supabase/schema.sql.</div>'
         : '<p class="meta kl-af-leeg">Nog niets vastgelegd. Zonder afspraak kan het systeem na een getekend contract niet zelf rekenen.</p>')
-      + `<button class="btn ghost sm kl-railknop" id="af_nieuw">+ Afspraak vastleggen</button>`;
+      + (CRM.canSeeMoney()
+          ? `<button class="btn ghost sm kl-railknop" id="af_nieuw">+ Afspraak vastleggen</button>`
+          /* Geen knop die toch geweigerd wordt: het team leest mee, maar
+             vastleggen is aan de eigenaar — zeg dat er gewoon bij. */
+          : `<p class="meta" style="margin:8px 0 0">Alleen Tjeerd kan afspraken vastleggen — vraag hem de overeenkomst in te lezen.</p>`);
     const nw = body.querySelector('#af_nieuw');
     if(nw) nw.onclick = () => afspraakDrawer(k, null, true);
     return;
@@ -1698,14 +1831,21 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           + `<div class="kl-af-impknoppen"><button class="btn" id="af_imp_ok">
               ${nieuwe.length === 1 ? 'Afspraak vastleggen' : 'Beide afspraken vastleggen'}</button></div>`;
         uitEl.querySelector('#af_imp_ok').onclick = async () => {
+          let gelukt = 0;
           for(const af of nieuwe){
             af.door = CRM.me();
-            await bewaarAfspraak(Object.assign({}, af), false);
+            if(await bewaarAfspraak(Object.assign({}, af), false)) gelukt++;
           }
-          CRM.logActiviteit('klant', k.naam, 'systeem',
-            'Commerciële afspraken ingelezen uit de overeenkomst (' + nieuwe.map(x => soortLbl(x.soort)).join(' en ') + ')');
-          CRM.drawer.close();
-          CRM.render();
+          /* Alleen loggen (en sluiten) als er echt iets is opgeslagen —
+             precies hier ontstond de spookvermelding bij Antoon Rijnbeek:
+             Tjerk las de overeenkomst in, de opslag werd door de
+             rechtenregel geweigerd, en het logboek meldde tóch succes. */
+          if(gelukt){
+            CRM.logActiviteit('klant', k.naam, 'systeem',
+              'Commerciële afspraken ingelezen uit de overeenkomst (' + nieuwe.map(x => soortLbl(x.soort)).join(' en ') + ')');
+            CRM.drawer.close();
+            CRM.render();
+          }
         };
       };
 
@@ -1742,9 +1882,11 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           return CRM.toast('De einddatum ligt vóór de ingangsdatum','err');
         if(!a.door) a.door = CRM.me();
         CRM.drawer.close();
-        await bewaarAfspraak(Object.assign({}, a), bestaat);
-        CRM.logActiviteit('klant', k.naam, 'systeem',
-          bestaat ? 'Commerciële afspraak bijgewerkt' : 'Commerciële afspraak vastgelegd');
+        /* Alleen loggen wat er écht gebeurd is — het logboek zei eerder
+           "vastgelegd" terwijl de opslag geweigerd was. */
+        if(await bewaarAfspraak(Object.assign({}, a), bestaat))
+          CRM.logActiviteit('klant', k.naam, 'systeem',
+            bestaat ? 'Commerciële afspraak bijgewerkt' : 'Commerciële afspraak vastgelegd');
         CRM.render();
       };
       const weg = dr.querySelector('#af_weg');
@@ -3101,8 +3243,12 @@ function klantModal(k){
         <div class="f-row"><label>KvK-nummer</label><input type="text" id="g_kvk" value="${h(k.kvk||'')}" inputmode="numeric"></div>
       </div>` : ''}
     </div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+    <div class="modal-f">
+      <button class="btn ghost" id="g_opruim" style="color:var(--red)" title="Duplicaat samenvoegen of een lege kaart verwijderen">Verwijderen…</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="g_ok">Opslaan</button></div>`, {onOpen(m){
+    m.querySelector('#g_opruim').onclick = () => { CRM.modal.close(); klantOpruimen(k); };
     m.querySelector('#g_ok').onclick = async () => {
       const oudeFase = k.fase || '';
       const nieuweFase = m.querySelector('#g_fase').value;
