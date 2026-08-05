@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "crm",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8752"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "exec python3 -m http.server \"$PORT\""],
+      "autoPort": true,
       "port": 8752
     }
   ]

@@ -2807,7 +2807,13 @@ function laatsteKandContact(c){
 function kandRegel(c){
   const lc = laatsteKandContact(c);
   const d  = CRM.dagenGeleden(lc);
-  return `<a class="kl-kand" data-kand="${h(String(c.id))}" href="#kandidaten/${encodeURIComponent(c.id)}">
+  /* De hele rij in de tint van de fase, niet alleen het chipje — Tjeerd
+     (5 aug 2026): "van mij mogen de kaarten echt de kleuren krijgen, dit
+     geeft meer variatie". Tint licht (~8%), rand vol: zo blijft de tekst
+     leesbaar en zie je tóch in één blik wie waar staat. */
+  const kleur = c.fase ? CRM.faseKleur(c.fase) : '';
+  const tint  = kleur ? ` style="border-left:3px solid ${kleur};background:${kleur}14"` : '';
+  return `<a class="kl-kand"${tint} data-kand="${h(String(c.id))}" href="#kandidaten/${encodeURIComponent(c.id)}">
     <div class="kl-kand-wie"><b class="trunc">${h(c.naam)}</b>
       <div class="meta trunc">${h(c.functie||'—')}${c.woonplaats?' · '+h(c.woonplaats):''}</div></div>
     ${c.fase

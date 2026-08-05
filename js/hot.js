@@ -1036,6 +1036,12 @@
                 : `<button class="btn ghost sm" id="ovd_hotop">Hot maken</button>`}
         <button class="btn sub sm" id="ovd_notitie">+ Notitie</button>
         <button class="btn sub sm" id="ovd_taak">+ Taak</button>
+        <span class="spacer"></span>
+        ${/* Verwijderen hoort bij een vacature die niets meer toevoegt —
+             dat is iets anders dan Vervuld of Gesloten (die blijven als
+             geschiedenis staan). Bewust achteraan en gedempt: het is de
+             uitzondering, niet de dagelijkse knop. */''}
+        <button class="btn sub sm ovd-weg" id="ovd_weg">Verwijderen</button>
       </div>`;
 
     /* ── Tabbladen ── */
@@ -1074,6 +1080,27 @@
     mount.querySelector('#ovd_notitie').onclick = () => notitieModal(v);
     mount.querySelector('#ovd_taak').onclick = () =>
       CRM.taakModal({entiteit:'vacature', ref:v.id, refLabel:`${v.klant||'vacature'} – ${v.functie||''}`});
+
+    /* Vacature verwijderen (Tjeerd, 5 aug 2026: "bijvoorbeeld als ze niet
+       van toegevoegde waarde zijn"). De kandidaten zelf blijven bestaan —
+       alleen de vacature en haar koppeling verdwijnen. De oude knop zat in
+       het bewerkformulier, maar dat is sinds "Bewerken → vacaturekaart"
+       onbereikbaar; daarom staat hij nu hier. */
+    mount.querySelector('#ovd_weg').onclick = async () => {
+      const nKand = t.cands.length;
+      const ok = await CRM.bevestig('Vacature verwijderen?',
+        `${v.functie||'Vacature'}${v.klant ? ' bij ' + v.klant : ''} verdwijnt definitief.` +
+        (nKand ? ` De ${nKand === 1 ? 'gekoppelde kandidaat blijft' : nKand + ' gekoppelde kandidaten blijven'} gewoon bestaan.` : ''),
+        {gevaarlijk:true, knop:'Ja, verwijderen'});
+      if(!ok) return;
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('vacatures').delete().eq('id', v.id);
+        if(error){ CRM.fout('Verwijderen mislukt', error); return; }
+      }
+      CRM.state.vacs = (CRM.state.vacs||[]).filter(x => String(x.id) !== String(v.id));
+      CRM.toast('Vacature verwijderd','ok');
+      CRM.ga('hot');
+    };
 
     /* Klik-om-te-bewerken op de zijbalk. Bewust géén modal en géén poort:
        Tjerk en Rajesh moeten hier altijd bij kunnen, ook als de commerciële

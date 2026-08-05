@@ -372,3 +372,8 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
   border:1px solid var(--olive,#3D6400);border-radius:6px;
   padding:2px 6px;max-width:180px;
 }
+
+/* Verwijderen: gedempt tot je eroverheen gaat — pas dan kleurt hij naar
+   het rood van "dit is definitief". Zo staat hij er wel, maar schreeuwt
+   hij niet. */
+.ovd-weg:hover{color:var(--red,#c0453b);border-color:var(--red,#c0453b)}
