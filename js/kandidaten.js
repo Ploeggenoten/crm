@@ -849,6 +849,10 @@ const VELDEN = [
   {k:'telefoon',    lbl:'Telefoon',          t:'tel'},
   {k:'email',       lbl:'E-mail',            t:'email'},
   {k:'woonplaats',  lbl:'Woonplaats',        t:'text'},
+  /* Bij een plaatsing is het exacte adres nodig voor de papieren; de
+     CV-lezer vult deze velden voor als het cv ze bevat. */
+  {k:'adres',       lbl:'Adres',             t:'text'},
+  {k:'postcode',    lbl:'Postcode',          t:'text'},
   {k:'functie',     lbl:'Gezochte functie',  t:'text'},
   {k:'beschikbaar', lbl:'Beschikbaar',       t:'select', opts:['', ...CRM.BESCHIKBAAR]},
   {k:'ploegen',     lbl:'Ploegendiensten',   t:'select', opts:['', ...CRM.PLOEGEN]},
@@ -880,7 +884,10 @@ const euroMnd = v => {
   return isNaN(n) ? String(v) : CRM.euro(n) + ' p/mnd';
 };
 const SITUATIE_VELDEN = [
-  {k:'functie',          lbl:'Huidige functie',  t:'text'},
+  /* Niet `functie`: dat is de GEZOCHTE functie, waar de matching op draait.
+     Dit veld deelde ooit die sleutel, waardoor "huidige functie invullen"
+     stilzwijgend overschreef waar de kandidaat naar zoekt. */
+  {k:'cv.huidigeFunctie', lbl:'Huidige functie', t:'text'},
   {k:'cv.werkgever',     lbl:'Huidig bedrijf',   t:'text'},
   {k:'cv.opzegtermijn',  lbl:'Opzegtermijn',     t:'text', toon:opzegNL},
   {k:'cv.huidigSalaris', lbl:'Huidig salaris',   t:'text', toon:euroMnd},

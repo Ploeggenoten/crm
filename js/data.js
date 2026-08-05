@@ -769,6 +769,10 @@ CRM.match = (kandidaat, vacature) => {
   if(!vervoer) uit.onbekend.push('vervoer van de kandidaat niet ingevuld');
   if(km != null && vervoer === 'fiets' && km > 15)
     uit.blokkers.push(km + ' km op de fiets');
+  /* Een e-bike rekt de fietsgrens op, maar 06:00 beginnen op 30 km blijft
+     onhoudbaar — dezelfde logica, ruimere band. */
+  if(km != null && vervoer === 'elektrische fiets' && km > 25)
+    uit.blokkers.push(km + ' km op de elektrische fiets');
   if(km != null && vervoer === 'geen' && km > 5)
     uit.blokkers.push(km + ' km zonder eigen vervoer');
 
@@ -895,7 +899,7 @@ CRM.besteMatches = (kandidaat, n=5) => (CRM.state.vacs||[])
 /* ─── Kwalificatie- en zoekhelpers (filters, Source-kaart) ────── */
 CRM.BESCHIKBAAR = ['direct','in overleg','niet'];
 CRM.PLOEGEN     = ['geen','2-ploegen','3-ploegen','5-ploegen','wisselend'];
-CRM.VERVOER     = ['auto','ov','fiets','geen'];
+CRM.VERVOER     = ['auto','ov','fiets','elektrische fiets','geen'];
 CRM.sterren = n => { const s=Math.max(0,Math.min(5,Number(n)||0));
   return s ? '★'.repeat(s)+'☆'.repeat(5-s) : '—'; };
 /* Woont deze kandidaat binnen X km van een plaats? Onbekende plaats telt

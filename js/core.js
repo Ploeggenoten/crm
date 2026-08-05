@@ -456,6 +456,9 @@ CRM.rowToCand = r => ({
   geanonimiseerdOp:r.geanonimiseerd_op||null,
   ooId:r.oo_id||null, vervangt:r.vervangt||'', rec:r.rec||'', note:r.note||'',
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
+  /* Adres en postcode zijn echte kolommen; oudere cv-parses schreven ze in
+     het cv-jsonb, dus dat blijft de terugval bij het lezen. */
+  adres:r.adres||(r.cv||{}).adres||'', postcode:r.postcode||(r.cv||{}).postcode||'',
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
   ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
   talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||'', golden:!!r.golden
@@ -478,6 +481,7 @@ CRM.candToRow = c => ({
   geanonimiseerd_op:c.geanonimiseerdOp||null,
   oo_id:c.ooId||null, vervangt:c.vervangt||'', rec:c.rec||'', note:c.note||'',
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
+  adres:c.adres||'', postcode:c.postcode||'',
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
   ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
   talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||'', golden:!!c.golden
@@ -1001,7 +1005,20 @@ const sync = CRM.debounce(async tabel => {
   const d = await veilig(sb.from(tabel).select('*'), tabel);
   CRM.state[veld] = d;
   navBadges();
-  if(CRM.modules[CRM.view]?.herlaadBijSync !== false) CRM.render();
+  if(CRM.modules[CRM.view]?.herlaadBijSync !== false){
+    /* Niet hertekenen terwijl iemand een veld invult. Elke opslag komt als
+       realtime-echo terug, en de volledige hertekening rukte dan het veld
+       waar je nét in typte onder je handen vandaan ("velden schieten weg",
+       naam: Tjeerd, 5 aug 2026). De data staat al in CRM.state; we proberen
+       het gewoon opnieuw zodra de gebruiker het veld heeft losgelaten. */
+    const a = document.activeElement;
+    if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount')){
+      clearTimeout(CRM._syncLater);
+      CRM._syncLater = setTimeout(() => sync(tabel), 2500);
+      return;
+    }
+    CRM.render();
+  }
 }, 700);
 
 /* ─── Auth ────────────────────────────────────────────────────── */

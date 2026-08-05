@@ -1445,11 +1445,11 @@ const VELDEN = [
   ['vervoer',       'Vervoer',         c => c.vervoer],
   ['beschikbaar',   'Beschikbaarheid', c => c.beschikbaar],
   ['ploegen',       'Ploegendienst',   c => c.ploegen],
-  /* Adres, postcode en nationaliteit hebben geen eigen kolom op de
-     kandidaat. Ze gaan mee in het cv-blok in plaats van te verdwijnen —
-     zie het verzoek aan de coördinator onderaan dit bestand. */
-  ['adres',         'Adres',           c => (c.cv||{}).adres,        null, true],
-  ['postcode',      'Postcode',        c => (c.cv||{}).postcode,     null, true],
+  /* Adres en postcode hebben inmiddels echte kolommen (schema.sql) en
+     staan als velden op de kandidatenkaart — ze schrijven dus niet meer
+     in het cv-jsonb. Nationaliteit heeft nog geen kolom en blijft daar. */
+  ['adres',         'Adres',           c => c.adres],
+  ['postcode',      'Postcode',        c => c.postcode],
   ['nationaliteit', 'Nationaliteit',   c => (c.cv||{}).nationaliteit, null, true]
 ];
 
