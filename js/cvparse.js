@@ -82,7 +82,7 @@ async function pdfTekst(file, opts={}){
     const page = await doc.getPage(p);
     const vp = page.getViewport({scale:1});
     const tc = await page.getTextContent();
-    paginas.push(paginaRegels(tc.items, vp.width, vp.height));
+    paginas.push(paginaRegels(tc.items, vp.width, vp.height, opts.zonderKolommen));
     if(p === 1) groot = groteRegels(tc.items, vp.width, vp.height);
   }
   return {
@@ -92,8 +92,14 @@ async function pdfTekst(file, opts={}){
   };
 }
 
-/* Fragmenten → regels → leesvolgorde, voor één pagina. */
-function paginaRegels(items, breedte, hoogte){
+/* Fragmenten → regels → leesvolgorde, voor één pagina.
+   `zonderKolommen` slaat de kolomdetectie over: die is voor cv's met een
+   zijbalk, maar bij een overeenkomst is hij schadelijk — een smalle
+   tarieventabel (Functie | Factor) trok daar een "witte baan" over de
+   hele pagina, waardoor functienamen en factoren twintig regels uit
+   elkaar belandden en zelfs lopende zinnen doormidden gingen.
+   (Staalduinen-overeenkomst, 5 aug 2026.) */
+function paginaRegels(items, breedte, hoogte, zonderKolommen){
   const frag = [];
   items.forEach(it => {
     const s = it.str;
@@ -104,6 +110,7 @@ function paginaRegels(items, breedte, hoogte){
     const hgt = Math.abs(t[3]) || Math.abs(it.height) || 10;
     frag.push({s, x:t[4], y: hoogte - t[5], w: it.width || 0, hg: hgt});
   });
+  if(zonderKolommen) return frag.length ? regelsTekst(frag, breedte) : '';
   return kolommenTekst(frag, breedte, hoogte, 0);
 }
 

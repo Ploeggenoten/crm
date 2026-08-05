@@ -1945,8 +1945,10 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         try{
           if(!CRM.cvParse?.leesBestand) throw new Error('De bestandslezer is niet geladen — herlaad de pagina.');
           /* Dezelfde lezer als het cv-inlezen: pdf via de tekstlaag, docx
-             via de eigen zip-lezer. */
-          const gel = await CRM.cvParse.leesBestand(f);
+             via de eigen zip-lezer — maar zónder kolomdetectie: een
+             overeenkomst is één kolom, en de detectie hakte de
+             Staalduinen-tarieventabel doormidden (5 aug 2026). */
+          const gel = await CRM.cvParse.leesBestand(f, {zonderKolommen: true});
           const tekst = String(gel && gel.tekst || '').trim();
           dr.querySelector('#af_imp_vak').hidden = false;
           dr.querySelector('#af_imp_tekst').value = tekst;
