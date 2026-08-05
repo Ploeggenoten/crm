@@ -1365,7 +1365,7 @@ function parseOvereenkomst(ruw){
     overname_uren:null, vt_pct:null, maanden:null,
     garantie_mnd:null, garantie_soort:null,
     exclusiviteit_wkn:null, betaaltermijn:null,
-    ingang:null, factuurmoment:null
+    ingang:null, factuurmoment:null, betaalschema:null
   };
 
   /* ── 1. De tarieventabel ─────────────────────────────────────────
@@ -1481,6 +1481,20 @@ function parseOvereenkomst(ruw){
     if(n > 0 && n <= 12) uit.ws.regels.push({functie:'', vorm:'maanden', maanden:n});
   }
 
+  /* ── Betaalverdeling ───────────────────────────────────────────
+     "50% direct na ondertekening, 50% na de overeengekomen termijn van
+     2 maanden" (Izico, 5 aug 2026). Leesbaar vastleggen bij de afspraak;
+     het termijnschema zelf maak je in Finance bij de plaatsing — daar
+     bestaat de 50/50-preset al. */
+  const deel1 = vloei.match(/(\d{2})\s*%[^.]{0,140}?(?:onderteken|getekend|arbeidsovereenkomst)/);
+  const deel2 = vloei.match(/(\d{2})\s*%[^.]{0,160}?(?:na|termijn van)[^.]{0,60}?(\d{1,2}|twee|drie|vier|zes)\s*(?:\(\s*\d+\s*\)\s*)?maand/);
+  if(deel1 && deel2){
+    const n = WOORDGETAL[deel2[2]] ?? Number(deel2[2]);
+    if(n > 0) uit.betaalschema = `${deel1[1]}% bij ondertekening · ${deel2[1]}% na ${n} ${n===1?'maand':'maanden'}`;
+  }else if((vloei.match(/50\s*%/g) || []).length >= 2){
+    uit.betaalschema = '50% / 50%-verdeling — zie de overeenkomst voor de momenten';
+  }
+
   return uit;
 }
 
@@ -1491,7 +1505,8 @@ function afsprakenUitParse(p, klant){
     if(p.ingang) a.ingang = p.ingang;
     if(p.betaaltermijn != null) a.betaaltermijn = p.betaaltermijn;
     if(p.exclusiviteit_wkn != null) a.exclusiviteit_wkn = p.exclusiviteit_wkn;
-    a.notitie = 'Ingelezen uit de geplakte samenwerkingsovereenkomst';
+    a.notitie = 'Ingelezen uit de geplakte samenwerkingsovereenkomst'
+      + (p.betaalschema ? ' · Facturatie: ' + p.betaalschema : '');
     return a;
   };
   const uit = [];
@@ -1877,6 +1892,7 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           const vw = [];
           if(af.ingang) vw.push('ingang ' + CRM.fmtDate(af.ingang));
           vw.push(`betaaltermijn <span class="num">${af.betaaltermijn}</span> dgn`);
+          if(p.betaalschema) vw.push('facturatie ' + h(p.betaalschema));
           if(uitzend){
             if(af.overname_uren != null) vw.push(`overname na <span class="num">${af.overname_uren}</span> uur`);
           }else{
@@ -2732,8 +2748,16 @@ function vacatureHtml(v, k){
     <div class="kl-vac-b">
       ${webBlokHtml(v, open)}
       ${v.omschrijving ? `<p class="sub" style="margin:0 0 10px">${h(v.omschrijving)}</p>` : ''}
-      ${kandidaten.length ? `<div class="kl-kandlijst">${kandidaten.map(c=>kandRegel(c)).join('')}</div>`
-        : '<p class="meta" style="margin:0">Nog geen kandidaten gekoppeld aan deze vacature.</p>'}
+      ${/* Afgevallen kandidaten niet tussen de lopende trajecten — dat is
+           ruis op de kaart (Tjeerd, 5 aug 2026). Ze blijven bestaan (tab
+           Kandidaten, Uitval bij Recruitment); hier alleen de teller. */''}
+      ${(() => {
+        const actief = kandidaten.filter(c => c.fase !== 'Afgevallen');
+        const afgevallen = kandidaten.length - actief.length;
+        return (actief.length ? `<div class="kl-kandlijst">${actief.map(c=>kandRegel(c)).join('')}</div>`
+            : '<p class="meta" style="margin:0">Nog geen kandidaten gekoppeld aan deze vacature.</p>')
+          + (afgevallen ? `<p class="meta" style="margin:6px 0 0">${afgevallen} afgevallen kandida${afgevallen===1?'at':'ten'} — zie de tab Kandidaten.</p>` : '');
+      })()}
     </div></details>`;
 }
 
