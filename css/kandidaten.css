@@ -335,3 +335,40 @@ label.kd-taak input{margin-top:3px}
 /* "Ook in beeld voor": één regel per extra vacature (4 aug 2026). */
 .kd-sollrij{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #eef0e4;font-size:13px}
 .kd-sollrij:last-child{border-bottom:none}
+
+/* ─── Plaatsbaarheidsstrip (5 aug 2026) ───────────────────────────
+   Vier chips onder de kop: beschikbaar, ploegen, vervoer + afstand,
+   salariswens. Groen = kan, amber = knelt, gestippeld grijs = nog leeg.
+   Alle vier klikbaar; ze springen naar hun veld op de kaart. */
+.kd-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 20px;border-top:1px solid var(--line)}
+.kd-strip>.label{margin-right:4px}
+.kd-pchip.leeg{color:var(--muted);border-style:dashed;background:transparent}
+
+/* ─── Dealbalk (5 aug 2026) ───────────────────────────────────────
+   Donker vlak direct onder de kop: deal, fase, type, fee-status en de
+   eerstvolgende stap. Donker zodat hij zich losmaakt van de kaarten —
+   dit is de regel waar de AM de hele dag op terugvalt. */
+.kd-dealbalk{display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  background:var(--dark-card);color:var(--dark-txt);
+  border-radius:var(--r);padding:11px 18px}
+.kd-dealcel{display:flex;flex-direction:column;gap:2px;font-size:13px;min-width:0;
+  border:0;background:none;padding:0;text-align:left;font-family:inherit;color:inherit}
+.kd-dealcel .dl{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:var(--dark-muted)}
+.kd-dealcel.klik{cursor:pointer}
+.kd-dealcel.klik:hover{color:var(--lime)}
+.kd-dealcel .knel{color:#f0c775}
+.kd-dealcel .leeg{color:var(--dark-muted);font-style:italic}
+.kd-dealstap{background:var(--lime);color:#171d08;border:0;border-radius:9px;
+  padding:8px 14px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.kd-dealstap:hover{filter:brightness(.94)}
+
+/* ─── Blok-bewerken: alle velden van een blok tegelijk open ────── */
+.kd-blokform .f-row{margin-bottom:9px}
+.kd-blokform .f-row .meta{display:block;margin-top:3px}
+
+/* De samenvatting-voor-de-klant is hét stuk dat je voorleest als je de
+   klant belt — daarom bovenaan het intakeblok, met een eigen vlak. */
+.kd-intsam{background:var(--card-2);border-radius:var(--r-s);padding:10px 14px;margin-bottom:14px}
+.kd-intsam .label{margin-bottom:4px}
+.kd-intsam p{margin:0;font-size:13.5px;line-height:1.55}

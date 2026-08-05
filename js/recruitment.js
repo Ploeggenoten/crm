@@ -3702,75 +3702,339 @@ function planAfspraak(c){
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   VIDEO-INTAKE — volledige vragenlijst (blokken A–F, zoals het bord)
-   Veldnamen identiek aan het bord zodat bestaande intakes gewoon
-   openen en de data uitwisselbaar blijft.
+   VIDEO-INTAKE — GESPREKSMODUS IN HET ZIJPANEEL
+   Sinds 5 aug 2026 een drawer in plaats van een modal: de recruiter
+   loopt het paneel van boven naar beneden door terwijl de kaart
+   ernaast leesbaar blijft, en heeft daarna een VOLLEDIG ingevulde
+   kandidatenkaart — geen dubbel werk meer na het gesprek.
+
+   Opbouw: blok 0 zijn de FEITEN (lezen/schrijven rechtstreeks op de
+   kandidaatvelden en c.cv), daarna de bestaande gespreksvragen in
+   gespreksvolgorde. De intake-sleutels (cijfer, drijfveer, risicos,
+   op, door, …) blijven exact gelijk — de kandidatenkaart
+   (intakeHtml in js/kandidaten.js) leest ze zo.
+
+   Extra's: conceptopslag in localStorage (typwerk kan niet meer
+   verdampen door een misklik of een transcript-run), Enter springt
+   naar het volgende veld, en "Samenvatting maken" bouwt zonder AI
+   een nette samenvatting uit wat er al is ingevuld.
    ═══════════════════════════════════════════════════════════════ */
+/* Eén intakepaneel tegelijk: opent iemand het opnieuw (bv. na de
+   transcript-route) dan ruimt de vorige instantie eerst haar
+   listeners en scrim-guard op. Zonder dit stapelen Escape-guards. */
+let igVorigeOpruimen = null;
+
 function intakeForm(id){
   const c = CRM.kandidaat(id); if(!c) return;
   const it = c.intake || {};
+  const cv = c.cv || {};
+  const conceptKey = 'intakeConcept:' + c.id;
+  if(igVorigeOpruimen) igVorigeOpruimen();
+
+  /* Toestand van dit paneel. `dirty` = er is iets gewijzigd sinds openen of
+     opslaan; de guards (sluitknop, scrim, Escape) kijken hiernaar. */
+  let dirty = false, wachter = null, escGuard = null, opgeruimd = false;
+  const opruimen = () => {
+    if(opgeruimd) return; opgeruimd = true;
+    if(igVorigeOpruimen === opruimen) igVorigeOpruimen = null;
+    clearTimeout(wachter);
+    if(escGuard) document.removeEventListener('keydown', escGuard, true);
+    /* De scrim-guard weer terug naar het gedrag dat core.js erop zette,
+       anders houdt een gesloten intake alle vólgende drawers gegijzeld. */
+    const sc = document.getElementById('scrim');
+    if(sc) sc.onclick = () => CRM.drawer.close();
+  };
+  igVorigeOpruimen = opruimen;
+
+  /* Bouwstenen. De gespreksvelden houden hun oude in_*-ids (dus dezelfde
+     intake-sleutels); de feitenvelden heten ig_* en schrijven naar de
+     kandidaat zelf. */
   const ta = (k, vraag, ph) => `<div class="f-row"><label for="in_${k}">${h(vraag)}</label>
     <textarea id="in_${k}" rows="2" placeholder="${h(ph||'')}">${h(it[k]||'')}</textarea></div>`;
   const chips = (k, ops, sel) => `<div class="rc-inchips" data-veld="${h(k)}">${
     ops.map(o=>`<button type="button" class="chip btn-like ${sel===o?'on':''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`;
-  const blok = t => `<div class="label" style="margin:18px 0 10px;border-top:1px solid var(--line);padding-top:14px">${h(t)}</div>`;
-  CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Video-intake · ${h(c.naam)}</div>
-      <p class="sub" style="margin:6px 0 0">${h(c.klant||'—')} · ${h(c.functie||'—')}${c.datum?' · videocall '+h(CRM.fmtDay(c.datum))+(c.tijd?' '+h(c.tijd):''):''}${it.op?' · laatst bijgewerkt '+h(CRM.fmtDate(it.op))+(it.door?' door '+h(it.door):''):''}</p></div>
-    <div class="modal-b" style="max-height:70vh;overflow-y:auto">
-      <div class="label" style="margin-bottom:10px">A · Situatie &amp; urgentie</div>
+  const fi = (k, lbl, val, ph) => `<div class="f-row"><label for="ig_${k}">${h(lbl)}</label>
+    <input type="text" id="ig_${k}" value="${h(val||'')}" placeholder="${h(ph||'')}"></div>`;
+  const fsel = (k, lbl, ops, val) => {
+    /* Staat er op de kaart een waarde die niet (meer) in de lijst zit, dan
+       hoort die tóch zichtbaar te blijven — anders wist opslaan hem stiekem. */
+    const lijst = (!val || ops.includes(val)) ? ops : ops.concat([val]);
+    return `<div class="f-row"><label for="ig_${k}">${h(lbl)}</label>
+      <select id="ig_${k}"><option value="">—</option>${lijst.map(o=>`<option ${o===val?'selected':''}>${h(o)}</option>`).join('')}</select></div>`;
+  };
+  const blok = (nr, titel, eerste) => `<div class="ig-blok${eerste?' ig-eerste':''}"><span class="ig-nr num">${nr}</span><span>${titel}</span></div>`;
+
+  /* "Er staat nog een concept" — eigen mini-modal in plaats van CRM.bevestig,
+     omdat Escape/ernaast klikken hier de VEILIGE keuze moet zijn (verdergaan);
+     bij bevestig() geldt dat als annuleren en dat zou hier weggooien betekenen. */
+  const vraagConcept = op => new Promise(res => {
+    const d = new Date(op);
+    const wanneer = isNaN(d) ? 'eerder' :
+      d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'}) + ' ' +
+      d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Niet-opgeslagen intake gevonden</div></div>
+      <div class="modal-b"><p class="sub" style="margin:0">Er staat een niet-opgeslagen intake van ${h(wanneer)} — verdergaan of weggooien?</p></div>
+      <div class="modal-f">
+        <button class="btn ghost" id="igc_weg">Weggooien</button>
+        <div class="spacer"></div>
+        <button class="btn" id="igc_door">Verdergaan</button>
+      </div>`, {
+      onClose(){ res(true); },
+      onOpen(m){
+        const sluit = v => { CRM.modal._onClose = null; CRM.modal.close(); res(v); };
+        m.querySelector('#igc_door').onclick = () => sluit(true);
+        m.querySelector('#igc_weg').onclick  = () => sluit(false);
+      }});
+  });
+
+  CRM.drawer.open(`
+    <div class="drawer-h">
+      <div style="flex:1;min-width:0">
+        <div class="h2">Video-intake · ${h(c.naam)}</div>
+        <div class="sub">${h(c.klant||'—')} · ${h(c.functie||'—')}${c.datum?' · videocall '+h(CRM.fmtDay(c.datum))+(c.tijd?' '+h(c.tijd):''):''}${it.op?' · laatst bijgewerkt '+h(CRM.fmtDate(it.op))+(it.door?' door '+h(it.door):''):''}</div>
+      </div>
+      <button class="btn sub x" id="ig_sluit">✕</button>
+    </div>
+    <div class="drawer-b" id="ig_body">
+      <p class="ig-uitleg">Loop het paneel van boven naar beneden door tijdens het gesprek. Enter springt naar het volgende veld (Shift+Enter = nieuwe regel); je invoer wordt tussendoor als concept bewaard.</p>
+      ${blok('0','Feiten', true)}
+      <div class="f-grid">
+        ${fi('functie','Gezochte functie', c.functie)}
+        ${fsel('beschikbaar','Beschikbaar', CRM.BESCHIKBAAR, c.beschikbaar)}
+        ${fsel('ploegen','Ploegen', CRM.PLOEGEN, c.ploegen)}
+        ${fsel('vervoer','Vervoer', CRM.VERVOER, c.vervoer)}
+        ${fi('woonplaats','Woonplaats', c.woonplaats)}
+        ${fi('adres','Adres', c.adres)}
+        ${fi('postcode','Postcode', c.postcode)}
+        ${fi('talen','Talen', c.talen, 'Nederlands, Engels…')}
+        ${fi('rijbewijs','Rijbewijs', c.rijbewijs, 'B')}
+      </div>
+      ${blok('1','Functie &amp; werkverleden')}
+      <div class="f-grid">
+        ${fi('huidigeFunctie','Huidige functie', cv.huidigeFunctie)}
+        ${fi('werkgever','Huidig bedrijf', cv.werkgever)}
+        ${fi('opzegtermijn','Opzegtermijn', cv.opzegtermijn, 'bijv. 1 maand')}
+      </div>
       ${ta('situatie','Wat is er veranderd waardoor je nu openstaat? Wat mis je in je huidige/vorige werk?','de reden achter de reden — vraag door')}
-      <div class="f-row"><label>Loop je ook bij andere bureaus of bedrijven?</label>
-        ${chips('trajecten',['nee','ja'],it.trajecten)}
-        <textarea id="in_trajectenTxt" rows="1" placeholder="zo ja: waar, en hoe ver in het proces?" style="margin-top:8px;${it.trajecten==='ja'?'':'display:none'}">${h(it.trajectenTxt||'')}</textarea></div>
-      ${blok('B · Drijfveren')}
+      ${ta('werkbeeld','Wat weet je van dit soort werk — tempo, fysiek, omgeving? Waar verwacht je aan te moeten wennen?','voorkomt uitval in de eerste 30 dagen')}
+      ${blok('2','Salaris &amp; voorwaarden')}
+      <div class="f-grid">
+        ${fi('huidigSalaris','Huidig salaris (bruto p/m)', cv.huidigSalaris, 'bijv. 2800')}
+        ${fi('salariswens','Salariswens (bruto p/m)', cv.salariswens, 'bijv. 3100')}
+      </div>
+      ${blok('3','Motivatie')}
       ${ta('jaZegt','Stel je krijgt een aanbod: wat maakt dat je ja zegt — behalve het geld?')}
       ${ta('droombaan','Wat maakt een baan voor jou een droombaan?')}
       ${ta('blijven','Wat zou je huidige werkgever moeten veranderen zodat je tóch blijft?','ontmaskert de echte drijfveer en de tegenbod-gevoeligheid')}
-      ${blok('C · Werkbeeld')}
-      ${ta('werkbeeld','Wat weet je van dit soort werk — tempo, fysiek, omgeving? Waar verwacht je aan te moeten wennen?','voorkomt uitval in de eerste 30 dagen')}
-      ${blok('D · Toekomst en ontwikkeling')}
       ${ta('jaar13','Waar wil je over 1 jaar staan? En over 3 jaar?')}
       ${ta('leren','Wat wil je leren of ontwikkelen in je volgende stap?')}
-      ${blok('E · Risico-check')}
+      ${blok('4','Risico’s')}
+      <div class="f-row"><label>Loop je ook bij andere bureaus of bedrijven?</label>
+        ${chips('trajecten',['nee','ja'],it.trajecten)}
+        <textarea id="in_trajectenTxt" rows="1" placeholder="zo ja: waar, en hoe ver in het proces?" style="margin-top:8px;${it.trajecten==='ja'?'':'display:none'}">${h(it.trajectenTxt||'')}</textarea></div>
       ${ta('blokkade','Is er iets of iemand die je zou tegenhouden om ja te zeggen op een passend aanbod?','partner, reistijd, twijfel…')}
       <div class="f-row"><label>Verwacht je een tegenbod als je opzegt?</label>${chips('tegenbod',['nee','misschien','ja'],it.tegenbod)}</div>
       <div class="f-row"><label>Heb je je onvrede al eens bij je leidinggevende aangekaart?</label>${chips('aangekaart',['ja','nee'],it.aangekaart)}</div>
-      ${blok('F · Commitment')}
+      ${blok('5','Oordeel &amp; samenvatting')}
       <div class="f-row"><label>Als het aanbod klopt: hoe graag maak je deze overstap? (1–10)</label>
         <div class="rc-schaal">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button type="button" class="rc-cijfer ${+it.cijfer===n?'on':''}" data-c="${n}">${n}</button>`).join('')}</div></div>
       ${ta('nietLager','Waarom geen twee punten lager?','hier komt het echte verhaal')}
       ${ta('tien','Wat zou het een 10 maken?','je onderhandel-checklist bij het offer')}
-      ${blok('Samenvatting AM')}
       ${ta('drijfveer','Echte drijfveer (één zin)')}
       ${ta('risicos','Afhaakrisico’s')}
+      <div class="ig-samenvat">
+        <button type="button" class="btn ghost sm" id="ig_samenvat">Samenvatting maken</button>
+        <span class="hint">bouwt een paar zinnen uit wat je hierboven invulde — daarna gewoon aanpasbaar</span>
+      </div>
       ${ta('samenvatting','Samenvatting voor de klant','drie feitelijke zinnen die de kandidaat verkopen')}
       <div class="f-row"><label>Klaar om voor te stellen?</label>${chips('klaar',['ja','nog niet'],it.klaar)}</div>
     </div>
-    <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button>
+    <div class="drawer-f" style="flex-wrap:wrap;row-gap:8px">
+      <button class="btn" id="in_ok">Intake opslaan</button>
       <button class="btn ghost" id="in_uittranscript">Uit transcript</button>
-      <button class="btn" id="in_ok">Intake opslaan</button></div>`, {onOpen(m){
-      /* Er is maar één modal, dus het formulier moet eerst dicht; onKlaar
-         zet hem daarna weer open, nu gevuld met wat er uit het gesprek kwam. */
-      const trKnop = m.querySelector('#in_uittranscript');
-      if(trKnop) trKnop.onclick = () => {
-        if(!CRM.intakeAI) return CRM.toast('Transcript inlezen is nu niet beschikbaar','err');
-        CRM.modal.close();
-        CRM.intakeAI.open({kandidaat:c, onKlaar:() => intakeForm(c.id)});
+      <div class="spacer"></div>
+      <button class="btn ghost" id="ig_annuleer">Sluiten</button>
+    </div>`, {onClose:opruimen, onOpen(dr){
+      const $ = sel => dr.querySelector(sel);
+
+      /* ── Conceptopslag: alles wat in het paneel staat, als één object ── */
+      const lees = () => {
+        const d = {velden:{}, chips:{}, cijfer:null};
+        CRM.$$('#ig_body input[id], #ig_body select[id], #ig_body textarea[id]', dr)
+          .forEach(el => { d.velden[el.id] = el.value; });
+        CRM.$$('.rc-inchips[data-veld]', dr).forEach(g => {
+          const on = g.querySelector('.chip.on'); if(on) d.chips[g.dataset.veld] = on.dataset.w;
+        });
+        const cij = dr.querySelector('.rc-cijfer.on'); if(cij) d.cijfer = +cij.dataset.c;
+        return d;
       };
-      CRM.$$('.rc-inchips', m).forEach(g => CRM.$$('.chip', g).forEach(b => b.onclick = () => {
+      const heeftInhoud = d => !!d && (
+        Object.values(d.velden||{}).some(v => String(v).trim() !== '') ||
+        Object.keys(d.chips||{}).length > 0 || d.cijfer != null);
+      const zetTerug = d => {
+        /* Alleen gevulde conceptvelden terugzetten: een leeg veld in het
+           concept mag niet wissen wat er intussen op de kaart of via de
+           transcript-route is ingevuld. */
+        Object.entries((d && d.velden) || {}).forEach(([k, v]) => {
+          if(String(v).trim() === '') return;
+          const el = dr.querySelector('#'+k); if(el) el.value = v;
+        });
+        Object.entries((d && d.chips) || {}).forEach(([veld, w]) => {
+          const g = dr.querySelector(`.rc-inchips[data-veld="${veld}"]`); if(!g) return;
+          CRM.$$('.chip', g).forEach(b => b.classList.toggle('on', b.dataset.w === w));
+        });
+        if(d && d.cijfer != null)
+          CRM.$$('.rc-cijfer', dr).forEach(b => b.classList.toggle('on', +b.dataset.c === d.cijfer));
+        const tr = dr.querySelector('.rc-inchips[data-veld="trajecten"] .chip.on');
+        const txt = $('#in_trajectenTxt');
+        if(txt) txt.style.display = (tr && tr.dataset.w === 'ja') ? '' : 'none';
+      };
+      const schrijfConcept = () => {
+        try{ localStorage.setItem(conceptKey, JSON.stringify({op:new Date().toISOString(), data:lees()})); }catch(e){}
+      };
+      /* ~2 s stilte na de laatste aanslag, dan pas schrijven — niet bij elke
+         toets, want JSON.stringify over het hele paneel bij elke letter is
+         zonde en het concept hoeft alleen een misklik te overleven. */
+      const noteer = () => { dirty = true; clearTimeout(wachter); wachter = setTimeout(schrijfConcept, 2000); };
+      $('#ig_body').addEventListener('input', noteer);
+
+      /* Ligt er nog een concept van een eerdere sessie? Dan kiest de
+         recruiter zelf: verdergaan (concept over de kaartwaarden heen) of
+         weggooien (verder met wat er op de kaart staat). */
+      let concept = null;
+      try{ concept = JSON.parse(localStorage.getItem(conceptKey) || 'null'); }catch(e){ concept = null; }
+      if(concept && heeftInhoud(concept.data)){
+        vraagConcept(concept.op).then(verder => {
+          if(verder){ zetTerug(concept.data); dirty = true; }
+          else { try{ localStorage.removeItem(conceptKey); }catch(e){} }
+        });
+      }
+
+      /* ── Chips en cijferschaal (ongewijzigd gedrag, plus conceptopslag) ── */
+      CRM.$$('.rc-inchips', dr).forEach(g => CRM.$$('.chip', g).forEach(b => b.onclick = () => {
         CRM.$$('.chip', g).forEach(x => x.classList.remove('on'));
         b.classList.add('on');
-        if(g.dataset.veld === 'trajecten') m.querySelector('#in_trajectenTxt').style.display = b.dataset.w === 'ja' ? '' : 'none';
+        if(g.dataset.veld === 'trajecten') $('#in_trajectenTxt').style.display = b.dataset.w === 'ja' ? '' : 'none';
+        noteer();
       }));
-      CRM.$$('.rc-cijfer', m).forEach(b => b.onclick = () => {
-        CRM.$$('.rc-cijfer', m).forEach(x => x.classList.remove('on'));
+      CRM.$$('.rc-cijfer', dr).forEach(b => b.onclick = () => {
+        CRM.$$('.rc-cijfer', dr).forEach(x => x.classList.remove('on'));
         b.classList.add('on');
+        noteer();
       });
-      m.querySelector('#in_ok').onclick = async () => {
-        const chip = k => { const b = m.querySelector(`.rc-inchips[data-veld=${k}] .chip.on`); return b ? b.dataset.w : ''; };
-        const cij = m.querySelector('.rc-cijfer.on');
-        const g = k => m.querySelector('#in_'+k).value.trim();
+
+      /* ── Invulritme: Enter = volgend veld, Shift+Enter = nieuwe regel ── */
+      dr.addEventListener('keydown', e => {
+        if(e.key !== 'Enter') return;
+        const el = e.target;
+        if(!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+        if(el.tagName === 'TEXTAREA' && e.shiftKey) return;
+        e.preventDefault();
+        const lijst = CRM.$$('#ig_body input, #ig_body select, #ig_body textarea', dr)
+          .filter(x => x.offsetParent !== null && !x.disabled);
+        const vlg = lijst[lijst.indexOf(el) + 1];
+        if(vlg){ vlg.focus(); vlg.scrollIntoView({block:'center', behavior:'smooth'}); }
+        else $('#in_ok').focus();
+      });
+
+      /* ── Sluiten met onopgeslagen werk: eerst bevestigen ──
+         De drawer kent zelf geen sluit-haak; daarom een eigen guard op de
+         sluitknoppen, de scrim en (via capture, dus vóór de globale handler
+         in core.js) op Escape. Het concept staat op dat moment al veilig
+         in localStorage, dus "toch sluiten" gooit niets weg. */
+      const sluitVeilig = async () => {
+        if(dirty){
+          clearTimeout(wachter); schrijfConcept();
+          const toch = await CRM.bevestig('Sluiten zonder de intake op te slaan?',
+            'Je invoer blijft als concept bewaard en komt terug zodra je deze intake opnieuw opent.',
+            {knop:'Sluiten'});
+          if(!toch) return;
+        }
+        CRM.drawer.close();
+      };
+      escGuard = e => {
+        if(e.key !== 'Escape' || CRM.modal._aan) return;
+        if(!dr.isConnected || !dr.classList.contains('on') || !dr.querySelector('#ig_body')) return;
+        const el = document.activeElement;
+        const typt = el && (el.tagName === 'TEXTAREA' ||
+          (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range)$/i.test(el.type)) ||
+          el.isContentEditable);
+        if(typt) return;              // core.js laat dan alleen het veld los
+        if(!dirty) return;            // niets te verliezen → core.js sluit gewoon
+        e.stopPropagation();
+        sluitVeilig();
+      };
+      document.addEventListener('keydown', escGuard, true);
+      const scrim = document.getElementById('scrim');
+      if(scrim) scrim.onclick = () => sluitVeilig();
+      $('#ig_sluit').onclick = sluitVeilig;
+      $('#ig_annuleer').onclick = sluitVeilig;
+
+      /* ── Samenvatting zonder AI: 3–4 zinnen uit de ingevulde velden ── */
+      $('#ig_samenvat').onclick = () => {
+        const f = k => { const el = $('#ig_'+k); return el ? el.value.trim() : ''; };
+        const t = k => { const el = $('#in_'+k); return el ? el.value.trim() : ''; };
+        const zonderPunt = s => String(s).replace(/[.\s]+$/, '');
+        const lijstNL = d => d.length > 1 ? d.slice(0, -1).join(', ') + ' en ' + d[d.length - 1] : (d[0] || '');
+        const geld = v => {
+          const s = String(v || '').trim();
+          const m = s.match(/^€?\s*(\d{1,2}\.?\d{3}|\d+)(?:,\d+)?$/);
+          return m ? '€' + m[1].replace('.', '') + ' bruto per maand' : s;
+        };
+        const voornaam = (c.naam || 'De kandidaat').trim().split(/\s+/)[0];
+        const zinnen = [];
+        /* Wie is het, wat doet hij nu, wat zoekt hij. */
+        const d1 = [];
+        const hf = f('huidigeFunctie'), wg = f('werkgever');
+        if(hf && wg) d1.push(`werkt als ${hf} bij ${wg}`);
+        else if(hf) d1.push(`werkt als ${hf}`);
+        else if(wg) d1.push(`werkt bij ${wg}`);
+        if(f('woonplaats')) d1.push(`woont in ${f('woonplaats')}`);
+        if(f('functie')) d1.push(`zoekt een baan als ${f('functie')}`);
+        if(d1.length) zinnen.push(`${voornaam} ${lijstNL(d1)}.`);
+        /* Wat wil hij verdienen en per wanneer. */
+        const d2 = [];
+        if(f('salariswens')) d2.push(`wil ${geld(f('salariswens'))} verdienen${f('huidigSalaris') ? ' (nu ' + geld(f('huidigSalaris')) + ')' : ''}`);
+        const b = f('beschikbaar');
+        if(b === 'direct') d2.push('kan per direct beginnen');
+        else if(f('opzegtermijn')) d2.push(`heeft een opzegtermijn van ${zonderPunt(f('opzegtermijn'))}`);
+        else if(b && b !== 'niet') d2.push(`is ${b} beschikbaar`);
+        const pl = f('ploegen');
+        if(pl && pl !== 'geen') d2.push(`wil in ${pl === 'wisselend' ? 'wisselende ploegen' : pl} werken`);
+        if(d2.length) zinnen.push(`${voornaam} ${lijstNL(d2)}.`);
+        /* Drijfveer + eventueel risico en commitment. */
+        const drijf = t('drijfveer') || t('jaZegt') || t('droombaan');
+        if(drijf) zinnen.push(`Belangrijkste drijfveer: ${zonderPunt(drijf)}.`);
+        const cijEl = dr.querySelector('.rc-cijfer.on');
+        const risico = t('risicos') || t('blokkade');
+        let z4 = '';
+        if(cijEl) z4 = `Commitment voor de overstap: ${cijEl.dataset.c}/10`;
+        if(risico) z4 = z4 ? `${z4}; aandachtspunt: ${zonderPunt(risico)}` : `Aandachtspunt: ${zonderPunt(risico)}`;
+        if(z4) zinnen.push(z4 + '.');
+        if(!zinnen.length) return CRM.toast('Vul eerst een paar velden in — er valt nog niets samen te vatten','err');
+        $('#in_samenvatting').value = zinnen.join(' ');
+        noteer();
+        $('#in_samenvatting').focus();
+      };
+
+      /* ── Transcript-route: blijft werken, maar gooit geen typwerk meer
+         weg — het concept staat in localStorage vóór het paneel sluit, en
+         bij terugkomst kiest de recruiter zelf tussen concept en
+         transcript-resultaat. ── */
+      $('#in_uittranscript').onclick = () => {
+        if(!CRM.intakeAI) return CRM.toast('Transcript inlezen is nu niet beschikbaar','err');
+        if(dirty){ clearTimeout(wachter); schrijfConcept(); }
+        CRM.drawer.close();
+        CRM.intakeAI.open({kandidaat:c, onKlaar:() => intakeForm(c.id)});
+      };
+
+      /* ── Opslaan: intake als vanouds, plus de feiten naar de kandidaat ── */
+      $('#in_ok').onclick = async () => {
+        const g = k => { const el = $('#in_'+k); return el ? el.value.trim() : ''; };
+        const f = k => { const el = $('#ig_'+k); return el ? el.value.trim() : ''; };
+        const chip = k => { const b = dr.querySelector(`.rc-inchips[data-veld="${k}"] .chip.on`); return b ? b.dataset.w : ''; };
+        const cij = dr.querySelector('.rc-cijfer.on');
         const intake = {
           situatie:g('situatie'), trajecten:chip('trajecten'), trajectenTxt:g('trajectenTxt'),
           jaZegt:g('jaZegt'), droombaan:g('droombaan'), blijven:g('blijven'), werkbeeld:g('werkbeeld'),
@@ -3782,15 +4046,39 @@ function intakeForm(id){
              hier niet opnieuw gevraagd — maar hij mag ook niet verdwijnen
              zodra iemand de vragenlijst opslaat. */
           videocallOp:it.videocallOp || '',
+          /* Kwam (een deel van) deze intake uit een transcript, dan is dít
+             de enige plek waar dat staat — niet laten verdampen bij opslaan
+             (wens js/intake.js, punt 4 van de inbouwnotitie). */
+          bron:it.bron || '',
           op:CRM.todayISO(), door:CRM.me()
         };
-        await bewaarKand(c.id, {intake});
+        /* De feiten schrijven naar de kandidaat zelf (kolommen + c.cv),
+           zodat de kaart na het gesprek volledig is — geen dubbel werk.
+           LET OP: ig_functie is de GEZOCHTE functie (c.functie); de huidige
+           functie zit in c.cv.huidigeFunctie. Het cv-object mergen, niet
+           vervangen — daar zit ook het werkverleden (cv.werkgevers) in. */
+        const patch = {
+          intake,
+          functie:f('functie'), beschikbaar:f('beschikbaar'), ploegen:f('ploegen'), vervoer:f('vervoer'),
+          woonplaats:f('woonplaats'), adres:f('adres'), postcode:f('postcode'),
+          talen:f('talen'), rijbewijs:f('rijbewijs'),
+          cv:Object.assign({}, c.cv || {}, {
+            huidigeFunctie:f('huidigeFunctie'), werkgever:f('werkgever'), opzegtermijn:f('opzegtermijn'),
+            huidigSalaris:f('huidigSalaris'), salariswens:f('salariswens')
+          })
+        };
+        const ok = await bewaarKand(c.id, patch);
+        if(!ok) return;
+        /* Concept wissen — en eerst de wachtende schrijf-timer stoppen,
+           anders zet die het concept 2 s later doodleuk terug. */
+        clearTimeout(wachter);
+        try{ localStorage.removeItem(conceptKey); }catch(e){}
+        dirty = false;
         await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
           `Video-intake afgenomen${intake.cijfer ? ' — commitment ' + intake.cijfer + '/10' : ''}`);
-        CRM.modal.close();
+        CRM.drawer.close();
         CRM.toast(`Intake opgeslagen${intake.cijfer ? ' — ' + intake.cijfer + '/10' : ''}`, 'ok');
         tekenBody();
-        if(document.getElementById('drawer')?.classList.contains('on')) snelBewerk(c.id);
       };
     }});
 }

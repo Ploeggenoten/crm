@@ -375,3 +375,38 @@ table.rc-qa tr:last-child td{border-bottom:none}
 @media (min-width:1900px){
   .rc-leadbord .bcol{max-height:calc(100vh - 270px)}
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   GESPREKSMODUS VIDEO-INTAKE (.ig-) — het intakeformulier als
+   zijpaneel (drawer) in plaats van modal, zie intakeForm in
+   js/recruitment.js. Waarom een eigen sectie: het paneel heeft een
+   paar elementen die nergens anders voorkomen (genummerde
+   gespreksblokken, de samenvattingsregel) en die horen niet tussen
+   de bord- en lijststijlen hierboven te sluipen.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Eén rustige instructieregel bovenaan; gedempte kleur zodat hij niet
+   met de vragen concurreert zodra het gesprek eenmaal loopt. */
+.ig-uitleg{margin:0 0 18px;font-size:12.5px;line-height:1.55;color:var(--muted)}
+
+/* Genummerde blokkop. De dunne lijn erboven verdeelt het paneel in
+   gespreksfasen — zo ziet de recruiter tijdens het bellen in één
+   oogopslag waar hij is. Inter 700, géén Anton: dit is functionele
+   tekst, geen paginatitel (huisstijlbrief 30 jul 2026). */
+.ig-blok{display:flex;align-items:center;gap:9px;margin:22px 0 12px;
+  padding-top:16px;border-top:1px solid var(--line);
+  font-size:13px;font-weight:700;color:var(--ink)}
+/* Het eerste blok (0 · Feiten) volgt direct op de uitlegregel; een extra
+   lijn plus marge zou daar alleen maar lucht tussen duwen. */
+.ig-blok.ig-eerste{margin-top:0;padding-top:0;border-top:none}
+/* Het nummer als rustig rondje met alleen een rand — kleur is betekenis,
+   en een tellertje heeft er geen. */
+.ig-nr{flex:0 0 auto;width:22px;height:22px;display:inline-flex;
+  align-items:center;justify-content:center;border:1px solid var(--line-2);
+  border-radius:50%;font-size:11.5px;font-weight:700;color:var(--txt-2)}
+
+/* De regel met de knop "Samenvatting maken" en zijn uitleg, vlak boven het
+   samenvattingsveld. wrap: op een smal scherm valt de hint eronder in
+   plaats van buiten beeld. */
+.ig-samenvat{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px}
+.ig-samenvat .hint{font-size:11.5px;color:var(--muted)}

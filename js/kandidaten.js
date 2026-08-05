@@ -992,6 +992,7 @@ function kaart(mount, acties, id){
   mount.innerHTML = `
     <div class="stack">
       ${kopHtml(c)}
+      ${dealbalkHtml(c)}
       ${laatsteNotitiesHtml(c)}
       <div class="grid c2 kd-kolommen">
         <div class="stack">
@@ -1030,6 +1031,9 @@ function kaart(mount, acties, id){
   bindVelden(mount, c);
   bindSterren(mount, c);
   bindMist(mount, c);
+  bindStrip(mount, c);
+  bindDealbalk(mount, c);
+  bindBlokBewerk(mount, c);
   /* Uitvalgegevens vastleggen of bijwerken vanaf de kaart zelf — hetzelfde
      formulier als op het bord, zodat er maar één plek is waar dit gebeurt. */
   mount.querySelector('#c_uitval')?.addEventListener('click',
@@ -1253,12 +1257,97 @@ function anonMeterHtml(){
   </div>`;
 }
 
+/* ─── Plaatsbaarheidsstrip ────────────────────────────────────────
+   De vier vragen die bepalen of iemand plaatsbaar is — beschikbaarheid,
+   ploegen, vervoer + reisafstand, salariswens — als één rij chips direct
+   onder de kop. Groen = kan, amber = knelt, grijs = nog leeg. Elke chip
+   springt naar zijn veld, ook als hij al gevuld is: tijdens een telefoon-
+   gesprek is dit de kortste route naar corrigeren. */
+function stripHtml(c){
+  if(geanonimiseerd(c)) return '';
+  const chip = (veld, kleur, tekst, tip) =>
+    `<button type="button" class="chip btn-like kd-pchip ${kleur}" data-strip="${h(veld)}"
+       title="${h(tip || 'Klik om te wijzigen')}">${tekst}</button>`;
+  const uit = [];
+
+  const BES = {direct:['green','per direct'], 'in overleg':['amber','in overleg'], niet:['red','niet beschikbaar']};
+  uit.push(c.beschikbaar
+    ? chip('beschikbaar', BES[c.beschikbaar]?.[0] || '', h(BES[c.beschikbaar]?.[1] || c.beschikbaar))
+    : chip('beschikbaar', 'leeg', 'beschikbaar?'));
+
+  uit.push(c.ploegen
+    ? chip('ploegen', c.ploegen === 'geen' ? 'amber' : 'green', h(c.ploegen === 'geen' ? 'geen ploegen' : c.ploegen),
+        c.ploegen === 'geen' ? 'Wil geen ploegendienst — in productie en logistiek knelt dat vaak' : '')
+    : chip('ploegen', 'leeg', 'ploegen?'));
+
+  /* Vervoer + reisafstand in één chip: los van elkaar zeggen ze weinig.
+     De grenzen zijn dezelfde als in de matching (js/data.js), geen eigen norm. */
+  const w = werkplek(c);
+  const km = (w && c.woonplaats) ? CRM.afstandKm(c.woonplaats, w.plaats) : null;
+  if(c.vervoer){
+    const grens = c.vervoer === 'auto' ? REIS_VER : c.vervoer === 'elektrische fiets' ? 25
+                : c.vervoer === 'fiets' ? 15 : c.vervoer === 'geen' ? 5 : REIS_VER_ZONDER_AUTO;
+    const ver = km != null && km >= grens;
+    uit.push(chip('vervoer', ver ? 'amber' : 'green',
+      h(c.vervoer) + (km != null ? ` · <span class="num">${km}</span> km` : ''),
+      ver ? `${km} km naar ${w.plaats} is ver met ${c.vervoer} — reistijd is een vaste uitvalreden` : ''));
+  }else uit.push(chip('vervoer', 'leeg', 'vervoer?'));
+
+  const wens = lees(c, 'cv.salariswens');
+  uit.push(wens
+    ? chip('cv.salariswens', 'green', h(euroMnd(wens)))
+    : chip('cv.salariswens', 'leeg', 'salariswens?'));
+
+  return `<div class="kd-strip"><span class="label">Plaatsbaar?</span>${uit.join('')}</div>`;
+}
+function bindStrip(mount, c){
+  mount.querySelectorAll('[data-strip]').forEach(b => b.onclick = () => springNaarVeld(b.dataset.strip, c));
+}
+
+/* ─── Dealbalk ────────────────────────────────────────────────────
+   De AM-vraag in één regel: welke deal, welke fase, W&S of Flex, wat mist
+   er voor de fee, en wat is de eerstvolgende stap. Alles wat erop staat
+   bestaat al elders op de kaart — dit is een nieuwe plek, geen nieuw veld. */
+function dealbalkHtml(c){
+  if(geanonimiseerd(c) || !c.klant) return '';
+  const v = c.vacatureId ? (CRM.state.vacs || []).find(x => String(x.id) === String(c.vacatureId)) : null;
+  const deal = v ? `${v.functie || 'vacature'} · ${v.klant}` : `${c.functie || 'functie?'} · ${c.klant}`;
+
+  let feeTxt = '';
+  if(CRM.fee){
+    try{
+      const mist = CRM.fee.watMist(c, CRM.fee.voorKlant(c.klant, c.geplaatstOp || null)) || [];
+      feeTxt = mist.length ? `<span class="knel">nog ${mist.length} in te vullen</span>` : 'compleet';
+    }catch(e){ feeTxt = ''; }
+  }
+
+  /* De eerstvolgende stap: een geplande afspraak wint van de actiedatum,
+     want die is hard. Daarna de volgende actie; anders vraagt de balk erom. */
+  const vd = CRM.todayISO();
+  let stap = '', stapVeld = 'volgendeActie';
+  if(c.datum && c.datum >= vd){ stap = `afspraak ${CRM.fmtDate(c.datum)}${c.tijd ? ' · ' + c.tijd : ''}`; stapVeld = 'datum'; }
+  else if(c.volgendeActie) stap = c.volgendeActie + (c.actieDatum ? ` · ${CRM.fmtDate(c.actieDatum)}` : '');
+
+  const cel = (lbl, inhoud, veld, tip) => `<span class="kd-dealcel${veld ? ' klik' : ''}"${veld ? ` data-deal="${h(veld)}"` : ''}
+      ${tip ? ` title="${h(tip)}"` : ''}><span class="dl">${h(lbl)}</span>${inhoud}</span>`;
+  return `<div class="kd-dealbalk">
+    ${cel('Deal', h(deal))}
+    ${cel('Fase', h(CRM.faseNorm(c.fase) || 'instroom'))}
+    ${cel('Type', c.type ? h(c.type) : '<span class="leeg">invullen…</span>', 'type', 'W&S of Flex — bepaalt of er een fee is')}
+    ${feeTxt ? cel('Fee', feeTxt, '', 'Zie het blok "Klaar voor facturatie" onderaan de kaart') : ''}
+    <span class="spacer"></span>
+    <button type="button" class="kd-dealstap" data-deal="${h(stapVeld)}"
+      title="Klik om de volgende stap te wijzigen">${stap ? 'Volgende: ' + h(stap) : 'Volgende stap invullen…'}</button>
+  </div>`;
+}
+function bindDealbalk(mount, c){
+  mount.querySelectorAll('[data-deal]').forEach(b => b.onclick = () => springNaarVeld(b.dataset.deal, c));
+}
+
 function kopHtml(c){
   const anon = geanonimiseerd(c);
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
-  const BESCH_LBL = {direct:'Direct beschikbaar', 'in overleg':'Beschikbaar in overleg', niet:'Niet beschikbaar'};
-  const besch = BESCH_LBL[c.beschikbaar] || (c.start ? 'Start ' + CRM.fmtDate(c.start) : '');
   const gold = isGolden(c.id);
   return `<div class="card"><div class="card-b kd-hero">
     <div style="min-width:0;flex:1">
@@ -1273,7 +1362,6 @@ function kopHtml(c){
         <button type="button" class="chip btn-like kd-goldbtn${gold?' aan':''}" id="c_golden"
           title="${gold?'Klik om de golden-markering weg te halen':'Markeer als golden candidate: goede kandidaat, nu geen passende vacature'}">★ Golden candidate</button>
         ${faseChip(c.fase)}
-        ${besch?`<span class="chip${c.beschikbaar==='direct'?' green':''}">${h(besch)}</span>`:''}
         ${c.rec?`<span class="chip">Recruiter ${h(c.rec)}</span>`:''}
         ${c.type?`<span class="chip">${h(c.type)}</span>`:''}
         ${stilteChip(c)}
@@ -1299,7 +1387,7 @@ function kopHtml(c){
         ? `<div class="meta">Nog invullen: ${v.mist.map(m=>h(m.lbl.toLowerCase())).join(', ')}</div>`
         : '<div class="meta">Alles ingevuld — netjes.</div>'}
     </div>`}
-  </div>${anon ? '' : mistHtml(c)}</div>`;
+  </div>${stripHtml(c)}${anon ? '' : mistHtml(c)}</div>`;
 }
 
 /* ─── Kandidaatgegevens (inline bewerkbaar) ───────────────────── */
@@ -1694,7 +1782,21 @@ function intakeHtml(c){
       <span class="spacer"></span>${knop}</div>
     <div class="card-b">${CRM.intakeAI ? CRM.intakeAI.blokHtml(c) : ''}${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall — of lees een transcript in.')}</div></div>`;
   const cijfer = Number(i.cijfer || i.commitment || 0);
-  const rest = Object.keys(i).filter(k => !['cijfer','commitment','drijfveer','drijfveren','risico','risicos','op','door'].includes(k));
+  /* Nederlandse labels in gespreksvolgorde, in plaats van de rauwe sleutels
+     ("jaZegt", "nietLager") die hier eerst op de kaart stonden. Onbekende
+     sleutels vallen terug op de sleutelnaam, zodat een nieuw intakeveld
+     nooit onzichtbaar is. */
+  const INTAKE_LBL = {
+    situatie:'Situatie & urgentie', trajecten:'Ook bij andere bureaus', trajectenTxt:'Waar en hoe ver',
+    jaZegt:'Waarom ja, los van geld', droombaan:'Droombaan', blijven:'Wat de werkgever moest veranderen',
+    werkbeeld:'Beeld van het werk', jaar13:'Over 1 en 3 jaar', leren:'Wil leren of ontwikkelen',
+    blokkade:'Mogelijke blokkade', tegenbod:'Verwacht tegenbod', aangekaart:'Onvrede aangekaart',
+    nietLager:'Waarom geen twee punten lager', tien:'Wat het een 10 maakt', klaar:'Klaar om voor te stellen'
+  };
+  const verstopt = ['cijfer','commitment','drijfveer','drijfveren','risico','risicos','samenvatting','op','door'];
+  const volgorde = Object.keys(INTAKE_LBL).concat(Object.keys(i).filter(k => !INTAKE_LBL[k] && !verstopt.includes(k)));
+  const toon = k => { const w = i[k]; return w == null || w === '' ? ''
+    : `<div class="kd-veld"><span class="label">${h(INTAKE_LBL[k] || k)}</span><span>${h(typeof w==='object'?JSON.stringify(w):w)}</span></div>`; };
   return `<div class="card">
     <div class="card-h"><div class="h2">Intake</div>
       ${cijfer?`<span class="chip${cijfer<7?' amber':' green'}">Commitment <span class="num">${cijfer}</span>/10</span>`:''}
@@ -1703,10 +1805,12 @@ function intakeHtml(c){
       ${knop}</div>
     <div class="card-b">
       ${cijfer && cijfer < 7 ? '<div class="note warn" style="margin-bottom:14px">Commitmentcijfer onder de 7 — bespreek de twijfel vóór je voorstelt.</div>' : ''}
+      ${i.samenvatting ? `<div class="kd-intsam"><span class="label">Samenvatting voor de klant</span>
+        <p>${h(i.samenvatting)}</p></div>` : ''}
       <div class="kd-velden">
-        ${(i.drijfveer||i.drijfveren)?`<div class="kd-veld"><span class="label">Drijfveren</span><span>${h(i.drijfveer||i.drijfveren)}</span></div>`:''}
-        ${(i.risico||i.risicos)?`<div class="kd-veld"><span class="label">Risico's</span><span>${h(i.risico||i.risicos)}</span></div>`:''}
-        ${rest.map(k=>`<div class="kd-veld"><span class="label">${h(k)}</span><span>${h(typeof i[k]==='object'?JSON.stringify(i[k]):i[k])}</span></div>`).join('')}
+        ${(i.drijfveer||i.drijfveren)?`<div class="kd-veld"><span class="label">Echte drijfveer</span><span>${h(i.drijfveer||i.drijfveren)}</span></div>`:''}
+        ${(i.risico||i.risicos)?`<div class="kd-veld"><span class="label">Afhaakrisico's</span><span>${h(i.risico||i.risicos)}</span></div>`:''}
+        ${volgorde.map(toon).join('')}
       </div>
     </div></div>`;
 }
@@ -1983,6 +2087,71 @@ function veldRij(c, f){
       f.hint?` <span class="meta">${h(f.hint)}</span>`:''}</span></div>`;
 }
 
+/* ─── Blok-bewerken: alle velden van een blok tegelijk ────────────
+   Het inline patroon (klik één waarde) blijft bestaan voor losse
+   correcties, maar wie een heel blok invult — het Traject na een belletje,
+   Contract & salaris bij een plaatsing — opent hiermee álle velden
+   tegelijk: Tab of Enter loopt erdoorheen, één keer opslaan, dus ook maar
+   één netwerkrit en één hertekening (die per definitie ná het typen valt). */
+function blokVelden(c, welk){
+  if(welk === 'traject') return TRAJECT_VELDEN;
+  const toonDatums = CRM.PLACED.includes(c.fase) || ['Afgevallen','Gestopt'].includes(c.fase)
+    || !!c.geplaatstOp || !!c.gestoptOp;
+  return CONTRACT_VELDEN.filter(f => !f.alleenBijPlaatsing || toonDatums).concat(SALARIS_VELDEN);
+}
+function bindBlokBewerk(mount, c){
+  mount.querySelectorAll('[data-blokbewerk]').forEach(b => b.onclick = () => {
+    const body = b.closest('.card')?.querySelector('.card-b');
+    if(body) blokForm(body, c, b.dataset.blokbewerk);
+  });
+}
+function blokForm(body, c, welk){
+  const velden = blokVelden(c, welk);
+  const rij = f => {
+    const ruw = lees(c, f.k);
+    const start = ruw == null ? '' : String(ruw);
+    const opts = typeof f.opts === 'function' ? f.opts(c) : (f.opts || []);
+    const inp = f.t === 'select'
+      ? `<select data-bf="${h(f.k)}">${opts.map(o => {
+          const v = (o && typeof o === 'object') ? o.v : o;
+          const l = (o && typeof o === 'object') ? o.l : (o || '—');
+          return `<option value="${h(v)}"${String(start)===String(v)?' selected':''}>${h(l)}</option>`; }).join('')}</select>`
+      : `<input type="${h(f.t)}" data-bf="${h(f.k)}" value="${h(start)}">`;
+    return `<div class="f-row"><label>${h(f.lbl)}</label>${inp}${f.hint?`<span class="meta">${h(f.hint)}</span>`:''}</div>`;
+  };
+  body.innerHTML = `<div class="kd-blokform">
+    ${velden.map(rij).join('')}
+    <div class="row tight" style="margin-top:12px">
+      <button type="button" class="btn sm" data-bfok>Opslaan</button>
+      <button type="button" class="btn ghost sm" data-bfweg>Annuleren</button>
+      <span class="meta">Enter of Tab = volgende veld · Esc = annuleren</span>
+    </div></div>`;
+
+  const invoer = [...body.querySelectorAll('[data-bf]')];
+  const opslaan = async () => {
+    invoer.forEach(el => {
+      const f = velden.find(x => x.k === el.dataset.bf);
+      let v = el.value;
+      if(f.t === 'number') v = v === '' ? null : Number(v);
+      else v = String(v).trim();
+      schrijf(c, f.k, v);
+    });
+    await bewaarKandidaat(c);
+    CRM.render();
+  };
+  body.querySelector('[data-bfok]').onclick = opslaan;
+  body.querySelector('[data-bfweg]').onclick = () => CRM.render();
+  body.onkeydown = e => {
+    if(e.key === 'Escape'){ e.preventDefault(); return CRM.render(); }
+    if(e.key !== 'Enter' || !e.target.dataset?.bf) return;
+    e.preventDefault();
+    const i = invoer.indexOf(e.target);
+    if(i >= 0 && i < invoer.length - 1) invoer[i+1].focus();
+    else opslaan();
+  };
+  if(invoer[0]) invoer[0].focus();
+}
+
 /* Toont de kandidaat een lopend traject? Bij fase '' (import uit het oude
    ATS, of een golden candidate) heeft contract- en salarisinvoer geen zin
    en houden we de kaart rustig. */
@@ -2093,8 +2262,10 @@ function trajectHtml(c){
   const uitval = ['Afgevallen','Gestopt'].includes(c.fase);
   const kanIntake = CRM.faseIn(c.fase, ['Intake','Voorgesteld']);
   return `<div class="card">
-    <div class="card-h"><div class="h2">Traject</div>
-      ${c.klant?`<span class="spacer"></span><a class="btn ghost sm" href="#klanten/${encodeURIComponent(c.klant)}" data-klant="${h(c.klant)}">Naar klantkaart</a>`:''}</div>
+    <div class="card-h"><div class="h2">Traject</div><span class="spacer"></span>
+      ${c.klant?`<a class="btn ghost sm" href="#klanten/${encodeURIComponent(c.klant)}" data-klant="${h(c.klant)}">Naar klantkaart</a>`:''}
+      <button class="btn ghost sm" data-blokbewerk="traject"
+        title="Alle trajectvelden tegelijk open — Tab of Enter loopt erdoorheen, één keer opslaan">Bewerken</button></div>
     <div class="card-b">
       <div class="kd-velden">
         <div class="kd-veld"><span class="label">Huidige fase</span><span>${h(CRM.faseNorm(c.fase)||'—')} <span class="meta num">sinds ${h(CRM.fmtDate(c.since)||'—')}</span></span></div>
@@ -2147,8 +2318,9 @@ function contractHtml(c){
     || !!c.geplaatstOp || !!c.gestoptOp;
   const velden = CONTRACT_VELDEN.filter(f => !f.alleenBijPlaatsing || toonDatums);
   return `<div class="card">
-    <div class="card-h"><div class="h2">Contract &amp; salaris</div>
-      <span class="meta">klik een waarde om te wijzigen</span></div>
+    <div class="card-h"><div class="h2">Contract &amp; salaris</div><span class="spacer"></span>
+      <button class="btn ghost sm" data-blokbewerk="contract"
+        title="Alle contract- en salarisvelden tegelijk open, één keer opslaan">Bewerken</button></div>
     <div class="card-b">
       <div class="kd-velden">${velden.map(f => veldRij(c, f)).join('')}</div>
       <div class="label" style="margin:16px 0 4px">Salaris</div>

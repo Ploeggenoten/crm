@@ -1012,7 +1012,8 @@ const sync = CRM.debounce(async tabel => {
        naam: Tjeerd, 5 aug 2026). De data staat al in CRM.state; we proberen
        het gewoon opnieuw zodra de gebruiker het veld heeft losgelaten. */
     const a = document.activeElement;
-    if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount')){
+    const blokOpen = document.querySelector('#viewmount .kd-blokform');
+    if(blokOpen || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount'))){
       clearTimeout(CRM._syncLater);
       CRM._syncLater = setTimeout(() => sync(tabel), 2500);
       return;
