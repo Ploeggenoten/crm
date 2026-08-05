@@ -607,17 +607,13 @@ async function verwijderRij(tabel, veld, id){
 /* Afspraken apart: eigen tabel, eigen afscherming, en in demo geen
    database maar localStorage (de tabel bestaat daar niet). */
 async function bewaarAfspraak(rij, bestaat){
-  /* Lezen mag het team, schrijven niet — zie de toelichting bij
-     zorgAfspraken(). De database weigert het ook. Maar dat moet HARDOP:
-     tot 5 aug 2026 keerde deze functie hier stil om, waarna de aanroeper
-     alsnog "Commerciële afspraak vastgelegd" in het logboek zette. Tjerk
-     dacht dat zijn afspraak stond; het blok bleef leeg en de vacature
-     erfde niets. Een geweigerde opslag hoort een melding én een `false`
-     te geven, geen stilte. */
-  if(!CRM.canSeeMoney()){
-    CRM.toast('Alleen de eigenaar kan commerciële afspraken vastleggen — vraag Tjeerd','err');
-    return false;
-  }
+  /* Sinds 5 aug 2026 mag het hele team afspraken vastleggen (besluit
+     Tjeerd: "de AM's moeten ook commerciële afspraken erin kunnen
+     zetten"). De databaseregel die dat regelt staat in
+     supabase/nog-te-draaien.sql (blok 2, afspraken_team); zolang die
+     niet gedraaid is weigert de database een teamlid nog — en dán moet
+     dat HARDOP: de stille weigering van vóór 5 aug zette wél een
+     "vastgelegd"-regel in het logboek terwijl het blok leeg bleef. */
   const lijst = CRM.state.afspraken || (CRM.state.afspraken = []);
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
   if(i >= 0) Object.assign(lijst[i], rij); else lijst.unshift(rij);
@@ -629,21 +625,28 @@ async function bewaarAfspraak(rij, bestaat){
   const {error} = await q;
   if(error){
     if(TABEL_WEG(error)){ CRM.toast('Tabel crm_afspraken bestaat nog niet — draai eerst supabase/schema.sql','err'); return false; }
+    if(RLS_DICHT(error)){
+      CRM.toast('De database laat alleen Tjeerd nog schrijven — draai blok 2 van supabase/nog-te-draaien.sql, dan kan het hele team dit','err');
+      return false;
+    }
     CRM.fout('Opslaan mislukt', error);
     return false;
   }
   CRM.toast('Opgeslagen','ok');
   return true;
 }
+/* Een weigering door row-level security is geen storing maar een regel
+   die nog niet is omgezet — dat verdient een uitleg, geen kale fout. */
+const RLS_DICHT = e => /row.level security|policy|42501/i.test(String((e && (e.message + ' ' + e.code)) || ''));
 async function verwijderAfspraak(id){
-  if(!CRM.canSeeMoney()){
-    CRM.toast('Alleen de eigenaar kan commerciële afspraken wijzigen — vraag Tjeerd','err');
-    return;
-  }
   CRM.state.afspraken = (CRM.state.afspraken || []).filter(r => String(r.id) !== String(id));
   if(CRM.demo){ P.set('afspraken', CRM.state.afspraken); CRM.toast('Verwijderd','ok'); return; }
   const {error} = await CRM.sb.from('crm_afspraken').delete().eq('id', id);
-  if(error) return CRM.fout('Verwijderen mislukt', error);
+  if(error){
+    if(RLS_DICHT(error))
+      return CRM.toast('De database laat alleen Tjeerd nog schrijven — draai blok 2 van supabase/nog-te-draaien.sql','err');
+    return CRM.fout('Verwijderen mislukt', error);
+  }
   CRM.toast('Verwijderd','ok');
 }
 
@@ -1255,11 +1258,9 @@ function railAfspraak(mount, k){
     body.innerHTML = (_afsprTabelMist
         ? '<div class="note warn kl-af-note">De tabel <code>crm_afspraken</code> bestaat nog niet — draai eerst supabase/schema.sql.</div>'
         : '<p class="meta kl-af-leeg">Nog niets vastgelegd. Zonder afspraak kan het systeem na een getekend contract niet zelf rekenen.</p>')
-      + (CRM.canSeeMoney()
-          ? `<button class="btn ghost sm kl-railknop" id="af_nieuw">+ Afspraak vastleggen</button>`
-          /* Geen knop die toch geweigerd wordt: het team leest mee, maar
-             vastleggen is aan de eigenaar — zeg dat er gewoon bij. */
-          : `<p class="meta" style="margin:8px 0 0">Alleen Tjeerd kan afspraken vastleggen — vraag hem de overeenkomst in te lezen.</p>`);
+      /* Sinds 5 aug 2026 voor het hele team: "de AM's moeten ook
+         commerciële afspraken erin kunnen zetten" (Tjeerd). */
+      + `<button class="btn ghost sm kl-railknop" id="af_nieuw">+ Afspraak vastleggen</button>`;
     const nw = body.querySelector('#af_nieuw');
     if(nw) nw.onclick = () => afspraakDrawer(k, null, true);
     return;
