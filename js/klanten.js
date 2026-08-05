@@ -3484,9 +3484,13 @@ function klantModal(k){
           if(doc && doc.postcode){
             pcVeld.value = String(doc.postcode).replace(/^(\d{4})\s*([A-Za-z]{2})$/, '$1 $2').toUpperCase();
             autoPc = true;
-            /* Plaats netjes meeschrijven als het veld nog leeg was. */
+            /* Plaats én Locatie netjes meeschrijven als ze nog leeg
+               waren — de kaart toont Locatie, dus die moet net zo goed
+               mee (Tjeerd, 5 aug 2026: "locatie ook?"). */
             const pl = m.querySelector('#g_pl');
             if(pl && !pl.value.trim() && doc.woonplaatsnaam) pl.value = doc.woonplaatsnaam;
+            const loc = m.querySelector('#g_loc');
+            if(loc && !loc.value.trim() && doc.woonplaatsnaam) loc.value = doc.woonplaatsnaam;
           }
         }catch(e){ /* stil */ }
       }, 600);
