@@ -994,6 +994,14 @@ function kaart(mount, acties, id){
       ${kopHtml(c)}
       ${dealbalkHtml(c)}
       ${laatsteNotitiesHtml(c)}
+      <!-- Het logboek stond helemaal onderaan; "je wilt zien wat er allemaal
+           gebeurt" (naam: Tjeerd, 5 aug 2026) — dus direct onder de kop, vóór
+           de kolommen. De lijst zelf scrollt in eigen vlak, zodat een druk
+           dossier de rest van de kaart niet naar beneden duwt. -->
+      <div class="kd-logboek">
+        <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
+        <div id="c_tabinhoud"></div>
+      </div>
       <div class="grid c2 kd-kolommen">
         <div class="stack">
           ${gegevensHtml(c)}
@@ -1017,10 +1025,6 @@ function kaart(mount, acties, id){
           ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
           ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
         </div>
-      </div>
-      <div>
-        <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
-        <div id="c_tabinhoud"></div>
       </div>
       <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan de
            kaart, want het is het einde van een dossier en geen dagelijkse

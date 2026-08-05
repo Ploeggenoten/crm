@@ -376,3 +376,8 @@ label.kd-taak input{margin-top:3px}
 .kd-intsam{background:var(--card-2);border-radius:var(--r-s);padding:10px 14px;margin-bottom:14px}
 .kd-intsam .label{margin-bottom:4px}
 .kd-intsam p{margin:0;font-size:13.5px;line-height:1.55}
+
+/* Het logboek (activiteiten/taken/notities/historie) staat sinds 5 aug
+   2026 bovenaan de kaart. De lijst scrollt binnen een vast vlak: een druk
+   dossier mag de kolommen eronder niet van het scherm duwen. */
+.kd-logboek #c_tabinhoud .card-b{max-height:280px;overflow-y:auto}
