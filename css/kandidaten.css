@@ -346,22 +346,26 @@ label.kd-taak input{margin-top:3px}
 .kd-pchip.leeg{color:var(--muted);border-style:dashed;background:transparent}
 
 /* ─── Dealbalk (5 aug 2026) ───────────────────────────────────────
-   Donker vlak direct onder de kop: deal, fase, type, fee-status en de
-   eerstvolgende stap. Donker zodat hij zich losmaakt van de kaarten —
-   dit is de regel waar de AM de hele dag op terugvalt. */
-.kd-dealbalk{display:flex;align-items:center;gap:20px;flex-wrap:wrap;
-  background:var(--dark-card);color:var(--dark-txt);
-  border-radius:var(--r);padding:11px 18px}
+   Eén regel direct onder de kop: deal, fase, type, fee-status en de
+   eerstvolgende stap. In de gewone lichte kaartstijl — een donker vlak
+   met lime paste niet in het thema (naam: Tjeerd, 5 aug 2026); het
+   accent zit nu alleen in de olijfgroene stap-knop rechts, dezelfde
+   als elke andere hoofdknop. */
+.kd-dealbalk{display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);
+  border-left:3px solid var(--olive);
+  border-radius:var(--r);padding:11px 18px;box-shadow:var(--sh-2)}
 .kd-dealcel{display:flex;flex-direction:column;gap:2px;font-size:13px;min-width:0;
-  border:0;background:none;padding:0;text-align:left;font-family:inherit;color:inherit}
-.kd-dealcel .dl{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:var(--dark-muted)}
+  border:0;background:none;padding:0;text-align:left;font-family:inherit;color:var(--txt)}
+.kd-dealcel .dl{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted)}
 .kd-dealcel.klik{cursor:pointer}
-.kd-dealcel.klik:hover{color:var(--lime)}
-.kd-dealcel .knel{color:#f0c775}
-.kd-dealcel .leeg{color:var(--dark-muted);font-style:italic}
-.kd-dealstap{background:var(--lime);color:#171d08;border:0;border-radius:9px;
-  padding:8px 14px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
-.kd-dealstap:hover{filter:brightness(.94)}
+.kd-dealcel.klik:hover{color:var(--olive)}
+.kd-dealcel .knel{color:var(--oranje)}
+.kd-dealcel .leeg{color:var(--muted);font-style:italic}
+.kd-dealstap{background:var(--olive);color:#fff;border:1px solid var(--olive);
+  border-radius:999px;padding:8px 15px;font-family:inherit;font-size:13px;
+  font-weight:600;cursor:pointer;transition:filter .12s}
+.kd-dealstap:hover{filter:brightness(1.08)}
 
 /* ─── Blok-bewerken: alle velden van een blok tegelijk open ────── */
 .kd-blokform .f-row{margin-bottom:9px}
