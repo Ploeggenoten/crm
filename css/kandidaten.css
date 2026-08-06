@@ -385,28 +385,29 @@ label.kd-taak input{margin-top:3px}
 .kd-notinvoer{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
 .kd-notinvoer textarea{flex:1;resize:vertical}
 
-/* ─── Werken / Dossier (5 aug 2026) ───────────────────────────────
-   Twee weergaven op één kaart. Bewust géén tabbladen-uiterlijk: het
-   logboek daaronder heeft al tabs, en twee rijen tabs onder elkaar leest
-   als een doolhof. Dit is één schakelaar met twee standen, in het
-   merkoranje — hij moet meteen opvallen (naam: Tjeerd, 5 aug 2026), want
-   wie hem niet ziet mist de helft van de kaart. */
-.kd-schakel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  background:var(--well);border:1px solid var(--line-2);border-radius:999px;
-  padding:5px;align-self:flex-start}
-.kd-schakel button{
-  background:none;border:1px solid transparent;color:var(--txt-2);
-  border-radius:999px;padding:8px 24px;font-family:var(--body);font-size:14px;
-  font-weight:700;cursor:pointer;letter-spacing:.2px;
-  transition:background .12s,color .12s,border-color .12s}
-.kd-schakel button:hover{color:var(--oranje);border-color:var(--oranje)}
-.kd-schakel button.on{background:var(--oranje);border-color:var(--oranje);color:#fff}
-.kd-schakel button.on:hover{filter:brightness(1.06);color:#fff}
-/* Stip op Dossier zolang het profiel nog niet compleet is: daar ligt het
-   werk, ook als je in Werken staat te kijken. */
-.kd-schakelpunt{color:var(--oranje);font-size:17px;line-height:0;vertical-align:1px;margin-left:2px}
-.kd-schakel button.on .kd-schakelpunt{color:#fff}
-.kd-schakeluitleg{font-size:12.5px;color:var(--txt-2);margin:0 10px 0 6px}
-.kd-schakel.opbouwen{border-color:var(--oranje);background:var(--amber-bg)}
-.kd-schakel.opbouwen .kd-schakeluitleg{color:#b03d1c;font-weight:600}
-.kd-vlak[hidden]{display:none}
+/* ─── Eén kaart, twee kolommen (6 aug 2026) ───────────────────────
+   Links wie de kandidaat is, rechts wat we ermee doen. De linkerkolom
+   blijft staan terwijl je rechts doorscrolt — tijdens een intakegesprek
+   lees je links en typ je rechts, zonder heen en weer te scrollen. Is de
+   linkerkolom langer dan het scherm, dan scrolt hij binnen zichzelf. */
+.kd-tweeluik{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
+  gap:16px;align-items:start}
+.kd-profielkol{position:sticky;top:12px;max-height:calc(100vh - 28px);
+  overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+/* Smallere schermen: kolommen onder elkaar en niets vastgezet — een
+   vastgeplakte kolom op een klein scherm laat geen ruimte over. */
+@media (max-width:1180px){
+  .kd-tweeluik{grid-template-columns:minmax(0,1fr)}
+  .kd-profielkol{position:static;max-height:none;overflow:visible;padding-right:0}
+}
+
+/* ─── Snelbalk bovenaan de werkkolom ──────────────────────────────
+   Altijd op dezelfde plek: typ wat er gebeurd is en kies wat het is.
+   Olijfrand links, zoals overal waar iets van jou gevraagd wordt. */
+.kd-snelbalk{border-left:3px solid var(--olive)}
+.kd-snelbalk .card-b{padding-top:12px;padding-bottom:12px}
+.kd-snelrij{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.kd-snelrij textarea{flex:1;min-width:240px;resize:none;overflow:hidden;
+  font-size:13px;line-height:1.5}
+.kd-snelknoppen{flex-wrap:wrap;row-gap:6px}
+.kd-snelhint{margin:9px 0 0;font-size:12.5px;line-height:1.5;color:#b03d1c}

@@ -842,15 +842,11 @@ function lijst(wrap){
 let kandOpen = null, tabActief = 'activiteiten';
 /* Welke helft van de kaart je open hebt staan: 'werken' of 'dossier'.
    Onthouden per browser — je eigen manier van werken blijft zo staan. */
-const voorkeur = () => { try{ return localStorage.getItem('kdWeergave') === 'dossier' ? 'dossier' : 'werken'; }catch(e){ return 'werken'; } };
-let weergave = voorkeur();
 
-/* Bij een kaart die nog niet af is begint het werk bij de gegevens, niet bij
-   het traject (naam: Tjeerd, 5 aug 2026: "een kandidaat er goed inzetten en
-   de gegevens hiervan — het startpunt moet duidelijk zijn"). Zo'n kaart
-   opent dus in Dossier, ongeacht wat je de vorige keer koos: je kunt pas
-   voorstellen wat je hebt ingevuld. Vanaf 70% is het profiel bruikbaar en
-   wint jouw eigen voorkeur weer. */
+/* Een kaart die nog niet af is vraagt om invullen, niet om een traject
+   (naam: Tjeerd, 5 aug 2026: "een kandidaat er goed inzetten en de gegevens
+   hiervan — het startpunt moet duidelijk zijn"). Onder deze grens zet de
+   snelbalk daarom de aanwijzing "begin bij de gegevens" erbij. */
 const NOG_OPBOUWEN = 70;
 const magOpbouwen = c => !geanonimiseerd(c) && CRM.volledigheid(c).pct < NOG_OPBOUWEN;
 
@@ -973,12 +969,6 @@ function kaart(mount, acties, id){
   }
   if(kandOpen !== String(id)){
     kandOpen = String(id); tabActief = 'activiteiten';
-    /* Nieuwe kaart openen: staat het profiel nog niet, dan begin je bij de
-       gegevens. Staat het er wél, dan geldt weer jouw eigen voorkeur —
-       anders sleept één onvolledige kaart de dossier-stand mee naar alle
-       kaarten die je daarna opent. Binnen dezelfde kaart blijft je
-       handmatige wissel gewoon staan. */
-    weergave = magOpbouwen(c) ? 'dossier' : voorkeur();
   }
 
   /* Eén inplan-knop, niet twee. "Inplannen" was vaag én het venster stond
@@ -1015,88 +1005,48 @@ function kaart(mount, acties, id){
       ${kopHtml(c)}
       ${dealbalkHtml(c)}
       ${laatsteNotitiesHtml(c)}
-      <!-- Het logboek stond helemaal onderaan; "je wilt zien wat er allemaal
-           gebeurt" (naam: Tjeerd, 5 aug 2026) — dus direct onder de kop, vóór
-           de kolommen. De lijst zelf scrollt in eigen vlak, zodat een druk
-           dossier de rest van de kaart niet naar beneden duwt. -->
-      <!-- Twee weergaven op één kaart (naam: Tjeerd, 5 aug 2026: "alle tools
-           hebben we nodig, maar het mag rustiger ogen"). Er verdwijnt niets:
-           "Werken" is wat je tijdens een belletje nodig hebt, "Dossier" is
-           alles om na te lezen en bij te werken. Beide vlakken worden
-           getekend en alleen verborgen — zo blijven alle knoppen gekoppeld
-           en is wisselen ogenblikkelijk, zonder hertekenen. -->
-      <div class="kd-schakel${magOpbouwen(c)?' opbouwen':''}" role="tablist">
-        <button type="button" data-weergave="werken"${weergave==='werken'?' class="on"':''} role="tab">Werken</button>
-        <button type="button" data-weergave="dossier"${weergave==='dossier'?' class="on"':''} role="tab">Dossier${
-          magOpbouwen(c) ? ' <span class="kd-schakelpunt" title="Het profiel is nog niet compleet">•</span>' : ''}</button>
-        <span class="kd-schakeluitleg">${magOpbouwen(c)
-          ? 'Begin hier: vul eerst de gegevens aan — pas dan kun je goed voorstellen'
-          : (weergave==='werken'
-            ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
-            : 'Gegevens, cv, intake en contract — bijwerken en nalezen')}</span>
-      </div>
-
-      <div class="kd-vlak" data-vlak="werken"${weergave==='werken'?'':' hidden'}>
-        <div class="stack">
+      <!-- Eén kaart, twee kolommen (naam: Tjeerd, 6 aug 2026: "alles gewoon
+           bij elkaar"). LINKS staat wie deze persoon is — gegevens, situatie,
+           werkervaring, certificaten, intake — en die kolom blijft staan
+           terwijl je rechts doorscrolt: tijdens een intakegesprek lees je
+           links en typ je rechts. RECHTS staat wat we ermee doen, met de
+           snelbalk bovenaan zodat vastleggen altijd op dezelfde plek zit. -->
+      <div class="kd-tweeluik">
+        <div class="kd-profielkol">
+          <div class="stack">
+            ${gegevensHtml(c)}
+            ${situatieHtml(c)}
+            ${cvHtml(c)}
+            ${intakeHtml(c)}
+          </div>
+        </div>
+        <div class="stack kd-werkkol">
+          ${snelbalkHtml(c)}
           <div class="kd-logboek">
             <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
             <div id="c_tabinhoud"></div>
           </div>
-          <div class="grid c2 kd-kolommen">
-            <div class="stack">
-              ${trajectHtml(c)}
-              <!-- Opvolging staat pal onder Traject: het is de voortzetting
-                   daarvan. Nazorg ná de start, warm houden ervóór, plus de
-                   verjaardag en de felicitatiemail. Het ritme zelf staat in
-                   js/opvolging.js — die ene plek. -->
-              ${CRM.opvolging ? CRM.opvolging.kaartHtml(c) : ''}
-              ${uitvalHtml(c)}
-            </div>
-            <div class="stack">
-              ${kansenHtml(c)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="kd-vlak" data-vlak="dossier"${weergave==='dossier'?'':' hidden'}>
-        <div class="stack">
-          <div class="grid c2 kd-kolommen">
-            <div class="stack">
-              ${gegevensHtml(c)}
-              ${situatieHtml(c)}
-              ${cvHtml(c)}
-              ${intakeHtml(c)}
-            </div>
-            <div class="stack">
-              ${contractHtml(c)}
-              ${factuurklaarHtml(c)}
-              ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
-              ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
-            </div>
-          </div>
-          <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan het
-               dossier, want het is het einde van een dossier en geen
-               dagelijkse handeling. De regels wie wat mag wonen daar. -->
+          ${trajectHtml(c)}
+          ${kansenHtml(c)}
+          <!-- Opvolging staat pal onder Traject: het is de voortzetting
+               daarvan. Nazorg ná de start, warm houden ervóór, plus de
+               verjaardag en de felicitatiemail. Het ritme zelf staat in
+               js/opvolging.js — die ene plek. -->
+          ${CRM.opvolging ? CRM.opvolging.kaartHtml(c) : ''}
+          ${uitvalHtml(c)}
+          ${contractHtml(c)}
+          ${factuurklaarHtml(c)}
+          ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
+          ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
+          <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan de
+               kaart, want het is het einde van een dossier en geen dagelijkse
+               handeling. De regels wie wat mag wonen daar, niet hier. -->
           ${CRM.kandVerwijder ? CRM.kandVerwijder.knopHtml(c) : ''}
         </div>
       </div>
     </div>`;
 
-  /* Wisselen tussen Werken en Dossier: alleen tonen en verbergen, en de
-     keuze onthouden — kom je morgen terug, dan sta je waar je gebleven was. */
-  mount.querySelectorAll('[data-weergave]').forEach(b => b.onclick = () => {
-    weergave = b.dataset.weergave;
-    try{ localStorage.setItem('kdWeergave', weergave); }catch(e){}
-    mount.querySelectorAll('[data-weergave]').forEach(x => x.classList.toggle('on', x.dataset.weergave === weergave));
-    mount.querySelectorAll('.kd-vlak').forEach(x => x.hidden = x.dataset.vlak !== weergave);
-    const uitleg = mount.querySelector('.kd-schakeluitleg');
-    /* Bij een profiel dat nog opgebouwd wordt blijft de startaanwijzing
-       staan — die geldt ongeacht in welke helft je kijkt. */
-    if(uitleg && !magOpbouwen(c)) uitleg.textContent = weergave === 'werken'
-      ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
-      : 'Gegevens, cv, intake en contract — bijwerken en nalezen';
-  });
+  bindSnelbalk(mount, c);
 
   bindVelden(mount, c);
   bindSterren(mount, c);
@@ -1296,14 +1246,6 @@ function bindMist(root, c){
 function springNaarVeld(k, c){
   const span = document.querySelector('.kd-w[data-veld="' + CSS.escape(k) + '"]');
   if(!span) return;
-  /* Het veld kan in de andere helft van de kaart staan (Werken/Dossier).
-     Dan eerst omschakelen — anders scrollt de kaart naar iets onzichtbaars
-     en lijkt de chip kapot. */
-  const vlak = span.closest('.kd-vlak');
-  if(vlak && vlak.hidden){
-    const knop = document.querySelector('[data-weergave="' + vlak.dataset.vlak + '"]');
-    if(knop) knop.click();
-  }
   span.scrollIntoView({behavior:'smooth', block:'center'});
   span.classList.add('kd-wijs');
   setTimeout(() => span.classList.remove('kd-wijs'), 1500);
@@ -1420,6 +1362,60 @@ function dealbalkHtml(c){
 }
 function bindDealbalk(mount, c){
   mount.querySelectorAll('[data-deal]').forEach(b => b.onclick = () => springNaarVeld(b.dataset.deal, c));
+}
+
+/* ─── Snelbalk (6 aug 2026) ───────────────────────────────────────
+   Eén invoerregel bovenaan de werkkolom: typen en kiezen wat het is.
+   Stond dit alleen in de knoppenbalk bovenin, dan opende elke handeling
+   een venster óver de kaart — precies op het moment dat je de kandidaat
+   wil blijven zien. Nu: typ, Enter, klaar. De knoppen erachter gebruiken
+   dezelfde tekst, zodat je nooit twee keer hetzelfde typt. */
+function snelbalkHtml(c){
+  if(geanonimiseerd(c)) return '';
+  return `<div class="card kd-snelbalk">
+    <div class="card-b">
+      <div class="kd-snelrij">
+        <textarea id="kd_snel" rows="1" placeholder="Wat is er gebeurd of moet er gebeuren?"
+          title="Enter legt het vast als notitie. Noem een collega met @naam om diegene een melding te sturen."></textarea>
+        <div class="row tight kd-snelknoppen">
+          <button type="button" class="btn sm" data-snel="notitie">Notitie</button>
+          <button type="button" class="btn ghost sm" data-snel="bel">Gebeld</button>
+          <button type="button" class="btn ghost sm" data-snel="whatsapp">Geappt</button>
+          <button type="button" class="btn ghost sm" data-snel="taak">Taak…</button>
+        </div>
+      </div>
+      ${magOpbouwen(c) ? `<p class="kd-snelhint">Dit profiel is nog niet compleet — begin links bij de gegevens,
+        anders kun je deze kandidaat niet goed voorstellen.</p>` : ''}
+    </div></div>`;
+}
+function bindSnelbalk(mount, c){
+  const ta = mount.querySelector('#kd_snel');
+  if(!ta) return;
+  const tekstOf = () => ta.value.trim();
+  const doe = async soort => {
+    const tekst = tekstOf();
+    if(soort === 'taak') return nieuweTaak(c, tekst);      // venster: er hoort een wie en wanneer bij
+    if(!tekst){ ta.focus(); return; }
+    if(soort === 'notitie'){
+      const nieuw = Object.assign({}, c, {
+        notities:[{op:new Date().toISOString(), door:CRM.me(), tekst}].concat(c.notities||[])
+      });
+      await bewaarKandidaat(nieuw);
+      CRM.verwerkTags(tekst, 'kandidaat', c.id);
+      tabActief = 'notities';
+    }else{
+      await CRM.logActiviteit('kandidaat', c.id, soort, tekst);
+      CRM.verwerkTags(tekst, 'kandidaat', c.id);
+      CRM.toast('Vastgelegd','ok');
+      tabActief = 'activiteiten';
+    }
+    CRM.render();
+  };
+  mount.querySelectorAll('[data-snel]').forEach(b => b.onclick = () => doe(b.dataset.snel));
+  ta.onkeydown = e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); doe('notitie'); } };
+  /* Meegroeien met wat je typt, tot een paar regels — een balk die bij de
+     tweede zin gaat schuiven leest niet prettig. */
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; };
 }
 
 function kopHtml(c){
@@ -2490,7 +2486,7 @@ function tabTaken(el, c){
 
 /* Taak via het gedeelde taakvenster van core — toewijzen, prioriteit en
    Outlook werken daar overal hetzelfde. */
-async function nieuweTaak(c){
+async function nieuweTaak(c, tekst){
   /* De naam alleen is te weinig. Krijgt Tjerk "Tomasz voorbereiden", dan moet
      erbij staan vóór welke vacature en bij welke klant — anders begint hij met
      uitzoeken wat jij al wist. Vacature vóór functie: dat is waar het gesprek
@@ -2498,7 +2494,9 @@ async function nieuweTaak(c){
   const v = c.vacatureId ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
   const waarover = v ? `${v.functie || 'vacature'} bij ${v.klant}`
                      : [c.functie, c.klant].filter(Boolean).join(' bij ');
-  const rij = await CRM.taakModal({entiteit:'kandidaat', ref:c.id,
+  /* Kwam je uit de snelbalk, dan staat de tekst er al — die typ je niet
+     nog een keer over in het venster. */
+  const rij = await CRM.taakModal({entiteit:'kandidaat', ref:c.id, tekst: tekst || '',
     refLabel: waarover ? `${c.naam} — ${waarover}` : c.naam});
   if(rij){ tabActief = 'taken'; CRM.render(); }
 }
