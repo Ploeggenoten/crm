@@ -1011,7 +1011,17 @@
           <div class="ovd-mini"><span>Locatie</span><span class="ovd-edit" data-vedit="locatie" title="Klik om aan te passen">${h(locLabel(v))}</span></div>
           <div class="ovd-mini"><span>Gevraagd</span><span class="ovd-edit num" data-vedit="aantal" data-num="1" title="Klik om aan te passen">${h(String(Number(v.aantal)||1))}</span></div>
           <div class="ovd-mini"><span>Accountmanager</span><span class="ovd-edit" data-vedit="eigenaar" title="Klik om aan te passen">${h(v.eigenaar || 'invullen…')}</span></div>
-          ${contact ? `<div class="ovd-mini"><span>Contactpersoon</span><span>${h(contact.naam)}</span></div>` : ''}
+          ${/* Wie gaat er bij de klant over déze vacature? Zonder dit moest
+               de AM eerst naar de relatiekaart om te zien wie hij belt
+               (Tjeerd, 6 aug 2026). De rij staat er ook als er nog niemand
+               gekoppeld is — anders valt er niets te koppelen. */''}
+          <div class="ovd-mini"><span>Contactpersoon</span><span class="ovd-edit" data-vcontact title="Klik om te koppelen">${
+            contact ? h(contact.naam) + (contact.functie ? ` <span class="meta">${h(contact.functie)}</span>` : '')
+                    : '<span class="meta" style="font-style:italic">koppelen…</span>'}</span></div>
+          ${contact && (contact.telefoon || contact.email) ? `<div class="ovd-mini"><span>Bereikbaar</span><span>${
+            [contact.telefoon ? `<a href="tel:${h(String(contact.telefoon).replace(/\s/g,''))}">${h(contact.telefoon)}</a>` : '',
+             contact.email ? `<a href="mailto:${h(contact.email)}">${h(contact.email)}</a>` : ''].filter(Boolean).join(' · ')
+          }</span></div>` : ''}
           <div class="ovd-mini"><span>Open sinds</span><span class="num">${
             v.aangemaakt ? h(CRM.fmtDateShort(v.aangemaakt)) + (dgn != null ? ` · ${dgn} dgn` : '') : '—'}</span></div>
           ${feeRij}
@@ -1169,6 +1179,36 @@
         if(e.key === 'Escape'){ e.preventDefault(); sluit(false); }
       };
     });
+
+    /* Contactpersoon koppelen: een keuzelijst uit de contactpersonen van
+       déze klant. Apart van data-vedit, want de waarde is een id en het
+       label een naam — dat past niet in de vrije-tekst-route. */
+    const ctEl = mount.querySelector('[data-vcontact]');
+    if(ctEl) ctEl.onclick = () => {
+      const cts = (CRM.state.contacten || []).filter(c => c.klant === v.klant);
+      if(!cts.length){
+        CRM.toast('Deze relatie heeft nog geen contactpersonen — voeg er eerst één toe op de relatiekaart');
+        return;
+      }
+      const sel = document.createElement('select');
+      sel.className = 'ovd-inp';
+      sel.innerHTML = `<option value="">— niemand gekoppeld —</option>` + cts.map(c =>
+        `<option value="${h(String(c.id))}"${String(c.id) === String(v.contact_id||'') ? ' selected' : ''}>${
+          h(c.naam)}${c.functie ? ' · ' + h(c.functie) : ''}</option>`).join('');
+      ctEl.replaceWith(sel);
+      sel.focus();
+      let klaar = false;
+      const sluit = async bewaren => {
+        if(klaar) return; klaar = true;
+        const nieuw = sel.value || null;
+        if(bewaren && String(nieuw || '') !== String(v.contact_id || ''))
+          await bewaarVac(v, {contact_id: nieuw});
+        detail(v);
+      };
+      sel.onchange = () => sluit(true);
+      sel.onblur = () => sluit(true);
+      sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); sluit(false); } };
+    };
   }
 
   function tekenTab(v){
@@ -1695,6 +1735,20 @@
   }
 
   /* ── Tab: Historie ── */
+  /* Uitkomsten van een belpoging, precies zoals op de relatiekaart. De AM
+     werkt vanuit de vacature (Tjeerd, 6 aug 2026: "een AM moet dus ook
+     vanuit de vacaturekaart goed kunnen werken") en moet hier dus net zo
+     snel kunnen vastleggen. Alles landt op de vacature, en de relatiekaart
+     mengt die activiteiten inmiddels mee — één keer vastleggen, op beide
+     plekken zichtbaar. */
+  const VAC_UITKOMSTEN = [
+    ['bel',      'Gebeld',      'Gebeld'],
+    ['bel',      'Geen gehoor', 'Gebeld, geen gehoor'],
+    ['bel',      'Voicemail',   'Gebeld, voicemail achtergelaten'],
+    ['whatsapp', 'WhatsApp',    'WhatsApp gestuurd'],
+    ['mail',     'Gemaild',     'Gemaild']
+  ];
+
   function tabHistorie(el, v){
     const acts = CRM.activiteitenVoor('vacature', v.id).map(a => ({
       ico: (CRM.ACT_SOORTEN[a.soort]||{}).ico || '•',
@@ -1702,9 +1756,54 @@
       wanneer: CRM.geleden(a.op) + (a.door ? ' · ' + a.door : ''),
       tekst: a.tekst
     }));
+    const ct = v.contact_id
+      ? (CRM.state.contacten||[]).find(c => String(c.id) === String(v.contact_id)) : null;
     el.innerHTML = `
-      <p class="meta" style="margin:0 0 12px">Statuswissels, notities, doelen — alles wat er op deze vacature is gebeurd, nieuwste eerst.</p>
+      <div class="row tight ovd-uit">${VAC_UITKOMSTEN.map(([, lbl], i) =>
+        `<button type="button" class="chip btn-like" data-uit="${i}">${h(lbl)}</button>`).join('')}</div>
+      <div class="ovd-uitveld" data-uitveld hidden>
+        <div class="label" data-uitkop style="margin-bottom:4px"></div>
+        <textarea rows="2" data-uittekst placeholder="Wat is er besproken? Leeg laten mag — Enter legt vast."></textarea>
+        <div class="row tight" style="margin-top:6px">
+          <button type="button" class="btn sm" data-uitok>Vastleggen</button>
+          <button type="button" class="btn ghost sm" data-uitweg>Annuleren</button>
+        </div>
+      </div>
+      <p class="meta" style="margin:12px 0">Statuswissels, notities, doelen — alles wat er op deze vacature is gebeurd, nieuwste eerst.${
+        ct ? ` Contactpersoon: <b>${h(ct.naam)}</b>.` : ''} Dit staat ook op de relatiekaart.</p>
       ${CRM.ui.tijdlijn(acts)}`;
+
+    const veld = el.querySelector('[data-uitveld]');
+    const tekst = veld.querySelector('[data-uittekst]');
+    let keuze = null;
+    const dicht = () => { veld.hidden = true; keuze = null; };
+    const vastleggen = async () => {
+      if(keuze == null) return;
+      const [soort, , standaard] = VAC_UITKOMSTEN[keuze];
+      const extra = tekst.value.trim();
+      /* De contactpersoon van de vacature staat in de regel: over een jaar
+         wil je weten wie je sprak, niet alleen dát je belde. */
+      const wie = ct ? ' met ' + ct.naam : '';
+      const regel = (standaard + wie) + (extra ? ': ' + extra : '');
+      dicht();
+      await logActie(v, soort, regel);
+      /* Een belpoging over een vacature is contact met de klant — het
+         salesbord hoort die stilte-teller te resetten. */
+      if(v.klant && CRM.bewaarKlantVeld) await CRM.bewaarKlantVeld(v.klant, {laatst_contact: CRM.todayISO()});
+      tabHistorie(el, v);
+    };
+    CRM.$$('[data-uit]', el).forEach(b => b.onclick = () => {
+      keuze = +b.dataset.uit;
+      veld.hidden = false;
+      veld.querySelector('[data-uitkop]').textContent = VAC_UITKOMSTEN[keuze][2] + (ct ? ' met ' + ct.naam : '');
+      tekst.value = ''; tekst.focus();
+    });
+    veld.querySelector('[data-uitok]').onclick = vastleggen;
+    veld.querySelector('[data-uitweg]').onclick = dicht;
+    tekst.onkeydown = e => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); vastleggen(); }
+      if(e.key === 'Escape'){ e.preventDefault(); dicht(); }
+    };
   }
 
   /* ─── Status wijzigen ────────────────────────────────────────────

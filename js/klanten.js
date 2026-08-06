@@ -299,15 +299,22 @@ function index(){
   const bij = (map, sleutel, waarde) => {
     const l = map.get(sleutel); if(l) l.push(waarde); else map.set(sleutel, [waarde]);
   };
-  const kand = new Map(), vac = new Map(), act = new Map(), actKand = new Map(), cont = new Map();
+  const kand = new Map(), vac = new Map(), act = new Map(), actKand = new Map(),
+        cont = new Map(), actVac = new Map();
   CRM.kandidaten().forEach(c => bij(kand, c.klant, c));
   (CRM.state.vacs||[]).forEach(v => bij(vac, v.klant, v));
   (CRM.state.contacten||[]).forEach(c => bij(cont, c.klant, c));
   (CRM.state.activiteiten||[]).forEach(a => {
-    if(a.entiteit === 'klant')         bij(act,     String(a.ref), a);
+    if(a.entiteit === 'klant')          bij(act,     String(a.ref), a);
     else if(a.entiteit === 'kandidaat') bij(actKand, String(a.ref), a);
+    /* Wat een AM op een vacaturekaart vastlegt hoort óók bij de relatie
+       (Tjeerd, 6 aug 2026: "alles wat je in de vacature typt en doet moet
+       ook weer terug te zien zijn op de relatiekaart"). Tot nu toe viel
+       dit hier gewoon buiten de index en was het op de klantkaart
+       onzichtbaar. */
+    else if(a.entiteit === 'vacature')  bij(actVac,  String(a.ref), a);
   });
-  _idx = {kand, vac, act, actKand, cont}; _idxStempel = s;
+  _idx = {kand, vac, act, actKand, cont, actVac}; _idxStempel = s;
   return _idx;
 }
 const LEEG = [];
@@ -2171,14 +2178,20 @@ function railNotities(mount, k){
        iedereen ziet hetzelfde beeld, en "Gebeld · geen gehoor" hoort er
        net zo goed bij als een verslag. */
     const ctIds = new Set((CRM.state.contacten||[]).filter(x => x.klant === k.naam).map(c => String(c.id)));
+    /* Ook de vacatures van deze klant: de AM legt daar vast, de relatie
+       moet het tonen (Tjeerd, 6 aug 2026). */
+    const vacBij = new Map();
+    (index().vac.get(k.naam) || LEEG).forEach(vc => vacBij.set(String(vc.id), vc));
     const alle = CRM.state.activiteiten
       .filter(a => (a.entiteit==='klant' && a.ref===k.naam)
-                || (a.entiteit==='contact' && ctIds.has(String(a.ref))))
+                || (a.entiteit==='contact' && ctIds.has(String(a.ref)))
+                || (a.entiteit==='vacature' && vacBij.has(String(a.ref))))
       .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
     const top = alle.slice(0, 5);
     el.innerHTML = top.length ? top.map(a => `
       <div class="rn-item" data-rnitem title="Klik voor de volledige tijdlijn">
-        <div class="rn-kop">${h(((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort)}${a.extra?.verslag?' · verslag':''}</div>
+        <div class="rn-kop">${h(((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort)}${a.extra?.verslag?' · verslag':''}${
+          a.entiteit==='vacature' ? ' · ' + h(vacBij.get(String(a.ref))?.functie || 'vacature') : ''}</div>
         <div class="rn-tekst">${h(a.tekst)}</div>
         <div class="meta num">${h(a.door||'—')} · ${h(CRM.geleden(a.op))}</div>
       </div>`).join('') + (alle.length > 5
@@ -2763,7 +2776,12 @@ function vacatureHtml(v, k){
     <summary>
       <div style="min-width:0;flex:1">
         <b class="kl-vaclink" data-vopen="${h(String(v.id))}" title="Open de vacaturekaart">${h(v.functie)}</b>
-        <div class="meta">${h(v.locatie||k.locatie||'—')} · <span class="num">${Number(v.aantal)||1}</span> gevraagd · <span class="num">${lopend.length}</span> in traject</div>
+        ${/* Wie gaat hier bij de klant over? Eén blik, geen doorklik
+             (Tjeerd, 6 aug 2026). */''}
+        <div class="meta">${h(v.locatie||k.locatie||'—')} · <span class="num">${Number(v.aantal)||1}</span> gevraagd · <span class="num">${lopend.length}</span> in traject${
+          (() => { const ct = v.contact_id
+            ? (CRM.state.contacten||[]).find(c => String(c.id) === String(v.contact_id)) : null;
+            return ct ? ' · via ' + h(ct.naam) : ''; })()}</div>
       </div>
       ${sal}
       ${sig.lbl && !sig.gedempt ? `<span class="chip ${sig.kleur}">${h(sig.lbl)}</span>` : ''}
@@ -2876,6 +2894,11 @@ function tabKandidaten(el, k, c){
    "· bewerkt" zodat niemand denkt dat dit de oorspronkelijke tekst is.
    Gedeeld via CRM.bewerkActiviteit: de contactkaart gebruikt hem ook. */
 const BEWERKBAAR = new Set(['notitie','gesprek','bel','mail','whatsapp','bezoek']);
+/* Andere modules moeten "laatste contact" op een relatie kunnen bijwerken
+   zonder de clients-tabel zelf aan te raken — de vacaturekaart legt
+   belpogingen vast en het salesbord leest die stilte-teller.
+   (Tjeerd, 6 aug 2026: werken vanuit de vacaturekaart.) */
+CRM.bewaarKlantVeld = (naam, wijziging) => bewaarKlant(naam, wijziging);
 CRM.magBewerken = a => a && BEWERKBAAR.has(a.soort) && !(a.extra && a.extra.evaluatie);
 CRM.bewerkActiviteit = (a, na) => {
   CRM.modal.open(`
@@ -2909,15 +2932,20 @@ function tabActiviteiten(el, k){
   /* Klant-activiteiten + de notities/gespreksverslagen van al haar
      contactpersonen, gemengd op datum — zo blijft het klantbeeld compleet. */
   const conts = (CRM.state.contacten||[]).filter(x => x.klant === k.naam);
-  const alle = CRM.activiteitenVoor('klant', k.naam).map(a => ({a, ct:null}))
-    .concat(conts.flatMap(ct => CRM.activiteitenVoor('contact', ct.id).map(a => ({a, ct}))))
+  /* Ook wat er op de vacatures van deze klant is vastgelegd — de AM werkt
+     vanuit de vacaturekaart, maar het klantbeeld hoort compleet te zijn. */
+  const vacs = index().vac.get(k.naam) || LEEG;
+  const alle = CRM.activiteitenVoor('klant', k.naam).map(a => ({a, ct:null, vac:null}))
+    .concat(conts.flatMap(ct => CRM.activiteitenVoor('contact', ct.id).map(a => ({a, ct, vac:null}))))
+    .concat(vacs.flatMap(vc => (index().actVac.get(String(vc.id)) || LEEG).map(a => ({a, ct:null, vac:vc}))))
     .sort((x,y) => new Date(y.a.op) - new Date(x.a.op));
-  const items = alle.map(({a, ct}) => {
+  const items = alle.map(({a, ct, vac}) => {
     const wanneer = (a.extra && a.extra.datum) || a.op;
     return {
       ico: (CRM.ACT_SOORTEN[a.soort]||{}).ico || '•',
       titel: (a.extra && a.extra.verslag ? 'Gespreksverslag' : (CRM.ACT_SOORTEN[a.soort]||{}).lbl || a.soort)
-             + (ct ? ' met ' + ct.naam : '') + (a.door ? ' · ' + a.door : ''),
+             + (ct ? ' met ' + ct.naam : '') + (vac ? ' · vacature ' + (vac.functie||'') : '')
+             + (a.door ? ' · ' + a.door : ''),
       wanneer: CRM.fmtDate(wanneer) + ' · ' + CRM.geleden(wanneer)
              + (a.extra && a.extra.bewerkt ? ' · bewerkt' : ''),
       tekst: (a.extra && a.extra.evaluatie) ? evalSamenvatting(a.extra.evaluatie) : a.tekst

@@ -398,3 +398,12 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
 .ovd-doc .ovd-doc-k:first-child{margin-top:0}
 .ovd-doc .ovd-doc-l{margin:0 0 11px;padding-left:20px}
 .ovd-doc .ovd-doc-l li{margin:2px 0}
+
+/* Snel vastleggen op de vacaturekaart — zelfde knoppen als op de
+   relatiekaart, zodat de AM niet hoeft te wisselen van scherm. */
+.ovd-uit{margin-bottom:10px;flex-wrap:wrap}
+.ovd-uitveld{
+  background:var(--well-2);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;margin-bottom:12px;
+}
+.ovd-uitveld textarea{width:100%;resize:vertical}
