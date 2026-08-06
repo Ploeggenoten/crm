@@ -1029,6 +1029,7 @@ function kaart(mount, acties, id){
           ${contractHtml(c)}
           ${factuurklaarHtml(c)}
           ${CRM.mailUI ? CRM.mailUI.blokHtml(c.email, 'kd_mailblok') : ''}
+          ${docsHtml(c)}
           ${CRM.bestandenUI ? CRM.bestandenUI.blokHtml(c.naam, 'kd_bestanden') : ''}
           <!-- Verwijderen en anonimiseren (js/kandverwijder.js). Onderaan de
                kaart, want het is het einde van een dossier en geen dagelijkse
@@ -1101,6 +1102,12 @@ function kaart(mount, acties, id){
     if(b) b.onclick = () => vaardigheidToevoegen(c); }
   mount.querySelectorAll('[data-skillweg]').forEach(b =>
     b.onclick = () => vaardigheidWeg(c, Number(b.dataset.skillweg)));
+  { const b = mount.querySelector('#c_taalnieuw');
+    if(b) b.onclick = () => taalToevoegen(c); }
+  mount.querySelectorAll('[data-taalweg]').forEach(b =>
+    b.onclick = () => taalWeg(c, Number(b.dataset.taalweg)));
+  bindSleep(mount, c);
+  bindDocs(mount, c);
   /* Opvolging: check-in vastleggen, ritme uitklappen, felicitatiemail openen.
      Alle knoppen zitten in js/opvolging.js — deze kaart roept alleen aan. */
   if(CRM.opvolging) CRM.opvolging.bindKaart(mount, c, () => CRM.render());
@@ -1701,6 +1708,7 @@ function ervaringHtml(c){
   const werk = Array.isArray(cv.werkgevers) ? cv.werkgevers : [];
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   const skills = Array.isArray(cv.skills) ? cv.skills : [];
+  const talen  = Array.isArray(cv.talen) ? cv.talen : (c.talen ? String(c.talen).split(',').map(s=>s.trim()).filter(Boolean) : []);
   const certs  = certLijst(c);
   const leeg = !werk.length && !opl.length && !skills.length && !certs.length
             && !cv.ervaringJaren && !cv.url && !cv.bestandPad;
@@ -1713,13 +1721,16 @@ function ervaringHtml(c){
            te groot, dat is zonde"). Toevoegen doe je vanaf hier bij de lijst
            waar het bij hoort — dat leest logischer dan vier knoppen boven
            een blok dat nog leeg is. -->
+      ${/* Het bestandsblok stond middenin en knipte het blok doormidden
+           (naam: Tjeerd, 6 aug 2026). Nu een knop in de kop; het bestand
+           zelf staat compleet bij Documenten. */
+        cv.bestandPad ? `<button class="btn ghost sm" data-cvopen="${h(cv.bestandPad)}"
+          title="${h(cv.bestand || 'CV')}${cv.op ? ' · ' + h(CRM.fmtDate(cv.op)) : ''}">Open ingeladen cv</button>` : ''}
       <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
     <div class="card-b">
       <!-- Waar hij nú zit: dezelfde inline-velden als voorheen, alleen niet
            meer in een eigen kaart eronder. -->
       <div class="kd-velden kd-nu">${SITUATIE_VELDEN.map(f => veldRij(c, f)).join('')}</div>
-      ${cvBestandHtml(c)}
-      ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
       ${leeg ? `<p class="kd-ervleeg">Nog niets ingevuld. Lees een cv in — loopbaan, opleiding,
         certificaten en talen komen er in één keer in${CRM.cvClaude ? `, of laat een lastig opgemaakt cv
         <button type="button" class="lnk" id="c_cvclaude"
@@ -1731,7 +1742,8 @@ function ervaringHtml(c){
            inlezen. -->
       <div class="kd-ervkop"><span class="label">Loopbaan</span>
         <button class="btn sub sm" id="c_werknieuw">+ Toevoegen</button></div>
-      ${werk.length?`<div class="kd-cvlijst">${werk.map((w, i) => `<div class="kd-cvrij">
+      ${werk.length?`<div class="kd-cvlijst kd-sleep" data-sleep="werk">${werk.map((w, i) => `<div class="kd-cvrij" draggable="true" data-i="${i}">
+          <span class="kd-greep" title="Sleep om de volgorde te wijzigen">⠿</span>
           <b>${h(w.functie||w.rol||'—')}
             ${/* Ingelezen is een beginpunt, geen eindstand: de AM moet een
                  dienstverband kunnen corrigeren of aanvullen (Tjeerd,
@@ -1759,13 +1771,19 @@ function ervaringHtml(c){
            kun je ze ook zelf toevoegen (naam: Tjeerd, 6 aug 2026). -->
       <div class="kd-ervkop"><span class="label">Vaardigheden</span>
         <button class="btn sub sm" id="c_skillnieuw">+ Toevoegen</button></div>
-      ${skills.length?`<div class="row tight kd-skills">${skills.map((s,i)=>
-        `<span class="chip kd-skill">${h(s)}<button type="button" class="kd-skillweg" data-skillweg="${i}"
+      ${skills.length?`<div class="row tight kd-skills kd-sleep" data-sleep="skills">${skills.map((s,i)=>
+        `<span class="chip kd-skill" draggable="true" data-i="${i}" title="Sleep om de volgorde te wijzigen">${h(s)}<button type="button" class="kd-skillweg" data-skillweg="${i}"
            title="Verwijderen" aria-label="Verwijder ${h(s)}">×</button></span>`).join('')}</div>`
         :'<p class="meta kd-ervnog">Nog geen vaardigheden — bijvoorbeeld orderpicken, lassen of WMS-ervaring.</p>'}
 
-      ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="kd-ervkop"><span class="label">Talen</span></div>
-        <div class="row tight">${cv.talen.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
+      <!-- Talen stonden alleen als leesbare chips uit het cv; ze zijn nu
+           net als vaardigheden aan te vullen, weg te halen en te slepen. -->
+      <div class="kd-ervkop"><span class="label">Talen</span>
+        <button class="btn sub sm" id="c_taalnieuw">+ Toevoegen</button></div>
+      ${talen.length?`<div class="row tight kd-skills kd-sleep" data-sleep="talen">${talen.map((s,i)=>
+        `<span class="chip kd-skill" draggable="true" data-i="${i}" title="Sleep om de volgorde te wijzigen">${h(s)}<button type="button" class="kd-skillweg" data-taalweg="${i}"
+           title="Verwijderen" aria-label="Verwijder ${h(s)}">×</button></span>`).join('')}</div>`
+        :'<p class="meta kd-ervnog">Nog geen talen — bijvoorbeeld Nederlands, Engels of Pools.</p>'}
     </div></div>`;
 }
 
@@ -1800,10 +1818,251 @@ async function vaardigheidWeg(c, i){
   CRM.render();
 }
 
+/* ─── Talen ───────────────────────────────────────────────────────
+   Stonden alleen als leesbare chips uit het cv. Het losse veld `talen`
+   op de kandidaat (waar Sourcing op filtert) blijft de leidende waarde;
+   we houden beide gelijk zodat filteren en de cv-generator hetzelfde
+   zien. */
+async function taalToevoegen(c){
+  const tekst = await CRM.vraag('Taal toevoegen',
+    {hint:'Eén per keer, of meerdere gescheiden door een komma.', knop:'Toevoegen'});
+  if(!tekst) return;
+  const nieuwe = String(tekst).split(',').map(s => s.trim()).filter(Boolean);
+  if(!nieuwe.length) return;
+  const lijst = taalLijst(c).slice();
+  nieuwe.forEach(s => {
+    if(!lijst.some(x => String(x).toLowerCase() === s.toLowerCase())) lijst.push(s);
+  });
+  await bewaarTalen(c, lijst);
+}
+async function taalWeg(c, i){
+  const lijst = taalLijst(c).slice();
+  if(i < 0 || i >= lijst.length) return;
+  lijst.splice(i, 1);
+  await bewaarTalen(c, lijst);
+}
+const taalLijst = c => {
+  const cv = c.cv || {};
+  if(Array.isArray(cv.talen)) return cv.talen;
+  return c.talen ? String(c.talen).split(',').map(s=>s.trim()).filter(Boolean) : [];
+};
+async function bewaarTalen(c, lijst){
+  const cv = Object.assign({}, c.cv || {}, {talen: lijst});
+  await bewaarKandidaat(Object.assign({}, c, {cv, talen: lijst.join(', ')}));
+  CRM.render();
+}
+
+/* ─── Slepen om de volgorde te wijzigen ───────────────────────────
+   De volgorde is niet cosmetisch: het kandidaatprofiel dat naar de klant
+   gaat neemt deze lijsten over zoals ze hier staan (naam: Tjeerd, 6 aug
+   2026 — "dat maakt het daarna makkelijker om een cv te genereren"). Wat
+   het meest relevant is voor déze vacature zet je dus bovenaan.
+   Bewust de ingebouwde sleepfunctie van de browser: geen bibliotheek,
+   en het werkt met een muis én met een touchpad. */
+function bindSleep(mount, c){
+  mount.querySelectorAll('.kd-sleep').forEach(lijst => {
+    const soort = lijst.dataset.sleep;
+    let van = null;
+    lijst.querySelectorAll('[draggable="true"]').forEach(el => {
+      el.ondragstart = e => {
+        van = Number(el.dataset.i);
+        el.classList.add('sleept');
+        /* Zonder een gezette waarde weigert Firefox het slepen te starten. */
+        try{ e.dataTransfer.setData('text/plain', String(van)); }catch(err){}
+        e.dataTransfer.effectAllowed = 'move';
+      };
+      el.ondragend = () => {
+        el.classList.remove('sleept');
+        lijst.querySelectorAll('.doel').forEach(x => x.classList.remove('doel'));
+      };
+      el.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('doel'); };
+      el.ondragleave = () => el.classList.remove('doel');
+      el.ondrop = async e => {
+        e.preventDefault();
+        el.classList.remove('doel');
+        const naar = Number(el.dataset.i);
+        const start = van != null ? van : Number(e.dataTransfer.getData('text/plain'));
+        if(!Number.isFinite(start) || !Number.isFinite(naar) || start === naar) return;
+        await zetVolgorde(c, soort, start, naar);
+      };
+    });
+  });
+}
+async function zetVolgorde(c, soort, van, naar){
+  const cv = Object.assign({}, c.cv || {});
+  const bron = soort === 'werk' ? (Array.isArray(cv.werkgevers) ? cv.werkgevers : [])
+             : soort === 'skills' ? (Array.isArray(cv.skills) ? cv.skills : [])
+             : taalLijst(c);
+  const lijst = bron.slice();
+  if(van < 0 || van >= lijst.length || naar < 0 || naar >= lijst.length) return;
+  const [eruit] = lijst.splice(van, 1);
+  lijst.splice(naar, 0, eruit);
+  if(soort === 'talen') return bewaarTalen(c, lijst);
+  if(soort === 'werk') cv.werkgevers = lijst; else cv.skills = lijst;
+  await bewaarKandidaat(Object.assign({}, c, {cv}));
+  CRM.render();
+}
+
 /* Het cv-bestand zelf: pad in de afgeschermde map, geopend met een
    tijdelijke link. Zie js/cvparse.js. */
 function cvBestandHtml(c){
   return CRM.cvParse ? CRM.cvParse.bestandHtml(c) : '';
+}
+
+/* ─── Documenten bij de kandidaat ─────────────────────────────────
+   Er waren twee losse dingen: het ingelezen cv (in het cv-jsonb) en het
+   zoeken in SharePoint. Zelf iets toevoegen kon niet — een getekende
+   verklaring, een diploma of een identiteitsbewijs-checklist had dus geen
+   plek (naam: Tjeerd, 6 aug 2026). Nu één blok: het ingelezen cv bovenaan,
+   daaronder wat je zelf toevoegt (crm_documenten, dezelfde tabel als bij
+   de vacature), en het SharePoint-zoekblok blijft daaronder staan.
+
+   Let op: bestanden gaan naar de afgeschermde map crm-docs en worden
+   alleen met een kortlopende ondertekende link geopend. Een publieke url
+   zou hier paspoortkopieën en adressen op straat leggen. */
+const kandDocs = c => (CRM.state.documenten || [])
+  .filter(d => d.entiteit === 'kandidaat' && String(d.ref) === String(c.id))
+  .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+
+function docsHtml(c){
+  if(geanonimiseerd(c)) return '';
+  const cv = c.cv || {};
+  const docs = kandDocs(c);
+  const rij = d => {
+    const duid = CRM.opslag ? CRM.opslag.duiding(d.url) : {soort:'extern', url:d.url, pad:''};
+    const knop = duid.soort === 'pad'
+      ? `<button type="button" class="btn ghost sm" data-cvopen="${h(duid.pad)}">Openen</button>`
+      : duid.url ? `<a class="btn ghost sm" href="${h(duid.url)}" target="_blank" rel="noopener">Openen</a>` : '';
+    return `<div class="kd-docrij">
+      <span class="kd-docic">▤</span>
+      <span class="kd-doct"><b>${h(d.naam || 'Document')}</b>
+        <span class="meta num">${h([d.soort, d.op ? CRM.fmtDate(d.op) : '', d.door].filter(Boolean).join(' · '))}</span></span>
+      ${knop}
+      <button type="button" class="btn sub sm" data-docweg="${h(d.id)}" title="Losmaken van deze kandidaat">×</button>
+    </div>`;
+  };
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Documenten</div><span class="spacer"></span>
+      <button class="btn ghost sm" id="c_docupload">Bestand toevoegen</button>
+      <button class="btn sub sm" id="c_doclink">Link koppelen</button></div>
+    <div class="card-b">
+      ${cv.bestandPad ? `<div class="kd-docrij kd-doccv">
+        <span class="kd-docic">▤</span>
+        <span class="kd-doct"><b>${h(cv.bestand || 'CV')}</b>
+          <span class="meta num">${h(['ingelezen cv', cv.op ? CRM.fmtDate(cv.op) : '', cv.door].filter(Boolean).join(' · '))}</span></span>
+        <button type="button" class="btn ghost sm" data-cvopen="${h(cv.bestandPad)}">Openen</button>
+        <button type="button" class="btn sub sm" data-cvdl="${h(cv.bestandPad)}" data-cvnaam="${h(cv.bestand||'cv.pdf')}">Bewaren</button>
+      </div>` : ''}
+      ${docs.length ? docs.map(rij).join('') : ''}
+      ${!cv.bestandPad && !docs.length
+        ? '<p class="meta" style="margin:0">Nog geen documenten. Voeg een bestand toe of koppel een link — het ingelezen cv verschijnt hier vanzelf.</p>' : ''}
+      <input type="file" id="c_docfile" hidden
+        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt,.xlsx,.csv">
+    </div></div>`;
+}
+
+const DOC_SOORTEN = ['cv','diploma','certificaat','identiteit','contract','overig'];
+
+function bindDocs(mount, c){
+  const file = mount.querySelector('#c_docfile');
+  const upl  = mount.querySelector('#c_docupload');
+  if(upl && file){
+    upl.onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      file.value = '';
+      if(f) await docUpload(c, f);
+    };
+  }
+  const link = mount.querySelector('#c_doclink');
+  if(link) link.onclick = () => docLinkModal(c);
+  mount.querySelectorAll('[data-docweg]').forEach(b => b.onclick = () => docWeg(c, b.dataset.docweg));
+  /* Openen en bewaren van bestanden in de afgeschermde map — één plek
+     (js/cvparse.js) die de ondertekende link maakt. */
+  if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
+}
+
+async function docBewaar(c, rij){
+  CRM.state.documenten = CRM.state.documenten || [];
+  CRM.state.documenten.unshift(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_documenten').insert(rij);
+    if(error){ CRM.state.documenten.shift(); return CRM.fout('Opslaan mislukt', error); }
+  }
+  CRM.toast('Document toegevoegd','ok');
+  CRM.render();
+}
+
+/* Naam en soort vraagt hij vóór het uploaden: een bestand dat "scan_3.pdf"
+   heet zegt over een half jaar niemand meer iets. */
+function docUpload(c, f){
+  if(CRM.demo){ CRM.toast('Demo: het bestand wordt niet geüpload'); return; }
+  const raden = /cv|resume/i.test(f.name) ? 'cv'
+              : /diploma/i.test(f.name) ? 'diploma'
+              : /certi|vca/i.test(f.name) ? 'certificaat' : 'overig';
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Bestand toevoegen</div>
+      <p class="sub" style="margin:6px 0 0">${h(f.name)} · ${h(Math.max(1, Math.round(f.size/1024)) + ' kB')}</p></div>
+    <div class="modal-b"><div class="f-grid">
+      <div class="f-row"><label for="kd_unaam">Naam</label>
+        <input type="text" id="kd_unaam" value="${h(f.name)}"></div>
+      <div class="f-row"><label for="kd_usoort">Soort</label>
+        <select id="kd_usoort">${DOC_SOORTEN.map(s=>
+          `<option${s===raden?' selected':''}>${h(s)}</option>`).join('')}</select></div>
+    </div></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="kd_uok">Uploaden</button></div>`, {onOpen(m){
+      m.querySelector('#kd_uok').onclick = async () => {
+        const naam = m.querySelector('#kd_unaam').value.trim() || f.name;
+        const soort = m.querySelector('#kd_usoort').value;
+        CRM.modal.close();
+        const veilig = String(f.name).replace(/[^\w.\-]+/g,'_').slice(-80);
+        const token = Math.random().toString(36).slice(2, 8);
+        const pad = `kandidaten/${String(c.id).replace(/[^\w-]/g,'')}/docs/${CRM.todayISO()}-${token}-${veilig}`;
+        CRM.toast('Bezig met uploaden…');
+        const {error} = await CRM.sb.storage.from(CRM.opslag.map).upload(pad, f, {upsert:false});
+        if(error) return CRM.toast(CRM.opslag.foutTekst(error), 'err');
+        await docBewaar(c, {id:CRM.uid(), entiteit:'kandidaat', ref:String(c.id),
+          naam, soort, url:pad, door:CRM.me(), op:new Date().toISOString()});
+      };
+    }});
+}
+
+function docLinkModal(c){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Link koppelen</div>
+      <p class="sub" style="margin:6px 0 0">Een document dat elders staat — SharePoint, OneDrive of een gedeelde map.</p></div>
+    <div class="modal-b"><div class="f-grid">
+      <div class="f-row"><label for="kd_dnaam">Naam</label>
+        <input type="text" id="kd_dnaam" placeholder="Bijv. Diploma heftruck"></div>
+      <div class="f-row"><label for="kd_dsoort">Soort</label>
+        <select id="kd_dsoort">${DOC_SOORTEN.map(s=>`<option>${h(s)}</option>`).join('')}</select></div>
+      <div class="f-row" style="grid-column:1/-1"><label for="kd_durl">Link</label>
+        <input type="text" id="kd_durl" placeholder="https://…"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="kd_dok">Koppelen</button></div>`, {onOpen(m){
+      m.querySelector('#kd_dok').onclick = async () => {
+        const url = m.querySelector('#kd_durl').value.trim();
+        if(!url) return m.querySelector('#kd_durl').focus();
+        /* Alleen http(s): een javascript:-link zou hier een klikbare val zijn. */
+        const duid = CRM.opslag.duiding(url);
+        if(duid.soort === 'geweigerd') return CRM.toast('Dat is geen geldige link','err');
+        CRM.modal.close();
+        await docBewaar(c, {id:CRM.uid(), entiteit:'kandidaat', ref:String(c.id),
+          naam: m.querySelector('#kd_dnaam').value.trim() || 'Document',
+          soort: m.querySelector('#kd_dsoort').value, url,
+          door:CRM.me(), op:new Date().toISOString()});
+      };
+    }});
+}
+
+async function docWeg(c, id){
+  if(!await CRM.bevestig('Document losmaken?',
+    'De koppeling verdwijnt van deze kaart. Een geüpload bestand blijft in de opslag staan.')) return;
+  CRM.state.documenten = (CRM.state.documenten||[]).filter(d => String(d.id) !== String(id));
+  if(!CRM.demo) await CRM.sb.from('crm_documenten').delete().eq('id', id);
+  CRM.render();
 }
 
 /* ─── Werkervaring handmatig toevoegen of aanpassen ───────────────
