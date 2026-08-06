@@ -1015,8 +1015,7 @@ function kaart(mount, acties, id){
         <div class="kd-profielkol">
           <div class="stack">
             ${gegevensHtml(c)}
-            ${situatieHtml(c)}
-            ${cvHtml(c)}
+            ${ervaringHtml(c)}
             ${intakeHtml(c)}
           </div>
         </div>
@@ -1131,8 +1130,8 @@ function kaart(mount, acties, id){
     await sollWeg(b.dataset.sollweg); CRM.render();
   });
   klik('#kd_lnotmeer', () => {
-    tabActief = 'notities';
-    mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'notities'));
+    tabActief = 'activiteiten';
+    mount.querySelectorAll('#c_tabs .tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'activiteiten'));
     tabInhoud(mount, c);
   });
   klik('#c_fase',   () => CRM.kandidaatFasePicker && CRM.kandidaatFasePicker(c.id));
@@ -1402,7 +1401,7 @@ function bindSnelbalk(mount, c){
       });
       await bewaarKandidaat(nieuw);
       CRM.verwerkTags(tekst, 'kandidaat', c.id);
-      tabActief = 'notities';
+      tabActief = 'activiteiten';
     }else{
       await CRM.logActiviteit('kandidaat', c.id, soort, tekst);
       CRM.verwerkTags(tekst, 'kandidaat', c.id);
@@ -1483,20 +1482,11 @@ function gegevensHtml(c){
     }).join('')}</div></div></div>`;
 }
 
-/* ─── Huidige situatie (inline bewerkbaar, zelfde stijl) ──────────
-   Waar de kandidaat nú zit: functie, werkgever, opzegtermijn en
-   salaris uit het geïmporteerde oude ATS, plus herkomst (since,
-   eigenaar, bron). cv.*-velden schrijven het cv-jsonb bij. */
-function situatieHtml(c){
-  return `<div class="card">
-    <div class="card-h"><div class="h2">Huidige situatie</div>
-      <span class="meta">klik een waarde om te wijzigen</span></div>
-    <div class="card-b"><div class="kd-velden">${SITUATIE_VELDEN.map(f => {
-      const w = toonWaarde(f, lees(c, f.k));
-      return `<div class="kd-veld"><span class="label">${h(f.lbl)}</span>
-        <span><span class="kd-w${w?'':' leeg'}" data-veld="${h(f.k)}" tabindex="0" role="button">${w?h(w):'invullen…'}</span></span></div>`;
-    }).join('')}</div></div></div>`;
-}
+/* "Huidige situatie" stond hier als eigen blok. Het is opgegaan in
+   Werkervaring (zie ervaringHtml): waar iemand nú zit en wat hij eerder
+   deed is één verhaal, en het stond in twee kaarten onder elkaar
+   (naam: Tjeerd, 6 aug 2026: "dit is namelijk hetzelfde"). De velden
+   zelf (SITUATIE_VELDEN) zijn ongewijzigd. */
 
 function bindVelden(mount, c){
   mount.querySelectorAll('.kd-w').forEach(span => {
@@ -1708,8 +1698,14 @@ async function certBewaar(c, index, naam, tot){
   CRM.render();
 }
 
-/* ─── CV & ervaring ───────────────────────────────────────────── */
-function cvHtml(c){
+/* ─── Werkervaring (6 aug 2026) ───────────────────────────────────
+   Eén kop voor het hele arbeidsverleden. Bovenaan waar de kandidaat nú
+   zit en wat hij wil verdienen (de oude "Huidige situatie"), daaronder
+   de loopbaan, opleiding, certificaten en vaardigheden uit het cv. Ze
+   stonden als twee kaarten onder elkaar terwijl het hetzelfde verhaal
+   is. "CV inlezen" hoort daarom hier: dit is het blok dat ervan
+   volloopt. */
+function ervaringHtml(c){
   const cv = c.cv || {};
   const werk = Array.isArray(cv.werkgevers) ? cv.werkgevers : [];
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
@@ -1718,7 +1714,7 @@ function cvHtml(c){
   const leeg = !werk.length && !opl.length && !skills.length && !certs.length
             && !cv.ervaringJaren && !cv.url && !cv.bestandPad;
   return `<div class="card">
-    <div class="card-h"><div class="h2">CV &amp; ervaring</div>
+    <div class="card-h"><div class="h2">Werkervaring</div>
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
       <span class="spacer"></span>
       ${veiligeUrl(cv.url)?`<a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}
@@ -1738,7 +1734,11 @@ function cvHtml(c){
            keuze: jij bepaalt per cv of je het door Claude haalt. */
         CRM.cvClaude ? `<button class="btn ghost sm" id="c_cvclaude"
           title="Zet de cv-tekst met een opdracht op je klembord. Plak in Claude, plak het antwoord terug.">Door Claude laten lezen</button>` : ''}</div>
-    <div class="card-b">${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens',
+    <div class="card-b">
+      <!-- Waar hij nú zit: dezelfde inline-velden als voorheen, alleen niet
+           meer in een eigen kaart eronder. -->
+      <div class="kd-velden kd-nu">${SITUATIE_VELDEN.map(f => veldRij(c, f)).join('')}</div>
+      ${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens',
       'Lees een CV in (PDF, Word of tekst) — werkervaring, opleidingen, certificaten, talen en de pasfoto komen er in één keer in. Je ziet per gegeven wat het CV zegt voordat er iets wordt overgenomen.',
       '<button class="btn" id="c_cvleeg">CV inlezen</button>') : `
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
@@ -2414,10 +2414,12 @@ function totaalRegel(c){
 function tabsHtml(c){
   const acts  = CRM.activiteitenVoor('kandidaat', c.id);
   const taken = (CRM.state.taken||[]).filter(t => t.entiteit === 'kandidaat' && String(t.ref) === String(c.id));
+  /* Een notitie is geen aparte soort: het is hetzelfde verhaal als een
+     belletje of een appje, alleen zonder telefoon (naam: Tjeerd, 6 aug
+     2026 — "notities apart is too much"). Dus één stroom. */
   return [
-    ['activiteiten','Activiteiten', acts.length],
+    ['activiteiten','Activiteiten', acts.length + (c.notities||[]).length],
     ['taken','Taken', taken.filter(t=>!t.klaar).length],
-    ['notities','Notities', (c.notities||[]).length],
     ['historie','Historie', (c.historie||[]).length]
   ].map(([k,lbl,n]) => `<button class="tab${tabActief===k?' on':''}" data-t="${k}">${h(lbl)}${n?`<span class="cnt num">${n}</span>`:''}</button>`).join('');
 }
@@ -2427,26 +2429,35 @@ function tabInhoud(mount, c){
   const fn = {
     activiteiten: () => tabActiviteiten(el, c),
     taken:        () => tabTaken(el, c),
-    notities:     () => tabNotities(el, c),
     historie:     () => tabHistorie(el, c)
   }[tabActief];
-  if(fn) fn(); else el.innerHTML = '';
+  /* Een onbekend tabblad (bv. het oude 'notities') valt terug op de
+     stroom in plaats van op een leeg vlak. */
+  if(fn) fn(); else { tabActief = 'activiteiten'; tabActiviteiten(el, c); }
 }
 
+/* Eén stroom op tijd: belletjes, appjes, mails, gesprekken én notities.
+   Vastleggen doe je met de snelbalk erboven — de losse knoppenrij die
+   hier stond deed hetzelfde en stond er dus dubbel. */
 function tabActiviteiten(el, c){
   const items = CRM.activiteitenVoor('kandidaat', c.id)
-    .slice().sort((a,b) => new Date(b.op) - new Date(a.op))
     .map(a => ({
+      op:a.op,
       titel:((CRM.ACT_SOORTEN[a.soort]||{}).lbl || a.soort) + (a.door ? ' · ' + a.door : ''),
       wanneer:CRM.fmtDate(a.op) + ' · ' + CRM.geleden(a.op),
       tekst:a.tekst
-    }));
+    }))
+    .concat((c.notities||[]).map(n => ({
+      op:n.op,
+      titel:'Notitie' + (n.door ? ' · ' + n.door : ''),
+      wanneer:CRM.fmtDate(n.op) + ' · ' + CRM.geleden(n.op),
+      tekst:n.tekst
+    })))
+    .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
   el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Activiteiten</div><span class="spacer"></span>
-      <div class="row tight">${['bel','whatsapp','mail','gesprek'].map(s =>
-        `<button class="btn ghost sm" data-log="${s}">${h((CRM.ACT_SOORTEN[s]||{}).lbl||s)}</button>`).join('')}</div></div>
-    <div class="card-b">${CRM.ui.tijdlijn(items)}</div></div>`;
-  el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logVia(c, b.dataset.log, 'Wat leg je vast?'));
+    <div class="card-h"><div class="h2">Activiteiten &amp; notities</div></div>
+    <div class="card-b">${items.length ? CRM.ui.tijdlijn(items)
+      : '<p class="meta" style="margin:0">Nog niets vastgelegd — gebruik de balk hierboven.</p>'}</div></div>`;
 }
 
 /* opts is optioneel: een eigen venstertitel, een vaste aanhef vóór de tekst
@@ -2613,37 +2624,8 @@ function laatsteNotitiesHtml(c){
   </div></div>`;
 }
 
-function tabNotities(el, c){
-  const notities = (c.notities||[]).slice().sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
-  /* Direct typen in plaats van eerst een venster openen: het logboek staat
-     nu bovenaan de kaart, dus dit is de plek waar je tijdens een gesprek
-     even iets kwijt wilt. Enter = vastleggen, Shift+Enter = nieuwe regel. */
-  el.innerHTML = `<div class="card">
-    <div class="card-h"><div class="h2">Notities</div></div>
-    <div class="card-b">
-      <div class="kd-notinvoer">
-        <textarea id="kn_tekst" rows="2"
-          placeholder="Typ je notitie en druk op Enter… Tip: @collega stuurt diegene een melding"></textarea>
-        <button class="btn sm" id="kn_opslaan">Vastleggen</button>
-      </div>
-      ${CRM.ui.tijdlijn(notities.map(n => ({
-        titel:n.door||'—', wanneer:CRM.fmtDate(n.op)+' · '+CRM.geleden(n.op), tekst:n.tekst
-      })))}</div></div>`;
-  const ta = el.querySelector('#kn_tekst');
-  const opslaan = async () => {
-    const tekst = ta.value.trim();
-    if(!tekst) return;
-    const nieuw = Object.assign({}, c, {
-      notities:[{op:new Date().toISOString(), door:CRM.me(), tekst}].concat(c.notities||[])
-    });
-    await bewaarKandidaat(nieuw);
-    CRM.verwerkTags(tekst, 'kandidaat', c.id);     // @collega → melding
-    tabActief = 'notities'; CRM.render();
-  };
-  el.querySelector('#kn_opslaan').onclick = opslaan;
-  ta.onkeydown = e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); opslaan(); } };
-}
-
+/* tabNotities is vervallen: notities lopen mee in tabActiviteiten en
+   vastleggen gaat via de snelbalk bovenaan de werkkolom. */
 async function notitieToevoegen(c){
   const tekst = await CRM.vraag('Notitie', {multiline:true,
     hint:'Wat wil je onthouden over deze kandidaat? Tip: @collega stuurt diegene een melding.', knop:'Opslaan'});
@@ -2653,7 +2635,7 @@ async function notitieToevoegen(c){
   });
   await bewaarKandidaat(nieuw);
   CRM.verwerkTags(tekst, 'kandidaat', c.id);       // @collega → melding
-  tabActief = 'notities'; CRM.render();
+  tabActief = 'activiteiten'; CRM.render();
 }
 
 function tabHistorie(el, c){
