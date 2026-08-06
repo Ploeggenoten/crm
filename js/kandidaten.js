@@ -842,7 +842,17 @@ function lijst(wrap){
 let kandOpen = null, tabActief = 'activiteiten';
 /* Welke helft van de kaart je open hebt staan: 'werken' of 'dossier'.
    Onthouden per browser — je eigen manier van werken blijft zo staan. */
-let weergave = (() => { try{ return localStorage.getItem('kdWeergave') === 'dossier' ? 'dossier' : 'werken'; }catch(e){ return 'werken'; } })();
+const voorkeur = () => { try{ return localStorage.getItem('kdWeergave') === 'dossier' ? 'dossier' : 'werken'; }catch(e){ return 'werken'; } };
+let weergave = voorkeur();
+
+/* Bij een kaart die nog niet af is begint het werk bij de gegevens, niet bij
+   het traject (naam: Tjeerd, 5 aug 2026: "een kandidaat er goed inzetten en
+   de gegevens hiervan — het startpunt moet duidelijk zijn"). Zo'n kaart
+   opent dus in Dossier, ongeacht wat je de vorige keer koos: je kunt pas
+   voorstellen wat je hebt ingevuld. Vanaf 70% is het profiel bruikbaar en
+   wint jouw eigen voorkeur weer. */
+const NOG_OPBOUWEN = 70;
+const magOpbouwen = c => !geanonimiseerd(c) && CRM.volledigheid(c).pct < NOG_OPBOUWEN;
 
 /* Inline bewerkbare velden — pad 'cv.x' schrijft in het cv-jsonb.
    Beschikbaarheid, ploegen, talen, rijbewijs en vervoer zijn échte
@@ -961,7 +971,15 @@ function kaart(mount, acties, id){
     mount.querySelector('#kd_terug').onclick = () => CRM.ga('kandidaten');
     return;
   }
-  if(kandOpen !== String(id)){ kandOpen = String(id); tabActief = 'activiteiten'; }
+  if(kandOpen !== String(id)){
+    kandOpen = String(id); tabActief = 'activiteiten';
+    /* Nieuwe kaart openen: staat het profiel nog niet, dan begin je bij de
+       gegevens. Staat het er wél, dan geldt weer jouw eigen voorkeur —
+       anders sleept één onvolledige kaart de dossier-stand mee naar alle
+       kaarten die je daarna opent. Binnen dezelfde kaart blijft je
+       handmatige wissel gewoon staan. */
+    weergave = magOpbouwen(c) ? 'dossier' : voorkeur();
+  }
 
   /* Eén inplan-knop, niet twee. "Inplannen" was vaag én het venster stond
      standaard op een gesprek zonder video, terwijl de videocall juist de
@@ -1007,12 +1025,15 @@ function kaart(mount, acties, id){
            alles om na te lezen en bij te werken. Beide vlakken worden
            getekend en alleen verborgen — zo blijven alle knoppen gekoppeld
            en is wisselen ogenblikkelijk, zonder hertekenen. -->
-      <div class="kd-schakel" role="tablist">
+      <div class="kd-schakel${magOpbouwen(c)?' opbouwen':''}" role="tablist">
         <button type="button" data-weergave="werken"${weergave==='werken'?' class="on"':''} role="tab">Werken</button>
-        <button type="button" data-weergave="dossier"${weergave==='dossier'?' class="on"':''} role="tab">Dossier</button>
-        <span class="meta">${weergave==='werken'
-          ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
-          : 'Gegevens, cv, intake en contract — bijwerken en nalezen'}</span>
+        <button type="button" data-weergave="dossier"${weergave==='dossier'?' class="on"':''} role="tab">Dossier${
+          magOpbouwen(c) ? ' <span class="kd-schakelpunt" title="Het profiel is nog niet compleet">•</span>' : ''}</button>
+        <span class="kd-schakeluitleg">${magOpbouwen(c)
+          ? 'Begin hier: vul eerst de gegevens aan — pas dan kun je goed voorstellen'
+          : (weergave==='werken'
+            ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
+            : 'Gegevens, cv, intake en contract — bijwerken en nalezen')}</span>
       </div>
 
       <div class="kd-vlak" data-vlak="werken"${weergave==='werken'?'':' hidden'}>
@@ -1069,8 +1090,10 @@ function kaart(mount, acties, id){
     try{ localStorage.setItem('kdWeergave', weergave); }catch(e){}
     mount.querySelectorAll('[data-weergave]').forEach(x => x.classList.toggle('on', x.dataset.weergave === weergave));
     mount.querySelectorAll('.kd-vlak').forEach(x => x.hidden = x.dataset.vlak !== weergave);
-    const uitleg = mount.querySelector('.kd-schakel .meta');
-    if(uitleg) uitleg.textContent = weergave === 'werken'
+    const uitleg = mount.querySelector('.kd-schakeluitleg');
+    /* Bij een profiel dat nog opgebouwd wordt blijft de startaanwijzing
+       staan — die geldt ongeacht in welke helft je kijkt. */
+    if(uitleg && !magOpbouwen(c)) uitleg.textContent = weergave === 'werken'
       ? 'Wat je nu nodig hebt — het dossier staat één klik verderop'
       : 'Gegevens, cv, intake en contract — bijwerken en nalezen';
   });

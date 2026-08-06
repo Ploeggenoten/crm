@@ -388,13 +388,25 @@ label.kd-taak input{margin-top:3px}
 /* ─── Werken / Dossier (5 aug 2026) ───────────────────────────────
    Twee weergaven op één kaart. Bewust géén tabbladen-uiterlijk: het
    logboek daaronder heeft al tabs, en twee rijen tabs onder elkaar leest
-   als een doolhof. Dit is één schakelaar met twee standen. */
-.kd-schakel{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+   als een doolhof. Dit is één schakelaar met twee standen, in het
+   merkoranje — hij moet meteen opvallen (naam: Tjeerd, 5 aug 2026), want
+   wie hem niet ziet mist de helft van de kaart. */
+.kd-schakel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  background:var(--well);border:1px solid var(--line-2);border-radius:999px;
+  padding:5px;align-self:flex-start}
 .kd-schakel button{
-  background:none;border:1px solid var(--line-2);color:var(--txt-2);
-  border-radius:999px;padding:6px 18px;font-family:var(--body);font-size:13px;
-  font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
-.kd-schakel button:hover{border-color:var(--olive-l);color:var(--olive)}
-.kd-schakel button.on{background:var(--olive);border-color:var(--olive);color:#fff}
-.kd-schakel .meta{margin-left:8px}
+  background:none;border:1px solid transparent;color:var(--txt-2);
+  border-radius:999px;padding:8px 24px;font-family:var(--body);font-size:14px;
+  font-weight:700;cursor:pointer;letter-spacing:.2px;
+  transition:background .12s,color .12s,border-color .12s}
+.kd-schakel button:hover{color:var(--oranje);border-color:var(--oranje)}
+.kd-schakel button.on{background:var(--oranje);border-color:var(--oranje);color:#fff}
+.kd-schakel button.on:hover{filter:brightness(1.06);color:#fff}
+/* Stip op Dossier zolang het profiel nog niet compleet is: daar ligt het
+   werk, ook als je in Werken staat te kijken. */
+.kd-schakelpunt{color:var(--oranje);font-size:17px;line-height:0;vertical-align:1px;margin-left:2px}
+.kd-schakel button.on .kd-schakelpunt{color:#fff}
+.kd-schakeluitleg{font-size:12.5px;color:var(--txt-2);margin:0 10px 0 6px}
+.kd-schakel.opbouwen{border-color:var(--oranje);background:var(--amber-bg)}
+.kd-schakel.opbouwen .kd-schakeluitleg{color:#b03d1c;font-weight:600}
 .kd-vlak[hidden]{display:none}
