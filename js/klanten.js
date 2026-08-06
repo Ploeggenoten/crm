@@ -2077,11 +2077,19 @@ function takenBlokHtml(){
    - Wat je het vaakst vastlegt is de úitkomst van een poging: gebeld,
      geen gehoor, voicemail, appje gestuurd. Dat zijn nu knoppen van één
      klik — allemaal echte contactmomenten, dus laatst_contact loopt mee. */
+/* Vierde kolom: telt dit als contactmoment? Een notitie is dat niet — je
+   hebt niemand gesproken — en een taak al helemaal niet, die gaat over de
+   toekomst. Zonder dat onderscheid zou "even iets opschrijven" de klant op
+   het salesbord uit de stiltefilter halen terwijl er geen contact was.
+   (Tjeerd, 6 aug 2026: notitie en taak erbij, mét dezelfde
+   contactpersoon-koppeling als de belknoppen.) */
 const SNEL_UITKOMSTEN = [
-  ['bel',      'Gebeld',       'Gebeld'],
-  ['bel',      'Geen gehoor',  'Gebeld, geen gehoor'],
-  ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten'],
-  ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd']
+  ['bel',      'Gebeld',       'Gebeld',                          true],
+  ['bel',      'Geen gehoor',  'Gebeld, geen gehoor',             true],
+  ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten', true],
+  ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd',               true],
+  ['notitie',  'Notitie',      '',                                false],
+  ['taak',     'Taak',         '',                                false]
 ];
 /* De knoppenrij plus het invulveldje dat ná een klik verschijnt. Eén klik
    en Enter is genoeg ("Gebeld, geen gehoor" staat er dan), maar wíe wil,
@@ -2095,6 +2103,20 @@ function uitkomstenHtml(){
       <div class="label" data-uitkop style="margin-bottom:4px"></div>
       <div class="row tight kl-uitwie" data-uitwie style="margin-bottom:6px"></div>
       <textarea rows="2" data-uittekst placeholder="Wat is er besproken? Leeg laten mag — Enter legt vast."></textarea>
+      ${/* Alleen bij een taak: wanneer moet het af? Dezelfde snelkeuzes als
+           in het taakvenster, zodat je niet hoeft na te rekenen. */''}
+      <div class="kl-uittaak" data-uittaak hidden style="margin-top:8px">
+        <div class="row tight" style="align-items:center">
+          <span class="meta">wanneer</span>
+          ${[[1,'morgen'],[7,'over 1 week'],[14,'over 2 weken'],['m','over 1 maand']].map(([v,l]) =>
+            `<button type="button" class="chip btn-like" data-uitdag="${v}">${l}</button>`).join('')}
+          <input type="date" data-uitdatum style="max-width:160px">
+        </div>
+        <div class="row tight" style="align-items:center;margin-top:6px">
+          <span class="meta">voor</span>
+          <select data-uitvoor style="max-width:180px"></select>
+        </div>
+      </div>
       <div class="row tight" style="margin-top:6px">
         <button type="button" class="btn sm" data-uitok>Vastleggen</button>
         <button type="button" class="btn ghost sm" data-uitweg>Annuleren</button>
@@ -2127,24 +2149,94 @@ function bindUitkomsten(root, k, na){
       tekst.focus();
     });
   };
+  const taakEl  = veld.querySelector('[data-uittaak]');
+  const datumEl = veld.querySelector('[data-uitdatum]');
+  const voorEl  = veld.querySelector('[data-uitvoor]');
+  const isTaak  = () => keuze != null && SNEL_UITKOMSTEN[keuze][0] === 'taak';
+
+  /* Snelkeuzes rekenen lokaal, niet via toISOString — dat is UTC en zet
+     's avonds de verkeerde dag neer (zelfde valkuil als in taakModal). */
+  const isoLokaal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')
+                       + '-' + String(d.getDate()).padStart(2,'0');
+  CRM.$$('[data-uitdag]', veld).forEach(b => b.onclick = () => {
+    const d = new Date();
+    if(b.dataset.uitdag === 'm') d.setMonth(d.getMonth() + 1);
+    else d.setDate(d.getDate() + Number(b.dataset.uitdag));
+    datumEl.value = isoLokaal(d);
+    CRM.$$('[data-uitdag]', veld).forEach(x => x.classList.toggle('sel', x === b));
+  });
+
   const toon = i => { keuze = i;
+    const [soort,, standaard] = SNEL_UITKOMSTEN[i];
     veld.hidden = false;
-    veld.querySelector('[data-uitkop]').textContent = SNEL_UITKOMSTEN[i][2];
+    /* Bij bellen en appen is de uitkomst de kop ("Gebeld, geen gehoor").
+       Notitie en taak hebben geen standaardzin — daar is de tekst zelf de
+       inhoud, dus daar dient de kop alleen als opschrift. */
+    veld.querySelector('[data-uitkop]').textContent = standaard || (soort === 'taak' ? 'TAAK' : 'NOTITIE');
+    tekst.placeholder = soort === 'taak'
+      ? 'Wat moet er gebeuren? Bijv. offerte nabellen'
+      : soort === 'notitie'
+        ? 'Wat wil je vastleggen? Tip: @collega stuurt diegene een melding.'
+        : 'Wat is er besproken? Leeg laten mag — Enter legt vast.';
+    taakEl.hidden = soort !== 'taak';
+    if(soort === 'taak'){
+      datumEl.value = '';
+      CRM.$$('[data-uitdag]', veld).forEach(x => x.classList.remove('sel'));
+      voorEl.innerHTML = (CRM.teamNamen ? CRM.teamNamen() : [CRM.me()])
+        .map(n => `<option value="${h(n)}"${n === CRM.me() ? ' selected' : ''}>${h(n)}${
+          n === CRM.me() ? ' (ik)' : ''}</option>`).join('');
+    }
     tekenWie();
     tekst.value = ''; tekst.focus(); };
-  const dicht = () => { veld.hidden = true; keuze = null; wie = null; };
+  const dicht = () => { veld.hidden = true; taakEl.hidden = true; keuze = null; wie = null; };
   const vastleggen = async () => {
     if(keuze == null) return;
-    const [soort,, standaard] = SNEL_UITKOMSTEN[keuze];
+    const [soort,, standaard, isContact] = SNEL_UITKOMSTEN[keuze];
     const extra = tekst.value.trim();
-    const regel = extra ? standaard + ': ' + extra : standaard;
     const met = wie;
+
+    /* ── Taak: geen activiteit maar een taak, wél op dezelfde persoon ── */
+    if(soort === 'taak'){
+      if(!extra){ tekst.focus(); CRM.toast('Schrijf even op wat er moet gebeuren'); return; }
+      const rij = {
+        id: CRM.uid(), tekst: extra + (met ? ' — ' + met.naam : ''),
+        datum: datumEl.value || null, tijd: '', klaar: false,
+        entiteit: 'klant', ref: k.naam, contact_id: met ? String(met.id) : null,
+        voor: voorEl.value || CRM.me(), door: CRM.me(), prioriteit: '',
+        created_at: new Date().toISOString()
+      };
+      dicht();
+      (CRM.state.taken || (CRM.state.taken = [])).push(rij);
+      if(!CRM.demo){
+        let {error} = await CRM.sb.from('crm_taken').insert(rij);
+        /* contact_id komt uit supabase/nog-te-draaien.sql; is die nog niet
+           gedraaid, dan is een taak zónder koppeling beter dan geen taak. */
+        if(error && /contact_id/.test(String(error.message||''))){
+          const zonder = Object.assign({}, rij); delete zonder.contact_id;
+          ({error} = await CRM.sb.from('crm_taken').insert(zonder));
+        }
+        if(error){ CRM.fout('Taak opslaan mislukt', error); return; }
+      }
+      if(rij.voor !== CRM.me())
+        CRM.meld(rij.voor, 'taak', `${CRM.me()} heeft je een taak gegeven: "${rij.tekst}" — ${k.naam}`
+          + (rij.datum ? ` (${CRM.fmtDate(rij.datum)})` : ''), 'taak', rij.id);
+      CRM.verwerkTags(extra, 'klant', k.naam);
+      CRM.toast('Taak aangemaakt','ok');
+      na();
+      return;
+    }
+
+    /* ── Bellen, appen, notitie: activiteit ── */
+    const regel = standaard ? (extra ? standaard + ': ' + extra : standaard) : extra;
+    if(!regel){ tekst.focus(); return; }        /* een lege notitie zegt niets */
     dicht();
     if(met) await CRM.logActiviteit('contact', String(met.id), soort, regel);
     else await CRM.logActiviteit('klant', k.naam, soort, regel);
     if(extra) CRM.verwerkTags(extra, 'klant', k.naam);
-    /* Een uitkomst is een echt contactmoment — het bord moet het zien. */
-    await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
+    /* Alleen een écht contactmoment verzet "laatste contact". Een notitie
+       is geen gesprek; die zou de klant anders ten onrechte uit de
+       stiltefilter op het salesbord halen. */
+    if(isContact) await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
     na();
   };
   CRM.$$('[data-uitkomst]', root).forEach(b => b.onclick = () => toon(+b.dataset.uitkomst));
