@@ -404,13 +404,13 @@ label.kd-taak input{margin-top:3px}
 /* ─── Snelbalk bovenaan de werkkolom ──────────────────────────────
    Altijd op dezelfde plek: typ wat er gebeurd is en kies wat het is.
    Olijfrand links, zoals overal waar iets van jou gevraagd wordt. */
-.kd-snelbalk{border-left:3px solid var(--olive)}
-.kd-snelbalk .card-b{padding-top:12px;padding-bottom:12px}
-.kd-snelrij{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+/* De invoerregel staat in het blok Activiteiten & notities zelf, met een
+   streep eronder vóór de tijdlijn — geen losse balk erboven meer. */
+.kd-snelrij{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;
+  margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
 .kd-snelrij textarea{flex:1;min-width:240px;resize:none;overflow:hidden;
   font-size:13px;line-height:1.5}
 .kd-snelknoppen{flex-wrap:wrap;row-gap:6px}
-.kd-snelhint{margin:9px 0 0;font-size:12.5px;line-height:1.5;color:#b03d1c}
 
 /* De "nu"-regels bovenaan Werkervaring: waar hij zit, opzegtermijn en
    salariswens, met een streep eronder vóór de loopbaan uit het cv. */

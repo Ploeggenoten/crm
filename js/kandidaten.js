@@ -840,15 +840,9 @@ function lijst(wrap){
    KANDIDATENKAART
    ═══════════════════════════════════════════════════════════════ */
 let kandOpen = null, tabActief = 'activiteiten';
-/* Welke helft van de kaart je open hebt staan: 'werken' of 'dossier'.
-   Onthouden per browser — je eigen manier van werken blijft zo staan. */
-
-/* Een kaart die nog niet af is vraagt om invullen, niet om een traject
-   (naam: Tjeerd, 5 aug 2026: "een kandidaat er goed inzetten en de gegevens
-   hiervan — het startpunt moet duidelijk zijn"). Onder deze grens zet de
-   snelbalk daarom de aanwijzing "begin bij de gegevens" erbij. */
-const NOG_OPBOUWEN = 70;
-const magOpbouwen = c => !geanonimiseerd(c) && CRM.volledigheid(c).pct < NOG_OPBOUWEN;
+/* Dat een profiel nog niet af is, zegt de balk "Wat mist nog" onder de kop
+   al — met klikbare chips naar het lege veld. Een tweede waarschuwing in de
+   werkkolom was dezelfde boodschap voor de tweede keer. */
 
 /* Inline bewerkbare velden — pad 'cv.x' schrijft in het cv-jsonb.
    Beschikbaarheid, ploegen, talen, rijbewijs en vervoer zijn échte
@@ -1020,7 +1014,6 @@ function kaart(mount, acties, id){
           </div>
         </div>
         <div class="stack kd-werkkol">
-          ${snelbalkHtml(c)}
           <div class="kd-logboek">
             <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
             <div id="c_tabinhoud"></div>
@@ -1045,7 +1038,6 @@ function kaart(mount, acties, id){
       </div>
     </div>`;
 
-  bindSnelbalk(mount, c);
 
   bindVelden(mount, c);
   bindSterren(mount, c);
@@ -1371,21 +1363,16 @@ function bindDealbalk(mount, c){
    dezelfde tekst, zodat je nooit twee keer hetzelfde typt. */
 function snelbalkHtml(c){
   if(geanonimiseerd(c)) return '';
-  return `<div class="card kd-snelbalk">
-    <div class="card-b">
-      <div class="kd-snelrij">
-        <textarea id="kd_snel" rows="1" placeholder="Wat is er gebeurd of moet er gebeuren?"
-          title="Enter legt het vast als notitie. Noem een collega met @naam om diegene een melding te sturen."></textarea>
-        <div class="row tight kd-snelknoppen">
-          <button type="button" class="btn sm" data-snel="notitie">Notitie</button>
-          <button type="button" class="btn ghost sm" data-snel="bel">Gebeld</button>
-          <button type="button" class="btn ghost sm" data-snel="whatsapp">Geappt</button>
-          <button type="button" class="btn ghost sm" data-snel="taak">Taak…</button>
-        </div>
-      </div>
-      ${magOpbouwen(c) ? `<p class="kd-snelhint">Dit profiel is nog niet compleet — begin links bij de gegevens,
-        anders kun je deze kandidaat niet goed voorstellen.</p>` : ''}
-    </div></div>`;
+  return `<div class="kd-snelrij">
+    <textarea id="kd_snel" rows="1" placeholder="Wat is er gebeurd of moet er gebeuren?"
+      title="Enter legt het vast als notitie. Noem een collega met @naam om diegene een melding te sturen."></textarea>
+    <div class="row tight kd-snelknoppen">
+      <button type="button" class="btn sm" data-snel="notitie">Notitie</button>
+      <button type="button" class="btn ghost sm" data-snel="bel">Gebeld</button>
+      <button type="button" class="btn ghost sm" data-snel="whatsapp">Geappt</button>
+      <button type="button" class="btn ghost sm" data-snel="taak">Taak…</button>
+    </div>
+  </div>`;
 }
 function bindSnelbalk(mount, c){
   const ta = mount.querySelector('#kd_snel');
@@ -2454,10 +2441,16 @@ function tabActiviteiten(el, c){
       tekst:n.tekst
     })))
     .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+  /* De invoerregel hoort in dit blok en niet als losse balk erboven
+     (naam: Tjeerd, 6 aug 2026): je legt iets vast in de lijst waarin het
+     daarna verschijnt. */
   el.innerHTML = `<div class="card">
     <div class="card-h"><div class="h2">Activiteiten &amp; notities</div></div>
-    <div class="card-b">${items.length ? CRM.ui.tijdlijn(items)
-      : '<p class="meta" style="margin:0">Nog niets vastgelegd — gebruik de balk hierboven.</p>'}</div></div>`;
+    <div class="card-b">
+      ${snelbalkHtml(c)}
+      ${items.length ? CRM.ui.tijdlijn(items)
+      : '<p class="meta" style="margin:0">Nog niets vastgelegd — typ hierboven wat er is gebeurd.</p>'}</div></div>`;
+  bindSnelbalk(el, c);
 }
 
 /* opts is optioneel: een eigen venstertitel, een vaste aanhef vóór de tekst
