@@ -1097,6 +1097,10 @@ function kaart(mount, acties, id){
   const certKnop = mount.querySelector('#c_certnieuw');
   if(certKnop) certKnop.onclick = () => certModal(c, -1);
   mount.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => certModal(c, Number(b.dataset.cert)));
+  { const b = mount.querySelector('#c_skillnieuw');
+    if(b) b.onclick = () => vaardigheidToevoegen(c); }
+  mount.querySelectorAll('[data-skillweg]').forEach(b =>
+    b.onclick = () => vaardigheidWeg(c, Number(b.dataset.skillweg)));
   /* Opvolging: check-in vastleggen, ritme uitklappen, felicitatiemail openen.
      Alle knoppen zitten in js/opvolging.js — deze kaart roept alleen aan. */
   if(CRM.opvolging) CRM.opvolging.bindKaart(mount, c, () => CRM.render());
@@ -1705,32 +1709,29 @@ function ervaringHtml(c){
       ${cv.ervaringJaren?`<span class="chip"><span class="num">${h(cv.ervaringJaren)}</span> jaar ervaring</span>`:''}
       <span class="spacer"></span>
       ${veiligeUrl(cv.url)?`<a class="btn ghost sm" href="${h(veiligeUrl(cv.url))}" target="_blank" rel="noopener">CV openen</a>`:''}
-      <!-- Toevoegen zit in de kop en niet bij het lijstje zelf: bij een kaart
-           zónder certificaten is er geen lijstje, en dan moet je er alsnog
-           eentje kwijt kunnen. -->
-      <button class="btn ghost sm" id="c_werknieuw">+ Werkervaring</button>
-      <button class="btn ghost sm" id="c_certnieuw">Certificaat toevoegen</button>
-      <!-- Is er nog niets, dan is dit de enige zinnige vervolgstap op dit
-           blok en staat de knop gevuld in plaats van als randje. Zodra er
-           wel gegevens staan zakt hij terug naar een gewone hulpknop. -->
-      <button class="btn ${leeg?'':'ghost '}sm" id="c_cvlees">CV inlezen</button>
-      ${/* De route via Claude, voor cv's waar de snelle inlezer weinig uit
-           haalt — inspringing zonder bolletjes, "± 4 jaar" in plaats van
-           jaartallen. Die opmaak valt niet met regels te vangen; zie de kop
-           van js/cvclaude.js. Bewust een tweede knop en geen automatische
-           keuze: jij bepaalt per cv of je het door Claude haalt. */
-        CRM.cvClaude ? `<button class="btn ghost sm" id="c_cvclaude"
-          title="Zet de cv-tekst met een opdracht op je klembord. Plak in Claude, plak het antwoord terug.">Door Claude laten lezen</button>` : ''}</div>
+      <!-- Eén knop in de kop (naam: Tjeerd, 6 aug 2026: "cv inlezen is veel
+           te groot, dat is zonde"). Toevoegen doe je vanaf hier bij de lijst
+           waar het bij hoort — dat leest logischer dan vier knoppen boven
+           een blok dat nog leeg is. -->
+      <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
     <div class="card-b">
       <!-- Waar hij nú zit: dezelfde inline-velden als voorheen, alleen niet
            meer in een eigen kaart eronder. -->
       <div class="kd-velden kd-nu">${SITUATIE_VELDEN.map(f => veldRij(c, f)).join('')}</div>
-      ${cvBestandHtml(c)}${leeg ? CRM.ui.leeg('Nog geen CV-gegevens',
-      'Lees een CV in (PDF, Word of tekst) — werkervaring, opleidingen, certificaten, talen en de pasfoto komen er in één keer in. Je ziet per gegeven wat het CV zegt voordat er iets wordt overgenomen.',
-      '<button class="btn" id="c_cvleeg">CV inlezen</button>') : `
+      ${cvBestandHtml(c)}
       ${cv.bestand?`<div class="meta" style="margin-bottom:10px">Ingelezen: ${h(cv.bestand)}${cv.op?' · '+h(CRM.fmtDate(cv.op)):''}</div>`:''}
-      ${werk.length?`<div class="label">Werkervaring</div>
-        <div class="kd-cvlijst">${werk.map((w, i) => `<div class="kd-cvrij">
+      ${leeg ? `<p class="kd-ervleeg">Nog niets ingevuld. Lees een cv in — loopbaan, opleiding,
+        certificaten en talen komen er in één keer in${CRM.cvClaude ? `, of laat een lastig opgemaakt cv
+        <button type="button" class="lnk" id="c_cvclaude"
+          title="Zet de cv-tekst met een opdracht op je klembord. Plak in Claude, plak het antwoord terug.">door Claude lezen</button>` : ''} —
+        of vul het hieronder zelf aan.</p>` : ''}
+
+      <!-- Elke lijst heeft zijn eigen toevoegknop, ook als hij leeg is: dan
+           weet je waar je iets kwijt kunt zonder eerst een cv te hoeven
+           inlezen. -->
+      <div class="kd-ervkop"><span class="label">Loopbaan</span>
+        <button class="btn sub sm" id="c_werknieuw">+ Toevoegen</button></div>
+      ${werk.length?`<div class="kd-cvlijst">${werk.map((w, i) => `<div class="kd-cvrij">
           <b>${h(w.functie||w.rol||'—')}
             ${/* Ingelezen is een beginpunt, geen eindstand: de AM moet een
                  dienstverband kunnen corrigeren of aanvullen (Tjeerd,
@@ -1740,20 +1741,63 @@ function ervaringHtml(c){
           <span class="meta num">${h([w.van,w.tot].filter(Boolean).join(' – '))||h(w.periode||'')}</span>
           ${Array.isArray(w.taken) && w.taken.length ? `<ul class="kd-cvtaken">${
             w.taken.map(t => `<li>${h(t)}</li>`).join('')}</ul>` : ''}
-        </div>`).join('')}</div>`:''}
-      ${opl.length?`<div class="label" style="margin-top:16px">Opleiding</div>
+        </div>`).join('')}</div>`:'<p class="meta kd-ervnog">Nog geen dienstverbanden.</p>'}
+
+      ${opl.length?`<div class="kd-ervkop"><span class="label">Opleiding</span></div>
         <div class="kd-cvlijst">${opl.map(o => `<div class="kd-cvrij">
           <b>${h(o.opleiding||o.naam||'—')}</b>
           <span class="sub">${h(o.school||o.instituut||'')}</span>
           <span class="meta num">${h(o.jaar||o.periode||'')}</span>
         </div>`).join('')}</div>`:''}
-      ${certs.length?`<div class="label" style="margin-top:16px">Certificaten</div>
-        <div class="kd-certs">${certs.map((r,i) => certRij(r,i)).join('')}</div>`:''}
-      ${skills.length?`<div class="label" style="margin-top:16px">Vaardigheden</div>
-        <div class="row tight" style="margin-top:8px">${skills.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
-      ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="label" style="margin-top:16px">Talen</div>
-        <div class="row tight" style="margin-top:8px">${cv.talen.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
-    `}</div></div>`;
+
+      <div class="kd-ervkop"><span class="label">Certificaten</span>
+        <button class="btn sub sm" id="c_certnieuw">+ Toevoegen</button></div>
+      ${certs.length?`<div class="kd-certs">${certs.map((r,i) => certRij(r,i)).join('')}</div>`
+        :'<p class="meta kd-ervnog">Nog geen certificaten — denk aan VCA, heftruck of reachtruck.</p>'}
+
+      <!-- Vaardigheden waren alleen te vullen door een cv in te lezen; nu
+           kun je ze ook zelf toevoegen (naam: Tjeerd, 6 aug 2026). -->
+      <div class="kd-ervkop"><span class="label">Vaardigheden</span>
+        <button class="btn sub sm" id="c_skillnieuw">+ Toevoegen</button></div>
+      ${skills.length?`<div class="row tight kd-skills">${skills.map((s,i)=>
+        `<span class="chip kd-skill">${h(s)}<button type="button" class="kd-skillweg" data-skillweg="${i}"
+           title="Verwijderen" aria-label="Verwijder ${h(s)}">×</button></span>`).join('')}</div>`
+        :'<p class="meta kd-ervnog">Nog geen vaardigheden — bijvoorbeeld orderpicken, lassen of WMS-ervaring.</p>'}
+
+      ${Array.isArray(cv.talen)&&cv.talen.length?`<div class="kd-ervkop"><span class="label">Talen</span></div>
+        <div class="row tight">${cv.talen.map(s=>`<span class="chip">${h(s)}</span>`).join('')}</div>`:''}
+    </div></div>`;
+}
+
+/* ─── Vaardigheden: zelf toevoegen en weghalen ────────────────────
+   Ze komen normaal uit het cv (cv.skills), maar lang niet elk cv noemt
+   ze en een AM hoort er eentje bij te kunnen zetten na een gesprek.
+   Zelfde veld, zodat de cv-generator en de matching er niets van merken. */
+async function vaardigheidToevoegen(c){
+  const tekst = await CRM.vraag('Vaardigheid toevoegen',
+    {hint:'Eén per keer, of meerdere gescheiden door een komma.', knop:'Toevoegen'});
+  if(!tekst) return;
+  const nieuwe = String(tekst).split(',').map(s => s.trim()).filter(Boolean);
+  if(!nieuwe.length) return;
+  const cv = Object.assign({}, c.cv || {});
+  const huidig = Array.isArray(cv.skills) ? cv.skills.slice() : [];
+  /* Dubbel toevoegen levert een rij identieke chips op; vergelijken zonder
+     hoofdletters, want "Heftruck" en "heftruck" zijn hetzelfde. */
+  nieuwe.forEach(s => {
+    if(!huidig.some(x => String(x).toLowerCase() === s.toLowerCase())) huidig.push(s);
+  });
+  cv.skills = huidig;
+  await bewaarKandidaat(Object.assign({}, c, {cv}));
+  CRM.render();
+}
+async function vaardigheidWeg(c, i){
+  const cv = Object.assign({}, c.cv || {});
+  const huidig = Array.isArray(cv.skills) ? cv.skills.slice() : [];
+  if(i < 0 || i >= huidig.length) return;
+  huidig.splice(i, 1);
+  cv.skills = huidig;
+  await bewaarKandidaat(Object.assign({}, c, {cv}));
+  CRM.render();
 }
 
 /* Het cv-bestand zelf: pad in de afgeschermde map, geopend met een

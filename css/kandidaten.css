@@ -415,3 +415,22 @@ label.kd-taak input{margin-top:3px}
 /* De "nu"-regels bovenaan Werkervaring: waar hij zit, opzegtermijn en
    salariswens, met een streep eronder vóór de loopbaan uit het cv. */
 .kd-nu{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+
+/* ─── Werkervaring: kopjes per lijst (6 aug 2026) ─────────────────
+   Elke lijst heeft zijn eigen toevoegknop, ook als hij leeg is. Dat
+   scheelde vier knoppen in de kaartkop en zegt duidelijker wáár je iets
+   toevoegt. De lege regel eronder legt uit wat er hoort te staan. */
+.kd-ervkop{display:flex;align-items:center;gap:10px;margin:18px 0 6px}
+.kd-ervkop:first-of-type{margin-top:4px}
+.kd-ervkop > .label{margin:0}
+.kd-ervkop .btn{margin-left:auto}
+.kd-ervnog{margin:0;font-size:12.5px;line-height:1.5}
+.kd-ervleeg{margin:0 0 4px;font-size:12.5px;line-height:1.6;color:var(--txt-2)}
+
+/* Vaardigheid weghalen: kruisje in de chip zelf, gedempt tot je erover
+   gaat — anders leest een rij chips als een rij sluitknoppen. */
+.kd-skills{margin-top:2px}
+.kd-skill{padding-right:5px}
+.kd-skillweg{background:none;border:0;cursor:pointer;color:var(--muted);
+  font-size:14px;line-height:1;padding:0 2px;margin-left:5px}
+.kd-skillweg:hover{color:var(--oranje)}
