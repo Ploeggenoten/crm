@@ -384,3 +384,17 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
 .ovd-bijzrij{padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.45}
 .ovd-bijzrij:last-child{border-bottom:none}
 .ovd-bijzrij .meta{display:block;margin-top:1px;font-size:11px}
+
+/* De vacaturetekst als leesbaar document in plaats van een tekstveld.
+   Smalle kolom (~70 tekens) omdat lange regels slecht lezen; koppen in
+   de huisstijl-olijf zodat je de structuur ziet zonder te lezen. */
+.ovd-doc{max-width:64ch;font-size:14px;line-height:1.62}
+.ovd-doc p{margin:0 0 11px}
+.ovd-doc .ovd-doc-k{
+  font-size:11.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--olive,#3D6400);margin:20px 0 7px;padding-bottom:4px;
+  border-bottom:1px solid var(--line);
+}
+.ovd-doc .ovd-doc-k:first-child{margin-top:0}
+.ovd-doc .ovd-doc-l{margin:0 0 11px;padding-left:20px}
+.ovd-doc .ovd-doc-l li{margin:2px 0}

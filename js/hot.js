@@ -40,7 +40,7 @@
   /* ─── Schermstand ───────────────────────────────────────────────
      Bewust niet bewaard: dit zijn vragen van dít moment, geen gewoonte. */
   const S = { open:null, zoek:'', sort:'knelt', mijn:false, toonRest:false, klant:'', am:'',
-              dtab:'kandidaten', afvalOpen:false };   // stand van de vacaturekaart
+              dtab:'kandidaten', afvalOpen:false, tekstBewerk:false };   // stand van de vacaturekaart
   const M = { mount:null, acties:null, vac:null };   // vac gezet = detailpagina
 
   const EIND = ['Afgevallen','Gestopt'];
@@ -1295,7 +1295,11 @@
     /* 'keuze:A,B,C' → een select in plaats van vrije tekst. Voor velden
        waar alleen vaste waarden kloppen (soort opdracht: de rest van het
        CRM herkent precies W&S, Detachering en Flex). */
-    const keuzes = type && type.startsWith('keuze') ? type.slice(6).split(',') : null;
+    /* 'keuzegetal:' is dezelfde lijst, maar de gekozen waarde gaat als
+       getal de database in — garantie en betaaltermijn zijn numerieke
+       kolommen; een string zou daar stilletjes stuklopen. */
+    const keuzeGetal = !!(type && type.startsWith('keuzegetal:'));
+    const keuzes = type && /^keuze(getal)?:/.test(type) ? type.slice(type.indexOf(':') + 1).split(',') : null;
     const inp = document.createElement(keuzes ? 'select' : type === 'tekst' ? 'textarea' : 'input');
     if(keuzes){
       inp.innerHTML = [''].concat(keuzes).map(o =>
@@ -1313,7 +1317,8 @@
     const bewaar = async () => {
       if(klaar) return; klaar = true;
       const ruw = inp.value;
-      const waarde = type === 'getal' ? (String(ruw).trim() === '' ? null : Number(ruw)) : ruw.trim();
+      const waarde = (type === 'getal' || keuzeGetal)
+        ? (String(ruw).trim() === '' ? null : Number(ruw)) : ruw.trim();
       if(String(waarde == null ? '' : waarde) === oud){ naKlaar(); return; }
       await bewaarVac(v, {[veld]: waarde});
       naKlaar();
@@ -1326,6 +1331,21 @@
     if(keuzes) inp.onchange = bewaar;      /* kiezen = klaar, niet nog eens wegklikken */
     inp.onblur = bewaar;
   }
+
+  /* Vaste keuzelijsten voor de Voorwaarden. Vrije tekst gaf twintig
+     schrijfwijzen van hetzelfde ("2 ploegen", "2-ploegendienst",
+     "tweeploegen") en daar valt niets op te filteren of te vergelijken
+     (Tjeerd, 6 aug 2026: "er moeten meer dropdowns zijn"). Let op: de
+     komma scheidt de opties, dus geen komma's ín een optie. */
+  const KEUZE = {
+    reiskosten:     'keuze:Geen vergoeding,Kilometervergoeding,Volledig vergoed,OV volledig vergoed,Vaste vergoeding per dag,In overleg',
+    uren:           'keuze:40,38,36,32,24,20,16,In overleg',
+    ploegendienst:  'keuze:Geen,2-ploegen,3-ploegen,4-ploegen,5-ploegen,Wisselend,Alleen nachtdienst',
+    contractvorm:   'keuze:Direct in dienst bij de klant,Tijdelijk met uitzicht op vast,Uitzendcontract,Detachering,ZZP / opdracht,Oproep / 0-uren',
+    bereikbaarheid: 'keuze:Alleen met eigen vervoer,Eigen vervoer een pré,Goed bereikbaar met OV,Met OV en fiets,Niet met OV bereikbaar',
+    garantie:       'keuzegetal:0,1,2,3,6',
+    betaaltermijn:  'keuzegetal:14,30,45,60'
+  };
 
   /* ── Tab: Voorwaarden ── */
   function tabVoorwaarden(el, v){
@@ -1341,9 +1361,36 @@
     const num = w => (w == null || w === '') ? '' : `<span class="num">${h(String(w))}</span>`;
     const euroBereik = (a2, b2) => (a2 == null && b2 == null) ? ''
       : `<span class="num">${a2 != null ? CRM.euro(a2) : '…'} – ${b2 != null ? CRM.euro(b2) : '…'}</span>`;
+    /* Waar komt deze waarde vandaan? Drie mogelijkheden, en de AM moet ze
+       uit elkaar kunnen houden (Tjeerd, 6 aug 2026): geërfd van de
+       klantafspraak, hier bewust anders gezet, of er is simpelweg niets.
+       Zonder klantafspraak tonen we niets — een geërfde "2 mnd" die
+       nergens is afgesproken leest als een afspraak die niet bestaat. */
     const afwChip = k => wijkt.includes(k)
-      ? ' <span class="chip amber">afwijkend</span>'
-      : (heeftKlantAfspraak ? ' <span class="chip">standaard</span>' : '');
+      ? ' <span class="chip amber">alleen deze vacature</span>'
+      : (heeftKlantAfspraak ? ' <span class="chip green">uit klantafspraak</span>' : '');
+    /* Een waarde uit de klantafspraak alleen tonen als die afspraak er is;
+       anders is het een standaardwaarde uit de code en geen afspraak. */
+    const geerfd = (k, w) => (wijkt.includes(k) || heeftKlantAfspraak) ? w : null;
+
+    /* Welke fee-regel hoort bij déze functie? pctVoor kijkt naar de
+       functiegroepen in de klantafspraak ("operators 22%, teamleiders
+       25%") en zegt er zelf bij waaróm die regel past. Precies wat de
+       AM hier moet zien in plaats van één plat percentage. */
+    const pv = (heeftKlantAfspraak && CRM.fee && CRM.fee.pctVoor)
+      ? CRM.fee.pctVoor({functie: v.functie}, a) : null;
+    const feeLabelVan = p => !p ? ''
+      : p.vorm === 'vast'    ? (p.bedrag  != null ? CRM.euro(p.bedrag) + ' vast' : '')
+      : p.vorm === 'maanden' ? (p.maanden != null ? String(p.maanden).replace('.', ',') + '× maandsalaris' : '')
+      : (p.pct != null ? String(p.pct).replace('.', ',') + '%' : '');
+    /* Eigen percentage op de vacature wint altijd van de klantafspraak. */
+    const feeEigen = wijkt.includes('fee');
+    const feeWaarde = feeEigen ? num(a.pct + '%') : (pv ? num(feeLabelVan(pv)) : '');
+    const feeChip = feeEigen ? ' <span class="chip amber">alleen deze vacature</span>'
+      : (pv && pv.bron === 'regel' && pv.functiegroep
+          ? ` <span class="chip green">uit klantafspraak · ${h(pv.functiegroep)}</span>`
+          : (pv && pv.pct != null || pv && pv.bedrag != null || pv && pv.maanden != null
+              ? ' <span class="chip green">uit klantafspraak</span>' : ''));
 
     el.innerHTML = `
       ${heeftKlantAfspraak || !geld ? '' : `<div class="note warn" style="margin-bottom:14px">Er is nog geen ${h(soortLbl(soort))}-afspraak met ${h(v.klant || 'deze klant')} vastgelegd. Zolang die ontbreekt valt er hier niets te erven — leg hem vast op de klantkaart bij Commerciële afspraken.</div>`}
@@ -1357,12 +1404,12 @@
           ${rij('Vakantiegeld %', v.vt_pct != null ? num(v.vt_pct + '%') : '', 'invullen…', 'vt_pct', 'getal')}
           ${rij('Ploegentoeslag %', v.toeslag_pct != null ? num(v.toeslag_pct + '%') : '', 'invullen…', 'toeslag_pct', 'getal')}
           ${rij('13e maand / eju %', v.eju_pct != null ? num(v.eju_pct + '%') : '', 'invullen…', 'eju_pct', 'getal')}
-          ${rij('Reiskosten', v.reiskosten ? h(v.reiskosten) : '', 'invullen…', 'reiskosten')}
+          ${rij('Reiskosten', v.reiskosten ? h(v.reiskosten) : '', 'kiezen…', 'reiskosten', KEUZE.reiskosten)}
           <div class="label" style="margin:16px 0 6px">Rooster en contract</div>
           ${rij('Werktijden', v.werktijden ? h(v.werktijden) : '', '06:00–14:30, ma t/m vr', 'werktijden')}
-          ${rij('Uren per week', v.uren ? h(v.uren) : '', 'invullen…', 'uren')}
-          ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '', 'geen / 2 / 3 / wisselend', 'ploegendienst')}
-          ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '', 'invullen…', 'contractvorm')}
+          ${rij('Uren per week', v.uren ? h(v.uren) : '', 'kiezen…', 'uren', KEUZE.uren)}
+          ${rij('Ploegendienst', v.ploegendienst ? h(v.ploegendienst) : '', 'kiezen…', 'ploegendienst', KEUZE.ploegendienst)}
+          ${rij('Contractvorm', v.contractvorm ? h(v.contractvorm) : '', 'kiezen…', 'contractvorm', KEUZE.contractvorm)}
         </div>
         <div>
           <div class="label" style="margin-bottom:6px">Afspraak met de klant</div>
@@ -1370,19 +1417,20 @@
               ? ` <span class="chip green">volgt ${h(soortLbl(soort))}-afspraak</span>` : ''),
             'kiezen…', 'type', 'keuze:W&S,Detachering,Flex')}
           ${!geld ? '' : flex ? `
-          ${rij('Factor', a.pct != null ? num(String(a.pct).replace('.', ',') + '×')
-              : (heeftKlantAfspraak && CRM.fee.pctVoor ? (x => x != null ? num(String(x).replace('.', ',') + '×') : '')(CRM.fee.pctVoor({functie:v.functie}, a).pct) : ''), 'geen afspraak')}
-          ${rij('Overname na', a.overname_uren != null ? num(a.overname_uren + ' uur') : '', 'geen grens')}
-          ${rij('Betaaltermijn (dgn)', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14', 'betaaltermijn_dgn', 'getal')}
+          ${rij('Factor', feeEigen ? num(String(a.pct).replace('.', ',') + '×')
+              : (pv && pv.pct != null ? num(String(pv.pct).replace('.', ',') + '×') : ''), 'geen afspraak')}
+          ${rij('Overname na', geerfd('overname', a.overname_uren) != null ? num(a.overname_uren + ' uur') : '', 'geen grens')}
+          ${rij('Betaaltermijn (dgn)', (geerfd('betaaltermijn', a.betaaltermijn) ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'kiezen…', 'betaaltermijn_dgn', KEUZE.betaaltermijn)}
           <p class="meta" style="margin:10px 0 16px">Flex: de opbrengst loopt via de marge op gewerkte uren, niet via een eenmalige fee. Factor en overnamegrens komen uit de uitzendafspraak op de klantkaart.</p>` : `
-          ${rij('Fee %', (a.pct != null ? num(a.pct + '%') : '') + afwChip('fee'), 'geen afspraak', 'fee_pct', 'getal')}
-          ${rij('Garantie (mnd)', (a.garantie_mnd ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'geen', 'garantie_mnd', 'getal')}
-          ${rij('Betaaltermijn (dgn)', (a.betaaltermijn ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'standaard 14', 'betaaltermijn_dgn', 'getal')}
+          ${rij('Fee bij vulling', feeWaarde + feeChip, 'geen afspraak', 'fee_pct', 'getal')}
+          ${rij('Garantie (mnd)', (geerfd('garantie', a.garantie_mnd) ? num(a.garantie_mnd + ' mnd') : '') + afwChip('garantie'), 'kiezen…', 'garantie_mnd', KEUZE.garantie)}
+          ${rij('Betaaltermijn (dgn)', (geerfd('betaaltermijn', a.betaaltermijn) ? num(a.betaaltermijn + ' dagen') : '') + afwChip('betaaltermijn'), 'kiezen…', 'betaaltermijn_dgn', KEUZE.betaaltermijn)}
           ${fs && fs.fee != null ? rij('Grondslag (schatting)', num(CRM.euro(fs.grondslag))) + rij('Fee per plaatsing', num(CRM.euro(fs.fee))) : ''}
-          <p class="meta" style="margin:10px 0 16px">NULL = geërfd van de ${h(soortLbl(soort))}-afspraak met de klant. Wijk je hier af, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>`}
+          ${pv && pv.uitleg ? `<p class="meta" style="margin:10px 0 0">${h(pv.uitleg)}</p>` : ''}
+          <p class="meta" style="margin:6px 0 16px">Leeg = geërfd van de ${h(soortLbl(soort))}-afspraak met de klant. Vul je hier iets in, dan geldt dat alleen voor deze vacature — de klantafspraak zelf blijft staan.</p>`}
           <div class="label" style="margin-bottom:6px">Eisen</div>
           ${rij('Ervaring en certificaten', v.eisen ? h(v.eisen).replace(/\n/g,'<br>') : '', 'één eis per regel', 'eisen', 'tekst')}
-          ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '', 'invullen…', 'bereikbaarheid')}
+          ${rij('Bereikbaarheid', v.bereikbaarheid ? h(v.bereikbaarheid) : '', 'kiezen…', 'bereikbaarheid', KEUZE.bereikbaarheid)}
         </div>
       </div>
       <p class="meta" style="margin-top:16px">Klik op een waarde om hem te bewerken — Enter of wegklikken is opslaan, Escape is annuleren.</p>`;
@@ -1412,6 +1460,43 @@
      stond wordt bij de eerste keer openen samengevoegd voorgezet, zodat
      er niets verloren gaat. Opslaan gaat vanzelf: twee tellen na het
      laatste getypte teken, en meteen bij het verlaten van het veld. */
+  /* Een geplakte Indeed-tekst is één blok platte tekst. Die tonen we als
+     een net document: koppen als koppen, opsommingen als opsommingen.
+     We verzínnen geen structuur — we herkennen alleen wat er al staat, en
+     wat we niet herkennen blijft gewoon een regel. Zo leest de AM een
+     vacature in plaats van een tekstveld (Tjeerd, 6 aug 2026: "dit is
+     voor de AM zo niet overzichtelijk"). */
+  const KOP_MAX = 60;
+  function isKop(t){
+    if(!t || t.length > KOP_MAX) return false;
+    /* HOOFDLETTERKOP: "OVER HET BEDRIJF", "WAT WIJ VRAGEN". */
+    if(t.length > 2 && /[A-ZÀ-Ý]/.test(t) && !/[a-zà-ÿ]/.test(t)) return true;
+    /* "Werktijden:", "Ploegrooster:" — kort en eindigend op een dubbele
+       punt. "Let op: je wordt verwacht…" valt hier bewust buiten: die
+       heeft de dubbele punt middenin en is dus een zin, geen kop. */
+    return /:$/.test(t) && t.split(/\s+/).length <= 5 && !/[.!?]/.test(t.slice(0, -1));
+  }
+  const isPunt = t => /^[-•*–·▪]\s*\S/.test(t);
+
+  function tekstDocHtml(tekst){
+    const rs = String(tekst || '').split('\n').map(r => r.replace(/\s+$/, ''));
+    let uit = '', lijst = [], para = [];
+    const spoelLijst = () => { if(lijst.length){
+      uit += `<ul class="ovd-doc-l">${lijst.map(x => `<li>${h(x)}</li>`).join('')}</ul>`; lijst = []; } };
+    const spoelPara = () => { if(para.length){
+      uit += `<p>${para.map(h).join('<br>')}</p>`; para = []; } };
+    const spoel = () => { spoelLijst(); spoelPara(); };
+    for(const ruw of rs){
+      const t = ruw.trim();
+      if(!t){ spoel(); continue; }
+      if(isKop(t)){ spoel(); uit += `<h4 class="ovd-doc-k">${h(t.replace(/:$/, ''))}</h4>`; continue; }
+      if(isPunt(t)){ spoelPara(); lijst.push(t.replace(/^[-•*–·▪]\s*/, '')); continue; }
+      spoelLijst(); para.push(t);
+    }
+    spoel();
+    return uit;
+  }
+
   function tabTekst(el, v){
     const salaris = salarisRegel(v);
     /* Oude blokken samenvoegen als er nog geen vrije tekst is. */
@@ -1422,36 +1507,51 @@
       regels(v.eisen).length ? 'WAT WIJ VRAGEN\n' + regels(v.eisen).join('\n') : '',
       regels(v.wat_krijg_je).length ? 'WAT KRIJG JE\n' + regels(v.wat_krijg_je).join('\n') : ''
     ].filter(Boolean).join('\n\n');
-    const start = String(v.omschrijving || '').trim() || oud();
+    const tekst = String(v.omschrijving || '').trim() || oud();
+    /* Zonder tekst valt er niets te lezen — dan meteen het invoerveld,
+       anders kijk je naar een lege bladzijde met een knop erboven. */
+    const bewerk = S.tekstBewerk || !tekst;
+
+    const salRegel = salaris
+      ? `<p class="meta" style="margin:0 0 12px">Het salarisveld op Voorwaarden zegt: <b>${h(salaris)}</b> — houd de tekst daarmee in lijn.</p>` : '';
+
+    if(!bewerk){
+      el.innerHTML = `
+        <div class="row tight" style="margin-bottom:12px">
+          <button class="btn sm" id="ovd_tekstbew">Bewerken</button>
+          <span class="spacer"></span>
+        </div>
+        ${salRegel}
+        <div class="ovd-doc">${tekstDocHtml(tekst)}</div>`;
+      el.querySelector('#ovd_tekstbew').onclick = () => { S.tekstBewerk = true; tabTekst(el, v); };
+      return;
+    }
 
     el.innerHTML = `
-      <p class="meta" style="margin:0 0 12px">Plak of typ hier de volledige vacaturetekst — bijvoorbeeld rechtstreeks uit Indeed. Hij wordt vanzelf opgeslagen.${
-        salaris ? ` Het salarisveld op Voorwaarden zegt: <b>${h(salaris)}</b> — houd de tekst daarmee in lijn.` : ''}</p>
+      <p class="meta" style="margin:0 0 12px">Plak of typ hier de volledige vacaturetekst — bijvoorbeeld rechtstreeks uit Indeed.
+        Een regel in HOOFDLETTERS of een kort woord met een dubbele punt erachter wordt een kopje; regels die met - of • beginnen worden opsommingen.</p>
+      ${salRegel}
       <textarea id="ovd_vrijtekst" rows="24" style="width:100%;resize:vertical;font-size:13px;line-height:1.55"
-        placeholder="Plak hier de hele vacaturetekst…">${h(start)}</textarea>
+        placeholder="Plak hier de hele vacaturetekst…">${h(tekst)}</textarea>
       <div class="row tight" style="margin-top:12px">
-        <button class="btn sm" id="ovd_kopalles">Kopieer de hele tekst</button>
-        <span class="meta" id="ovd_tekststatus"></span>
+        <button class="btn sm" id="ovd_tekstok">Opslaan</button>
+        <button class="btn ghost sm" id="ovd_tekstaf">Annuleren</button>
       </div>`;
 
     const ta = el.querySelector('#ovd_vrijtekst');
-    const status = el.querySelector('#ovd_tekststatus');
-    let bewaard = start, timer = null;
-    const opslaan = async () => {
-      clearTimeout(timer); timer = null;
-      const tekst = ta.value;
-      if(tekst === bewaard) return;
-      if(await bewaarVac(v, {omschrijving: tekst})){
-        bewaard = tekst;
-        status.textContent = 'Opgeslagen · ' + new Date().toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
-      }
+    el.querySelector('#ovd_tekstok').onclick = async () => {
+      const nieuw = ta.value.trim();
+      if(nieuw !== tekst && !(await bewaarVac(v, {omschrijving: nieuw}))) return;
+      S.tekstBewerk = false;
+      CRM.toast('Vacaturetekst opgeslagen', 'ok');
+      detail(v);                 /* ook de kop en de signalen kunnen meebewegen */
     };
-    ta.oninput = () => { status.textContent = 'aan het typen…'; clearTimeout(timer); timer = setTimeout(opslaan, 2000); };
-    ta.onblur = opslaan;
-
-    el.querySelector('#ovd_kopalles').onclick = async () => {
-      try{ await navigator.clipboard.writeText(ta.value); CRM.toast('Hele tekst gekopieerd', 'ok'); }
-      catch(e){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf', 'err'); }
+    el.querySelector('#ovd_tekstaf').onclick = async () => {
+      /* Typwerk weggooien is onomkeerbaar — dus alleen na een ja. */
+      if(ta.value.trim() !== tekst && !(await CRM.bevestig('Wijzigingen weggooien?',
+        'De tekst die je net hebt getypt gaat verloren.', {gevaarlijk:true, knop:'Ja, weggooien'}))) return;
+      S.tekstBewerk = false;
+      tabTekst(el, v);
     };
   }
 
@@ -1880,6 +1980,9 @@
       if(id){
         const v = CRM.state.vacs.find(x => String(x.id) === id);
         if(v){
+          /* Een andere vacature begint altijd in leesmodus — anders sta je
+             in het tekstveld van een vacature die je nog moet lezen. */
+          if(M.vacVorige !== id){ S.tekstBewerk = false; M.vacVorige = id; }
           M.vac = id;
           tekenActies();
           detail(v);
