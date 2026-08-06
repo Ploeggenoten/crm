@@ -2876,6 +2876,56 @@ async function bewaarFase(c, fase, extra){
   alles();
 }
 
+/* Het venster van de vervangervraag. Geeft true als er verder gegaan mag
+   worden (ja én nee), false bij annuleren. Bij "ja" wordt de koppeling
+   meteen weggeschreven — dan valt de fee vanzelf weg (CRM.fee.geenFeeReden)
+   en slaat de finance-app hem over als nieuwe plaatsing. */
+function vervangerVraag(c, open){
+  const regel = s => {
+    const tot = garantieEnd(s);
+    return `${s.naam} — ${s.functie || 'functie onbekend'}, gestopt ${CRM.fmtDateShort(s.gestoptOp)}`
+         + (tot ? `, garantie tot ${CRM.fmtDateShort(tot)}` : '');
+  };
+  const eenling = open.length === 1;
+  return new Promise(klaar => {
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Is ${h(c.naam)} een vervanger?</div>
+        <p class="sub" style="margin:6px 0 0">Bij ${h(c.klant)} staat nog een vervanging open uit de garantie.
+          Een vervanger is kosteloos — de fee is al gefactureerd op de voorganger.</p></div>
+      <div class="modal-b">
+        ${eenling
+          ? `<div class="note info" style="margin:0 0 14px">${h(regel(open[0]))}</div>`
+          : `<div class="f-row"><label for="vv_wie">Wie vervangt ${h(c.naam)}?</label>
+              <select id="vv_wie">${open.map(s =>
+                `<option value="${h(String(s.id))}">${h(regel(s))}</option>`).join('')}</select></div>`}
+        <p class="meta" style="margin:0">Kies je "nieuwe plaatsing", dan telt deze gewoon mee met een eigen fee.
+          De vervanging blijft dan openstaan.</p>
+      </div>
+      <div class="modal-f">
+        <button class="btn ghost" data-mclose>Annuleren</button>
+        <button class="btn sub" id="vv_nee">Nee, nieuwe plaatsing</button>
+        <button class="btn" id="vv_ja">Ja, dit is de vervanger</button>
+      </div>`, {onClose: () => klaar(false), onOpen(m){
+        m.querySelector('#vv_nee').onclick = () => { CRM.modal._onClose = null; CRM.modal.close(); klaar(true); };
+        m.querySelector('#vv_ja').onclick = async () => {
+          const wie = eenling ? String(open[0].id) : m.querySelector('#vv_wie').value;
+          const stopper = CRM.kandidaat(wie);
+          CRM.modal._onClose = null; CRM.modal.close();
+          await bewaarKand(c.id, {vervangt: wie});
+          /* Vastleggen bij de klant én bij de voorganger: over een half jaar
+             wil je kunnen zien dat deze plaatsing een garantieplaatsing was
+             en niet zomaar een tweede opdracht. */
+          if(stopper){
+            await CRM.logActiviteit('klant', c.klant, 'notitie',
+              `${c.naam} is vastgelegd als kosteloze vervanger voor ${stopper.naam} (gestopt ${CRM.fmtDateShort(stopper.gestoptOp)}, binnen garantie).`);
+            CRM.toast(`Vastgelegd als vervanger voor ${stopper.naam} — geen fee`, 'ok');
+          }
+          klaar(true);
+        };
+      }});
+  });
+}
+
 async function faseWissel(id, fase){
   const c = CRM.kandidaat(id);
   if(!c || !fase || CRM.faseIs(c.fase, fase)) return;
@@ -2905,6 +2955,27 @@ async function faseWissel(id, fase){
     const toch = await CRM.bevestig(`${c.naam} heeft nog geen video-intake gehad`,
       'Voorstellen kan pas na de intake. Weet je zeker dat je deze kandidaat toch aan de klant voorstelt?');
     if(!toch) return;
+  }
+
+  /* ─── De poort vóór een plaatsing: is dit een vervanger? ──────
+     Dit is de duurste vergissing in het systeem. Staat er bij een klant
+     nog een vervangingsplicht open en leg je de vervanger vast als
+     gewone plaatsing, dan rekent de finance-app er een tweede fee bij —
+     bij Michal Ostrowski ging het om ruim € 10.000 omzet die nooit
+     gefactureerd wordt. Er wás een route die het goed doet ("+ Vervanger"
+     op Uitval), maar die moet je zelf zoeken; een kandidaat die gewoon op
+     de vacature binnenkomt glipt erlangs.
+     Daarom hier: elke fasewissel komt door deze functie heen, dus dit is
+     de enige plek waar niemand langs kan. De vraag komt alleen als er
+     echt iets openstaat — anders geen ruis.
+     Matchen op klant, niet op functienaam: Michal stond als "Logistiek
+     medewerker" en zijn vervanger als "Magazijn team leider". Op naam
+     matchen had hem gemist. (Tjeerd, 6 aug 2026.) */
+  if(CRM.PLACED.includes(fase) && !c.vervangt && String(c.klant||'').trim()){
+    const open = CRM.kandidaten().filter(x =>
+      String(x.klant||'') === String(c.klant) && String(x.id) !== String(c.id)
+      && owesReplacement(x) && !repOf(x));
+    if(open.length && !(await vervangerVraag(c, open))) return;   /* Annuleren = niets doen */
   }
 
   /* Welke poortwachters gelden voor de doelfase? */
