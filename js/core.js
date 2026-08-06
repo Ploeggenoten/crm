@@ -153,6 +153,41 @@ CRM.toast = (msg, soort='') => {
 CRM.fout = (msg,err) => { console.error(msg,err); CRM.toast(msg + (err?.message ? ' — '+err.message : ''), 'err'); };
 
 /* ─── Drawer (detailpaneel rechts) ────────────────────────────── */
+/* ─── Overlays in de geschiedenis ─────────────────────────────────
+   Een schuifpaneel of venster is voor de gebruiker "een kaart die
+   opengaat", maar voor de browser gebeurde er niets: de URL bleef staan.
+   Druk je dan op vorige, dan verlaat je de pagina eronder — en stond die
+   kaart bovenaan je geschiedenis, dan sta je ineens buiten het CRM. Dat
+   overkwam Tjerk bij een contactpersoon vanaf een relatiekaart (Tjeerd,
+   6 aug 2026: "dan gaat die helemaal uit het crm").
+   Nu zet elke overlay een stap in de geschiedenis met dezelfde URL.
+   Vorige sluit dan de bovenste overlay en je staat weer op de kaart
+   eronder. Sluit je hem zelf (kruisje, Escape, klik ernaast), dan halen
+   we die stap weer weg — anders zou vorige eerst één klik "niets" doen. */
+let _overlays = 0;      /* aantal geschiedenisstappen van open overlays */
+let _popEigen = false;  /* wij riepen zelf history.back() aan */
+function overlayStapErbij(){
+  _overlays++;
+  history.pushState({crmOverlay:_overlays}, '', location.href);
+}
+function overlayStapEraf(){
+  if(_overlays <= 0) return;
+  _overlays--;
+  _popEigen = true;
+  history.back();
+  /* Is de stap er onverhoopt niet meer, laat de vlag dan niet hangen —
+     anders slikt hij de eerstvolgende échte terugklik op. */
+  setTimeout(() => { _popEigen = false; }, 400);
+}
+window.addEventListener('popstate', () => {
+  if(_popEigen){ _popEigen = false; return; }
+  if(_overlays <= 0) return;          /* gewone navigatie: hashchange doet de rest */
+  _overlays--;
+  /* Het venster ligt boven het schuifpaneel, dus dat sluit als eerste. */
+  if(CRM.modal._aan) CRM.modal.close({vanGeschiedenis:true});
+  else if(CRM.drawer._aan) CRM.drawer.close({vanGeschiedenis:true});
+});
+
 CRM.drawer = {
   open(html, opts={}){
     let scrim = document.getElementById('scrim'), dr = document.getElementById('drawer');
@@ -181,9 +216,18 @@ CRM.drawer = {
     CRM.$$('[data-close]', dr).forEach(b => b.onclick = () => CRM.drawer.close());
     if(opts.onOpen) opts.onOpen(dr);
     CRM.drawer._onClose = opts.onClose || null;
+    /* Alleen een stap zetten als er nog geen paneel openstond: soms wordt
+       hetzelfde paneel opnieuw gevuld (na opslaan), en dat is geen tweede
+       kaart om naar terug te keren. */
+    if(!CRM.drawer._aan){ CRM.drawer._aan = true; overlayStapErbij(); }
     return dr;
   },
-  close(){
+  close(opts={}){
+    /* Al dicht? Dan niets doen — anders halen defensieve close()-aanroepen
+       een geschiedenisstap weg die van iemand anders is. */
+    if(!CRM.drawer._aan) return;
+    CRM.drawer._aan = false;
+    if(!opts.vanGeschiedenis) overlayStapEraf();
     cancelAnimationFrame(CRM.drawer._frame); CRM.drawer._frame = null;
     const scrim = document.getElementById('scrim'), dr = document.getElementById('drawer');
     if(scrim) scrim.classList.remove('on');
@@ -210,6 +254,10 @@ CRM.drawer = {
    dat liep Tab door de pagina áchter het scherm, waar je de focusring niet
    ziet en dus blind formuliervelden bedient. */
 let _mFrame = null, _mFocusTerug = null;
+/* Aparte vlag naast CRM.modal._aan: die wordt op sommige plekken buiten
+   open/close gezet, en de geschiedenisstap moet exact één keer bij een
+   venster horen. */
+let _modalStap = false;
 function focusIn(el){
   const eerste = el.querySelector('input,select,textarea,button,[href],[tabindex]:not([tabindex="-1"])');
   (eerste || el).focus({preventScroll:true});
@@ -254,9 +302,14 @@ CRM.modal = {
     m.style.pointerEvents = 'auto';
     m.inert = false;
     if(opts.onOpen) opts.onOpen(m);
+    /* Zie CRM.drawer.open: alleen een geschiedenisstap bij een venster dat
+       écht nieuw opengaat, niet bij het opnieuw vullen van hetzelfde. */
+    if(!_modalStap){ _modalStap = true; overlayStapErbij(); }
     return m;
   },
-  close(){
+  close(opts={}){
+    if(!CRM.modal._aan && !_modalStap) return;
+    if(_modalStap){ _modalStap = false; if(!opts.vanGeschiedenis) overlayStapEraf(); }
     cancelAnimationFrame(_mFrame); _mFrame = null;
     CRM.modal._aan = false;
     const scrim = document.getElementById('mscrim'), m = document.getElementById('modal');
@@ -520,6 +573,15 @@ CRM.ga = (key, params={}, opts={}) => {
   if(!m) return;
   let vervang = !!opts.vervang;
   if(m.adminOnly && !CRM.canSeeMoney()){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; vervang = true; }
+  /* Navigeren terwijl er een paneel openstaat: dat paneel hoort weg, want
+     de pagina eronder verdwijnt. De bijbehorende geschiedenisstappen laten
+     we staan (ze liggen achter ons en een back() hier zou botsen met de
+     pushState die zo volgt); de teller zetten we wel eerlijk op nul. */
+  if(_overlays > 0){
+    if(CRM.modal._aan) CRM.modal.close({vanGeschiedenis:true});
+    if(CRM.drawer._aan) CRM.drawer.close({vanGeschiedenis:true});
+    _overlays = 0;
+  }
   CRM.view = key; CRM.params = params;
   const hash = '#' + key + (params.id ? '/'+encodeURIComponent(params.id) : '');
   /* Staat de hash al goed, dan komen we hier via terug/vooruit of via een
