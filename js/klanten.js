@@ -508,7 +508,9 @@ function klantOpruimen(k){
     if(weg) weg.onclick = async () => {
       if(!(await CRM.bevestig(`"${k.naam}" definitief verwijderen?`))) return;
       CRM.modal.close();
-      if(await verwijderLegeKlant(k.naam)) CRM.ga('klanten');
+      /* Vervangen: "vorige" hoort niet terug te gaan naar een relatie die
+         er niet meer is. */
+      if(await verwijderLegeKlant(k.naam)) CRM.ga('klanten', {}, {vervang:true});
     };
     const ok = m.querySelector('#opr_ok');
     if(ok) ok.onclick = async () => {

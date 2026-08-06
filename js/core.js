@@ -504,13 +504,31 @@ CRM.activiteitenVoor = (entiteit, ref) =>
 /* ─── Router ──────────────────────────────────────────────────── */
 CRM.registerModule = (key, def) => { CRM.modules[key] = Object.assign({key}, def); };
 
-CRM.ga = (key, params={}) => {
+/* De terugknop van de browser deed niets zinnigs: elke stap in de app
+   overschreef de vorige met replaceState, dus er ontstond geen spoor en
+   "vorige" sprong het CRM in één klap uit. Erger nog: links die als echte
+   <a href="#…"> in de pagina staan zetten wél een stap in de geschiedenis,
+   dus de ene klik was terug te draaien en de andere niet — onvoorspelbaar
+   (Tjeerd, 6 aug 2026: "waar stuurt die je dan naartoe").
+   Nu: een echte navigatie voegt een stap toe (pushState). Vervangen doen we
+   alleen waar teruggaan onzinnig is — bij het openen van de app en bij een
+   omleiding (verwijderd item, geen rechten): daar zou "vorige" je terug
+   sturen naar iets wat niet meer bestaat en meteen weer wegsturen. */
+let _navGehad = false;
+CRM.ga = (key, params={}, opts={}) => {
   let m = CRM.modules[key];
   if(!m) return;
-  if(m.adminOnly && !CRM.canSeeMoney()){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; }
+  let vervang = !!opts.vervang;
+  if(m.adminOnly && !CRM.canSeeMoney()){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; vervang = true; }
   CRM.view = key; CRM.params = params;
   const hash = '#' + key + (params.id ? '/'+encodeURIComponent(params.id) : '');
-  if(location.hash !== hash) history.replaceState(null,'',hash);
+  /* Staat de hash al goed, dan komen we hier via terug/vooruit of via een
+     <a href="#…">: de browser heeft de stap dan zelf al gezet. */
+  if(location.hash !== hash){
+    if(vervang || !_navGehad) history.replaceState(null,'',hash);
+    else history.pushState(null,'',hash);
+  }
+  _navGehad = true;
   CRM.render();
   if(window.innerWidth <= 900) document.querySelector('nav.side')?.classList.remove('open');
 };

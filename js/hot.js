@@ -1143,7 +1143,9 @@
       }
       CRM.state.vacs = (CRM.state.vacs||[]).filter(x => String(x.id) !== String(v.id));
       CRM.toast('Vacature verwijderd','ok');
-      CRM.ga('hot');
+      /* Vervangen, niet toevoegen: "vorige" zou terugsturen naar de
+         vacature die je net verwijderd hebt. */
+      CRM.ga('hot', {}, {vervang:true});
     };
 
     /* Klik-om-te-bewerken op de zijbalk. Bewust géén modal en géén poort:
@@ -2044,7 +2046,7 @@
     if(M.vac){
       const v = CRM.state.vacs.find(x => String(x.id) === String(M.vac));
       if(v){ detail(v); return; }
-      CRM.ga('hot'); return;               // vacature is weg: terug naar de lijst
+      CRM.ga('hot', {}, {vervang:true}); return;   // vacature is weg: terug naar de lijst
     }
     tekenActies(); tekenLijst();
   }
