@@ -3552,6 +3552,19 @@ function klantModal(k){
        verdeelt zichzelf over straat, postcode en plaats (naam: Tjeerd,
        7 aug 2026). Alleen als er iets uit te halen valt; wat je zelf al
        had ingevuld blijft staan. */
+    /* Ook het Locatie-veld: staat daar een volledig adres in (bijvoorbeeld
+       uit een eerder aangemaakte relatie), dan valt het bij het verlaten
+       van het veld vanzelf op zijn plek. */
+    { const locEl = m.querySelector('#g_loc');
+      if(locEl) locEl.addEventListener('blur', () => {
+        const d = CRM.adresSplits(locEl.value);
+        if(!d.postcode && !(d.adres && d.plaats)) return;
+        locEl.value = d.plaats || locEl.value;
+        const zet = (sel, val, forceer) => { const el = m.querySelector(sel);
+          if(el && val && (forceer || !el.value.trim())) el.value = val; };
+        zet('#g_adres', d.adres); zet('#g_pc', d.postcode); zet('#g_pl', d.plaats);
+      });
+    }
     { const adresVeld = m.querySelector('#g_adres');
       if(adresVeld) adresVeld.addEventListener('blur', () => {
         const d = CRM.adresSplits(adresVeld.value);
@@ -3654,7 +3667,9 @@ async function nieuweRelatie(){
         <div class="f-row"><label for="nr_eig">Accountmanager</label><select id="nr_eig">
           ${teamNamen.map(n=>`<option${n===CRM.me()?' selected':''}>${h(n)}</option>`).join('')}
         </select></div>
-        <div class="f-row"><label for="nr_loc">Plaats</label><input type="text" id="nr_loc"></div>
+        <div class="f-row"><label for="nr_loc">Adres of plaats</label>
+          <input type="text" id="nr_loc" placeholder="Malledijk 18, 3208 LA Spijkenisse">
+          <div class="hint" id="nr_loch">Plak gerust het hele adres — straat, postcode en plaats worden vanzelf gescheiden.</div></div>
         <div class="f-row"><label for="nr_br">Branche</label><input type="text" id="nr_br"></div>
       </div>
       <div class="err" id="nr_err"></div>
@@ -3663,6 +3678,16 @@ async function nieuweRelatie(){
       <button class="btn" id="nr_ok">Relatie aanmaken</button></div>`, {onOpen(m){
       const naamEl = m.querySelector('#nr_naam');
       setTimeout(() => naamEl.focus(), 60);
+      /* Terugkoppeling terwijl je typt: je ziet wat het systeem eruit haalt
+         voordat je op aanmaken drukt. */
+      { const locEl = m.querySelector('#nr_loc'), hint = m.querySelector('#nr_loch');
+        locEl.oninput = () => {
+          const d = CRM.adresSplits(locEl.value);
+          hint.textContent = (d.postcode || (d.adres && d.plaats))
+            ? `Wordt: ${[d.adres, d.postcode, d.plaats].filter(Boolean).join(' · ')}`
+            : 'Plak gerust het hele adres — straat, postcode en plaats worden vanzelf gescheiden.';
+        };
+      }
       const maak = async () => {
         const naam = naamEl.value.trim();
         const err = m.querySelector('#nr_err');
@@ -3672,16 +3697,34 @@ async function nieuweRelatie(){
         if((CRM.state.clients||[]).some(c => String(c.naam||'').trim().toLowerCase() === naam.toLowerCase())){
           err.textContent = 'Die relatie bestaat al.'; naamEl.focus(); return;
         }
+        /* Eén regel adres uit elkaar halen, zodat "Malledijk 18, 3208 LA
+           Spijkenisse" niet als plaatsnaam blijft staan (naam: Tjeerd,
+           7 aug 2026). Locatie houdt alleen de plaats over; straat en
+           postcode krijgen hun eigen veld. */
+        const d = CRM.adresSplits(m.querySelector('#nr_loc').value);
         const rij = {
           naam, fase: m.querySelector('#nr_fase').value,
           eigenaar: m.querySelector('#nr_eig').value || CRM.me(),
-          locatie: m.querySelector('#nr_loc').value.trim(),
+          locatie: d.plaats || d.adres || '',
           branche: m.querySelector('#nr_br').value.trim(),
           fase_sinds: CRM.todayISO(), laatst_contact: null
         };
+        /* Straat en postcode meesturen zonder eerst te raden of de kolommen
+           bestaan: bij een schemafout proberen we het opnieuw zónder. Dat is
+           betrouwbaarder dan de heuristiek "heeft de eerste rij dit veld",
+           want een net toegevoegde rij heeft die velden nog niet. */
+        if(d.adres)    rij.adres = d.adres;
+        if(d.postcode) rij.postcode = d.postcode;
+        if(d.plaats)   rij.plaats = d.plaats;
         (CRM.state.clients || (CRM.state.clients = [])).unshift(rij);
         if(!CRM.demo){
-          const {error} = await CRM.sb.from('clients').insert(rij);
+          let {error} = await CRM.sb.from('clients').insert(rij);
+          if(error && /adres|postcode|plaats|schema cache/i.test(error.message||'')){
+            const zonder = Object.assign({}, rij);
+            delete zonder.adres; delete zonder.postcode; delete zonder.plaats;
+            ({error} = await CRM.sb.from('clients').insert(zonder));
+            if(!error) CRM.toast('Relatie aangemaakt — straat en postcode nog niet bewaard, draai supabase/schema.sql','err');
+          }
           if(error){
             CRM.state.clients = CRM.state.clients.filter(c => c !== rij);
             return CRM.fout('Aanmaken mislukt', error);
