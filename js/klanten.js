@@ -1757,25 +1757,37 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
          grondslag, een vast bedrag, of n × het bruto maandsalaris. De
          vormkeuze bepaalt welk invoerveld ernaast staat. */
       const tekenRegels = () => {
+        /* Bij uitzenden rekent élke regel in een omrekenfactor over het
+           uurloon — daar valt niets te kiezen. De soortkeuze hoort dus
+           alleen bij W&S, waar een fee een percentage, een vast bedrag óf
+           een aantal maandsalarissen kan zijn (naam: Tjeerd, 6 aug 2026:
+           "alle functies op een rij, daar de tarieven, dus omrekenfactor
+           of W&S"). */
+        const uitzend = a.soort === 'uitzenden';
         regelsEl.innerHTML = a.fee_regels.length ? a.fee_regels.map((r,i) => {
-          const vorm = r.vorm === 'vast' || r.vorm === 'maanden' ? r.vorm : 'pct';
-          const veld = vorm === 'vast'
-            ? `<input type="number" data-rb="${i}" min="0" step="50" value="${nr(r.bedrag)}" placeholder="€ bedrag">`
+          const vorm = uitzend ? 'factor' : (r.vorm === 'vast' || r.vorm === 'maanden' ? r.vorm : 'pct');
+          const veld = vorm === 'factor'
+            ? `<input type="number" data-rp="${i}" min="0" max="10" step="0.05" value="${nr(r.pct)}" placeholder="2,40">`
+            : vorm === 'vast'
+            ? `<input type="number" data-rb="${i}" min="0" step="50" value="${nr(r.bedrag)}" placeholder="bedrag">`
             : vorm === 'maanden'
             ? `<input type="number" data-rm="${i}" min="0" max="12" step="0.5" value="${nr(r.maanden)}" placeholder="aantal">`
-            : `<input type="number" data-rp="${i}" min="0" max="100" step="0.1" value="${nr(r.pct)}" placeholder="%">`;
+            : `<input type="number" data-rp="${i}" min="0" max="100" step="0.1" value="${nr(r.pct)}" placeholder="23">`;
+          const eenheid = {factor:'× uurloon', pct:'%', vast:'€', maanden:'× maandsalaris'}[vorm];
           return `<div class="kl-af-regel">
             <input type="text" data-rf="${i}" value="${h(r.functiegroep || r.functie || '')}" placeholder="Functiegroep, bijv. Operator (verlading en proces)">
-            <select data-rv="${i}" title="Hoe rekent deze fee?">
-              <option value="pct"${vorm==='pct'?' selected':''}>%</option>
-              <option value="vast"${vorm==='vast'?' selected':''}>€ vast</option>
-              <option value="maanden"${vorm==='maanden'?' selected':''}>× maandsalaris</option>
-            </select>
+            ${uitzend ? '' : `<select data-rv="${i}" title="Hoe rekent deze fee?">
+              <option value="pct"${vorm==='pct'?' selected':''}>percentage</option>
+              <option value="vast"${vorm==='vast'?' selected':''}>vast bedrag</option>
+              <option value="maanden"${vorm==='maanden'?' selected':''}>maandsalarissen</option>
+            </select>`}
             ${veld}
+            <span class="kl-af-eenheid">${h(eenheid)}</span>
             <button class="btn sub sm" data-rweg="${i}" title="Regel verwijderen" aria-label="Regel verwijderen">×</button>
           </div>`;
         }).join('')
-          : '<p class="meta kl-af-leeg">Nog geen functiegroepen — dan geldt het standaardpercentage voor alles.</p>';
+          : `<p class="meta kl-af-leeg">Nog geen functiegroepen — dan geldt ${uitzend?'de standaardfactor':'het standaardpercentage'} voor alles.</p>`;
+        regelsEl.classList.toggle('kl-af-uitzend', uitzend);
         regelsEl.querySelectorAll('[data-rf]').forEach(inp => inp.oninput = () => {
           a.fee_regels[+inp.dataset.rf].functiegroep = inp.value; traag();
         });

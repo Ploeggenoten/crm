@@ -6,39 +6,39 @@
 <link rel="icon" href="assets/logo-lime.png">
 <!-- Supabase-bibliotheek zelf gehost: de CDN bleek onbetrouwbaar (wisselende
      404's), en zonder deze file doet de hele app — inclusief inloggen — niets. -->
-<script src="assets/supabase.min.js?v=20260806g"></script>
+<script src="assets/supabase.min.js?v=20260806h"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=Caveat:wght@600&display=swap" rel="stylesheet">
 <!-- Versiemerk achter elk eigen bestand. Zonder dit serveert de browser na
      een deploy hardnekkig de oude js en css: je ziet dan nieuwe functionaliteit
      met oude opmaak, of een scherm dat nergens op slaat. Dat kostte tijdens het
      bouwen herhaaldelijk tijd en zou het team na elke deploy raken.
-     BIJ ELKE DEPLOY OPHOGEN — zoek en vervang ?v=20260806g door de nieuwe datum. -->
-<link rel="stylesheet" href="css/base.css?v=20260806g">
-<link rel="stylesheet" href="css/dashboard.css?v=20260806g">
-<link rel="stylesheet" href="css/sales.css?v=20260806g">
-<link rel="stylesheet" href="css/klanten.css?v=20260806g">
-<link rel="stylesheet" href="css/contactkaart.css?v=20260806g">
-<link rel="stylesheet" href="css/recruitment.css?v=20260806g">
-<link rel="stylesheet" href="css/kandidaten.css?v=20260806g">
-<link rel="stylesheet" href="css/kandverwijder.css?v=20260806g">
-<link rel="stylesheet" href="css/traject.css?v=20260806g">
-<link rel="stylesheet" href="css/source.css?v=20260806g">
-<link rel="stylesheet" href="css/marketing.css?v=20260806g">
-<link rel="stylesheet" href="css/performance.css?v=20260806g">
-<link rel="stylesheet" href="css/finance.css?v=20260806g">
-<link rel="stylesheet" href="css/instellingen.css?v=20260806g">
-<link rel="stylesheet" href="css/hot.css?v=20260806g">
-<link rel="stylesheet" href="css/pijplijn.css?v=20260806g">
-<link rel="stylesheet" href="css/plaatsingen.css?v=20260806g">
-<link rel="stylesheet" href="css/feest.css?v=20260806g">
+     BIJ ELKE DEPLOY OPHOGEN — zoek en vervang ?v=20260806h door de nieuwe datum. -->
+<link rel="stylesheet" href="css/base.css?v=20260806h">
+<link rel="stylesheet" href="css/dashboard.css?v=20260806h">
+<link rel="stylesheet" href="css/sales.css?v=20260806h">
+<link rel="stylesheet" href="css/klanten.css?v=20260806h">
+<link rel="stylesheet" href="css/contactkaart.css?v=20260806h">
+<link rel="stylesheet" href="css/recruitment.css?v=20260806h">
+<link rel="stylesheet" href="css/kandidaten.css?v=20260806h">
+<link rel="stylesheet" href="css/kandverwijder.css?v=20260806h">
+<link rel="stylesheet" href="css/traject.css?v=20260806h">
+<link rel="stylesheet" href="css/source.css?v=20260806h">
+<link rel="stylesheet" href="css/marketing.css?v=20260806h">
+<link rel="stylesheet" href="css/performance.css?v=20260806h">
+<link rel="stylesheet" href="css/finance.css?v=20260806h">
+<link rel="stylesheet" href="css/instellingen.css?v=20260806h">
+<link rel="stylesheet" href="css/hot.css?v=20260806h">
+<link rel="stylesheet" href="css/pijplijn.css?v=20260806h">
+<link rel="stylesheet" href="css/plaatsingen.css?v=20260806h">
+<link rel="stylesheet" href="css/feest.css?v=20260806h">
 <!-- Documentgeneratoren: kandidaatprofiel, samenwerkingsovereenkomst,
      plan van aanpak. Geen eigen menu-item; ze openen vanaf een kaart. -->
-<link rel="stylesheet" href="css/cv.css?v=20260806g">
-<link rel="stylesheet" href="css/cvparse.css?v=20260806g">
-<link rel="stylesheet" href="css/intake.css?v=20260806g">
-<link rel="stylesheet" href="css/swo.css?v=20260806g">
-<link rel="stylesheet" href="css/pva.css?v=20260806g">
+<link rel="stylesheet" href="css/cv.css?v=20260806h">
+<link rel="stylesheet" href="css/cvparse.css?v=20260806h">
+<link rel="stylesheet" href="css/intake.css?v=20260806h">
+<link rel="stylesheet" href="css/swo.css?v=20260806h">
+<link rel="stylesheet" href="css/pva.css?v=20260806h">
 
 <!-- ─── Login ────────────────────────────────────────────────── -->
 <div id="loginscreen" style="display:none">
@@ -81,67 +81,67 @@
 <div id="toast"></div>
 
 <!-- Core eerst: definieert het CRM-object waar modules zich bij melden. -->
-<script src="js/core.js?v=20260806j"></script>
+<script src="js/core.js?v=20260806h"></script>
 <!-- Gedeelde rekenlogica die meerdere modules gebruiken. -->
-<script src="js/data.js?v=20260806g"></script>
+<script src="js/data.js?v=20260806h"></script>
 <!-- Outlook-koppeling per gebruiker (Microsoft Graph + deeplink-terugval) -->
-<script src="js/outlook.js?v=20260806g"></script>
+<script src="js/outlook.js?v=20260806h"></script>
 <!-- Demo-testdata: doet alleen iets op localhost met ?demo=1 -->
-<script src="js/demo.js?v=20260806g"></script>
+<script src="js/demo.js?v=20260806h"></script>
 <!-- Rekenregels voor de fee: leidt uit de klantafspraak en de
      salariscomponenten van de kandidaat de grondslag en de fee af.
      Moet vóór de modules staan die hem gebruiken. -->
-<script src="js/fee.js?v=20260806g"></script>
+<script src="js/fee.js?v=20260806h"></script>
 <!-- Opvolging: wanneer er contact hoort te zijn (nazorg, warm houden,
      verjaardagen, felicitatiemail, herinnering vóór een afspraak). Eén plek,
      zodat dashboard, bord, kaart en Performance nooit iets anders zeggen. -->
-<script src="js/opvolging.js?v=20260806g"></script>
+<script src="js/opvolging.js?v=20260806h"></script>
 <!-- Feest: confetti en een bericht op elk scherm zodra er getekend wordt.
      Hangt aan document.body, buiten #viewmount, zodat het een
      modulewissel overleeft. -->
-<script src="js/feest.js?v=20260806g"></script>
+<script src="js/feest.js?v=20260806h"></script>
 <!-- Kandidaat verwijderen of anonimiseren. Bibliotheek zonder eigen scherm:
      de kandidatenkaart hangt de knoppen onderaan. Leest CRM.PLACED bij het
      laden, dus moet ná js/data.js staan. -->
-<script src="js/kandverwijder.js?v=20260806g"></script>
+<script src="js/kandverwijder.js?v=20260806h"></script>
 <!-- Trajectpoort: voorkomt dat een tweede voorstel het eerste traject
      stilzwijgend overschrijft, en bewaart wat er wordt afgesloten. -->
-<script src="js/traject.js?v=20260806g"></script>
+<script src="js/traject.js?v=20260806h"></script>
 <!-- Documentgeneratoren. Geen menu-item: ze worden geopend vanaf een
      kandidaat- of klantenkaart, dus ze moeten wel vóór die modules laden. -->
 <!-- CV inlezen: tekstlaag uit pdf/docx halen, velden voorstellen naast
      wat er al staat, en het bestand zelf bewaren bij de kandidaat. -->
-<script src="js/cvparse.js?v=20260806g"></script>
+<script src="js/cvparse.js?v=20260806h"></script>
 <!-- Video-intake: transcript inlezen, opdracht voor Claude op het klembord,
      antwoord terug en de intakevelden als voorstel invullen. -->
-<script src="js/intake.js?v=20260806g"></script>
+<script src="js/intake.js?v=20260806h"></script>
 <!-- CV door Claude laten lezen: voor cv-opmaak die met regels niet te
      vangen is. Zelfde werkwijze als de video-intake — klembord heen,
      klembord terug, geen API en geen kosten. Moet ná cvparse.js staan:
      het hergebruikt diens leesBestand en controlevenster. -->
-<script src="js/cvclaude.js?v=20260806g"></script>
-<script src="js/cv.js?v=20260806g"></script>
-<script src="js/swo.js?v=20260806g"></script>
-<script src="js/pva.js?v=20260806g"></script>
+<script src="js/cvclaude.js?v=20260806h"></script>
+<script src="js/cv.js?v=20260806h"></script>
+<script src="js/swo.js?v=20260806h"></script>
+<script src="js/pva.js?v=20260806h"></script>
 <!-- Modules: elk bestand registreert zichzelf via CRM.registerModule(). -->
-<script src="js/dashboard.js?v=20260806g"></script>
-<script src="js/sales.js?v=20260806g"></script>
-<script src="js/klanten.js?v=20260806l"></script>
+<script src="js/dashboard.js?v=20260806h"></script>
+<script src="js/sales.js?v=20260806h"></script>
+<script src="js/klanten.js?v=20260806h"></script>
 <!-- Contactpersoonkaart: eigen kaart per persoon plus een doorzoekbaar
      overzicht. Geen menu-item — het hoort bij Relaties en registreert zich
      alleen om #contacten/<id> te kunnen routeren. -->
-<script src="js/contactkaart.js?v=20260806g"></script>
-<script src="js/recruitment.js?v=20260806k"></script>
-<script src="js/pijplijn.js?v=20260806g"></script>
+<script src="js/contactkaart.js?v=20260806h"></script>
+<script src="js/recruitment.js?v=20260806h"></script>
+<script src="js/pijplijn.js?v=20260806h"></script>
 <!-- Plaatsingen: alles vanaf de handtekening. Het bord hierboven houdt op bij
      'Contract ondertekenen' — na het tekenen is er geen volgende stap meer,
      alleen een startdatum en een aftelling, en dat is geen kanban. -->
-<script src="js/plaatsingen.js?v=20260806g"></script>
+<script src="js/plaatsingen.js?v=20260806h"></script>
 <script src="js/hot.js?v=20260806h"></script>
-<script src="js/kandidaten.js?v=20260806g"></script>
-<script src="js/source.js?v=20260806g"></script>
-<script src="js/marketing.js?v=20260806g"></script>
-<script src="js/performance.js?v=20260806g"></script>
-<script src="js/finance.js?v=20260806g"></script>
-<script src="js/instellingen.js?v=20260806g"></script>
+<script src="js/kandidaten.js?v=20260806h"></script>
+<script src="js/source.js?v=20260806h"></script>
+<script src="js/marketing.js?v=20260806h"></script>
+<script src="js/performance.js?v=20260806h"></script>
+<script src="js/finance.js?v=20260806h"></script>
+<script src="js/instellingen.js?v=20260806h"></script>
 </html>
