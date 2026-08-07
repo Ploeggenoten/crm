@@ -84,6 +84,16 @@ function euroMnd(v){
 const MAAND = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 const LOPEND = /^(heden|nu|nog|huidig|current|present|now)$/i;
 function jaarVan(s){ const m = t(s).match(/(19|20)\d{2}/); return m ? Number(m[0]) : null; }
+/* Maand uit een datum, in beide schrijfwijzen: 2025-09 én 09-2025. Nodig om
+   twee banen in hetzelfde jaar in de goede volgorde te zetten. */
+function maandVan(s){
+  const w = t(s);
+  let m = w.match(/^(19|20)\d{2}[-/](\d{1,2})/);
+  if(m) return Number(m[2]);
+  m = w.match(/^(\d{1,2})[-/](19|20)\d{2}/);
+  if(m && Number(m[1]) >= 1 && Number(m[1]) <= 12) return Number(m[1]);
+  return 0;
+}
 function mndJaar(s){
   const w = t(s);
   if(!w) return '';
@@ -143,7 +153,20 @@ function werkRijen(arr){
     if(typeof r === 'string') r = {functie:r};
     let van = t(r.van), tot = t(r.tot);
     if(!van && !tot && t(r.periode)){
-      const d = t(r.periode).split(/\s*(?:[–—]|-|tot)\s*/i);
+      /* Niet zomaar op een koppelteken splitsen: "09-2025" is één datum
+         (maand-jaar) en werd zo doormidden geknipt tot van="09" en
+         tot="2025". Gevolg: geen jaartal, geen badge, en die functie zakte
+         naar de bodem van het cv (naam: Tjeerd, 7 aug 2026). Een koppelteken
+         scheidt alleen als er spaties omheen staan; een lang streepje en het
+         woord "tot" scheiden altijd. */
+      const ruw = t(r.periode);
+      let d = ruw.split(/\s*[–—]\s*|\s+-\s+|\s+tot\s+/i);
+      /* "2020-2024" heeft geen spaties maar is wél een bereik — twee jaartallen
+         aan weerszijden van het streepje verraden dat. */
+      if(d.length < 2){
+        const jj = ruw.match(/^((?:19|20)\d{2})\s*-\s*((?:19|20)\d{2}|heden|nu)$/i);
+        if(jj) d = [jj[1], jj[2]];
+      }
       van = t(d[0] || ''); tot = t(d[1] || '');
     }
     if(!van && !tot && t(r.jaar)) van = t(r.jaar);
@@ -155,13 +178,20 @@ function werkRijen(arr){
     if(typeof taken === 'string') taken = taken.split(/\r?\n/);
     return {
       i, jaar: jv, eind: jt, open: lopend,
+      /* Sorteersleutel: jaar én maand, zodat twee banen in hetzelfde jaar
+         niet op invoervolgorde blijven staan. */
+      sleutel: jv ? jv * 100 + maandVan(van) : null,
       bedrijf: t(r.werkgever || r.bedrijf || r.organisatie),
       functie: t(r.functie || r.rol || r.titel),
       badge, periode,
       taken: Array.isArray(taken) ? taken.map(x => t(x)).filter(Boolean) : []
     };
   }).filter(r => r.bedrijf || r.functie)
-    .sort((a, b) => (b.jaar || 0) - (a.jaar || 0) || a.i - b.i)
+    /* Recentste bovenaan. Staat er geen leesbare datum bij, dan blijft die
+       regel op de plek waar hij op de kandidatenkaart staat (a.i) in plaats
+       van naar de bodem te zakken — die volgorde is daar met de hand
+       gezet en is dus een keuze, geen toeval. */
+    .sort((a, b) => (b.sleutel || 0) - (a.sleutel || 0) || a.i - b.i)
     /* De bovenste functie is de lopende: die krijgt een open badge ('25-),
        ook als er al een verwachte einddatum in dit jaar staat. */
     .map((r, n) => {
