@@ -191,14 +191,14 @@ function werkRijen(arr){
        regel op de plek waar hij op de kandidatenkaart staat (a.i) in plaats
        van naar de bodem te zakken — die volgorde is daar met de hand
        gezet en is dus een keuze, geen toeval. */
-    .sort((a, b) => (b.sleutel || 0) - (a.sleutel || 0) || a.i - b.i)
-    /* De bovenste functie is de lopende: die krijgt een open badge ('25-),
-       ook als er al een verwachte einddatum in dit jaar staat. */
-    .map((r, n) => {
-      if(n === 0 && !r.open && r.eind && r.eind >= new Date().getFullYear())
-        r.badge = r.badge.replace(/-'?\d*$/, '-');
-      return r;
-    });
+    .sort((a, b) => (b.sleutel || 0) - (a.sleutel || 0) || a.i - b.i);
+    /* Hier stond een regel die de bovenste functie altijd een open badge
+       ('25-) gaf zodra de einddatum in het lopende jaar viel. Dat wiste een
+       ingevulde einddatum: Angelo werkte tot juli 2026 bij Logoplaste en het
+       cv liet alleen '25- zien, terwijl de periode ernaast wél "sep 2025 –
+       jul 2026" zei (naam: Tjeerd, 7 aug 2026). Staat er een einddatum, dan
+       hoort die er ook te staan — een lopend dienstverband herken je aan een
+       leeg "tot" of aan "heden", en dat wordt hierboven al afgevangen. */
 }
 
 function oplRijen(arr){
