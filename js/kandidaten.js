@@ -967,6 +967,7 @@ function kaart(mount, acties, id){
   }
   if(kandOpen !== String(id)){
     kandOpen = String(id); tabActief = 'activiteiten';
+    ervBewerk = false;          // een nieuwe kaart open je om te kijken
   }
 
   /* Eén inplan-knop, niet twee. "Inplannen" was vaag én het venster stond
@@ -1732,7 +1733,13 @@ function ervaringHtml(c){
            zelf staat compleet bij Documenten. */
         cv.bestandPad ? `<button class="btn ghost sm" data-cvopen="${h(cv.bestandPad)}"
           title="${h(cv.bestand || 'CV')}${cv.op ? ' · ' + h(CRM.fmtDate(cv.op)) : ''}">Open ingeladen cv</button>` : ''}
-      <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
+      <button class="btn ghost sm" id="c_cvlees">CV inlezen</button>
+      ${/* Lezen of aanpassen — niet allebei tegelijk (naam: Tjeerd, 7 aug
+           2026: "met allemaal vakken is het onoverzichtelijk"). In de
+           leesstand staat het als een cv; klik je Aanpassen, dan worden het
+           invulvelden. Opslaan gebeurt al tijdens het typen, dus de knop
+           terug heet "Klaar" en niet "Opslaan" — er valt niets te verliezen. */''}
+      <button class="btn ${ervBewerk?'':'ghost '}sm" id="c_ervbew">${ervBewerk?'Klaar':'Aanpassen'}</button></div>
     <div class="card-b">
       ${leeg ? `<p class="kd-ervleeg">Nog niets ingevuld. Lees een cv in — loopbaan, opleiding,
         certificaten en talen komen er in één keer in${CRM.cvClaude ? `, of laat een lastig opgemaakt cv
@@ -1748,8 +1755,16 @@ function ervaringHtml(c){
            Typen slaat vanzelf op, twee tellen na de laatste toets; alleen
            toevoegen, verwijderen en slepen tekenen het blok opnieuw. -->
       <div class="kd-ervkop"><span class="label">Loopbaan</span>
-        <button class="btn sub sm" data-erv-add="werk">+ Toevoegen</button></div>
-      ${werk.length?`<div class="kd-ervlijst kd-sleep" data-sleep="werk">${werk.map((w, i) => `
+        ${ervBewerk?'<button class="btn sub sm" data-erv-add="werk">+ Toevoegen</button>':''}</div>
+      ${!werk.length ? '<p class="meta kd-ervnog">Nog geen dienstverbanden.</p>'
+        : !ervBewerk ? `<div class="kd-cvlijst">${werk.map(w => `<div class="kd-cvrij">
+            <b>${h(w.functie||w.rol||'—')}</b>
+            <span class="sub">${h(w.werkgever||w.bedrijf||'')}</span>
+            <span class="meta num">${h([w.van,w.tot].filter(Boolean).join(' – ')||w.periode||'')}</span>
+            ${Array.isArray(w.taken)&&w.taken.length?`<ul class="kd-cvtaken">${
+              w.taken.map(t=>`<li>${h(t)}</li>`).join('')}</ul>`:''}
+          </div>`).join('')}</div>`
+        : `<div class="kd-ervlijst kd-sleep" data-sleep="werk">${werk.map((w, i) => `
         <div class="kd-ervblok" draggable="true" data-i="${i}">
           <div class="kd-ervrij1">
             <span class="kd-greep" title="Sleep om de volgorde te wijzigen">⠿</span>
@@ -1760,29 +1775,43 @@ function ervaringHtml(c){
           </div>
           <textarea data-erv="werk|${i}|taken" rows="${Math.max(2,(Array.isArray(w.taken)?w.taken:[]).length)}"
             placeholder="Werkzaamheden — één per regel">${h((Array.isArray(w.taken)?w.taken:[]).join('\n'))}</textarea>
-        </div>`).join('')}</div>`:'<p class="meta kd-ervnog">Nog geen dienstverbanden.</p>'}
+        </div>`).join('')}</div>`}
 
       <div class="kd-ervkop"><span class="label">Opleiding</span>
-        <button class="btn sub sm" data-erv-add="opl">+ Toevoegen</button></div>
-      ${opl.length?`<div class="kd-ervlijst">${opl.map((o,i) => `
+        ${ervBewerk?'<button class="btn sub sm" data-erv-add="opl">+ Toevoegen</button>':''}</div>
+      ${!opl.length ? '<p class="meta kd-ervnog">Nog geen opleidingen.</p>'
+        : !ervBewerk ? `<div class="kd-cvlijst">${opl.map(o => `<div class="kd-cvrij">
+            <b>${h(o.opleiding||o.naam||'—')}</b>
+            <span class="sub">${h(o.school||o.instituut||'')}</span>
+            <span class="meta num">${h(o.jaar||o.periode||'')}</span>
+          </div>`).join('')}</div>`
+        : `<div class="kd-ervlijst">${opl.map((o,i) => `
         <div class="kd-ervrij1">
           <input type="text" data-erv="opl|${i}|opleiding" value="${h(o.opleiding||o.naam||'')}" placeholder="Opleiding">
           <input type="text" data-erv="opl|${i}|school" value="${h(o.school||o.instituut||'')}" placeholder="School en plaats">
           <input type="text" data-erv="opl|${i}|jaar" value="${h(o.jaar||o.periode||'')}" placeholder="2003 – 2007">
           <button type="button" class="kd-ervweg" data-erv-weg="opl|${i}" title="Verwijderen" aria-label="Verwijderen">×</button>
-        </div>`).join('')}</div>`:'<p class="meta kd-ervnog">Nog geen opleidingen.</p>'}
+        </div>`).join('')}</div>`}
 
       <div class="kd-ervkop"><span class="label">Certificaten</span>
-        <button class="btn sub sm" data-erv-add="cert">+ Toevoegen</button></div>
-      ${certs.length?`<div class="kd-ervlijst">${certs.map((r,i) => {
+        ${ervBewerk?'<button class="btn sub sm" data-erv-add="cert">+ Toevoegen</button>':''}</div>
+      ${!certs.length ? '<p class="meta kd-ervnog">Nog geen certificaten — denk aan VCA, heftruck of reachtruck.</p>'
+        : !ervBewerk ? `<div class="kd-certs">${certs.filter(r=>r.naam).map(r => {
+            const st = certStatus(r.geldigTot);
+            return `<div class="kd-cert${st?' '+st.k:''}"><b>${h(r.naam)}</b>
+              ${!r.geldigTot ? '<span class="meta">geen geldigheidsdatum</span>'
+                : isDatum(r.geldigTot) ? `<span class="num">geldig t/m ${h(CRM.fmtDate(r.geldigTot))}</span>`
+                : `<span class="num">${h(r.geldigTot)}</span>`}
+              ${st && st.chip ? `<span class="chip ${st.chip}">${h(st.lbl)}</span>` : ''}</div>`;
+          }).join('')}</div>`
+        : `<div class="kd-ervlijst">${certs.map((r,i) => {
         const st = certStatus(r.geldigTot);
         return `<div class="kd-ervrij1${st?' '+st.k:''}">
           <input type="text" data-erv="cert|${i}|naam" value="${h(r.naam)}" placeholder="Bijv. VCA Basis">
           <input type="date" data-erv="cert|${i}|geldigTot" value="${h(isDatum(r.geldigTot)?r.geldigTot:'')}" title="Geldig tot en met">
           ${st && st.chip ? `<span class="chip ${st.chip}">${h(st.lbl)}</span>` : '<span></span>'}
           <button type="button" class="kd-ervweg" data-erv-weg="cert|${i}" title="Verwijderen" aria-label="Verwijderen">×</button>
-        </div>`; }).join('')}</div>`
-        :'<p class="meta kd-ervnog">Nog geen certificaten — denk aan VCA, heftruck of reachtruck.</p>'}
+        </div>`; }).join('')}</div>`}
 
       <!-- Vaardigheden waren alleen te vullen door een cv in te lezen; nu
            kun je ze ook zelf toevoegen (naam: Tjeerd, 6 aug 2026). -->
@@ -1817,6 +1846,9 @@ function ervaringHtml(c){
    in een aparte map cv.certGeldig. Bij het schrijven maken we er één vorm
    van (objecten), zodat er nog maar één plek is waar de waarheid staat. */
 const ERV_LIJST = {werk:'werkgevers', opl:'opleidingen', cert:'certificaten'};
+/* Lezen of aanpassen. Niet onthouden tussen kandidaten: je opent een kaart
+   om te kijken, niet om te typen. */
+let ervBewerk = false;
 let _ervTimer = null;
 
 /* Altijd DEZELFDE array teruggeven, niet een kopie. Met een kopie las elk
@@ -1844,6 +1876,8 @@ async function ervBewaar(c, herteken){
 }
 
 function bindErvaring(mount, c){
+  { const b = mount.querySelector('#c_ervbew');
+    if(b) b.onclick = () => { ervBewerk = !ervBewerk; CRM.render(); }; }
   /* Typen: meteen in het geheugen bijwerken, pas na een korte stilte opslaan.
      Tijdens het typen wordt er niet hertekend — anders springt de cursor
      uit het veld. */
