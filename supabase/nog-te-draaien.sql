@@ -31,3 +31,33 @@
 -- Gegevens en rechten zijn niet van buitenaf te zien; daarvoor is er
 -- supabase/controle.sql. Alles op 0 = niets meer te doen.
 -- ═══════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════
+-- BLOK 11 — O&O-sessies horen bij een vacature (7 aug 2026)
+--
+-- Een O&O-sessie was een losse rij met klant + functie als vrije tekst.
+-- Maar een sessie wordt gehouden ÓP een vacature (naam: Tjeerd): klant,
+-- functie en locatie horen daaruit te komen in plaats van los ingetypt te
+-- worden. Meestal gaat een sessie over één vacature; zit er iemand voor een
+-- andere functie bij, dan vink je die vacature er expliciet bij.
+--
+-- `tijd` erbij omdat een sessie een moment op de dag is, net als elke andere
+-- afspraak — zonder tijd kan hij niet in de Afsprakenweergave meelopen.
+--
+-- klant en functie blijven bestaan: sessies van vóór deze wijziging hebben
+-- geen vacature en moeten gewoon blijven werken.
+--
+-- De tabel zelf stond nergens in schema.sql; hij bestaat wel in productie.
+-- Onderstaande create is er zodat een verse database hem ook krijgt.
+-- Veilig om meerdere keren te draaien.
+-- ═══════════════════════════════════════════════════════════════
+create table if not exists oo_sessions (
+  id       text primary key,
+  klant    text default '',
+  functie  text default '',
+  datum    date,
+  locatie  text default ''
+);
+alter table oo_sessions add column if not exists vacature_id     text default '';
+alter table oo_sessions add column if not exists extra_vacatures jsonb default '[]'::jsonb;
+alter table oo_sessions add column if not exists tijd            text default '';

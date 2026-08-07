@@ -994,3 +994,143 @@ CRM.adresSplits = tekst => {
   /* Eén stuk tekst: met een cijfer erin is het een straat, anders een plaats. */
   return /\d/.test(ruw) ? {adres: ruw, postcode:'', plaats:''} : {adres:'', postcode:'', plaats: ruw};
 };
+
+/* ═══════════════════════════════════════════════════════════════
+   O&O-SESSIES — één gedeelde bron (7 aug 2026)
+   Een sessie wordt gehouden ÓP een vacature. Klant, functie en locatie
+   komen daar dus uit; alleen sessies van vóór deze wijziging hebben nog
+   losse tekstvelden. Meestal één vacature, soms meer — die extra vacatures
+   vink je expliciet aan (naam: Tjeerd).
+
+   Een sessie is géén losse afspraak maar een stap in het traject: hij
+   vervangt voorstellen, eerste én tweede gesprek in één keer. Daarom blijft
+   'O&O sessie' een fase, en zet iemand aan een sessie hangen hem meteen op
+   die fase — voorgesteld zijn is geen voorwaarde.
+
+   Beheren kan vanaf de vacature-, relatie- én kandidatenkaart. Die drie
+   roepen allemaal dit ene object aan, zodat ze niet uit elkaar kunnen lopen.
+   ═══════════════════════════════════════════════════════════════ */
+CRM.oo = {
+  alle: () => CRM.state.ooSessions || [],
+  van: id => (CRM.state.ooSessions || []).find(s => String(s.id) === String(id)) || null,
+
+  /* De vacature waar deze sessie op gehouden wordt. */
+  vacature(s){
+    if(!s || !s.vacature_id) return null;
+    return (CRM.state.vacs || []).find(v => String(v.id) === String(s.vacature_id)) || null;
+  },
+  /* Alle vacatures van de sessie: de hoofdvacature plus wat er expliciet bij
+     gevonkt is. */
+  vacatures(s){
+    if(!s) return [];
+    const ids = [s.vacature_id].concat(Array.isArray(s.extra_vacatures) ? s.extra_vacatures : [])
+      .filter(Boolean).map(String);
+    const uniek = [...new Set(ids)];
+    return uniek.map(id => (CRM.state.vacs || []).find(v => String(v.id) === String(id)))
+                .filter(Boolean);
+  },
+  /* Klant, functie en locatie: uit de vacature als die er is, anders uit de
+     eigen velden. Zo blijven oude sessies leesbaar. */
+  klant(s){ const v = this.vacature(s); return (v && v.klant) || (s && s.klant) || ''; },
+  functie(s){
+    const vs = this.vacatures(s);
+    if(vs.length) return vs.map(v => v.functie || 'vacature').join(' · ');
+    return (s && s.functie) || '';
+  },
+  locatie(s){ const v = this.vacature(s); return (s && s.locatie) || (v && v.locatie) || ''; },
+  label(s){
+    const d = s && s.datum ? CRM.fmtDateShort(s.datum) : 'geen datum';
+    return `${d}${s && s.tijd ? ' · ' + s.tijd : ''} · ${this.klant(s) || '?'}`;
+  },
+
+  /* Wie er nu op de sessie staat (om te plannen: "zitten er al vier in?") */
+  leden: id => CRM.kandidaten().filter(c => String(c.ooId) === String(id) && CRM.faseIs(c.fase, 'O&O sessie')),
+  /* Wie er ooit in zat, ongeacht waar diegene nu staat — een geslaagde sessie
+     zou anders als leeg tellen zodra iedereen doorschuift. */
+  deelnemers: id => CRM.kandidaten().filter(c => String(c.ooId) === String(id)),
+
+  /* Sessies bij een klant of bij een vacature. */
+  bijKlant(naam){
+    const n = String(naam || '').trim().toLowerCase();
+    return this.alle().filter(s => String(this.klant(s)).trim().toLowerCase() === n)
+      .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
+  },
+  bijVacature(vacId){
+    const id = String(vacId || '');
+    if(!id) return [];
+    return this.alle().filter(s => this.vacatures(s).some(v => String(v.id) === id))
+      .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
+  },
+
+  async bewaar(sessie){
+    const rij = {
+      id: sessie.id || ('s' + Date.now()),
+      vacature_id: sessie.vacature_id || '',
+      extra_vacatures: Array.isArray(sessie.extra_vacatures) ? sessie.extra_vacatures : [],
+      datum: sessie.datum || null, tijd: sessie.tijd || '',
+      locatie: sessie.locatie || '',
+      /* klant en functie blijven meeschrijven: andere schermen en oude rijen
+         leunen erop, en zo blijft een sessie leesbaar zonder de vacature. */
+      klant: this.klant(sessie) || sessie.klant || '',
+      functie: this.functie(sessie) || sessie.functie || ''
+    };
+    const lijst = CRM.state.ooSessions || (CRM.state.ooSessions = []);
+    const i = lijst.findIndex(s => String(s.id) === String(rij.id));
+    if(i >= 0) Object.assign(lijst[i], rij); else lijst.push(rij);
+    if(!CRM.demo){
+      let {error} = await CRM.sb.from('oo_sessions').upsert(rij);
+      /* De nieuwe kolommen komen uit blok 11 van nog-te-draaien.sql. Zolang
+         die niet gedraaid is mag een sessie niet onopslaanbaar zijn. */
+      if(error && /vacature_id|extra_vacatures|tijd|schema cache/i.test(error.message||'')){
+        const oud = {id:rij.id, klant:rij.klant, functie:rij.functie, datum:rij.datum, locatie:rij.locatie};
+        ({error} = await CRM.sb.from('oo_sessions').upsert(oud));
+        if(!error) CRM.toast('Sessie bewaard, maar zónder vacaturekoppeling — draai blok 11 van nog-te-draaien.sql','err');
+      }
+      if(error){ CRM.fout('Sessie opslaan mislukt', error); return null; }
+    }
+    return rij;
+  },
+
+  async verwijder(id){
+    for(const c of CRM.kandidaten().filter(x => String(x.ooId) === String(id)))
+      await CRM.oo.ontkoppel(c.id, {stil:true});
+    CRM.state.ooSessions = (CRM.state.ooSessions || []).filter(s => String(s.id) !== String(id));
+    if(!CRM.demo) await CRM.sb.from('oo_sessions').delete().eq('id', id);
+  },
+
+  /* Kandidaat aan een sessie hangen. Dat ís het voorstellen: de sessie
+     vervangt voorstellen, eerste en tweede gesprek, dus de fase gaat mee.
+     `vacatureId` zegt voor wélke functie deze persoon komt — bij een sessie
+     met meerdere vacatures kies je dat. */
+  async koppel(kandId, sessieId, vacatureId){
+    const c = CRM.kandidaat(kandId);
+    const s = this.van(sessieId);
+    if(!c || !s) return false;
+    const vac = vacatureId || s.vacature_id || c.vacatureId || '';
+    const v = vac ? (CRM.state.vacs || []).find(x => String(x.id) === String(vac)) : null;
+    const patch = {oo_id: String(s.id), fase: 'O&O sessie', since: CRM.todayISO()};
+    if(v){ patch.vacature_id = String(v.id); patch.klant = v.klant || ''; }
+    else if(this.klant(s)) patch.klant = this.klant(s);
+    if(s.datum) patch.datum = s.datum;
+    if(s.tijd)  patch.tijd = s.tijd;
+    return this._schrijf(c, patch,
+      `Aan O&O-sessie gekoppeld: ${this.label(s)}${v ? ' · ' + (v.functie || '') : ''}`);
+  },
+  async ontkoppel(kandId, opts){
+    const c = CRM.kandidaat(kandId);
+    if(!c) return false;
+    const s = this.van(c.ooId);
+    return this._schrijf(c, {oo_id: null},
+      (opts && opts.stil) ? '' : `Losgekoppeld van de O&O-sessie${s ? ' van ' + this.label(s) : ''}`);
+  },
+  async _schrijf(c, patch, logregel){
+    const rij = CRM.state.cands.find(x => String(x.id) === String(c.id));
+    if(rij) Object.assign(rij, patch);
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('candidates').update(patch).eq('id', c.id);
+      if(error){ CRM.fout('Opslaan mislukt', error); return false; }
+    }
+    if(logregel) CRM.logActiviteit('kandidaat', c.id, 'systeem', logregel);
+    return true;
+  }
+};
