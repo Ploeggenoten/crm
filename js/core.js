@@ -464,6 +464,24 @@ CRM.load = async (force=false) => {
     veilig(sb.from('crm_sollicitaties').select('*').order('op',{ascending:false}), 'crm_sollicitaties')
   ]);
   Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, sollicitaties, _loaded:true});
+  /* Welke kandidaatkolommen bestaan er écht? PostgREST weigert een hele
+     insert/update zodra er één onbekende kolom in staat ("Could not find the
+     'uren' column of 'candidates' in the schema cache"). Eén nog niet
+     gedraaide migratie legde daarmee álles stil wat een kandidaat opslaat —
+     ook het inlezen van een cv, dat met dat veld niets te maken heeft.
+     `select('*')` geeft precies de kolommen terug die bestaan, dus dat
+     vergelijken we met wat candToRow wil wegschrijven. Nul rijen = niets te
+     vergelijken; dan gaan we ervan uit dat alles bestaat en valt de fout
+     hooguit terug op het oude gedrag. */
+  CRM.candKolWeg = new Set();
+  if(cands.length){
+    const bestaat = new Set(Object.keys(cands[0]));
+    Object.keys(CRM.candToRow({id:'', naam:'', fase:''}))
+      .forEach(k => { if(!bestaat.has(k)) CRM.candKolWeg.add(k); });
+    if(CRM.candKolWeg.size)
+      console.warn('Deze kolommen ontbreken in candidates en worden niet opgeslagen:',
+                   [...CRM.candKolWeg].join(', '), '— draai supabase/nog-te-draaien.sql');
+  }
   /* Ging het bij álles mis, dan is dit geen leeg systeem maar een kapotte
      verbinding. Dat verschil moet op het scherm staan, niet alleen in de
      console. `_loaded` blijft dan false zodat "Opnieuw proberen" echt
@@ -525,7 +543,9 @@ CRM.rowToCand = r => ({
   ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
   talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||'', golden:!!r.golden
 });
-CRM.candToRow = c => ({
+/* Alles wat een kandidaatrij hoort te bevatten. Gebruik CRM.candToRow —
+   die laat de kolommen weg die de database (nog) niet kent. */
+const candRijVol = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
   datum:c.datum||'', tijd:c.tijd||'', start:c.start||'', since:c.since||CRM.todayISO(), bron:c.bron||'',
   geplaatst_op:c.geplaatstOp||'', gestopt_op:c.gestoptOp||'', garantie_mnd:c.garantieMnd||0,
@@ -551,6 +571,15 @@ CRM.candToRow = c => ({
   ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
   talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||'', golden:!!c.golden
 });
+/* Eén onbekende kolom laat PostgREST de héle rij weigeren. Liever een veld
+   dat nog niet bewaard wordt dan een kandidaat die helemaal niet opgeslagen
+   kan worden — de melding bij het laden vertelt welke migratie nog moet. */
+CRM.candToRow = c => {
+  const rij = candRijVol(c);
+  const weg = CRM.candKolWeg;
+  if(weg && weg.size) weg.forEach(k => { delete rij[k]; });
+  return rij;
+};
 
 /* ─── Activiteiten (gedeeld: sales, klant, kandidaat) ─────────── */
 /* soort: notitie|bel|mail|whatsapp|gesprek|taak|fase|doc|systeem
