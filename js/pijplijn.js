@@ -843,7 +843,12 @@ function agendaItems(){
   const t = TERMIJNEN.find(x => x.k === termijn) || TERMIJNEN[1];
   const tot = new Date(vd + 'T00:00:00');
   tot.setDate(tot.getDate() + t.dagen);
-  const totISO = tot.toISOString().slice(0,10);
+  /* Niet via toISOString: die rekent om naar UTC, en Nederlandse
+     middernacht is daar de dág ervoor (zomertijd = UTC+2). Bij "Vandaag"
+     werd de bovengrens daardoor gisteren en bleef de lijst altijd leeg;
+     bij de andere termijnen viel de laatste dag eraf. 'sv-SE' geeft de
+     lokale datum als jjjj-mm-dd — zelfde truc als in js/kandidaten.js. */
+  const totISO = tot.toLocaleDateString('sv-SE');
   const binnen = dat => !!dat && dat >= vd && dat <= totISO;
 
   const uit = [];
