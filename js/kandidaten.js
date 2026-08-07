@@ -2358,12 +2358,14 @@ function uitvalHtml(c){
              de garantie kost hij ons een vervanging of restitutie en telt hij
              af; erbuiten is de plaatsing afgerond en blijft de fee staan
              (naam: Tjeerd, 7 aug 2026). */''}
-        ${gestopt && c.gestoptOp && !c.vervangt ? rij('Target-effect',
-          CRM.binnenGarantie(c)
+        ${/* Niet via rij(): die ontsnapt de waarde, en hier hoort opmaak. */''}
+        ${gestopt && c.gestoptOp && !c.vervangt ? `<div class="kd-veld">
+          <span class="label">Target-effect</span><span>${CRM.binnenGarantie(c)
             ? `<span class="chip red">telt af</span> <span class="meta">binnen de garantie${
                 CRM.garantieTot(c) ? ' (t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''}</span>`
             : `<span class="chip green">geen effect</span> <span class="meta">gestopt ná de garantie${
-                CRM.garantieTot(c) ? ' (liep t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''} — de fee is verdiend</span>`) : ''}
+                CRM.garantieTot(c) ? ' (liep t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''} — de fee is verdiend</span>`
+          }</span></div>` : ''}
         ${c.reden ? `<div class="kd-veld"><span class="label">Toelichting</span><span>${h(c.reden)}</span></div>` : ''}
       </div>
       ${gestopt && !c.geplaatstOp ? `<div class="note warn" style="margin-top:12px">Geen plaatsingsdatum ingevuld.
