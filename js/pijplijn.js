@@ -194,8 +194,19 @@ function pasKolomHoogteToe(){
    tweede blik: sorteren en vergelijken over de fases heen. Wie hem
    nodig heeft, kiest hem, en dan blijft die keuze staan. */
 const WKEY = 'crm_pp_weergave';
-const weergave    = () => { try{ return localStorage.getItem(WKEY) === 'lijst' ? 'lijst' : 'bord'; }catch(e){ return 'bord'; } };
+const WEERGAVEN = ['bord','lijst','agenda'];
+const weergave    = () => { try{ const v = localStorage.getItem(WKEY); return WEERGAVEN.includes(v) ? v : 'bord'; }catch(e){ return 'bord'; } };
 const zetWeergave = v => { try{ localStorage.setItem(WKEY, v); }catch(e){} };
+
+/* Termijn van de agendaweergave. Niet in localStorage: "wat staat er deze
+   week" is een vraag van dit moment, geen gewoonte. */
+const TERMIJNEN = [
+  {k:'vandaag', lbl:'Vandaag',   dagen:0},
+  {k:'week',    lbl:'Deze week', dagen:7},
+  {k:'twee',    lbl:'2 weken',   dagen:14},
+  {k:'maand',   lbl:'Deze maand',dagen:31}
+];
+let termijn = 'week';
 
 /* Sorteerstand van de lijst. Bewust NIET in localStorage: de weergavekeuze
    is een gewoonte, de sortering is een vraag van dit moment. Standaard
@@ -296,15 +307,20 @@ CRM.registerModule('pijplijn', {
 function tekenActies(acties){
   const el = acties || document.getElementById('pageacties');
   if(!el) return;
-  const lijst = weergave() === 'lijst';
+  const nu = weergave();
   /* De schakelaar staat vooraan: het is de eerste keuze die je maakt, en
      .seg is de vorm die het design-system daarvoor heeft. De compact-knop
-     hoort alleen bij het bord — in de lijst doet hij niets. */
+     hoort alleen bij het bord — elders doet hij niets. */
+  const knop = (k, lbl) =>
+    `<button data-w="${k}" class="${nu===k?'on':''}" aria-pressed="${nu===k?'true':'false'}">${lbl}</button>`;
   el.innerHTML = `<div class="seg" id="pp_weerg" role="group" aria-label="Weergave">
-      <button data-w="bord" class="${lijst?'':'on'}" aria-pressed="${lijst?'false':'true'}">Bord</button>
-      <button data-w="lijst" class="${lijst?'on':''}" aria-pressed="${lijst?'true':'false'}">Lijst</button>
+      ${knop('bord','Bord')}${knop('lijst','Lijst')}${knop('agenda','Afspraken')}
     </div>
-    ${lijst?'':`<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>`}`;
+    ${nu==='agenda' ? `<div class="seg" id="pp_termijn" role="group" aria-label="Termijn">
+      ${TERMIJNEN.map(t => `<button data-t="${t.k}" class="${termijn===t.k?'on':''}"
+        aria-pressed="${termijn===t.k?'true':'false'}">${h(t.lbl)}</button>`).join('')}
+    </div>` : ''}
+    ${nu==='bord'?`<button class="btn ghost sm" id="pp_dicht">${isCompact()?'Ruime weergave':'Compacte weergave'}</button>`:''}`;
   /* Hier stonden "+ O&O-sessie" en "+ Kandidaat". Allebei weg per 2 aug 2026.
 
      Dit scherm laat zien wat er bij klanten loopt; het is geen plek om dingen
@@ -324,6 +340,11 @@ function tekenActies(acties){
     zetWeergave(b.dataset.w);
     tekenActies(); tekenWeergave();
   });
+  CRM.$$('#pp_termijn button', el).forEach(b => b.onclick = () => {
+    if(termijn === b.dataset.t) return;
+    termijn = b.dataset.t;
+    tekenActies(); tekenInhoud();
+  });
   const dicht = el.querySelector('#pp_dicht');
   if(dicht) dicht.onclick = () => {
     localStorage.setItem('crm_rc_compact', isCompact() ? '0' : '1');
@@ -336,14 +357,19 @@ function tekenActies(acties){
 function tekenWeergave(){
   const el = document.getElementById('pp_weergave');
   if(!el) return;
-  el.innerHTML = weergave() === 'lijst'
+  const w = weergave();
+  el.innerHTML = w === 'lijst'
     ? `<div class="rc-pad pp-lijstwrap" id="pp_lijst"></div>`
+    : w === 'agenda'
+    ? `<div class="rc-pad" id="pp_agenda"></div>`
     : `<div class="rc-bordwrap ${isCompact()?'compact':''}"><div class="board" id="rb_board"></div></div>
        <p class="pp-uitregel" id="rb_uit"></p>`;
   tekenInhoud();
 }
 function tekenInhoud(){
-  if(weergave() === 'lijst') tekenLijst(); else tekenKolommen();
+  const w = weergave();
+  if(w === 'agenda') return tekenAgenda();
+  if(w === 'lijst') tekenLijst(); else tekenKolommen();
   /* Ná de kolommen: deze regel staat erbóven en bepaalt dus mee hoe hoog ze
      mogen worden. */
   tekenBuitenBord();
@@ -793,6 +819,114 @@ function lijstRij(c){
     <td>${eerst}</td>
     <td>${c.rec ? h(c.rec) : leeg('—')}</td>
   </tr>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AFSPRAKEN — alles wat gepland staat, op tijd
+   Het bord laat zien wáár iemand staat; deze weergave laat zien wat er
+   wannéér gebeurt (naam: Tjeerd, 7 aug 2026). Alle fases tellen mee
+   behalve Voorgesteld: daar is nog niets afgesproken. Uitval en al
+   gestarte plaatsingen vallen er ook buiten — dat is geen agenda meer.
+   O&O-sessies staan er tussen, want dat zijn evengoed afspraken.
+   De filters bovenaan (klant, recruiter, vacature, type) werken gewoon
+   door: dit is dezelfde verzameling, alleen anders geordend.
+   ═══════════════════════════════════════════════════════════════ */
+const GEEN_AGENDA = ['Voorgesteld'];
+
+/* Datum + tijd als één sorteerbare sleutel. Zonder tijd achteraan op de
+   dag, zodat "ergens die dag" onder de geplande momenten valt. */
+const agendaSleutel = (datum, tijd) => String(datum||'') + 'T' + (tijd && /^\d{1,2}:\d{2}/.test(tijd) ? tijd.padStart(5,'0') : '99:99');
+
+function agendaItems(){
+  const d = D();
+  const vd = CRM.todayISO();
+  const t = TERMIJNEN.find(x => x.k === termijn) || TERMIJNEN[1];
+  const tot = new Date(vd + 'T00:00:00');
+  tot.setDate(tot.getDate() + t.dagen);
+  const totISO = tot.toISOString().slice(0,10);
+  const binnen = dat => !!dat && dat >= vd && dat <= totISO;
+
+  const uit = [];
+  kandGefilterd().forEach(c => {
+    const f = CRM.faseNorm(c.fase);
+    if(GEEN_AGENDA.includes(f) || UITVAL.includes(f) || CRM.PLACED.includes(f)) return;
+    if(!binnen(c.datum)) return;
+    uit.push({soort:'kandidaat', sleutel:agendaSleutel(c.datum, c.tijd), datum:c.datum, tijd:c.tijd, c, fase:f});
+  });
+  /* O&O-sessies: de klantfilter geldt, de rest van de filters gaat over
+     kandidaten en zegt niets over een sessie. */
+  (d.ooSessies ? d.ooSessies() : []).forEach(s => {
+    if(P.klant && s.klant !== P.klant) return;
+    if(!binnen(s.datum)) return;
+    uit.push({soort:'oo', sleutel:agendaSleutel(s.datum, s.tijd), datum:s.datum, tijd:s.tijd, s,
+              leden: d.sessLeden ? d.sessLeden(s.id).length : 0});
+  });
+  return uit.sort((a,b) => a.sleutel.localeCompare(b.sleutel));
+}
+
+function tekenAgenda(){
+  const wrap = document.getElementById('pp_agenda');
+  if(!wrap) return;
+  const items = agendaItems();
+  const t = TERMIJNEN.find(x => x.k === termijn) || TERMIJNEN[1];
+  const vd = CRM.todayISO();
+
+  if(!items.length){
+    wrap.innerHTML = CRM.ui.leeg('Niets gepland',
+      `Er staat niets in de agenda voor ${t.lbl.toLowerCase()}${P.klant ? ' bij ' + P.klant : ''}. Plan een afspraak vanaf de kandidatenkaart.`);
+    return;
+  }
+
+  /* Per dag groeperen: dat is hoe je ernaar kijkt — "wat heb ik morgen". */
+  const dagen = [], perDag = {};
+  items.forEach(i => { if(!perDag[i.datum]){ perDag[i.datum] = []; dagen.push(i.datum); } perDag[i.datum].push(i); });
+
+  const rij = i => {
+    if(i.soort === 'oo'){
+      const s = i.s;
+      return `<div class="pp-ag-rij pp-ag-oo" data-oo="${h(s.id)}" role="button" tabindex="0">
+        <span class="pp-ag-tijd num">${h(i.tijd || '—')}</span>
+        <span class="pp-ag-wie"><b>O&amp;O-sessie</b>
+          <span class="sub">${h(s.functie || 'functie onbekend')}${s.locatie ? ' · ' + h(s.locatie) : ''}</span></span>
+        <span class="pp-ag-klant">${h(s.klant || '—')}</span>
+        <span class="pp-ag-fase"><span class="chip purple">O&amp;O sessie</span></span>
+        <span class="pp-ag-extra num">${i.leden}/4 deelnemers</span>
+      </div>`;
+    }
+    const c = i.c;
+    const v = c.vacatureId ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
+    const functie = (v && v.functie) || c.functie || '';
+    return `<div class="pp-ag-rij" data-kand="${h(c.id)}" role="button" tabindex="0">
+      <span class="pp-ag-tijd num">${h(c.tijd || '—')}</span>
+      <span class="pp-ag-wie"><b>${h(c.naam)}</b>
+        <span class="sub">${h(functie || 'functie nog niet ingevuld')}</span></span>
+      <span class="pp-ag-klant">${h(c.klant || '—')}</span>
+      <span class="pp-ag-fase"><span class="chip" style="border-color:${h(CRM.faseKleur(i.fase))}">${h(i.fase)}</span></span>
+      <span class="pp-ag-extra">${c.type ? `<span class="chip">${h(c.type)}</span>` : ''}${
+        c.rec ? `<span class="meta">${h(c.rec)}</span>` : ''}</span>
+    </div>`;
+  };
+
+  wrap.innerHTML = `
+    <p class="meta pp-ag-tel"><b class="num">${items.length}</b> ${items.length===1?'afspraak':'afspraken'}
+      · ${h(t.lbl.toLowerCase())}${P.klant ? ' · ' + h(P.klant) : ''}
+      <span class="pp-ag-uitleg">Alles wat gepland staat vanaf de eerste kennismaking — Voorgesteld telt niet mee, daar is nog niets afgesproken.</span></p>
+    ${dagen.map(dag => `<div class="pp-ag-dag">
+      <div class="pp-ag-dagkop${dag === vd ? ' vandaag' : ''}">${h(CRM.fmtDay(dag) || dag)}
+        <span class="num">${perDag[dag].length}</span></div>
+      ${perDag[dag].map(rij).join('')}
+    </div>`).join('')}`;
+
+  wrap.querySelectorAll('[data-kand]').forEach(el => {
+    const ga = () => CRM.ga('kandidaten', {id: el.dataset.kand});
+    el.onclick = ga;
+    el.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); ga(); } };
+  });
+  wrap.querySelectorAll('[data-oo]').forEach(el => {
+    const ga = () => { const f = D().ooModal; if(f) f(el.dataset.oo); };
+    el.onclick = ga;
+    el.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); ga(); } };
+  });
 }
 
 function tekenLijst(){
