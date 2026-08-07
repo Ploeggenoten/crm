@@ -191,7 +191,7 @@ function cijfers(p){
         als stop geteld, anders trek je dezelfde plek twee keer af. */
   const teltAlsStop = CRM.teltAlsStop;   // één definitie, in js/data.js — hier hing een eigen kopie
   const getekend = cs.filter(c => inP(c.geplaatstOp,p) &&
-    (CRM.faseIn(c.fase, CRM.PLACED) || teltAlsStop(c)));
+    CRM.teltAlsPlaatsing(c));
   const gestopt  = cs.filter(c => teltAlsStop(c) && inP(c.gestoptOp,p));
   /* Cohort voor duurzaamheid: iedereen die in deze periode getekend heeft,
      inclusief wie later gestopt is. */

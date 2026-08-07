@@ -2354,6 +2354,16 @@ function uitvalHtml(c){
           : rij('Gestopt door', STOP_DOOR[c.stopDoor] || c.stopDoor) + rij('Reden', c.stopCat)}
         ${gestopt ? rij('Gestopt op', CRM.fmtDate(c.gestoptOp)) + rij('Was geplaatst op', CRM.fmtDate(c.geplaatstOp)) : ''}
         ${rij('Herbruikbaar', herbruik)}
+        ${/* Wat een stop met de target doet, staat hier zwart op wit. Binnen
+             de garantie kost hij ons een vervanging of restitutie en telt hij
+             af; erbuiten is de plaatsing afgerond en blijft de fee staan
+             (naam: Tjeerd, 7 aug 2026). */''}
+        ${gestopt && c.gestoptOp && !c.vervangt ? rij('Target-effect',
+          CRM.binnenGarantie(c)
+            ? `<span class="chip red">telt af</span> <span class="meta">binnen de garantie${
+                CRM.garantieTot(c) ? ' (t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''}</span>`
+            : `<span class="chip green">geen effect</span> <span class="meta">gestopt ná de garantie${
+                CRM.garantieTot(c) ? ' (liep t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''} — de fee is verdiend</span>`) : ''}
         ${c.reden ? `<div class="kd-veld"><span class="label">Toelichting</span><span>${h(c.reden)}</span></div>` : ''}
       </div>
       ${gestopt && !c.geplaatstOp ? `<div class="note warn" style="margin-top:12px">Geen plaatsingsdatum ingevuld.

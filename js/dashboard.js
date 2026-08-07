@@ -1544,7 +1544,7 @@ function maandBlok(){
      dezelfde persoon dan de band erboven. */
   const teltAlsStop = CRM.teltAlsStop;   // één definitie, in js/data.js — hier hing een eigen kopie
   const get  = cs.filter(c => c.rec===mij && kort(c.geplaatstOp).slice(0,7)===mk
-    && (CRM.PLACED.includes(c.fase) || teltAlsStop(c))).length;
+    && CRM.teltAlsPlaatsing(c)).length;
   const stop = cs.filter(c => c.rec===mij && teltAlsStop(c) && kort(c.gestoptOp).slice(0,7)===mk).length;
   const netto = get - stop;
   const target = CRM.maandTarget();

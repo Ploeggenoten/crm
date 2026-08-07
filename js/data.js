@@ -114,7 +114,44 @@ CRM.klaarOmVoorTeStellen = c =>
    verandert cijfers, dus die gaat niet stilletjes mee in een ontdubbeling.
    `loopt` is de vraag "is dit een lopende plaatsing" die zes modules elk
    zelf uitschreven. */
-CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp && !c.vervangt;
+/* ─── Garantie: wanneer kost een stop ons echt iets? ──────────────
+   Stopt iemand bínnen de garantietermijn, dan moeten we kosteloos
+   vervangen of terugbetalen — dat is een echte min op de target. Stopt hij
+   erná, dan is de plaatsing gewoon afgerond: de fee is verdiend en blijft
+   staan. Zo'n stopper hoort dus wél bij Stoppers en niet meer bij lopend,
+   maar hij hoort de target niet te drukken (naam: Tjeerd, 7 aug 2026, over
+   Shifaz Salamat: vier maanden gelopen, buiten de garantie).
+
+   Staat er geen eigen termijn op de kandidaat, dan geldt de standaard uit
+   de samenwerkingsovereenkomst (2 maanden) — dezelfde waarde die js/fee.js
+   hanteert. Zonder start- of plaatsingsdatum weten we het niet; dan telt de
+   stop mee, want twijfel mag de cijfers niet gunstiger maken dan ze zijn. */
+CRM.GARANTIE_STD_MND = 2;
+CRM.garantieTot = c => {
+  const start = (c && (c.start || c.geplaatstOp)) || '';
+  if(!start) return '';
+  const d = new Date(String(start).slice(0,10) + 'T00:00:00');
+  if(isNaN(d)) return '';
+  const mnd = Number(c.garantieMnd) > 0 ? Number(c.garantieMnd) : CRM.GARANTIE_STD_MND;
+  d.setMonth(d.getMonth() + mnd);
+  return d.toLocaleDateString('sv-SE');     // lokale datum, niet via UTC
+};
+CRM.binnenGarantie = c => {
+  if(!c || !c.gestoptOp) return true;
+  const tot = CRM.garantieTot(c);
+  return !tot || String(c.gestoptOp).slice(0,10) <= tot;
+};
+
+/* Heeft hier ooit een plaatsing gestaan? Ook als die inmiddels gestopt is —
+   tekenen is een gebeurtenis die heeft plaatsgevonden. Deze vraag staat los
+   van de garantie: een stopper ná de garantie telde en telt mee als
+   plaatsing in de maand dat hij tekende. */
+CRM.teltAlsPlaatsing = c => !!c && !!c.geplaatstOp && !c.vervangt &&
+  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase, 'Gestopt'));
+
+/* Trekt deze stop van de target af? Alleen binnen de garantietermijn. */
+CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp
+  && !c.vervangt && CRM.binnenGarantie(c);
 CRM.loopt = c => !!c && CRM.faseIn(c.fase, CRM.PLACED) && !c.gestoptOp;
 
 CRM.AFVAL_CATS = {
@@ -225,10 +262,8 @@ CRM.plaatsingenMaand = (mk = CRM.todayISO().slice(0,7)) => {
      ongedaan. Daarom telt een Gestopt-kaart mee als getekend — maar met exact
      dezelfde uitzondering als hierboven, anders levert een vervanger die tekent
      en stopt een +1 op zonder bijbehorende −1. */
-  const teltAlsStop = CRM.teltAlsStop;
-  const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk &&
-    (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
-  const gestopt  = cs.filter(c => teltAlsStop(c) && (c.gestoptOp||'').slice(0,7)===mk);
+  const getekend = cs.filter(c => (c.geplaatstOp||'').slice(0,7)===mk && CRM.teltAlsPlaatsing(c));
+  const gestopt  = cs.filter(c => CRM.teltAlsStop(c) && (c.gestoptOp||'').slice(0,7)===mk);
   return {getekend, gestopt, netto: getekend.length - gestopt.length};
 };
 /* ─── Jaardoel ───────────────────────────────────────────────────
@@ -258,9 +293,8 @@ CRM.jaarTarget = (jaar = CRM.todayISO().slice(0,4)) => {
    Terug: {getekend, doel, gedaan, teGaan, dagenTeGaan, perWeekNodig, opSchema} */
 CRM.plaatsingenJaar = (jaar = CRM.todayISO().slice(0,4)) => {
   const cs = CRM.kandidaten();
-  const teltAlsStop = CRM.teltAlsStop;
-  const getekend = cs.filter(c => String(c.geplaatstOp || '').slice(0,4) === String(jaar) &&
-    (CRM.PLACED.includes(c.fase) || teltAlsStop(c)));
+  const getekend = cs.filter(c => String(c.geplaatstOp || '').slice(0,4) === String(jaar)
+    && CRM.teltAlsPlaatsing(c));
 
   const doel = CRM.jaarTarget(jaar);
   const gedaan = getekend.length;

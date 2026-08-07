@@ -39,6 +39,14 @@ alter table candidates add column if not exists geboortedatum date;
 -- stilzwijgend weer opduiken in de bellijst en de nazorg van iemand die net
 -- om verwijdering heeft gevraagd.
 alter table candidates add column if not exists geanonimiseerd_op date;
+-- Flex rekent per uur, W&S per maand. Zonder deze drie viel er bij een
+-- uitzendplaatsing niets vast te leggen waar de finance-app de marge mee kan
+-- uitrekenen: het maandloon slaat daar nergens op en het uurloon had geen
+-- plek. `tarief` is wat we de klant werkelijk per uur factureren — de factor
+-- op de klantkaart is de afspraak, dit is wat er op de factuur staat.
+alter table candidates add column if not exists uurloon numeric;
+alter table candidates add column if not exists uren    numeric;
+alter table candidates add column if not exists tarief  numeric;
 
 -- Klanten: salesfase, eigenaar (AM), contactgegevens.
 alter table clients add column if not exists fase        text default '';
@@ -73,6 +81,9 @@ alter table profiles add column if not exists telefoon   text default '';
 -- per cohort te kunnen tonen in plaats van een momentopname.
 alter table clients add column if not exists aangemaakt  date default current_date;
 alter table clients add column if not exists fase_historie jsonb default '[]'::jsonb;
+-- Eigen volgorde op het salesbord: laag getal = hoger op het bord, leeg =
+-- geen handmatige stand en dan bepaalt de eerstvolgende afspraak de volgorde.
+alter table clients add column if not exists sales_prio  int;
 
 -- Vacatures: eigen id, locatie, status, aantal en salarisrange.
 -- LET OP: in productie bestaat vacatures.id al als uuid — alleen aanmaken
@@ -99,6 +110,55 @@ alter table vacatures add column if not exists deadline     date;
 alter table vacatures add column if not exists doel_aantal  int;               -- bv. 2 (voorstellen)
 alter table vacatures add column if not exists doel_soort   text default 'voorstellen';  -- voorstellen | gesprekken | plaatsingen
 alter table vacatures add column if not exists doel_gezet_op date;             -- vanaf wanneer telt de voortgang
+-- Wanneer is deze vacature opgehaald? Sales stuurt op "hoeveel vacatures
+-- hebben we deze week binnengehaald"; zonder deze kolom is dat niet te
+-- tellen. Bestaande rijen kregen bewust GEEN datum — een verzonnen datum is
+-- erger dan een streepje, en het scherm meldt zelf hoeveel rijen niet
+-- meetellen.
+alter table vacatures add column if not exists aangemaakt date;
+alter table vacatures alter column aangemaakt set default current_date;
+
+-- De vacature als dossier. Zonder deze velden krijgt de marketeer een
+-- melding "zet deze vacature op de website" zonder te weten wát erop moet,
+-- en moet hij alsnog achter de AM aan — precies het heen-en-weer dat die
+-- melding moest voorkomen. De opsommingen zijn platte tekst met één punt per
+-- regel: eenvoudig in te vullen, kopieert schoon naar Indeed en de website,
+-- en het vraagt geen jsonb dat niemand met de hand kan lezen.
+alter table vacatures add column if not exists openingszin    text default '';
+alter table vacatures add column if not exists de_baan        text default '';
+alter table vacatures add column if not exists wat_krijg_je   text default '';
+alter table vacatures add column if not exists over_bedrijf   text default '';
+alter table vacatures add column if not exists waarom_hier    text default '';
+alter table vacatures add column if not exists eisen          text default '';
+-- Praktisch. `uren` staat als chip bovenaan de vacaturepagina ("Dagdienst · 40 uur").
+alter table vacatures add column if not exists werktijden     text default '';
+alter table vacatures add column if not exists ploegendienst  text default '';
+alter table vacatures add column if not exists contractvorm   text default '';
+alter table vacatures add column if not exists bereikbaarheid text default '';
+alter table vacatures add column if not exists uren           text default '';
+-- De lus terug: staat de vacature online, sinds wanneer, en waar.
+alter table vacatures add column if not exists web_status     text default 'Nog niet online';
+alter table vacatures add column if not exists web_url        text default '';
+alter table vacatures add column if not exists web_online_op  date;
+alter table vacatures add column if not exists web_door       text default '';
+-- Salaris in dezelfde opbouw als de kandidaatkaart, zodat wat hier staat bij
+-- een plaatsing één-op-één naar de kandidaat kan en de fee meteen klopt.
+-- Uurloon erbij omdat dat in productie en logistiek de taal van de klant is,
+-- terwijl de fee op jaarsalaris rekent.
+alter table vacatures add column if not exists uurloon_min    numeric;
+alter table vacatures add column if not exists uurloon_max    numeric;
+alter table vacatures add column if not exists vt_pct         numeric;
+alter table vacatures add column if not exists eju_pct        numeric;
+alter table vacatures add column if not exists toeslag_pct    numeric;
+alter table vacatures add column if not exists reiskosten     text default '';
+-- Afwijking op de klantafspraak. NULL betekent uitdrukkelijk "erf van de
+-- klant" — daarom geen default 0: dat zou een fee van nul procent zijn en
+-- niet "niet ingevuld". Dit is de reden dat het losse kolommen zijn en geen
+-- kopie van de hele afspraak: er is één waarheid (crm_afspraken) en hier
+-- staat alleen waar déze vacature van afwijkt.
+alter table vacatures add column if not exists fee_pct           numeric;
+alter table vacatures add column if not exists garantie_mnd      int;
+alter table vacatures add column if not exists betaaltermijn_dgn int;
 
 -- ─── 2. Kandidaat-leads (fase vóór de pijplijn) ───────────────
 -- Komen binnen uit Meta/Indeed/WhatsApp-agent, met kwalificatie.
@@ -177,6 +237,10 @@ create table if not exists crm_taken (
 );
 create index if not exists crm_taken_datum on crm_taken(datum);
 create index if not exists crm_taken_voor  on crm_taken(voor);
+-- Een taak had alleen een datum. "Tomasz voorbereiden" stond daarmee ergens
+-- op morgen, zonder dat je wist of dat vóór of ná het gesprek van 10:00
+-- moest. Leeg laten mag: niet elke taak hoort op een klok.
+alter table crm_taken add column if not exists tijd text default '';
 
 -- ─── 4b. Meldingen (taak toegewezen, @-tag in een notitie) ────
 create table if not exists crm_meldingen (
@@ -368,6 +432,12 @@ create table if not exists crm_afspraken (
   updated_at     timestamptz default now()
 );
 create index if not exists crm_afspraken_klant on crm_afspraken(klant, actief);
+-- Eén klant kan meerdere afspraken naast elkaar hebben (Thermon: 23% W&S én
+-- uitzenden met factor 2,4) — dat kon de tabel al aan, één rij per afspraak
+-- met een soort erop. Wat ontbrak is de overnamegrens van een
+-- uitzendafspraak: na zoveel gewerkte uren mag de klant kosteloos overnemen
+-- (Thermon: 1200 uur). De factor zelf staat in fee_standaard/fee_regels.
+alter table crm_afspraken add column if not exists overname_uren int;
 
 -- ─── 7d. Wat er werkelijk aan Meta betaald is ─────────────────
 -- Meta rapporteert zijn eigen uitgaven. Wat er daadwerkelijk van de rekening
@@ -402,6 +472,75 @@ begin
            with check (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')';
 end $$;
 
+-- ─── 7e. Afgesloten trajecten (js/traject.js) ─────────────────
+-- Eén kandidaat heeft één veld `klant`. Stel je dezelfde persoon bij een
+-- tweede klant voor, dan wordt de eerste overschreven en raakt die klant
+-- stilzwijgend een kandidaat kwijt — inclusief de telling op hun vacature.
+-- Deze tabel bewaart wat er dan verdween. ALLEEN TOEVOEGEN.
+-- Bewust GEEN kandidaatnaam, alleen kandidaat_id: de naam staat op de kaart
+-- en verdwijnt daar bij anonimiseren; zou hij hier ook staan, dan bewaar je
+-- precies wat je zou wissen.
+-- Telt NERGENS mee: dit is geen uitval en geen plaatsing.
+create table if not exists crm_trajecten (
+  id            text primary key,
+  kandidaat_id  text not null,
+  klant         text default '',
+  vacature_id   text default '',
+  functie       text default '',
+  fase          text default '',
+  hoogste_fase  text default '',
+  begin_op      date,
+  eind_op       date,
+  reden         text not null,
+  naar_klant    text default '',
+  naar_vacature text default '',
+  naar_functie  text default '',
+  door          text default '',
+  op            timestamptz default now()
+);
+create index if not exists crm_traj_klant on crm_trajecten(klant, eind_op desc);
+create index if not exists crm_traj_vac   on crm_trajecten(vacature_id);
+create index if not exists crm_traj_kand  on crm_trajecten(kandidaat_id);
+create index if not exists crm_traj_op    on crm_trajecten(op desc);
+
+-- Lezen en aanmaken mag het team. BIJWERKEN EN VERWIJDEREN MAG NIEMAND —
+-- een geschiedenis die je kunt aanpassen bewijst niets. Daarom staat deze
+-- tabel bewust NIET in de array-lus van blok 8 hieronder: die geeft
+-- `for all`, en daarmee ook update en delete.
+do $$
+begin
+  execute 'alter table crm_trajecten enable row level security';
+  execute 'drop policy if exists traj_lezen on crm_trajecten';
+  execute 'create policy traj_lezen on crm_trajecten
+           for select to authenticated using (true)';
+  execute 'drop policy if exists traj_aanmaken on crm_trajecten';
+  execute 'create policy traj_aanmaken on crm_trajecten
+           for insert to authenticated with check (true)';
+end $$;
+
+-- ─── 7f. Eén kandidaat op meerdere vacatures ──────────────────
+-- "Je moet een kandidaat op meerdere vacatures kunnen zetten" (Tjeerd,
+-- 4 aug 2026) — ook over klanten heen. Naast het ene hoofdtraject
+-- (candidates.vacature_id, dat de fase draagt) kan een kandidaat op
+-- meerdere vacatures "in beeld" staan. Het hoofdtraject omhangen is dan een
+-- wissel, geen afvallen. Parallelle fases per traject volgen later.
+create table if not exists crm_sollicitaties (
+  id           text primary key,
+  kandidaat_id text not null,
+  vacature_id  text not null,
+  op           timestamptz default now(),
+  door         text default ''
+);
+create index if not exists crm_soll_kand on crm_sollicitaties(kandidaat_id);
+create index if not exists crm_soll_vac  on crm_sollicitaties(vacature_id);
+do $$
+begin
+  execute 'alter table crm_sollicitaties enable row level security';
+  execute 'drop policy if exists soll_team on crm_sollicitaties';
+  execute 'create policy soll_team on crm_sollicitaties
+           for all to authenticated using (true) with check (true)';
+end $$;
+
 -- ─── 8. RLS: team mag alles in crm_* lezen/schrijven ──────────
 -- (Financiële cijfers zitten in fin_*-tabellen; die houden hun eigen,
 --  striktere policies waardoor alleen Tjeerd erbij kan.)
@@ -416,19 +555,27 @@ begin
   end loop;
 end $$;
 
--- ─── 8b. crm_afspraken: alleen Tjeerd ─────────────────────────
--- Deze tabel bevat fee-percentages. Die horen bij het geld, niet bij de rest
--- van het CRM, dus hij valt bewust BUITEN de team-policy hierboven en krijgt
--- dezelfde harde afscherming als de fin_*-tabellen in het financebord.
--- Afschermen in de interface is niet genoeg: zonder deze policy staan de
--- percentages gewoon in het geheugen van elke browser die inlogt.
+-- ─── 8b. crm_afspraken: de fee mag het hele team zien ─────────
+-- Deze tabel stond eerst afgeschermd op Tjeerds e-mailadres. Gevolg: een AM
+-- die een plaatsing afrondde kon de fee niet berekenen, dus die stond bij
+-- niemand op het feestscherm en niet op de kandidatenkaart — alleen Tjeerds
+-- browser rekende het uit.
+--
+-- Verruimd naar iedereen die is ingelogd. AKKOORD 31 jul 2026, Tjeerd: "De
+-- fee mag iedereen zien, dat is geen probleem hoor. Alleen niet al mijn
+-- bankcijfers etc."
+--
+-- LET OP — draai dit niet terug naar `afspraken_owner_only` omdat het "bij
+-- het geld hoort": dan verdwijnt de fee weer stilzwijgend uit Performance en
+-- van de kaart bij iedereen behalve Tjeerd. De echte bankcijfers zitten in
+-- de fin_*-tabellen; die hebben hun eigen, harde policies en blijven dicht.
 do $$
 begin
   execute 'alter table crm_afspraken enable row level security';
   execute 'drop policy if exists afspraken_owner_only on crm_afspraken';
-  execute 'create policy afspraken_owner_only on crm_afspraken for all to authenticated
-           using (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')
-           with check (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')';
+  execute 'drop policy if exists afspraken_team on crm_afspraken';
+  execute 'create policy afspraken_team on crm_afspraken
+           for all to authenticated using (true) with check (true)';
 end $$;
 
 -- ─── 9. Realtime ──────────────────────────────────────────────
@@ -476,3 +623,49 @@ create policy crm_docs_schrijven on storage.objects for insert to authenticated
 drop policy if exists crm_docs_verwijderen on storage.objects;
 create policy crm_docs_verwijderen on storage.objects for delete to authenticated
   using (bucket_id = 'crm-docs');
+
+-- ─── 11. De gebruikers ────────────────────────────────────────
+-- Staat hier omdat je dit ook draait als er een collega bijkomt: zet de
+-- persoon in de lijst hieronder en draai dit stuk opnieuw.
+--
+-- LET OP — EERST DIT, ANDERS DOET ONDERSTAANDE NIETS: de accounts zelf maak
+-- je aan in Supabase → Authentication → Users → "Add user". Dat kan alleen
+-- Tjeerd: er komt een wachtwoord aan te pas. Daarna pas dit script.
+--
+-- De app koppelt een profiel aan een account op `id` (auth.users.id), niet op
+-- e-mailadres. Onderstaande zoekt dat id zelf op, dus je hoeft nergens een id
+-- over te typen. Ontbreekt een account nog, dan slaat die regel gewoon over.
+--
+-- LET OP — TWEE VELDEN, TWEE BETEKENISSEN. Verwar ze niet:
+--
+--   rol      = mag deze persoon beheren? Alleen 'admin' of 'am'. De tabel
+--              profiles komt uit het oude pijplijnbord en heeft een
+--              check-constraint (profiles_rol_check) die niets anders
+--              toestaat. Hier stond eerst 'user'; dat bestaat niet en het
+--              hele script liep daarop stuk (1 aug 2026). De app kijkt ook
+--              alleen naar rol === 'admin' en noemt al het andere "Teamlid",
+--              dus 'am' betekent hier simpelweg "gewone gebruiker".
+--   functie  = welk dashboard krijg je: am | recruiter | marketeer.
+--
+-- Rajesh is dus functie 'recruiter' met rol 'am', en Bryan functie
+-- 'marketeer' met rol 'am'. Dat leest raar, maar het is de tabel die dat zo
+-- wil; wie het netter wil, verruimt eerst de constraint.
+--
+-- `naam` is waar de hele app op koppelt (eigenaar van een klant, recruiter op
+-- een kandidaat, "voor wie" bij een taak). Schrijf hem dus precies zoals hij
+-- in de bestaande gegevens staat — anders ziet iemand zijn eigen werk niet
+-- meer staan.
+insert into profiles (id, naam, email, functie, rol)
+select u.id, v.naam, v.email, v.functie, v.rol
+  from (values
+    ('tjeerd@ploeggenoten.nl',      'Tjeerd', 'am',        'admin'),
+    ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'am'),
+    ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'am'),
+    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'am')
+  ) as v(email, naam, functie, rol)
+  join auth.users u on lower(u.email) = v.email
+on conflict (id) do update
+  set naam    = excluded.naam,
+      email   = excluded.email,
+      functie = excluded.functie,
+      rol     = excluded.rol;
