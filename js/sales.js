@@ -438,13 +438,35 @@ function kaartHTML(k, lc, act, af, vandaag){
   </div>`;
 }
 
+/* ─── Volgorde binnen een kolom ───────────────────────────────────
+   Twee regels, in deze volgorde (naam: Tjeerd, 7 aug 2026):
+   1. Wat jij zelf naar boven sleept staat bovenaan. `sales_prio` is de
+      handmatige stand: laag getal = hoger op het bord. Niet gesleept =
+      geen getal = onderaan de gesleepte kaarten.
+   2. Daarna de eerstvolgende afspraak. Bij "Gesprek ingepland" is dát de
+      volgorde waarin je je week leest: wie komt er het eerst aan de beurt.
+      Kaarten zonder afspraak zakken naar onderen.
+   Bij gelijkspel op naam, zodat het bord niet danst tussen twee renders. */
+function kolomVolgorde(lijst, afspr){
+  return [...lijst].sort((a, b) => {
+    const pa = a.sales_prio == null ? Infinity : Number(a.sales_prio);
+    const pb = b.sales_prio == null ? Infinity : Number(b.sales_prio);
+    if(pa !== pb) return pa - pb;
+    const fa = afspr.get(a.naam), fb = afspr.get(b.naam);
+    const sa = fa ? String(fa.datum) + 'T' + String(fa.tijd || '99:99') : '9999';
+    const sb = fb ? String(fb.datum) + 'T' + String(fb.tijd || '99:99') : '9999';
+    if(sa !== sb) return sa < sb ? -1 : 1;
+    return String(a.naam||'').localeCompare(String(b.naam||''), 'nl');
+  });
+}
+
 function bordHTML(klanten){
   const contact = contactIndex();
   const act = activiteitIndex();
   const afspr = afspraakIndex();
   const vandaag = CRM.todayISO();
   return `<div class="board" id="s_board">${CRM.SALES_FASES.map(f => {
-    const in_ = klanten.filter(k => faseVan(k)===f.k);
+    const in_ = kolomVolgorde(klanten.filter(k => faseVan(k)===f.k), afspr);
     return `<div class="bcol" data-fase="${h(f.k)}">
       <div class="bcol-h" style="--ph:${f.c}"><b>${h(f.k)}</b><span class="cnt num">${in_.length}</span></div>
       <div class="bcol-b" data-drop="${h(f.k)}">
@@ -505,7 +527,28 @@ function bindBord(root){
   CRM.$$('.bcard', root).forEach(c => {
     c.ondragstart = e => { sleepend = c.dataset.klant; c.classList.add('drag');
       e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', sleepend); };
-    c.ondragend = () => { c.classList.remove('drag'); CRM.$$('.bcol', root).forEach(x=>x.classList.remove('over')); };
+    c.ondragend = () => { c.classList.remove('drag');
+      CRM.$$('.bcol', root).forEach(x=>x.classList.remove('over'));
+      CRM.$$('.bcard.doel', root).forEach(x=>x.classList.remove('doel')); };
+    /* Boven een andere kaart loslaten = ertussen zetten, niet alleen van
+       fase wisselen. Zo kun je zelf bepalen wat er bovenaan staat
+       (naam: Tjeerd, 7 aug 2026). Een streep boven de kaart laat zien
+       waar hij landt. */
+    c.ondragover = e => {
+      if(!sleepend || sleepend === c.dataset.klant) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      c.classList.add('doel');
+    };
+    c.ondragleave = () => c.classList.remove('doel');
+    c.ondrop = async e => {
+      e.preventDefault(); e.stopPropagation();
+      c.classList.remove('doel');
+      const naam = e.dataTransfer.getData('text/plain') || sleepend;
+      sleepend = null;
+      if(!naam || naam === c.dataset.klant) return;
+      await zetVolgorde(naam, c);
+    };
     /* Rechtstreeks naar de klantkaart. Er zat een tussenpaneel met een halve
        samenvatting en onderaan de knop "Volledige klantkaart openen →" — een
        extra klik voor iets wat je toch altijd wilde zien, en het toonde
@@ -520,9 +563,53 @@ function bindBord(root){
     b.ondrop = e => { e.preventDefault(); kol.classList.remove('over');
       const naam = e.dataTransfer.getData('text/plain') || sleepend;
       sleepend = null;
+      /* Op de lege ruimte onder de kaarten: onderaan in deze fase. */
       if(naam) zetFase(naam, b.dataset.drop);
     };
   });
+}
+
+/* Kaart vóór een andere kaart zetten. De kolom krijgt daarbij een verse
+   nummering (10, 20, 30 …): zo hoeft er niet herverdeeld te worden als er
+   later iets tussen komt, en blijft de volgorde stabiel over renders heen. */
+async function zetVolgorde(naam, doelKaart){
+  const doelNaam = doelKaart.dataset.klant;
+  const fase = doelKaart.closest('.bcol')?.dataset.fase;
+  if(!fase) return;
+  const bron = CRM.state.clients.find(x => x.naam === naam);
+  if(!bron) return;
+
+  /* Naar een andere kolom slepen én positioneren in één beweging. Eerst de
+     fase (die logt en bewaart zichzelf), daarna pas de volgorde — andersom
+     zag zetFase de fase al staan en deed hij niets. */
+  if(faseVan(bron) !== fase) await zetFase(naam, fase);
+
+  const lijst = kolomVolgorde(CRM.state.clients.filter(k => faseVan(k) === fase && k.naam !== naam),
+                              afspraakIndex());
+  const i = lijst.findIndex(k => k.naam === doelNaam);
+  lijst.splice(i < 0 ? lijst.length : i, 0, bron);
+
+  const patch = [];
+  lijst.forEach((k, n) => {
+    const prio = (n + 1) * 10;
+    if(k.sales_prio !== prio){ k.sales_prio = prio; patch.push({naam:k.naam, prio}); }
+  });
+  tekenInhoud();
+
+  if(!CRM.demo){
+    for(const p of patch){
+      const {error} = await CRM.sb.from('clients').update({sales_prio:p.prio}).eq('naam', p.naam);
+      /* De kolom bestaat pas na de aanvulling-SQL. Zonder die kolom mag het
+         slepen niet met een foutmelding stukgaan — de volgorde geldt dan
+         alleen voor deze sessie. */
+      if(error){
+        if(/sales_prio|schema cache/i.test(error.message||''))
+          CRM.toast('Volgorde niet bewaard — draai blok 10 van nog-te-draaien.sql','err');
+        else CRM.fout('Volgorde opslaan mislukt', error);
+        break;
+      }
+    }
+  }
 }
 
 /* ─── Lijst ────────────────────────────────────────────────────── */

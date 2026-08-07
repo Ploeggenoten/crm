@@ -355,3 +355,13 @@ alter table candidates add column if not exists uren    numeric;
 -- afspraak; dit is wat er werkelijk in rekening gebracht wordt, en dus
 -- waarmee de echte marge te berekenen valt.
 alter table candidates add column if not exists tarief  numeric;
+
+-- ═══════════════════════════════════════════════════════════════
+-- BLOK 10 — Eigen volgorde op het salesbord (7 aug 2026)
+-- Kaarten binnen een kolom naar boven kunnen slepen. Laag getal = hoger
+-- op het bord; leeg = geen handmatige stand, dan bepaalt de eerstvolgende
+-- afspraak de volgorde. Zonder deze kolom werkt het slepen wel, maar geldt
+-- de volgorde alleen voor die sessie.
+-- Veilig om meerdere keren te draaien.
+-- ═══════════════════════════════════════════════════════════════
+alter table clients add column if not exists sales_prio int;
