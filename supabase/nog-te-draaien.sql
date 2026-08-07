@@ -340,3 +340,14 @@ begin
   execute 'create policy soll_team on crm_sollicitaties
            for all to authenticated using (true) with check (true)';
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════
+-- BLOK 9 — Flex: uurloon en uren per week op de kandidaat (7 aug 2026)
+-- Een Flex-plaatsing rekent per uur, niet per maand. Zonder deze twee
+-- kolommen viel er bij een uitzendkracht niets vast te leggen waar de
+-- finance-app de marge mee kan uitrekenen: het maandloon slaat daar
+-- nergens op en het uurloon had geen plek.
+-- Veilig om meerdere keren te draaien.
+-- ═══════════════════════════════════════════════════════════════
+alter table candidates add column if not exists uurloon numeric;
+alter table candidates add column if not exists uren    numeric;

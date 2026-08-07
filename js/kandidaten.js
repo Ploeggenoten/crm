@@ -931,6 +931,14 @@ const CONTRACT_VELDEN = [
   {k:'geplaatstOp',  lbl:'Geplaatst op',    t:'date',   toon:v => CRM.fmtDate(v), alleenBijPlaatsing:true},
   {k:'gestoptOp',    lbl:'Gestopt op',      t:'date',   toon:v => CRM.fmtDate(v), alleenBijPlaatsing:true}
 ];
+/* Flex rekent per uur, W&S per maand. Welke velden je te zien krijgt hangt
+   dus af van het type plaatsing — anders vraagt de kaart een uitzendkracht
+   om een eindejaarsuitkering en een W&S-kandidaat om een uurloon
+   (naam: Tjeerd, 7 aug 2026). */
+const FLEX_VELDEN = [
+  {k:'uurloon',      lbl:'Bruto uurloon',   t:'number', toon:v => v == null || v === '' ? '' : CRM.euro(v) + ' p/uur'},
+  {k:'uren',         lbl:'Uren per week',   t:'number', toon:v => v == null || v === '' ? '' : v + ' uur'}
+];
 const SALARIS_VELDEN = [
   {k:'maandloon',    lbl:'Bruto maandloon', t:'number', toon:v => v ? CRM.euro(v) : ''},
   {k:'toeslagPct',   lbl:'Ploegentoeslag',  t:'number', toon:v => v ? CRM.pct(v) : ''},
@@ -940,7 +948,7 @@ const SALARIS_VELDEN = [
 ];
 
 /* Eén lijst voor het opzoeken bij inline bewerken (alle blokken). */
-const ALLE_VELDEN = VELDEN.concat(TRAJECT_VELDEN, CONTRACT_VELDEN, SALARIS_VELDEN);
+const ALLE_VELDEN = VELDEN.concat(TRAJECT_VELDEN, CONTRACT_VELDEN, SALARIS_VELDEN, FLEX_VELDEN);
 function lees(c, pad){
   if(pad.indexOf('cv.') === 0) return (c.cv || {})[pad.slice(3)];
   return c[pad];
@@ -1341,7 +1349,7 @@ function dealbalkHtml(c){
   let feeTxt = '';
   if(CRM.fee){
     try{
-      const mist = CRM.fee.watMist(c, CRM.fee.voorKlant(c.klant, c.geplaatstOp || null)) || [];
+      const mist = CRM.fee.watMist(c, afspraakVan(c)) || [];
       feeTxt = mist.length ? `<span class="knel">nog ${mist.length} in te vullen</span>` : 'compleet';
     }catch(e){ feeTxt = ''; }
   }
@@ -2358,20 +2366,23 @@ function factuurklaarHtml(c){
   if(!CRM.fee || !c.klant) return '';           // zonder klant valt er niets te factureren
   let mist = [], b = null;
   try{
-    const afspraak = CRM.fee.voorKlant(c.klant, c.geplaatstOp || null);
+    const afspraak = afspraakVan(c);
     mist = CRM.fee.watMist(c, afspraak) || [];
     if(CRM.magOpbrengstZien()) b = CRM.fee.bereken(c, afspraak);
   }catch(e){ console.warn('feeberekening', e); return ''; }
 
   const klaar = !mist.length;
   return `<div class="card">
-    <div class="card-h"><div class="h2">Klaar voor facturatie</div>
+    <div class="card-h"><div class="h2">Klaar voor de finance-app</div>
       <span class="spacer"></span>
       <span class="chip${klaar?' green':' amber'}">${klaar ? 'compleet' : mist.length + ' nog invullen'}</span></div>
     <div class="card-b">
       ${klaar
-        ? '<p class="sub" style="margin:0 0 10px">Alle gegevens staan erin. Zodra het contract getekend is, kan er gefactureerd worden.</p>'
-        : `<p class="sub" style="margin:0 0 10px">Dit moet er nog in voordat de fee berekend kan worden:</p>
+        ? `<p class="sub" style="margin:0 0 10px">Alle gegevens staan erin.${isFlex(c)
+            ? ' De finance-app kan de marge op de gewerkte uren berekenen.'
+            : ' Zodra het contract getekend is, kan er gefactureerd worden.'}</p>`
+        : `<p class="sub" style="margin:0 0 10px">Dit moet er nog in ${isFlex(c)
+            ? 'voordat de finance-app met deze plaatsing kan rekenen' : 'voordat de fee berekend kan worden'}:</p>
            <ul class="kd-mistlijst">${mist.map(m => {
              const veld = String(m.veld||''), waar = String(m.waar||'');
              /* Alleen een knop als het veld ook echt op deze kaart staat —
@@ -2817,12 +2828,46 @@ function contractHtml(c){
         title="Alle contract- en salarisvelden tegelijk open, één keer opslaan">Bewerken</button></div>
     <div class="card-b">
       <div class="kd-velden">${velden.map(f => veldRij(c, f)).join('')}</div>
-      <div class="label" style="margin:16px 0 4px">Salaris</div>
-      <div class="kd-velden">${SALARIS_VELDEN.map(f => veldRij(c, f)).join('')}</div>
+      <div class="label" style="margin:16px 0 4px">${isFlex(c) ? 'Tarief' : 'Salaris'}</div>
+      <div class="kd-velden">${(isFlex(c) ? FLEX_VELDEN : SALARIS_VELDEN).map(f => veldRij(c, f)).join('')}</div>
       <div class="kd-totsal" id="kd_totsal">${totaalRegel(c)}</div>
     </div></div>`;
 }
+const isFlex = c => String(c.type || '') === 'Flex';
+/* Een Flex-plaatsing valt onder de UITZENDafspraak, een W&S-plaatsing onder
+   de W&S-afspraak. Zonder dat onderscheid pakte de kaart het W&S-percentage
+   (23) en rekende daarmee als factor: een uurloon van 16,50 werd zo een
+   klanttarief van 380 euro (7 aug 2026). */
+const afspraakVan = c => CRM.fee.voorKlant(c.klant, c.geplaatstOp || null, isFlex(c) ? 'uitzenden' : 'ws');
+
+/* Bij Flex loopt de opbrengst via de marge op gewerkte uren: uurloon maal
+   de factor uit de uitzendafspraak van de klant. Die factor staat op de
+   klantkaart per functiegroep — hier laten we alleen zien wat eruit rolt,
+   en alleen aan wie de opbrengst mag zien. */
+function flexRegel(c){
+  if(!c.uurloon) return '<span class="meta">Vul het bruto uurloon in — daarmee rekent de finance-app het tarief uit.</span>';
+  if(!CRM.magOpbrengstZien || !CRM.magOpbrengstZien())
+    return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent het tarief uit.</span>';
+  let f = null;
+  try{
+    f = CRM.fee.pctVoor(c, afspraakVan(c)).pct;
+  }catch(e){ f = null; }
+  if(f == null)
+    return `<span class="meta">Nog geen uitzendfactor voor deze functie bij ${h(c.klant||'deze klant')} —
+      leg die vast op de klantkaart bij Commerciële afspraken.</span>`;
+  const tarief = c.uurloon * f;
+  const marge = tarief - c.uurloon;
+  const perWeek = c.uren ? marge * c.uren : null;
+  /* Uurbedragen op de cent: het verschil tussen 39,60 en 40,00 is per week
+     16 euro en per jaar bijna 800. Weekbedragen mogen wél afgerond. */
+  const uur = n => '€' + n.toFixed(2).replace('.', ',');
+  return `Klanttarief ≈ <b class="num">${uur(tarief)}</b> per uur
+    <span class="meta">factor ${h(String(f).replace('.', ','))}× · marge ${uur(marge)} p/uur${
+      perWeek != null ? ' · ' + CRM.euro(Math.round(perWeek)) + ' per week bij ' + c.uren + ' uur'
+                      : ' — vul de uren per week in voor de weekmarge'}</span>`;
+}
 function totaalRegel(c){
+  if(isFlex(c)) return flexRegel(c);
   const bereken = D().totaalJaarSalaris;
   if(!bereken || !c.maandloon) return '<span class="meta">Vul het bruto maandloon in voor het totaal-jaarsalaris.</span>';
   const tot = bereken(c.maandloon, c.toeslagPct||0, c.vtPct==null?'':c.vtPct, c.ejuPct||0, c.overigPct||0);

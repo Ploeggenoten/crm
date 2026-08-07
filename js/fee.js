@@ -362,6 +362,24 @@ function watMist(kandidaat, afspraak){
   if(!String(c.klant || '').trim()) bij('klant', 'Bij welke klant de kandidaat geplaatst wordt', 'Kandidaatkaart');
   if(!String(c.functie || '').trim()) bij('functie', 'Functie (bepaalt onder welke afspraak de plaatsing valt)', 'Kandidaatkaart');
 
+  /* Flex rekent per uur en heeft dus heel andere gegevens nodig dan W&S.
+     Vroeger vroeg deze lijst ook bij een uitzendplaatsing om vakantiegeld
+     en een eindejaarsuitkering, en zweeg hij over het uurloon — precies
+     wat de finance-app daar wél nodig heeft (naam: Tjeerd, 7 aug 2026). */
+  if(String(c.type || '') === 'Flex'){
+    const uur = getal(c.uurloon);
+    if(uur == null || uur <= 0) bij('uurloon', 'Bruto uurloon', KAND);
+    const uren = getal(c.uren);
+    if(uren == null || uren <= 0) bij('uren', 'Uren per week', KAND);
+    if(!datum(c.start)) bij('start', 'Startdatum', 'Kandidaatkaart');
+    if(magAfspraakZien){
+      if(!a.er) bij('afspraak', 'Uitzendafspraak met deze klant', 'Klantkaart › Commerciële afspraken');
+      else if(pctVoor(c, afspraak).pct == null)
+        bij('factor', 'Omrekenfactor voor deze functie', 'Klantkaart › Commerciële afspraken');
+    }
+    return mist;
+  }
+
   const loon = getal(c.maandloon);
   if(loon == null || loon <= 0) bij('maandloon', 'Bruto maandsalaris', KAND);
 

@@ -512,6 +512,11 @@ CRM.rowToCand = r => ({
   /* Adres en postcode zijn echte kolommen; oudere cv-parses schreven ze in
      het cv-jsonb, dus dat blijft de terugval bij het lezen. */
   adres:r.adres||(r.cv||{}).adres||'', postcode:r.postcode||(r.cv||{}).postcode||'',
+  /* Flex rekent per uur, W&S per maand. Zonder deze twee viel er bij een
+     uitzendplaatsing niets vast te leggen waar de finance-app mee kan
+     rekenen (7 aug 2026). Nul is een ingevulde waarde, net als bij de
+     toeslagen hierboven. */
+  uurloon:r.uurloon==null?null:Number(r.uurloon), uren:r.uren==null?null:Number(r.uren),
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
   ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
   talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||'', golden:!!r.golden
@@ -535,6 +540,8 @@ CRM.candToRow = c => ({
   oo_id:c.ooId||null, vervangt:c.vervangt||'', rec:c.rec||'', note:c.note||'',
   telefoon:c.telefoon||'', email:c.email||'', woonplaats:c.woonplaats||'',
   adres:c.adres||'', postcode:c.postcode||'',
+  uurloon:c.uurloon==null||c.uurloon===''?null:Number(c.uurloon),
+  uren:c.uren==null||c.uren===''?null:Number(c.uren),
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
   ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
   talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||'', golden:!!c.golden
