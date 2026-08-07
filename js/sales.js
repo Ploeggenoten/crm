@@ -584,8 +584,8 @@ function opvolgHTML(){
   const alle = openOpvolgingen();
   if(!alle.length) return CRM.ui.leeg('Geen open opvolgingen',
     mijn ? 'Er staat niets open op jouw naam. Zet "Mijn klanten" uit om die van collega\'s te zien.'
-         : 'Elke afspraak die je maakt — "volgende week terugbellen" — hoort hier als taak te staan.',
-    '<button class="btn" data-nieuwtaak>+ Opvolgtaak</button>');
+         : 'Elke afspraak die je maakt — "volgende week terugbellen" — hoort hier als taak te staan. '
+           + 'Je legt er een vast op de kaart van de relatie: knop "+ Taak", of "Taak" bij de belknoppen.');
   const vandaag = CRM.todayISO();
   const week = (() => { const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
   const groepen = [
@@ -1978,8 +1978,13 @@ function tekenInhoud(){
         /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
            knop die iets nieuws maakt. */
         : tab==='activiteit' ? ''
-        : `<button class="btn ghost" data-nieuwerelatie>+ Relatie</button>
-           <button class="btn" data-nieuwtaak>+ Opvolgtaak</button>`}
+        /* "+ Opvolgtaak" stond hier als losse knop boven het hele bord.
+           Een opvolging hoort bij één relatie, dus maak je hem vanaf díe
+           kaart — daar weet het systeem meteen om wie het gaat, wie de
+           contactpersoon is en waar het over ging (naam: Tjeerd, 7 aug
+           2026: "dit gebeurt vanuit de kaarten, niet de algehele
+           salespijplijn"). */
+        : `<button class="btn" data-nieuwerelatie>+ Relatie</button>`}
       </div>
     </div>`;
 
@@ -2037,10 +2042,6 @@ function bindInhoud(){
   CRM.$$('[data-nieuwerelatie]', mountEl).forEach(b => b.onclick = () => {
     if(CRM.nieuweRelatie) CRM.nieuweRelatie();
     else CRM.ga('klanten');
-  });
-  CRM.$$('[data-nieuwtaak]', mountEl).forEach(b=>b.onclick=async ()=>{
-    const rij = await CRM.taakModal({});
-    if(rij) tekenInhoud();
   });
   bindRadar();
   if(tab==='activiteit') bindActiviteit();
