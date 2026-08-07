@@ -667,7 +667,9 @@ function overzicht(mount, acties){
       <button data-w="kaarten" class="${F.weergave==='kaarten'?'on':''}">Kaarten</button>
       <button data-w="tabel"   class="${F.weergave==='tabel'?'on':''}">Tabel</button>
       <button data-w="kaart"   class="${F.weergave==='kaart'?'on':''}">Kaart</button>
-    </div>`;
+    </div>
+    <button class="btn sm" id="kl_nieuw">+ Relatie</button>`;
+  acties.querySelector('#kl_nieuw').onclick = () => nieuweRelatie();
   acties.querySelectorAll('#kl_seg button').forEach(b => b.onclick = () => { zet('weergave', b.dataset.w); CRM.render(); });
   /* Doorklik naar het overzicht van alle contactpersonen. Staat hier en niet
      in het menu: het hoort bij Relaties, en de zijbalk heeft al twaalf items. */
@@ -2100,6 +2102,7 @@ const SNEL_UITKOMSTEN = [
   ['bel',      'Geen gehoor',  'Gebeld, geen gehoor',             true],
   ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten', true],
   ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd',               true],
+  ['mail',     'Gemaild',      'Gemaild',                         true],
   ['notitie',  'Notitie',      '',                                false],
   ['taak',     'Taak',         '',                                false]
 ];
@@ -2135,7 +2138,12 @@ function uitkomstenHtml(){
       </div>
     </div>`;
 }
-function bindUitkomsten(root, k, na){
+/* opts.contact: sta je al op de kaart van één persoon, dan is de vraag
+   "met wie?" overbodig en landt alles meteen op die persoon. Zo kan de
+   contactkaart dezelfde knoppenrij gebruiken (naam: Tjeerd, 7 aug 2026)
+   zonder dat er twee versies van dezelfde logica ontstaan. */
+function bindUitkomsten(root, k, na, opts){
+  const vast = (opts && opts.contact) || null;
   const veld = root.querySelector('[data-uitveld]'); if(!veld) return;
   const tekst = veld.querySelector('[data-uittekst]');
   const wieEl = veld.querySelector('[data-uitwie]');
@@ -2147,6 +2155,7 @@ function bindUitkomsten(root, k, na){
      contact" lopen dan vanzelf mee, en de relatiekaart toont hem toch al
      (die mengt contactpersoon-activiteiten mee). */
   const tekenWie = () => {
+    if(vast){ wieEl.hidden = true; wie = vast; return; }
     const cts = (CRM.state.contacten||[]).filter(x => x.klant === k.naam);
     if(!cts.length){ wieEl.hidden = true; wie = null; return; }
     wieEl.hidden = false;
@@ -2213,7 +2222,8 @@ function bindUitkomsten(root, k, na){
       const rij = {
         id: CRM.uid(), tekst: extra + (met ? ' — ' + met.naam : ''),
         datum: datumEl.value || null, tijd: '', klaar: false,
-        entiteit: 'klant', ref: k.naam, contact_id: met ? String(met.id) : null,
+        entiteit: met ? 'contact' : 'klant', ref: met ? String(met.id) : k.naam,
+        contact_id: met ? String(met.id) : null,
         voor: voorEl.value || CRM.me(), door: CRM.me(), prioriteit: '',
         created_at: new Date().toISOString()
       };
@@ -2244,7 +2254,7 @@ function bindUitkomsten(root, k, na){
     dicht();
     if(met) await CRM.logActiviteit('contact', String(met.id), soort, regel);
     else await CRM.logActiviteit('klant', k.naam, soort, regel);
-    if(extra) CRM.verwerkTags(extra, 'klant', k.naam);
+    if(extra) CRM.verwerkTags(extra, met ? 'contact' : 'klant', met ? String(met.id) : k.naam);
     /* Alleen een écht contactmoment verzet "laatste contact". Een notitie
        is geen gesprek; die zou de klant anders ten onrechte uit de
        stiltefilter op het salesbord halen. */
@@ -3501,6 +3511,10 @@ async function opvolgtaak(k, d, datum){
 
 /* Voor sales.js en andere modules: hetzelfde venster, geen tweede modal. */
 CRM.klantInplannen = (klant, opts) => planModal(klant, opts || {});
+/* De uitkomstknoppen (gebeld, geen gehoor, voicemail, WhatsApp, gemaild,
+   notitie, taak) worden ook op de contactpersoonkaart gebruikt. Eén bron,
+   dus wat we hier veranderen geldt daar meteen ook. */
+CRM.uitkomsten = {html: uitkomstenHtml, bind: bindUitkomsten};
 
 /* ─── Klantgegevens bewerken ──────────────────────────────────── */
 /* De vestigingskolommen (adres/postcode/plaats/kvk) komen pas in de database
@@ -3633,6 +3647,74 @@ function klantModal(k){
     };
   }});
 }
+
+/* ─── Nieuwe relatie ──────────────────────────────────────────────
+   Vanuit Relaties én vanuit Sales (naam: Tjeerd, 7 aug 2026). Bewust een
+   kort venster: naam is het enige dat echt moet, de rest vul je op de
+   kaart aan zodra je hem opent. Een relatie zonder fase belandt in Lead
+   op het salesbord — dat is waar een nieuwe naam thuishoort. */
+async function nieuweRelatie(){
+  const teamNamen = (CRM.teamNamen ? CRM.teamNamen() : []).filter(Boolean);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe relatie</div>
+      <p class="sub" style="margin:6px 0 0">De rest van de gegevens vul je aan op de kaart.</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="nr_naam">Bedrijfsnaam</label>
+        <input type="text" id="nr_naam" placeholder="Bijv. Van Vliet Zoetwaren" autocomplete="off"></div>
+      <div class="f-grid">
+        <div class="f-row"><label for="nr_fase">Fase</label><select id="nr_fase">
+          ${CRM.SALES_FASES.map((f,i)=>`<option value="${h(f.k)}"${i===0?' selected':''}>${h(f.k)}</option>`).join('')}
+        </select></div>
+        <div class="f-row"><label for="nr_eig">Accountmanager</label><select id="nr_eig">
+          ${teamNamen.map(n=>`<option${n===CRM.me()?' selected':''}>${h(n)}</option>`).join('')}
+        </select></div>
+        <div class="f-row"><label for="nr_loc">Plaats</label><input type="text" id="nr_loc"></div>
+        <div class="f-row"><label for="nr_br">Branche</label><input type="text" id="nr_br"></div>
+      </div>
+      <div class="err" id="nr_err"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="nr_ok">Relatie aanmaken</button></div>`, {onOpen(m){
+      const naamEl = m.querySelector('#nr_naam');
+      setTimeout(() => naamEl.focus(), 60);
+      const maak = async () => {
+        const naam = naamEl.value.trim();
+        const err = m.querySelector('#nr_err');
+        if(!naam){ err.textContent = 'Vul een bedrijfsnaam in.'; naamEl.focus(); return; }
+        /* Dubbele namen zijn hier fataal: de hele app koppelt kandidaten,
+           vacatures en contactpersonen op de klantnaam. */
+        if((CRM.state.clients||[]).some(c => String(c.naam||'').trim().toLowerCase() === naam.toLowerCase())){
+          err.textContent = 'Die relatie bestaat al.'; naamEl.focus(); return;
+        }
+        const rij = {
+          naam, fase: m.querySelector('#nr_fase').value,
+          eigenaar: m.querySelector('#nr_eig').value || CRM.me(),
+          locatie: m.querySelector('#nr_loc').value.trim(),
+          branche: m.querySelector('#nr_br').value.trim(),
+          fase_sinds: CRM.todayISO(), laatst_contact: null
+        };
+        (CRM.state.clients || (CRM.state.clients = [])).unshift(rij);
+        if(!CRM.demo){
+          const {error} = await CRM.sb.from('clients').insert(rij);
+          if(error){
+            CRM.state.clients = CRM.state.clients.filter(c => c !== rij);
+            return CRM.fout('Aanmaken mislukt', error);
+          }
+        }
+        CRM.logActiviteit('klant', naam, 'systeem', 'Relatie aangemaakt');
+        CRM.toast('Relatie aangemaakt','ok');
+        /* Het venster NIET zelf sluiten: modal.close() zet een stap terug in
+           de geschiedenis en die landde ná onze navigatie, zodat je op het
+           overzicht bleef staan. CRM.ga sluit openstaande panelen zelf, op
+           de manier die met de geschiedenis klopt. */
+        klantOpen = naam;
+        CRM.ga('klanten', {id: naam});
+      };
+      m.querySelector('#nr_ok').onclick = maak;
+      naamEl.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); maak(); } };
+    }});
+}
+CRM.nieuweRelatie = nieuweRelatie;
 
 /* ─── Vacature toevoegen / bewerken ───────────────────────────── */
 /* k mag null zijn: dan vraagt het venster zelf om de klant. Zo kun je ook

@@ -368,14 +368,24 @@ function waaromHTML(k, lc, act, af, vandaag){
      handmatige taak — "gesprek ingepland" zonder wanneer is precies wat
      Tjeerd miste (5 aug 2026). Outlook (agendaOpBord) mag deze regel
      daarna nog vervangen. */
+  /* In de kolom "Gesprek ingepland" ís de datum het hele punt van die fase.
+     Daar krijgt de regel daarom een eigen label en een accent, en zegt hij
+     het expliciet als er géén datum bekend is — een gesprek dat "ingepland"
+     heet zonder wanneer is een gat (naam: Tjeerd, 7 aug 2026). */
+  const isGesprek = faseVan(k) === 'Gesprek ingepland';
+  const stapL = isGesprek ? 'gesprek op' : 'volgende stap';
+  const stapK = 's-w-stap' + (isGesprek ? ' s-w-gesprek' : '');
   const stapRegel = af
-    ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
+    ? `<div class="s-w-r ${stapK}"><span class="s-w-l">${stapL}</span>
         <span class="s-w-v trunc" title="${h(af.titel||'Afspraak')}"><span class="num">${
           h(CRM.fmtDateShort(af.datum))}${af.tijd ? ' · ' + h(af.tijd) : ''}</span> ${h(af.titel||'Afspraak')}</span></div>`
     : taak
-    ? `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
+    ? `<div class="s-w-r ${stapK}"><span class="s-w-l">${stapL}</span>
         <span class="s-w-v trunc" title="${h(taak.tekst)}">${
           taak.datum ? `<span class="num">${h(CRM.fmtDateShort(taak.datum))}</span> ` : ''}${h(taak.tekst)}</span></div>`
+    : isGesprek
+    ? `<div class="s-w-r geen ${stapK}"><span class="s-w-l">${stapL}</span>
+        <span class="s-w-v">datum nog niet vastgelegd</span></div>`
     : ((stil || hangt) ? `<div class="s-w-r geen s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v">niets gepland</span></div>` : '');
 
@@ -474,7 +484,9 @@ async function agendaOpBord(){
     /* De datum stáát voorop. Achteraan viel hij weg zodra de titel werd
        afgekapt ("Afspraak Arcelor Mittal De…") — en juist het wanneer is
        wat je in één oogopslag wilt zien (Tjeerd, 3 aug 2026). */
-    const regel = `<div class="s-w-r s-w-stap"><span class="s-w-l">volgende stap</span>
+    const gesprekKaart = kaart.closest('.bcol')?.dataset.fase === 'Gesprek ingepland';
+    const regel = `<div class="s-w-r s-w-stap${gesprekKaart?' s-w-gesprek':''}"><span class="s-w-l">${
+      gesprekKaart ? 'gesprek op' : 'volgende stap'}</span>
       <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}${wanneer ? ' — ' + h(wanneer) : ''}">${
         wanneer ? `<span class="num">${h(wanneer)}</span> ` : ''}${h(e.titel||'Afspraak')}</span></div>`;
     const stap = kaart.querySelector('.s-w-stap');
@@ -1962,7 +1974,8 @@ function tekenInhoud(){
         /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
            knop die iets nieuws maakt. */
         : tab==='activiteit' ? ''
-        : `<button class="btn" data-nieuwtaak>+ Opvolgtaak</button>`}
+        : `<button class="btn ghost" data-nieuwerelatie>+ Relatie</button>
+           <button class="btn" data-nieuwtaak>+ Opvolgtaak</button>`}
       </div>
     </div>`;
 
@@ -2006,6 +2019,13 @@ function bindInhoud(){
   CRM.$$('[data-tab]', mountEl).forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
   CRM.$$('[data-radar]', mountEl).forEach(b=>b.onclick=()=>{ tab='radar'; V.zet('tab',tab); tekenActies(); tekenInhoud(); });
   /* Het gedeelde taakvenster — mét de snelkeuzes morgen/1w/2w/1m. */
+  /* Een relatie aanmaken vanaf het salesbord: je hoort een naam aan de
+     telefoon en wilt hem meteen kwijt, zonder eerst naar Relaties
+     (naam: Tjeerd, 7 aug 2026). Het venster woont in js/klanten.js. */
+  CRM.$$('[data-nieuwerelatie]', mountEl).forEach(b => b.onclick = () => {
+    if(CRM.nieuweRelatie) CRM.nieuweRelatie();
+    else CRM.ga('klanten');
+  });
   CRM.$$('[data-nieuwtaak]', mountEl).forEach(b=>b.onclick=async ()=>{
     const rij = await CRM.taakModal({});
     if(rij) tekenInhoud();

@@ -219,3 +219,12 @@ table.tbl td.s-balk .bar{height:6px;min-width:40px}
 .bcol[data-fase="Onderhandeling"]{--ph:#c98a2e}
 .bcol[data-fase="Afgerond"]{--ph:#3d9968}
 .bcol[data-fase="Project uitgesteld"]{--ph:#8a8f7a}
+
+/* De kolom "Gesprek ingepland" draait om één ding: wanneer. Die regel
+   krijgt daarom een accent in plaats van dezelfde grijstint als de rest
+   (7 aug 2026). Staat er geen datum, dan valt dat juist op. */
+.s-w-gesprek .s-w-l{color:var(--olive);font-weight:700}
+.s-w-gesprek .s-w-v{color:var(--ink);font-weight:600}
+.s-w-gesprek .num{color:var(--olive)}
+.s-w-r.geen.s-w-gesprek .s-w-l{color:var(--oranje)}
+.s-w-r.geen.s-w-gesprek .s-w-v{color:var(--oranje);font-weight:600}

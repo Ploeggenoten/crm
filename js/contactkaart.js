@@ -550,6 +550,12 @@ function heroHtml(ct, klant){
    ernaast zodat vastleggen en opvolgen één beweging is. */
 function vastlegHtml(ct){
   return `<div class="card ck-vastleg"><div class="card-b">
+    ${/* Dezelfde knoppenrij als op de relatiekaart — gebeld, geen gehoor,
+         voicemail, WhatsApp, gemaild, notitie, taak (naam: Tjeerd, 7 aug
+         2026). Eén bron in js/klanten.js, dus ze kunnen niet uit elkaar
+         lopen. Hier hoeft niet gevraagd te worden mét wie: je staat al op
+         de kaart van die persoon. */
+      CRM.uitkomsten ? CRM.uitkomsten.html() : ''}
     <textarea id="ck_snelnotitie" rows="2"
       placeholder="Wat is er besproken of afgesproken met ${h(ct.naam)}?"></textarea>
     <div class="row tight" style="margin-top:8px">
@@ -862,6 +868,13 @@ function bindKaart(mount, ct, klant){
     CRM.logActiviteit('contact', String(ct.id), 'bel', 'Belpoging vanaf de kaart');
     setTimeout(opnieuw, 400);
   });
+
+  /* De gedeelde uitkomstknoppen. De relatie waar deze persoon bij hoort
+     gaat mee, zodat "laatste contact" van die relatie ook meeloopt. */
+  if(CRM.uitkomsten){
+    const kl = (CRM.state.clients||[]).find(x => x.naam === ct.klant) || {naam: ct.klant};
+    CRM.uitkomsten.bind(mount, kl, opnieuw, {contact: ct});
+  }
 
   /* Snel vastleggen. Opslaan + opvolgtaak bewaart éérst de notitie: ook
      als de taak daarna wordt geannuleerd is het gesprek vastgelegd — de
