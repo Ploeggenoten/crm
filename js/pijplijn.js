@@ -531,8 +531,10 @@ function klantGroepen(list){
 }
 function ooKolom(list){
   const d = D();
-  const sess = d.ooSessies().slice()
-    .filter(s => !P.klant || s.klant === P.klant)
+  /* Filteren op CRM.oo.klant(): de klant komt tegenwoordig uit de vacature
+     waar de sessie op gehouden wordt, niet meer uit een los tekstveld. */
+  const sess = CRM.oo.alle().slice()
+    .filter(s => !P.klant || CRM.oo.klant(s) === P.klant)
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
   const getoond = new Set(sess.map(s => String(s.id)));
   let uit = '', cw = null;
@@ -541,9 +543,19 @@ function ooKolom(list){
       const wk = weekKey(s.datum);
       if(wk !== cw){ cw = wk; uit += `<div class="rc-wdiv ${isDezeWeek(s.datum)?'nu':''}">${h(weekLabel(s.datum))}</div>`; }
     }
-    const n = d.sessLeden(s.id).length;
-    uit += `<button class="rc-sess ${n>=4?'goed':n===3?'matig':'laag'}" data-oo="${h(s.id)}" title="Sessie beheren">
-      <span>${h(s.klant||'?')} · ${h(s.functie||'')}<small>${h(CRM.fmtDay(s.datum)||'geen datum')}${s.locatie?' · '+h(s.locatie):''}</small></span>
+    /* De sessiekop is een DOORKLIK geworden, geen beheerknop meer (naam:
+       Tjeerd, 7 aug 2026: "dit moet vanuit de vacature-, relatie- of
+       kandidatenkaart gaan"). Dit bord laat zien wat er loopt; regelen doe
+       je op de kaart waar de sessie bij hoort. Zonder vacature — oude
+       sessies — brengt hij je naar de klant. */
+    const oo = CRM.oo;
+    const n = oo.leden(s.id).length;
+    const vac = oo.vacature(s);
+    const heen = vac ? `data-oovac="${h(String(vac.id))}"` : `data-ooklant="${h(oo.klant(s)||'')}"`;
+    uit += `<button class="rc-sess ${n>=4?'goed':n===3?'matig':'laag'}" ${heen}
+      title="${vac ? 'Naar de vacaturekaart — daar beheer je de sessie' : 'Naar de relatiekaart — daar beheer je de sessie'}">
+      <span>${h(oo.klant(s)||'?')} · ${h(oo.functie(s)||'')}<small>${h(CRM.fmtDay(s.datum)||'geen datum')}${
+        s.tijd?' · '+h(s.tijd):''}${oo.locatie(s)?' · '+h(oo.locatie(s)):''}</small></span>
       <b class="num">${n}/4</b></button>`;
     uit += list.filter(c => String(c.ooId) === String(s.id)).map(kaartHtml).join('');
   });
@@ -654,7 +666,10 @@ function tekenKolommen(){
     };
   });
   CRM.$$('[data-move]', board).forEach(b => b.onclick = e => { e.stopPropagation(); CRM.kandidaatFasePicker(b.dataset.move); });
-  CRM.$$('[data-oo]', board).forEach(b => b.onclick = e => { e.stopPropagation(); d.ooModal(b.dataset.oo); });
+  CRM.$$('[data-oovac]', board).forEach(b => b.onclick = e => {
+    e.stopPropagation(); CRM.ga('hot', {id: b.dataset.oovac}); });
+  CRM.$$('[data-ooklant]', board).forEach(b => b.onclick = e => {
+    e.stopPropagation(); CRM.ga('klanten', {id: b.dataset.ooklant}); });
   /* Alleen nog de kolommen zijn sleepdoel — de uitvalstrook is weg. */
   CRM.$$('.bcol', board).forEach(zone => {
     zone.ondragover  = e => { e.preventDefault(); zone.classList.add('over'); };
@@ -860,11 +875,11 @@ function agendaItems(){
   });
   /* O&O-sessies: de klantfilter geldt, de rest van de filters gaat over
      kandidaten en zegt niets over een sessie. */
-  (d.ooSessies ? d.ooSessies() : []).forEach(s => {
-    if(P.klant && s.klant !== P.klant) return;
+  CRM.oo.alle().forEach(s => {
+    if(P.klant && CRM.oo.klant(s) !== P.klant) return;
     if(!binnen(s.datum)) return;
     uit.push({soort:'oo', sleutel:agendaSleutel(s.datum, s.tijd), datum:s.datum, tijd:s.tijd, s,
-              leden: d.sessLeden ? d.sessLeden(s.id).length : 0});
+              leden: CRM.oo.leden(s.id).length});
   });
   return uit.sort((a,b) => a.sleutel.localeCompare(b.sleutel));
 }
@@ -893,12 +908,15 @@ function tekenAgenda(){
          onduidelijk om in een lange lijst te scannen (naam: Tjeerd, 7 aug
          2026). Een O&O-sessie heeft geen fase en houdt het paars van het
          bord. */
-      return `<div class="pp-ag-rij pp-ag-oo" data-oo="${h(s.id)}" role="button" tabindex="0"
+      const ooVac = CRM.oo.vacature(s);
+      return `<div class="pp-ag-rij pp-ag-oo" ${ooVac ? `data-oovac="${h(String(ooVac.id))}"`
+        : `data-ooklant="${h(CRM.oo.klant(s)||'')}"`} role="button" tabindex="0"
         style="--fase:#9575b8">
         <span class="pp-ag-tijd num">${h(i.tijd || '—')}</span>
         <span class="pp-ag-wie"><b>O&amp;O-sessie</b>
-          <span class="sub">${h(s.functie || 'functie onbekend')}${s.locatie ? ' · ' + h(s.locatie) : ''}</span></span>
-        <span class="pp-ag-klant">${h(s.klant || '—')}</span>
+          <span class="sub">${h(CRM.oo.functie(s) || 'functie onbekend')}${
+            CRM.oo.locatie(s) ? ' · ' + h(CRM.oo.locatie(s)) : ''}</span></span>
+        <span class="pp-ag-klant">${h(CRM.oo.klant(s) || '—')}</span>
         <span class="pp-ag-fase">O&amp;O sessie</span>
         <span class="pp-ag-extra num">${i.leden}/4 deelnemers</span>
       </div>`;
@@ -933,8 +951,10 @@ function tekenAgenda(){
     el.onclick = ga;
     el.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); ga(); } };
   });
-  wrap.querySelectorAll('[data-oo]').forEach(el => {
-    const ga = () => { const f = D().ooModal; if(f) f(el.dataset.oo); };
+  wrap.querySelectorAll('[data-oovac],[data-ooklant]').forEach(el => {
+    const ga = () => el.dataset.oovac
+      ? CRM.ga('hot', {id: el.dataset.oovac})
+      : CRM.ga('klanten', {id: el.dataset.ooklant});
     el.onclick = ga;
     el.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); ga(); } };
   });
