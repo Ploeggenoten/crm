@@ -928,3 +928,35 @@ CRM.volledigheid = c => {
   const basis = (CRM.VELDEN_VERPLICHT.length - mist.length) / CRM.VELDEN_VERPLICHT.length * 75;
   return {pct: Math.round(basis + extra*8.33), mist};
 };
+
+/* ─── Adres uit één regel halen (7 aug 2026) ──────────────────────
+   "Wasbeekerlaan 6 2171 AE Sassenheim" plakken en klaar — in plaats van
+   straat, postcode en plaats om beurten in drie vakjes typen (naam:
+   Tjeerd). Werkt met komma's, regeleinden of alleen spaties, en met een
+   postcode mét of zonder spatie.
+
+   De postcode is het anker: alles ervóór is de straat met huisnummer,
+   alles erna de plaats. Staat er geen postcode, dan valt hij terug op de
+   komma; en zonder komma is een tekst mét cijfer een straat en zonder
+   cijfer een plaatsnaam. Wat hij niet zeker weet laat hij leeg — een
+   verkeerd ingevulde postcode is erger dan een lege. */
+CRM.adresSplits = tekst => {
+  const ruw = String(tekst == null ? '' : tekst).replace(/[\r\n]+/g, ', ').replace(/\s+/g, ' ').trim();
+  const leeg = {adres:'', postcode:'', plaats:''};
+  if(!ruw) return leeg;
+
+  const pc = ruw.match(/\b(\d{4})\s?([A-Za-z]{2})\b/);
+  if(pc){
+    const voor = ruw.slice(0, pc.index).replace(/[,\s]+$/, '').trim();
+    const na   = ruw.slice(pc.index + pc[0].length).replace(/^[,\s]+/, '').trim();
+    return {
+      adres: voor.replace(/,$/, '').trim(),
+      postcode: pc[1] + ' ' + pc[2].toUpperCase(),
+      plaats: na.replace(/^,/, '').trim()
+    };
+  }
+  const delen = ruw.split(',').map(x => x.trim()).filter(Boolean);
+  if(delen.length > 1) return {adres: delen.slice(0, -1).join(', '), postcode:'', plaats: delen[delen.length-1]};
+  /* Eén stuk tekst: met een cijfer erin is het een straat, anders een plaats. */
+  return /\d/.test(ruw) ? {adres: ruw, postcode:'', plaats:''} : {adres:'', postcode:'', plaats: ruw};
+};

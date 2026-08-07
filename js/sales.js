@@ -384,8 +384,12 @@ function waaromHTML(k, lc, act, af, vandaag){
         <span class="s-w-v trunc" title="${h(taak.tekst)}">${
           taak.datum ? `<span class="num">${h(CRM.fmtDateShort(taak.datum))}</span> ` : ''}${h(taak.tekst)}</span></div>`
     : isGesprek
+    /* Klikbaar: "waar leg ik dat dan vast?" (naam: Tjeerd, 7 aug 2026).
+       Opent hetzelfde inplan-venster als de relatiekaart, zonder dat je
+       eerst het bord hoeft te verlaten. */
     ? `<div class="s-w-r geen ${stapK}"><span class="s-w-l">${stapL}</span>
-        <span class="s-w-v">datum nog niet vastgelegd</span></div>`
+        <button type="button" class="s-w-v s-w-plan" data-plan="${h(k.naam)}"
+          title="Gesprek inplannen bij ${h(k.naam)}">datum vastleggen →</button></div>`
     : ((stil || hangt) ? `<div class="s-w-r geen s-w-stap"><span class="s-w-l">volgende stap</span>
         <span class="s-w-v">niets gepland</span></div>` : '');
 
@@ -2022,6 +2026,14 @@ function bindInhoud(){
   /* Een relatie aanmaken vanaf het salesbord: je hoort een naam aan de
      telefoon en wilt hem meteen kwijt, zonder eerst naar Relaties
      (naam: Tjeerd, 7 aug 2026). Het venster woont in js/klanten.js. */
+  /* Inplannen vanaf de kaart: klik niet doorgeven aan de kaart zelf,
+     anders navigeer je tegelijk naar de klantkaart. */
+  CRM.$$('[data-plan]', mountEl).forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    if(typeof CRM.klantInplannen === 'function')
+      CRM.klantInplannen(b.dataset.plan, {titel:'Kennismaking ' + b.dataset.plan});
+    else CRM.ga('klanten', {id: b.dataset.plan});
+  });
   CRM.$$('[data-nieuwerelatie]', mountEl).forEach(b => b.onclick = () => {
     if(CRM.nieuweRelatie) CRM.nieuweRelatie();
     else CRM.ga('klanten');

@@ -984,34 +984,6 @@ function kaart(mount, acties, naam){
   bindFaseWissel(mount.querySelector('#gg_fase'));
   bindFaseWissel(mount.querySelector('#kop_fase'));
 
-  /* Rail: team — inline bewerken in dezelfde stijl als de kandidaatvelden. */
-  const teamEl = mount.querySelector('#gg_team');
-  if(teamEl){
-    const startTeam = () => {
-      const inp = document.createElement('input');
-      inp.type = 'text'; inp.className = 'kl-gg-inp'; inp.value = k.team || '';
-      teamEl.replaceWith(inp); inp.focus(); inp.select();
-      let klaar = false;
-      const sluit = async bewaren => {
-        if(klaar) return; klaar = true;
-        if(bewaren){
-          const nieuw = inp.value.trim();
-          if(nieuw !== (k.team||'')) await bewaarTeam(k, nieuw);
-        }
-        inp.replaceWith(teamEl);
-        teamEl.textContent = k.team || 'invullen…';
-        teamEl.classList.toggle('leeg', !k.team);
-      };
-      inp.onblur = () => sluit(true);
-      inp.onkeydown = e => {
-        if(e.key === 'Enter'){ e.preventDefault(); sluit(true); }
-        if(e.key === 'Escape'){ e.preventDefault(); sluit(false); }
-      };
-    };
-    teamEl.onclick = startTeam;
-    teamEl.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); startTeam(); } };
-  }
-
   /* Rail: contactpersonen. Elke regel is nu een knop naar de eigen kaart van
      die persoon — daar staat de geschiedenis, wie er via hem is aangenomen en
      hoe lang je hem niet gesproken hebt. Zie js/contactkaart.js. */
@@ -1196,8 +1168,11 @@ function gegevensHtml(k){
       ${rij('Plaats',   k.locatie ? h(k.locatie) : '')}
       ${rij('Sinds',    k.sinds ? `<span class="num">${h(maandJaar(k.sinds))}</span>` : '')}
       ${rij('Eigenaar', k.eigenaar ? h(k.eigenaar) : '')}
-      ${rij('Team', `<span class="kl-gg-w${k.team?'':' leeg'}" id="gg_team" tabindex="0" role="button"
-        title="Klik om te wijzigen">${k.team ? h(k.team) : 'invullen…'}</span>`)}
+      ${/* "Team" stond hier naast "Eigenaar" en betekende hetzelfde: wie
+           gaat er over deze relatie (naam: Tjeerd, 7 aug 2026). Het werd
+           nergens op gefilterd of gerapporteerd — alleen opgeslagen en
+           getoond. Eén veld is genoeg; de kolom blijft bestaan zodat
+           ingevulde waarden niet verdwijnen. */''}
       ${rij('Aangemaakt', k.aangemaakt ? `<span class="num">${h(CRM.fmtDate(k.aangemaakt))}</span>` : '')}
     </div></div>`;
 }
@@ -3540,7 +3515,6 @@ function klantModal(k){
           <option value=""${!k.fase?' selected':''}>Zonder fase</option>
           ${CRM.SALES_FASES.map(f=>`<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
         <div class="f-row"><label>Eigenaar (AM)</label><input type="text" id="g_eig" value="${h(k.eigenaar||'')}"></div>
-        <div class="f-row"><label>Team</label><input type="text" id="g_team" value="${h(k.team||'')}" placeholder="Bijv. Tjeerd of Tjerk"></div>
         <div class="f-row"><label>Branche</label><input type="text" id="g_br" value="${h(k.branche||'')}"></div>
         <div class="f-row"><label>Locatie</label><input type="text" id="g_loc" value="${h(k.locatie||'')}"></div>
         <div class="f-row"><label>Telefoon</label><input type="tel" id="g_tel" value="${h(k.telefoon||'')}"></div>
@@ -3574,6 +3548,20 @@ function klantModal(k){
        of eerder automatisch gevuld — wat de AM zelf typt blijft staan.
        Een mislukte lookup is stil: het formulier mag er nooit last van
        hebben. */
+    /* Een volledig adres plakken — "Wasbeekerlaan 6 2171 AE Sassenheim" —
+       verdeelt zichzelf over straat, postcode en plaats (naam: Tjeerd,
+       7 aug 2026). Alleen als er iets uit te halen valt; wat je zelf al
+       had ingevuld blijft staan. */
+    { const adresVeld = m.querySelector('#g_adres');
+      if(adresVeld) adresVeld.addEventListener('blur', () => {
+        const d = CRM.adresSplits(adresVeld.value);
+        if(!d.postcode && !d.plaats) return;
+        if(d.adres) adresVeld.value = d.adres;
+        const zet = (sel, val) => { const el = m.querySelector(sel);
+          if(el && val && !el.value.trim()) el.value = val; };
+        zet('#g_pc', d.postcode); zet('#g_pl', d.plaats); zet('#g_loc', d.plaats);
+      });
+    }
     const pcVeld = m.querySelector('#g_pc');
     if(pcVeld){
       let autoPc = false;
@@ -3626,7 +3614,6 @@ function klantModal(k){
       if(faseGewisseld) w.fase_sinds = CRM.todayISO();
       /* Team los opslaan: de kolom kan ontbreken zolang de aanvulling-SQL
          niet gedraaid is — dan mag de rest van de wijziging niet sneuvelen. */
-      const team = m.querySelector('#g_team').value.trim();
       const nieuweNaam = m.querySelector('#g_naam').value.trim();
       CRM.modal.close();
       /* Eerst de gewone velden onder de huidige naam, dán pas hernoemen —
@@ -3634,7 +3621,6 @@ function klantModal(k){
       await bewaarKlant(k.naam, w);
       if(faseGewisseld)
         CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oudeFase||'—'} → ${nieuweFase||'—'}`);
-      if(team !== (k.team||'')) await bewaarTeam(k, team);
       if(nieuweNaam && nieuweNaam !== k.naam){
         const ok = await CRM.bevestig(`"${k.naam}" hernoemen naar "${nieuweNaam}"? Alle koppelingen — kandidaten, vacatures, contactpersonen, taken en geschiedenis — verhuizen mee.`);
         if(ok && await hernoemKlant(k, nieuweNaam)){
