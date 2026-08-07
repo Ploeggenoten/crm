@@ -482,3 +482,10 @@ label.kd-taak input{margin-top:3px}
   .kd-ervrij1,.kd-ervlijst > .kd-ervrij1{grid-template-columns:minmax(0,1fr) 26px}
   .kd-ervrij1 > .kd-greep{display:none}
 }
+
+/* Uitkomst van een Flex-plaatsing: marge per uur, per week en tot de
+   overname. Eén regel eronder, gescheiden door puntjes — het zijn drie
+   antwoorden op dezelfde vraag, geen lijst. */
+.kd-flexuit{margin-top:6px;font-size:12.5px;color:var(--txt-2);line-height:1.6}
+.kd-flexuit .num{color:var(--ink)}
+.kd-flexpunt{margin:0 8px;color:var(--line-2)}

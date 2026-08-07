@@ -935,8 +935,13 @@ const CONTRACT_VELDEN = [
    dus af van het type plaatsing — anders vraagt de kaart een uitzendkracht
    om een eindejaarsuitkering en een W&S-kandidaat om een uurloon
    (naam: Tjeerd, 7 aug 2026). */
+const perUur = v => v == null || v === '' ? '' : '€' + Number(v).toFixed(2).replace('.', ',') + ' p/uur';
 const FLEX_VELDEN = [
-  {k:'uurloon',      lbl:'Bruto uurloon',   t:'number', toon:v => v == null || v === '' ? '' : CRM.euro(v) + ' p/uur'},
+  {k:'uurloon',      lbl:'Bruto uurloon',   t:'number', toon:perUur},
+  /* Wat er werkelijk gefactureerd wordt. Vul je dit in, dan rekent de kaart
+     de marge daarmee uit in plaats van met de factor uit de afspraak — dat
+     is wat je écht verdient (naam: Tjeerd, 7 aug 2026). */
+  {k:'tarief',       lbl:'Factuurtarief',   t:'number', toon:perUur, hint:'leeg = reken met de factor'},
   {k:'uren',         lbl:'Uren per week',   t:'number', toon:v => v == null || v === '' ? '' : v + ' uur'}
 ];
 const SALARIS_VELDEN = [
@@ -2847,25 +2852,50 @@ const afspraakVan = c => CRM.fee.voorKlant(c.klant, c.geplaatstOp || null, isFle
 function flexRegel(c){
   if(!c.uurloon) return '<span class="meta">Vul het bruto uurloon in — daarmee rekent de finance-app het tarief uit.</span>';
   if(!CRM.magOpbrengstZien || !CRM.magOpbrengstZien())
-    return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent het tarief uit.</span>';
-  let f = null;
+    return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent de marge uit.</span>';
+
+  let a = null, factor = null, overname = null;
   try{
-    f = CRM.fee.pctVoor(c, afspraakVan(c)).pct;
-  }catch(e){ f = null; }
-  if(f == null)
-    return `<span class="meta">Nog geen uitzendfactor voor deze functie bij ${h(c.klant||'deze klant')} —
-      leg die vast op de klantkaart bij Commerciële afspraken.</span>`;
-  const tarief = c.uurloon * f;
+    a = afspraakVan(c);
+    factor = CRM.fee.pctVoor(c, a).pct;
+    overname = a && a.overname_uren != null ? Number(a.overname_uren) : null;
+  }catch(e){}
+
+  /* Het factuurtarief wint van de factor: dat is wat er werkelijk in
+     rekening wordt gebracht. Staat het er niet, dan leiden we het af. */
+  const uitFactuur = c.tarief != null && c.tarief !== '';
+  const tarief = uitFactuur ? Number(c.tarief) : (factor != null ? c.uurloon * factor : null);
+  if(tarief == null)
+    return `<span class="meta">Vul het factuurtarief in, of leg een omrekenfactor voor deze functie vast
+      bij ${h(c.klant||'deze klant')} op de klantkaart — dan rekent de kaart de marge zelf uit.</span>`;
+
   const marge = tarief - c.uurloon;
-  const perWeek = c.uren ? marge * c.uren : null;
-  /* Uurbedragen op de cent: het verschil tussen 39,60 en 40,00 is per week
-     16 euro en per jaar bijna 800. Weekbedragen mogen wél afgerond. */
   const uur = n => '€' + n.toFixed(2).replace('.', ',');
-  return `Klanttarief ≈ <b class="num">${uur(tarief)}</b> per uur
-    <span class="meta">factor ${h(String(f).replace('.', ','))}× · marge ${uur(marge)} p/uur${
-      perWeek != null ? ' · ' + CRM.euro(Math.round(perWeek)) + ' per week bij ' + c.uren + ' uur'
-                      : ' — vul de uren per week in voor de weekmarge'}</span>`;
+  const bron = uitFactuur
+    ? (factor != null
+        ? `factuurtarief · komt neer op factor ${(tarief / c.uurloon).toFixed(2).replace('.', ',')}× (afspraak: ${String(factor).replace('.', ',')}×)`
+        : 'factuurtarief')
+    : `afgeleid uit factor ${String(factor).replace('.', ',')}×`;
+
+  const regels = [`marge ${uur(marge)} per uur`];
+  if(c.uren) regels.push(`${CRM.euro(Math.round(marge * c.uren))} per week bij ${c.uren} uur`);
+  /* Wat levert deze plaatsing op tot de klant hem kosteloos mag overnemen?
+     Dat is de horizon waarop je bij uitzenden stuurt (naam: Tjeerd, 7 aug
+     2026). Zonder overnamegrens loopt het door en zeggen we dat ook. */
+  if(overname){
+    const tot = marge * overname;
+    const wkn = c.uren ? Math.round(overname / c.uren) : null;
+    regels.push(`<b class="num">${CRM.euro(Math.round(tot))}</b> tot de overname bij ${overname} uur${
+      wkn ? ` — ongeveer ${wkn} weken` : ''}`);
+  }else if(c.uren){
+    regels.push(`${CRM.euro(Math.round(marge * c.uren * 52))} per jaar — geen overnamegrens afgesproken`);
+  }
+
+  return `Klanttarief <b class="num">${uur(tarief)}</b> per uur
+    <span class="meta">${h(bron)}</span>
+    <div class="kd-flexuit">${regels.join('<span class="kd-flexpunt">·</span>')}</div>`;
 }
+
 function totaalRegel(c){
   if(isFlex(c)) return flexRegel(c);
   const bereken = D().totaalJaarSalaris;

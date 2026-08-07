@@ -351,3 +351,7 @@ end $$;
 -- ═══════════════════════════════════════════════════════════════
 alter table candidates add column if not exists uurloon numeric;
 alter table candidates add column if not exists uren    numeric;
+-- Wat we de klant per uur factureren. De factor op de klantkaart is de
+-- afspraak; dit is wat er werkelijk in rekening gebracht wordt, en dus
+-- waarmee de echte marge te berekenen valt.
+alter table candidates add column if not exists tarief  numeric;

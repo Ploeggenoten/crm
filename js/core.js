@@ -517,6 +517,10 @@ CRM.rowToCand = r => ({
      rekenen (7 aug 2026). Nul is een ingevulde waarde, net als bij de
      toeslagen hierboven. */
   uurloon:r.uurloon==null?null:Number(r.uurloon), uren:r.uren==null?null:Number(r.uren),
+  /* Wat we de klant per uur factureren. De factor uit de afspraak is een
+     afspraak; dit is wat er werkelijk op de factuur staat en dus wat de
+     marge bepaalt. Leeg = reken met de factor. */
+  tarief:r.tarief==null?null:Number(r.tarief),
   cv:(r.cv&&typeof r.cv==='object')?r.cv:null, leadId:r.lead_id||'',
   ster:Number(r.ster)||0, beschikbaar:r.beschikbaar||'', ploegen:r.ploegen||'',
   talen:r.talen||'', rijbewijs:r.rijbewijs||'', vervoer:r.vervoer||'', golden:!!r.golden
@@ -542,6 +546,7 @@ CRM.candToRow = c => ({
   adres:c.adres||'', postcode:c.postcode||'',
   uurloon:c.uurloon==null||c.uurloon===''?null:Number(c.uurloon),
   uren:c.uren==null||c.uren===''?null:Number(c.uren),
+  tarief:c.tarief==null||c.tarief===''?null:Number(c.tarief),
   vacature_id:c.vacatureId||null, cv:c.cv||null, lead_id:c.leadId||'',
   ster:c.ster||0, beschikbaar:c.beschikbaar||'', ploegen:c.ploegen||'',
   talen:c.talen||'', rijbewijs:c.rijbewijs||'', vervoer:c.vervoer||'', golden:!!c.golden

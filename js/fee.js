@@ -372,10 +372,13 @@ function watMist(kandidaat, afspraak){
     const uren = getal(c.uren);
     if(uren == null || uren <= 0) bij('uren', 'Uren per week', KAND);
     if(!datum(c.start)) bij('start', 'Startdatum', 'Kandidaatkaart');
-    if(magAfspraakZien){
+    /* Het factuurtarief op de kandidaat is het echte bedrag; staat dat
+       erin, dan is de factor uit de afspraak niet meer nodig om de marge
+       te kennen. Ontbreken ze allebei, dan valt er niets te rekenen. */
+    if(getal(c.tarief) == null && magAfspraakZien){
       if(!a.er) bij('afspraak', 'Uitzendafspraak met deze klant', 'Klantkaart › Commerciële afspraken');
       else if(pctVoor(c, afspraak).pct == null)
-        bij('factor', 'Omrekenfactor voor deze functie', 'Klantkaart › Commerciële afspraken');
+        bij('tarief', 'Factuurtarief per uur (of een omrekenfactor op de klantkaart)', KAND);
     }
     return mist;
   }
