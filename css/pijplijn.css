@@ -213,3 +213,13 @@
   .pp-ag-klant,.pp-ag-fase,.pp-ag-extra{grid-column:2}
   .pp-ag-extra{justify-content:flex-start}
 }
+
+/* De hele regel draagt de fasekleur (7 aug 2026): een chip alleen was in een
+   lange lijst te zoeken. Streep links plus een lichte waas van dezelfde
+   kleur — genoeg om te scannen, niet zo fel dat de lijst een kermis wordt. */
+.pp-ag-rij{border-left:4px solid var(--fase, var(--line-2));
+  background:color-mix(in srgb, var(--fase, transparent) 7%, transparent);
+  padding-left:12px}
+.pp-ag-rij:hover{background:color-mix(in srgb, var(--fase, transparent) 15%, transparent)}
+.pp-ag-fase{font-size:12px;font-weight:700;color:var(--fase, var(--txt-2));
+  letter-spacing:.2px;filter:brightness(.82)}

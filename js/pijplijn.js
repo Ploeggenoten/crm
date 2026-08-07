@@ -884,24 +884,30 @@ function tekenAgenda(){
   const rij = i => {
     if(i.soort === 'oo'){
       const s = i.s;
-      return `<div class="pp-ag-rij pp-ag-oo" data-oo="${h(s.id)}" role="button" tabindex="0">
+      /* De hele regel krijgt de kleur van de fase — een chip alleen was te
+         onduidelijk om in een lange lijst te scannen (naam: Tjeerd, 7 aug
+         2026). Een O&O-sessie heeft geen fase en houdt het paars van het
+         bord. */
+      return `<div class="pp-ag-rij pp-ag-oo" data-oo="${h(s.id)}" role="button" tabindex="0"
+        style="--fase:#9575b8">
         <span class="pp-ag-tijd num">${h(i.tijd || '—')}</span>
         <span class="pp-ag-wie"><b>O&amp;O-sessie</b>
           <span class="sub">${h(s.functie || 'functie onbekend')}${s.locatie ? ' · ' + h(s.locatie) : ''}</span></span>
         <span class="pp-ag-klant">${h(s.klant || '—')}</span>
-        <span class="pp-ag-fase"><span class="chip purple">O&amp;O sessie</span></span>
+        <span class="pp-ag-fase">O&amp;O sessie</span>
         <span class="pp-ag-extra num">${i.leden}/4 deelnemers</span>
       </div>`;
     }
     const c = i.c;
     const v = c.vacatureId ? (CRM.state.vacs||[]).find(x => String(x.id) === String(c.vacatureId)) : null;
     const functie = (v && v.functie) || c.functie || '';
-    return `<div class="pp-ag-rij" data-kand="${h(c.id)}" role="button" tabindex="0">
+    return `<div class="pp-ag-rij" data-kand="${h(c.id)}" role="button" tabindex="0"
+      style="--fase:${h(CRM.faseKleur(i.fase) || 'var(--line-2)')}">
       <span class="pp-ag-tijd num">${h(c.tijd || '—')}</span>
       <span class="pp-ag-wie"><b>${h(c.naam)}</b>
         <span class="sub">${h(functie || 'functie nog niet ingevuld')}</span></span>
       <span class="pp-ag-klant">${h(c.klant || '—')}</span>
-      <span class="pp-ag-fase"><span class="chip" style="border-color:${h(CRM.faseKleur(i.fase))}">${h(i.fase)}</span></span>
+      <span class="pp-ag-fase">${h(i.fase)}</span>
       <span class="pp-ag-extra">${c.type ? `<span class="chip">${h(c.type)}</span>` : ''}${
         c.rec ? `<span class="meta">${h(c.rec)}</span>` : ''}</span>
     </div>`;

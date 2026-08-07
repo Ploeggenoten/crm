@@ -863,7 +863,20 @@ const VELDEN = [
   {k:'rijbewijs',   lbl:'Rijbewijs',         t:'text'},
   {k:'vervoer',     lbl:'Vervoer',           t:'select', opts:['', ...CRM.VERVOER]},
   {k:'maandloon',   lbl:'Maandloon',         t:'number', toon:v => v ? CRM.euro(v) : ''},
-  {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''}
+  {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''},
+  /* Hierheen verhuisd uit het blok bovenaan Werkervaring (naam: Tjeerd,
+     7 aug 2026). Huidige functie en huidig bedrijf stonden daar dubbel —
+     die staan al bovenaan de loopbaan. Wat er níet uit af te leiden is
+     hoort bij de kandidaatgegevens: wanneer kan hij weg, wat verdient hij
+     nu, wat wil hij verdienen, en waar komt hij vandaan. */
+  /* toon: via een pijl, want opzegNL en euroMnd staan verderop in dit
+     bestand — een directe verwijzing valt bij het laden om. */
+  {k:'cv.opzegtermijn',  lbl:'Opzegtermijn',   t:'text', toon:v => opzegNL(v)},
+  {k:'cv.huidigSalaris', lbl:'Huidig salaris', t:'text', toon:v => euroMnd(v)},
+  {k:'cv.salariswens',   lbl:'Salariswens',    t:'text', toon:v => euroMnd(v)},
+  {k:'since',            lbl:'Binnengekomen op', t:'date', toon:v => CRM.fmtDate(v)},
+  {k:'rec',              lbl:'Eigenaar',       t:'text'},
+  {k:'bron',             lbl:'Bron',           t:'select', opts:['', 'Import oud ATS', ...CRM.LEAD_BRONNEN]}
 ];
 
 /* ─── Blok "Huidige situatie" ─────────────────────────────────────
@@ -886,19 +899,10 @@ const euroMnd = v => {
   const n = Number(v);
   return isNaN(n) ? String(v) : CRM.euro(n) + ' p/mnd';
 };
-const SITUATIE_VELDEN = [
-  /* Niet `functie`: dat is de GEZOCHTE functie, waar de matching op draait.
-     Dit veld deelde ooit die sleutel, waardoor "huidige functie invullen"
-     stilzwijgend overschreef waar de kandidaat naar zoekt. */
-  {k:'cv.huidigeFunctie', lbl:'Huidige functie', t:'text'},
-  {k:'cv.werkgever',     lbl:'Huidig bedrijf',   t:'text'},
-  {k:'cv.opzegtermijn',  lbl:'Opzegtermijn',     t:'text', toon:opzegNL},
-  {k:'cv.huidigSalaris', lbl:'Huidig salaris',   t:'text', toon:euroMnd},
-  {k:'cv.salariswens',   lbl:'Salariswens',      t:'text', toon:euroMnd},
-  {k:'since',            lbl:'Binnengekomen op', t:'date', toon:v => CRM.fmtDate(v)},
-  {k:'rec',              lbl:'Eigenaar',         t:'text'},
-  {k:'bron',             lbl:'Bron',             t:'select', opts:['', 'Import oud ATS', ...CRM.LEAD_BRONNEN]}
-];
+/* SITUATIE_VELDEN is opgegaan in VELDEN (7 aug 2026). Huidige functie en
+   huidig bedrijf stonden dubbel met de bovenste regel van de loopbaan; de
+   rest — opzegtermijn, salaris, salariswens, herkomst — hoort gewoon bij de
+   kandidaatgegevens. De onderliggende velden zijn ongewijzigd. */
 /* ─── Traject en contract (verhuisd uit de bewerk-drawer) ─────────
    Dit zijn de velden waar het bord op draait: afspraak, actie, start,
    garantie, vervanging en de salariscomponenten. Ze stonden in het
@@ -936,7 +940,7 @@ const SALARIS_VELDEN = [
 ];
 
 /* Eén lijst voor het opzoeken bij inline bewerken (alle blokken). */
-const ALLE_VELDEN = VELDEN.concat(SITUATIE_VELDEN, TRAJECT_VELDEN, CONTRACT_VELDEN, SALARIS_VELDEN);
+const ALLE_VELDEN = VELDEN.concat(TRAJECT_VELDEN, CONTRACT_VELDEN, SALARIS_VELDEN);
 function lees(c, pad){
   if(pad.indexOf('cv.') === 0) return (c.cv || {})[pad.slice(3)];
   return c[pad];
@@ -1087,17 +1091,14 @@ function kaart(mount, acties, id){
      knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
      naar het lege blok en niet naar de kopregel. */
   mount.querySelectorAll('#c_cvlees, #c_cvleeg').forEach(b => b.onclick = () => cvLezen(c));
-  const werkNieuw = mount.querySelector('#c_werknieuw');
-  if(werkNieuw) werkNieuw.onclick = () => werkModal(c, null);
-  mount.querySelectorAll('[data-cvwerk]').forEach(b => b.onclick = () => werkModal(c, +b.dataset.cvwerk));
+  /* werkModal en certModal zijn vervallen: loopbaan, opleiding en
+     certificaten zijn nu gewone invulvelden op de kaart (zie
+     bindErvaring). */
   { const b = mount.querySelector('#c_cvclaude');
     if(b) b.onclick = () => CRM.cvClaude.open({kandidaat:c, onKlaar: x => CRM.ga('kandidaten', {id:x.id})}); }
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
   if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
   if(CRM.intakeAI) CRM.intakeAI.bindBlok(mount);
-  const certKnop = mount.querySelector('#c_certnieuw');
-  if(certKnop) certKnop.onclick = () => certModal(c, -1);
-  mount.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => certModal(c, Number(b.dataset.cert)));
   { const b = mount.querySelector('#c_skillnieuw');
     if(b) b.onclick = () => vaardigheidToevoegen(c); }
   mount.querySelectorAll('[data-skillweg]').forEach(b =>
@@ -1107,6 +1108,7 @@ function kaart(mount, acties, id){
   mount.querySelectorAll('[data-taalweg]').forEach(b =>
     b.onclick = () => taalWeg(c, Number(b.dataset.taalweg)));
   bindSleep(mount, c);
+  bindErvaring(mount, c);
   bindDocs(mount, c);
   /* Opvolging: check-in vastleggen, ritme uitklappen, felicitatiemail openen.
      Alle knoppen zitten in js/opvolging.js — deze kaart roept alleen aan. */
@@ -1603,7 +1605,11 @@ function meterBij(c){
    op één kaart delen dus één datum — die kwamen we nergens tegen. */
 const certSleutel = s => String(s == null ? '' : s).trim().toLowerCase();
 const isDatum = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s == null ? '' : s));
-function certLijst(c){
+/* alles=true houdt ook regels zonder naam vast. Nodig zodra de
+   certificaten een formulier zijn: een net toegevoegde, nog lege regel zou
+   anders meteen weer van het scherm verdwijnen. Overal waar er iets
+   geteld of getoond wordt blijft de gefilterde lijst gelden. */
+function certLijst(c, alles){
   const cv = c.cv || {};
   const map = (cv.certGeldig && typeof cv.certGeldig === 'object') ? cv.certGeldig : {};
   return (Array.isArray(cv.certificaten) ? cv.certificaten : []).map(x => {
@@ -1611,7 +1617,7 @@ function certLijst(c){
     const naam = String((obj ? (x.naam || x.certificaat || x.titel) : x) || '').trim();
     const eigen = obj ? (x.geldigTot || x.geldig_tot || '') : '';
     return {naam, geldigTot: String(eigen || map[certSleutel(naam)] || '').trim()};
-  }).filter(r => r.naam);
+  }).filter(r => alles || r.naam);
 }
 /* Verlopen = de datum ligt achter ons. "Binnenkort" = binnen twee
    kalendermaanden (niet "62 dagen": een certificaat loopt op een datum af,
@@ -1709,7 +1715,7 @@ function ervaringHtml(c){
   const opl  = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   const skills = Array.isArray(cv.skills) ? cv.skills : [];
   const talen  = Array.isArray(cv.talen) ? cv.talen : (c.talen ? String(c.talen).split(',').map(s=>s.trim()).filter(Boolean) : []);
-  const certs  = certLijst(c);
+  const certs  = certLijst(c, true);
   const leeg = !werk.length && !opl.length && !skills.length && !certs.length
             && !cv.ervaringJaren && !cv.url && !cv.bestandPad;
   return `<div class="card">
@@ -1728,9 +1734,6 @@ function ervaringHtml(c){
           title="${h(cv.bestand || 'CV')}${cv.op ? ' · ' + h(CRM.fmtDate(cv.op)) : ''}">Open ingeladen cv</button>` : ''}
       <button class="btn ghost sm" id="c_cvlees">CV inlezen</button></div>
     <div class="card-b">
-      <!-- Waar hij nú zit: dezelfde inline-velden als voorheen, alleen niet
-           meer in een eigen kaart eronder. -->
-      <div class="kd-velden kd-nu">${SITUATIE_VELDEN.map(f => veldRij(c, f)).join('')}</div>
       ${leeg ? `<p class="kd-ervleeg">Nog niets ingevuld. Lees een cv in — loopbaan, opleiding,
         certificaten en talen komen er in één keer in${CRM.cvClaude ? `, of laat een lastig opgemaakt cv
         <button type="button" class="lnk" id="c_cvclaude"
@@ -1740,31 +1743,45 @@ function ervaringHtml(c){
       <!-- Elke lijst heeft zijn eigen toevoegknop, ook als hij leeg is: dan
            weet je waar je iets kwijt kunt zonder eerst een cv te hoeven
            inlezen. -->
+      <!-- Eén doorlopend formulier: elk veld staat meteen open (naam:
+           Tjeerd, 7 aug 2026 — "nu zie je allemaal aparte bewerkknoppen").
+           Typen slaat vanzelf op, twee tellen na de laatste toets; alleen
+           toevoegen, verwijderen en slepen tekenen het blok opnieuw. -->
       <div class="kd-ervkop"><span class="label">Loopbaan</span>
-        <button class="btn sub sm" id="c_werknieuw">+ Toevoegen</button></div>
-      ${werk.length?`<div class="kd-cvlijst kd-sleep" data-sleep="werk">${werk.map((w, i) => `<div class="kd-cvrij" draggable="true" data-i="${i}">
-          <span class="kd-greep" title="Sleep om de volgorde te wijzigen">⠿</span>
-          <b>${h(w.functie||w.rol||'—')}
-            ${/* Ingelezen is een beginpunt, geen eindstand: de AM moet een
-                 dienstverband kunnen corrigeren of aanvullen (Tjeerd,
-                 4 aug 2026: "het moet aanpasbaar zijn, dat is nu niet"). */''}
-            <button type="button" class="lnk tl-bewerk" data-cvwerk="${i}" title="Aanpassen">bewerk</button></b>
-          <span class="sub">${h(w.werkgever||w.bedrijf||'')}</span>
-          <span class="meta num">${h([w.van,w.tot].filter(Boolean).join(' – '))||h(w.periode||'')}</span>
-          ${Array.isArray(w.taken) && w.taken.length ? `<ul class="kd-cvtaken">${
-            w.taken.map(t => `<li>${h(t)}</li>`).join('')}</ul>` : ''}
+        <button class="btn sub sm" data-erv-add="werk">+ Toevoegen</button></div>
+      ${werk.length?`<div class="kd-ervlijst kd-sleep" data-sleep="werk">${werk.map((w, i) => `
+        <div class="kd-ervblok" draggable="true" data-i="${i}">
+          <div class="kd-ervrij1">
+            <span class="kd-greep" title="Sleep om de volgorde te wijzigen">⠿</span>
+            <input type="text" data-erv="werk|${i}|functie" value="${h(w.functie||w.rol||'')}" placeholder="Functie">
+            <input type="text" data-erv="werk|${i}|werkgever" value="${h(w.werkgever||w.bedrijf||'')}" placeholder="Werkgever en plaats">
+            <input type="text" data-erv="werk|${i}|periode" value="${h([w.van,w.tot].filter(Boolean).join(' – ')||w.periode||'')}" placeholder="09-2025 – 07-2026">
+            <button type="button" class="kd-ervweg" data-erv-weg="werk|${i}" title="Deze functie verwijderen" aria-label="Verwijderen">×</button>
+          </div>
+          <textarea data-erv="werk|${i}|taken" rows="${Math.max(2,(Array.isArray(w.taken)?w.taken:[]).length)}"
+            placeholder="Werkzaamheden — één per regel">${h((Array.isArray(w.taken)?w.taken:[]).join('\n'))}</textarea>
         </div>`).join('')}</div>`:'<p class="meta kd-ervnog">Nog geen dienstverbanden.</p>'}
 
-      ${opl.length?`<div class="kd-ervkop"><span class="label">Opleiding</span></div>
-        <div class="kd-cvlijst">${opl.map(o => `<div class="kd-cvrij">
-          <b>${h(o.opleiding||o.naam||'—')}</b>
-          <span class="sub">${h(o.school||o.instituut||'')}</span>
-          <span class="meta num">${h(o.jaar||o.periode||'')}</span>
-        </div>`).join('')}</div>`:''}
+      <div class="kd-ervkop"><span class="label">Opleiding</span>
+        <button class="btn sub sm" data-erv-add="opl">+ Toevoegen</button></div>
+      ${opl.length?`<div class="kd-ervlijst">${opl.map((o,i) => `
+        <div class="kd-ervrij1">
+          <input type="text" data-erv="opl|${i}|opleiding" value="${h(o.opleiding||o.naam||'')}" placeholder="Opleiding">
+          <input type="text" data-erv="opl|${i}|school" value="${h(o.school||o.instituut||'')}" placeholder="School en plaats">
+          <input type="text" data-erv="opl|${i}|jaar" value="${h(o.jaar||o.periode||'')}" placeholder="2003 – 2007">
+          <button type="button" class="kd-ervweg" data-erv-weg="opl|${i}" title="Verwijderen" aria-label="Verwijderen">×</button>
+        </div>`).join('')}</div>`:'<p class="meta kd-ervnog">Nog geen opleidingen.</p>'}
 
       <div class="kd-ervkop"><span class="label">Certificaten</span>
-        <button class="btn sub sm" id="c_certnieuw">+ Toevoegen</button></div>
-      ${certs.length?`<div class="kd-certs">${certs.map((r,i) => certRij(r,i)).join('')}</div>`
+        <button class="btn sub sm" data-erv-add="cert">+ Toevoegen</button></div>
+      ${certs.length?`<div class="kd-ervlijst">${certs.map((r,i) => {
+        const st = certStatus(r.geldigTot);
+        return `<div class="kd-ervrij1${st?' '+st.k:''}">
+          <input type="text" data-erv="cert|${i}|naam" value="${h(r.naam)}" placeholder="Bijv. VCA Basis">
+          <input type="date" data-erv="cert|${i}|geldigTot" value="${h(isDatum(r.geldigTot)?r.geldigTot:'')}" title="Geldig tot en met">
+          ${st && st.chip ? `<span class="chip ${st.chip}">${h(st.lbl)}</span>` : '<span></span>'}
+          <button type="button" class="kd-ervweg" data-erv-weg="cert|${i}" title="Verwijderen" aria-label="Verwijderen">×</button>
+        </div>`; }).join('')}</div>`
         :'<p class="meta kd-ervnog">Nog geen certificaten — denk aan VCA, heftruck of reachtruck.</p>'}
 
       <!-- Vaardigheden waren alleen te vullen door een cv in te lezen; nu
@@ -1785,6 +1802,85 @@ function ervaringHtml(c){
            title="Verwijderen" aria-label="Verwijder ${h(s)}">×</button></span>`).join('')}</div>`
         :'<p class="meta kd-ervnog">Nog geen talen — bijvoorbeeld Nederlands, Engels of Pools.</p>'}
     </div></div>`;
+}
+
+/* ─── Werkervaring als doorlopend formulier ───────────────────────
+   Loopbaan, opleiding en certificaten staan als gewone invulvelden op de
+   kaart, niet achter een bewerkknop per regel (naam: Tjeerd, 7 aug 2026).
+   Typen slaat vanzelf op — twee tellen na de laatste toets, en meteen bij
+   het verlaten van het veld. Alléén toevoegen, verwijderen en slepen
+   tekenen het blok opnieuw; tijdens het typen niet, want dan zou de cursor
+   uit het veld springen.
+
+   Certificaten zijn een bijzonder geval: ze staan historisch soms als
+   losse tekst in cv.certificaten en soms als object, met de geldigheid
+   in een aparte map cv.certGeldig. Bij het schrijven maken we er één vorm
+   van (objecten), zodat er nog maar één plek is waar de waarheid staat. */
+const ERV_LIJST = {werk:'werkgevers', opl:'opleidingen', cert:'certificaten'};
+let _ervTimer = null;
+
+/* Altijd DEZELFDE array teruggeven, niet een kopie. Met een kopie las elk
+   veld de opgeslagen versie van vóór de vorige wijziging, en overschreef
+   het laatste veld de rest — vul je vier velden achter elkaar in, dan bleef
+   alleen het laatste staan. Nu stapelen de wijzigingen in het geheugen en
+   gaat er één keer een opslag naar de database. */
+function ervLijst(c, soort){
+  if(!c.cv || typeof c.cv !== 'object') c.cv = {};
+  const veld = ERV_LIJST[soort];
+  /* Certificaten stonden historisch soms als losse tekst met de geldigheid
+     in een aparte map. Bij de eerste wijziging maken we er objecten van,
+     zodat er nog maar één plek is waar de datum staat. */
+  if(soort === 'cert' && !c.cv._certOk){
+    c.cv.certificaten = certLijst(c, true);
+    delete c.cv.certGeldig;
+    c.cv._certOk = true;
+  }
+  if(!Array.isArray(c.cv[veld])) c.cv[veld] = [];
+  return c.cv[veld];
+}
+async function ervBewaar(c, herteken){
+  await bewaarKandidaat(c);
+  if(herteken) CRM.render();
+}
+
+function bindErvaring(mount, c){
+  /* Typen: meteen in het geheugen bijwerken, pas na een korte stilte opslaan.
+     Tijdens het typen wordt er niet hertekend — anders springt de cursor
+     uit het veld. */
+  mount.querySelectorAll('[data-erv]').forEach(el => {
+    const schrijf = meteen => {
+      const [soort, i, sleutel] = el.dataset.erv.split('|');
+      const lijst = ervLijst(c, soort);
+      if(!lijst[+i]) lijst[+i] = {};
+      lijst[+i][sleutel] = sleutel === 'taken'
+        ? el.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean)
+        : el.value.trim();
+      clearTimeout(_ervTimer);
+      if(meteen) ervBewaar(c, false);
+      else _ervTimer = setTimeout(() => ervBewaar(c, false), 2000);
+    };
+    el.oninput  = () => schrijf(false);
+    el.onchange = () => schrijf(true);      // datumvelden vuren geen input
+    el.onblur   = () => schrijf(true);
+  });
+  mount.querySelectorAll('[data-erv-add]').forEach(b => b.onclick = async () => {
+    const soort = b.dataset.ervAdd;
+    ervLijst(c, soort).push(
+      soort === 'werk' ? {functie:'', werkgever:'', periode:'', taken:[]}
+      : soort === 'opl' ? {opleiding:'', school:'', jaar:''}
+      : {naam:'', geldigTot:''});
+    await ervBewaar(c, true);
+  });
+  mount.querySelectorAll('[data-erv-weg]').forEach(b => b.onclick = async () => {
+    const [soort, i] = b.dataset.ervWeg.split('|');
+    const lijst = ervLijst(c, soort);
+    const rij = lijst[+i] || {};
+    const gevuld = Object.values(rij).some(v => Array.isArray(v) ? v.length : String(v||'').trim());
+    const wat = soort === 'werk' ? 'dit dienstverband' : soort === 'opl' ? 'deze opleiding' : 'dit certificaat';
+    if(gevuld && !await CRM.bevestig('Verwijderen?', 'Weet je zeker dat je ' + wat + ' wilt weghalen?')) return;
+    lijst.splice(+i, 1);
+    await ervBewaar(c, true);
+  });
 }
 
 /* ─── Vaardigheden: zelf toevoegen en weghalen ────────────────────
