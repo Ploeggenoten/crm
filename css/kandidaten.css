@@ -489,3 +489,17 @@ label.kd-taak input{margin-top:3px}
 .kd-flexuit{margin-top:6px;font-size:12.5px;color:var(--txt-2);line-height:1.6}
 .kd-flexuit .num{color:var(--ink)}
 .kd-flexpunt{margin:0 8px;color:var(--line-2)}
+
+/* ─── O&O-sessie op de kandidatenkaart (7 aug 2026) ───────────────
+   Staat pal onder Traject en gebruikt bewust dezelfde .kd-velden-stijl:
+   het is dezelfde tijdlijn, alleen dan een stap die niet van deze
+   kandidaat alleen is. Verder geen eigen kleur of streep — er hoort
+   hooguit één accent op een scherm, en dat is het lopende traject
+   (.kd-loopt) hierboven. */
+.kd-oo .card-b{padding-top:14px;padding-bottom:14px}
+.kd-oo a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line-2)}
+.kd-oo a:hover{color:var(--olive);border-bottom-color:var(--olive)}
+/* Een telling met een nuance erachter blijft één regel; het getal draagt,
+   de nuance mag kleiner. */
+.kd-oo .kd-veld .num{font-weight:700;color:var(--ink)}
+.kd-oo .kd-veld .meta{font-size:11.5px}

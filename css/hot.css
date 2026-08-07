@@ -407,3 +407,62 @@ textarea.ovd-inline{resize:vertical;line-height:1.5}
   padding:10px 12px;margin-bottom:12px;
 }
 .ovd-uitveld textarea{width:100%;resize:vertical}
+
+/* ─── O&O-sessies op de vacaturekaart (7 aug 2026) ───────────────
+   Eén sessie = één kaart, met de datum als kop. Rustig gehouden: het
+   enige wat kleur draagt is de bezetting (amber = er moet nog iemand
+   bij, olijfgroen = de streef van vier is gehaald). Een sessie die al
+   geweest is dooft: hij hoort bij de geschiedenis van de vacature,
+   niet bij het werk van vandaag. */
+.oo-lijst{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+.oo-sessie{border-color:var(--line)}
+.oo-sessie.geweest{background:var(--well);opacity:.78}
+
+.oo-kop{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.oo-wanneer{font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.3}
+.oo-kop .meta{margin-top:2px}
+
+/* De functies op de sessie. De vacature waar je nú op staat krijgt de
+   olijfrand, zodat je in één blik ziet welke van de twee de jouwe is. */
+.oo-vacs{margin-top:9px}
+.oo-vac.nu{border-color:var(--olive);color:var(--olive)}
+
+/* Deelnemers: dunne scheiding, geen kader om elke regel — vier namen
+   moeten als lijstje te lezen zijn, niet als vier kaarten. */
+.oo-deel{margin-top:11px;padding-top:9px;border-top:1px solid var(--line);
+  display:flex;flex-direction:column}
+.oo-drij{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:6px 0;border-bottom:1px solid var(--line)}
+.oo-drij:last-child{border-bottom:none}
+.oo-naam{font-weight:700;font-size:13.5px;color:var(--ink);text-decoration:none;
+  border-bottom:1px dashed var(--line-2)}
+.oo-naam:hover{color:var(--olive);border-bottom-color:var(--olive)}
+/* Loskoppelen is de uitzondering: gedempt tot je erover gaat. */
+.oo-los{opacity:.7}
+.oo-drij:hover .oo-los{opacity:1}
+.oo-acties{margin-top:12px}
+
+/* Extra vacatures in het planvenster: een vinklijstje in het verdiepte
+   vlak, zodat het als één keuze leest en niet als losse regels. */
+.oo-extra{background:var(--well);border:1px solid var(--line);border-radius:var(--r-s);
+  padding:6px 10px;margin-bottom:6px}
+.oo-extra .check:not(:last-child){border-bottom:1px solid var(--line)}
+
+/* Kandidaat kiezen. Eén regel per persoon: naam links, waar hij vandaan
+   komt eronder, de keuze voor welke functie en de knop rechts. */
+/* Bewust NIET wrappend: met wrap sprong de knop bij een lange woonplaats naar
+   een tweede regel en stond hij bij de buurman weer rechts — acht rijen die
+   allemaal net iets anders zijn, lezen slechter dan acht gelijke rijen. De
+   naamkolom krimpt in plaats daarvan en krijgt een beletselteken. */
+.oo-kies{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;
+  padding:8px 0;border-bottom:1px solid var(--line)}
+.oo-kies:last-child{border-bottom:none}
+.oo-kwie{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;overflow:hidden}
+.oo-kwie b,.oo-kwie .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oo-kwie .meta{font-size:11.5px;margin-top:1px}
+/* Een vaste breedte in plaats van "zo breed als de inhoud": de browser meet
+   die inhoud vóórdat het webfont geladen is en kapte daardoor de laatste
+   letter van "Productiemedewerker" af — precies het woord dat je hier moet
+   lezen. Vast houdt de keuzelijsten bovendien onder elkaar uitgelijnd. */
+.oo-kies select{flex:0 0 186px;width:186px;max-width:100%;padding:5px 8px;font-size:12.5px}
+.oo-kies .btn{flex:0 0 auto}

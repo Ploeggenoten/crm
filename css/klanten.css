@@ -409,25 +409,70 @@ a.ob-i:hover b{text-decoration:underline}
 }
 
 /* ─── O&O-sessies op de klantkaart ────────────────────────────────
-   Onder de vacatures, want een sessie gaat over meerdere vacatures
+   Onder de vacatures, want één sessie gaat geregeld over meerdere vacatures
    tegelijk. Rustige rijen, geen kaarten: het is een agenda, en de vraag
-   die je eraan stelt is "wanneer, voor welke functies, en zitten er al
+   die je eraan stelt is "wanneer, voor welke functies, waar, en zitten er al
    genoeg mensen in". Alleen dat laatste krijgt kleur, en alleen als het
-   goed is — vier is het streefgetal, minder is normaal onderweg. */
+   goed is — vier is het streefgetal, minder is normaal onderweg.
+
+   De rij was eerst één grote knop. Nu er losse doorkliks in zitten (naar de
+   vacature, naar elke kandidaat) kan dat niet meer: een knop in een knop is
+   geen geldige HTML en toetsenbordnavigatie loopt erop vast. Het is dus een
+   gewone rij met een paar duidelijke klikbare stukken. */
 .kl-oo{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
 .kl-oolijst{display:flex;flex-direction:column;gap:1px}
-.kl-oorij{display:grid;grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:14px;
-  width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef0e4;
-  padding:10px 4px;font-family:var(--body);cursor:pointer}
+.kl-oohint{margin:0;max-width:62ch}
+.kl-oorij{display:grid;grid-template-columns:96px minmax(0,1fr) auto auto;align-items:start;
+  gap:6px 14px;padding:11px 4px;border-bottom:1px solid var(--line)}
 .kl-oorij:last-child{border-bottom:none}
 .kl-oorij:hover{background:var(--card-2)}
-.kl-oorij.weg{opacity:.55}
-.kl-oodat{font-size:12.5px;font-weight:600;color:var(--txt-2);white-space:nowrap}
-.kl-oowat{display:flex;flex-direction:column;gap:2px;min-width:0}
-.kl-oowat b{font-size:13px;color:var(--ink);font-weight:600}
+/* Geweest = klaar; wel leesbaar houden, want je kijkt er nog naar terug. */
+.kl-oorij.weg{opacity:.6}
+
+.kl-oodat{display:flex;flex-direction:column;gap:1px;font-size:12.5px;font-weight:600;
+  color:var(--txt-2);white-space:nowrap;padding-top:2px}
+.kl-ootijd{font-weight:600;color:var(--muted)}
+
+.kl-oowat{display:flex;flex-direction:column;gap:3px;min-width:0}
 .kl-oowat .meta{font-size:11.5px}
-.kl-ooaantal{font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap}
+/* Meerdere functies in één sessie: als losse klikbare titels met een
+   punt-scheiding die de CSS tekent — zo hoeft de JS geen scheidingsteken
+   tussen twee knoppen te zetten. */
+.kl-oovacs{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;min-width:0}
+.kl-oovac{background:none;border:none;padding:0;font-family:var(--body);font-size:13px;
+  font-weight:600;color:var(--ink);cursor:pointer;text-align:left}
+.kl-oovac:hover{color:var(--olive);text-decoration:underline}
+.kl-oovac + .kl-oovac::before{content:'·';margin-right:6px;color:var(--muted);
+  text-decoration:none;display:inline-block}
+/* Sessie van vóór de vacaturekoppeling: wel tonen, niet klikbaar. */
+.kl-oolos{font-size:13px;font-weight:600;color:var(--muted)}
+
+.kl-oomensen{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:2px}
+.kl-ookand{background:var(--card-2);border:1px solid var(--line);border-radius:999px;
+  padding:2px 9px;font-family:var(--body);font-size:11.5px;font-weight:600;color:var(--txt-2);
+  cursor:pointer}
+.kl-ookand:hover{border-color:var(--olive);color:var(--olive)}
+
+.kl-ooaantal{font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap;padding-top:2px}
 .kl-ooaantal.goed{color:var(--olive)}
+/* De wijzig-knop is aanwezig maar stil: je leest de agenda vaker dan je hem
+   verandert. */
+.kl-oobew{opacity:.6}
+.kl-oorij:hover .kl-oobew, .kl-oobew:focus-visible{opacity:1}
+
+/* De vinkjes in het plan-venster: één per regel, zodat een lange functietitel
+   niet half achter de volgende valt. */
+.kl-ooextra{display:flex;flex-direction:column;gap:2px}
+.kl-ooextra .check .meta{font-size:11px}
+
+@media (max-width:700px){
+  /* Smal scherm: datum boven, teller en knop op één regel eronder. Vier
+     kolommen naast elkaar wordt hier onleesbaar. */
+  .kl-oorij{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+  .kl-oodat{grid-column:1/-1;flex-direction:row;gap:8px}
+  .kl-oowat{grid-column:1/-1}
+  .kl-oobew{opacity:1;justify-self:end}
+}
 
 /* Het invoerveld staat ónder de notities: eerst lezen wat er is, dan pas
    schrijven. Een streep ertussen zodat het niet als volgende notitie leest. */

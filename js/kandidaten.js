@@ -1037,6 +1037,11 @@ function kaart(mount, acties, id){
             <div id="c_tabinhoud"></div>
           </div>
           ${trajectHtml(c)}
+          <!-- De O&O-sessie staat pal onder Traject: een sessie ís een stap
+               in dat traject (hij vervangt voorstellen, het eerste én het
+               tweede gesprek). Een eigen kaart, omdat er eigen handelingen
+               en andere deelnemers aan hangen — zie ooHtml(). -->
+          ${ooHtml(c)}
           ${kansenHtml(c)}
           <!-- Opvolging staat pal onder Traject: het is de voortzetting
                daarvan. Nazorg ná de start, warm houden ervóór, plus de
@@ -1064,6 +1069,7 @@ function kaart(mount, acties, id){
   bindStrip(mount, c);
   bindDealbalk(mount, c);
   bindBlokBewerk(mount, c);
+  bindOo(mount, c);
   /* Uitvalgegevens vastleggen of bijwerken vanaf de kaart zelf — hetzelfde
      formulier als op het bord, zodat er maar één plek is waar dit gebeurt. */
   mount.querySelector('#c_uitval')?.addEventListener('click',
@@ -2818,6 +2824,247 @@ function trajectHtml(c){
       <span class="spacer"></span>
       <button class="btn sub sm" id="c_snel" title="Alle trajectvelden in één paneel, met één keer opslaan">Snel bewerken</button>
     </div></div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   O&O-SESSIE OP DE KANDIDATENKAART (7 aug 2026)
+
+   Een O&O-sessie is een groepsgesprek bij de klant, gehouden ÓP een
+   vacature. Het is géén losse afspraak maar een stap in het traject: hij
+   vervangt voorstellen, het eerste én het tweede gesprek in één keer.
+   Daarom is 'O&O sessie' een fase, en ís iemand aan een sessie hangen het
+   voorstellen — voorgesteld zijn is dus geen voorwaarde vooraf.
+
+   WAAROM EEN EIGEN KAART, PAL ONDER TRAJECT (en niet erin):
+   inhoudelijk hoort het bij Traject — het is dezelfde tijdlijn. Maar het
+   Traject-blok is een lijst inline bewerkbare kandidaatvelden, en een
+   sessie is geen veld van deze kandidaat: het is een gedeeld object met
+   eigen deelnemers, een eigen vacature en eigen handelingen (koppelen,
+   loskoppelen, doorklikken). Dat tussen 'Afspraakdatum' en 'Volgende
+   actie' proppen zou suggereren dat je het hier kunt overtypen, terwijl de
+   sessie zelf op de vacaturekaart wordt gepland. Vandaar: er direct onder,
+   in dezelfde velden-stijl zodat het één geheel blijft leest.
+
+   Alle kennis over sessies komt uit CRM.oo (js/data.js). Deze kaart rekent
+   niets zelf uit — de vacature-, relatie- en kandidatenkaart moeten
+   hetzelfde zeggen.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* De sessie waar deze kandidaat aan hangt, of null. */
+function ooSessieVan(c){
+  return (CRM.oo && c && c.ooId) ? CRM.oo.van(c.ooId) : null;
+}
+
+/* Na koppelen of loskoppelen is CRM.render() genoeg: CRM.oo schrijft de
+   patch in DB-kolomnamen (oo_id, vacature_id) op de rij in CRM.state, en
+   dát is precies de vorm die daar staat — CRM.state.cands bewaart ruwe
+   databaserijen, CRM.kandidaat() zet ze pas bij het lézen om naar de
+   kaartnamen (ooId, vacatureId) via CRM.rowToCand in js/core.js. Niet zelf
+   camelCase op die rijen plakken dus: dan leest rowToCand een leeg veld en
+   lijkt de kandidaat ineens niet gekoppeld. (Zelfde reden dat de patch in
+   vacatureKoppelen() hierboven `vacature_id` heet en niet `vacatureId`.) */
+
+/* Een sessie zonder datum is nog niet gepland en dus per definitie niet
+   geweest — die telt als aanstaand. */
+const ooAanstaand = s => !s || !s.datum || String(s.datum) >= CRM.todayISO();
+
+function ooHtml(c){
+  if(!CRM.oo) return '';
+  const s = ooSessieVan(c);
+  const fase = CRM.faseNorm(c.fase);
+  const uitval = ['Afgevallen','Gestopt'].includes(fase);
+  /* Koppelen kan zolang er nog iets te koppelen valt: niet bij uitval, niet
+     bij een plaatsing (die is al voorbij de sessie) en alleen als er
+     überhaupt sessies gepland staan. Sessies plan je op de vacaturekaart. */
+  const magKoppelen = !uitval && !CRM.PLACED.includes(fase) && CRM.oo.alle().length > 0;
+  /* Geen sessie én niets te koppelen = een leeg kaartje zonder boodschap.
+     Dan tekenen we het niet (rustige dichtheid, zie de bouwafspraken). */
+  if(!s && !magKoppelen) return '';
+
+  if(!s) return `<div class="card kd-oo">
+    <div class="card-h"><div class="h2">O&amp;O-sessie</div></div>
+    <div class="card-b"><p class="meta" style="margin:0">Nog niet aan een sessie gekoppeld.
+      Een O&amp;O-sessie is een groepsgesprek bij de klant; koppelen vervangt het voorstellen,
+      het eerste én het tweede gesprek in één keer.</p></div>
+    <div class="card-f row tight">
+      <button class="btn ghost sm" id="c_ookoppel">Aan een sessie koppelen…</button>
+    </div></div>`;
+
+  const vacs   = CRM.oo.vacatures(s);
+  /* Voor wélke functie deze persoon komt: de vacature die op zijn eigen
+     kaart staat als die op deze sessie draait, anders de hoofdvacature. */
+  const mijn   = vacs.find(v => String(v.id) === String(c.vacatureId))
+              || CRM.oo.vacature(s) || vacs[0] || null;
+  const overig = vacs.filter(v => !mijn || String(v.id) !== String(mijn.id));
+  const klant  = CRM.oo.klant(s);
+  const loc    = CRM.oo.locatie(s);
+  /* "Wie zitten erbij" is iedereen die ooit aan deze sessie is gehangen —
+     na afloop schuiven mensen door en dan zou een telling op fase een
+     geslaagde sessie als leeg laten zien. Wie er nú nog op de fase staat
+     zetten we er als nuance achter, niet in plaats van. */
+  const anderen = CRM.oo.deelnemers(s.id).filter(x => String(x.id) !== String(c.id));
+  const nog     = anderen.filter(x => CRM.faseIs(x.fase, 'O&O sessie'));
+  const namen   = anderen.map(x => x.naam).filter(Boolean).join(', ');
+
+  const rij = (lbl, inhoud, titel) => `<div class="kd-veld"><span class="label">${h(lbl)}</span>
+    <span${titel ? ` title="${h(titel)}"` : ''}>${inhoud}</span></div>`;
+
+  return `<div class="card kd-oo">
+    <div class="card-h"><div class="h2">O&amp;O-sessie</div><span class="spacer"></span>
+      <span class="meta">${ooAanstaand(s) ? 'staat nog te gebeuren' : 'is geweest'}</span></div>
+    <div class="card-b">
+      <div class="kd-velden">
+        ${rij('Wanneer', s.datum
+          ? `<span class="num">${h(CRM.fmtDay(s.datum))}</span>${s.tijd ? ` · <span class="num">${h(s.tijd)}</span>` : ''}`
+          : '<span class="meta">nog geen datum geprikt</span>')}
+        ${rij('Waar', loc ? h(loc) : '<span class="meta">geen locatie ingevuld</span>')}
+        ${rij('Klant', klant
+          ? `<a href="#klanten/${encodeURIComponent(klant)}" data-klant="${h(klant)}">${h(klant)}</a>`
+          : '<span class="meta">—</span>')}
+        ${rij('Voor de functie', mijn
+          ? `<a href="#hot/${encodeURIComponent(String(mijn.id))}" data-oovac="${h(String(mijn.id))}">${
+              h(mijn.functie || '(geen functie)')}</a>`
+          : `<span class="meta">${h(CRM.oo.functie(s) || 'geen vacature gekoppeld')}</span>`)}
+        ${overig.length ? rij('Draait ook op', overig.map(v =>
+          `<a href="#hot/${encodeURIComponent(String(v.id))}" data-oovac="${h(String(v.id))}">${
+            h(v.functie || '(geen functie)')}</a>`).join(' · ')) : ''}
+        ${rij('Wie zitten erbij', anderen.length
+          ? `<span class="num">${anderen.length}</span> ander${anderen.length === 1 ? '' : 'en'}${
+              nog.length !== anderen.length
+                ? ` <span class="meta">(${nog.length} nog op deze fase)</span>` : ''}`
+          : '<span class="meta">verder nog niemand</span>', namen)}
+      </div>
+    </div>
+    <div class="card-f row tight" style="flex-wrap:wrap;row-gap:8px">
+      ${mijn ? `<button class="btn ghost sm" data-oovac="${h(String(mijn.id))}">Naar de vacature</button>` : ''}
+      <span class="spacer"></span>
+      <button class="btn sub sm" id="c_ooweg" title="Haalt deze kandidaat van de sessie af; de fase blijft staan">Loskoppelen</button>
+    </div></div>`;
+}
+
+function bindOo(mount, c){
+  const k = mount.querySelector('#c_ookoppel'); if(k) k.onclick = () => ooKoppelModal(c);
+  const w = mount.querySelector('#c_ooweg');    if(w) w.onclick = () => ooLoskoppelen(c);
+  /* Doorklik naar de vacaturekaart. De links hebben een echte href zodat
+     midden-klikken en "link kopiëren" blijven werken; de klik zelf gaat via
+     CRM.ga, want die zet de geschiedenis goed. */
+  mount.querySelectorAll('[data-oovac]').forEach(a => a.onclick = e => {
+    e.preventDefault(); CRM.ga('hot', {id: a.dataset.oovac});
+  });
+}
+
+/* ─── Aan een sessie koppelen ─────────────────────────────────────
+   Kiezen uit wat er al gepland staat — een sessie plánnen doe je op de
+   vacaturekaart, want daar hoort hij bij. Aanstaande sessies eerst: je
+   koppelt bijna altijd aan iets wat nog moet komen. Nakoppelen aan een
+   sessie van gisteren gebeurt wel (iemand die er toch bij bleek te zijn),
+   dus die blijven staan — onderaan, meest recente eerst. */
+function ooKoppelModal(c){
+  if(!CRM.oo) return;
+  const lijst = CRM.oo.alle().slice().sort((a, b) => {
+    const ka = ooAanstaand(a), kb = ooAanstaand(b);
+    if(ka !== kb) return ka ? -1 : 1;
+    /* Zonder datum achteraan bij de aanstaande sessies: nog niet geprikt,
+       dus ook nog niet dringend. */
+    const da = String(a.datum || '9999-12-31'), db = String(b.datum || '9999-12-31');
+    return ka ? da.localeCompare(db) : db.localeCompare(da);
+  });
+  if(!lijst.length) return CRM.toast('Er staat nog geen O&O-sessie gepland','err');
+
+  /* Per klant groeperen, in de volgorde waarin de sessies hierboven zijn
+     gesorteerd: de klant met de eerstvolgende sessie staat dus bovenaan. */
+  const groepen = [];
+  lijst.forEach(s => {
+    const naam = CRM.oo.klant(s) || 'Zonder klant';
+    let g = groepen.find(x => x.klant === naam);
+    if(!g) groepen.push(g = {klant:naam, sessies:[]});
+    g.sessies.push(s);
+  });
+
+  const optie = s => {
+    const d = s.datum ? CRM.fmtDateShort(s.datum) : 'geen datum';
+    const n = CRM.oo.leden(s.id).length;
+    return `<option value="${h(String(s.id))}">${h(d)}${s.tijd ? ' ' + h(s.tijd) : ''} · ${
+      h(CRM.oo.functie(s) || 'geen functie')}${n ? ` · ${n} deelnemer${n === 1 ? '' : 's'}` : ''}${
+      ooAanstaand(s) ? '' : ' · geweest'}</option>`;
+  };
+
+  /* Alleen kiezen als er iets te kiezen valt: bij één vacature op de sessie
+     is de functie al bepaald en zou een keuzelijst met één regel alleen maar
+     de vraag oproepen of er nog iets moest. */
+  const vacRij = sid => {
+    const s = CRM.oo.van(sid);
+    const vs = s ? CRM.oo.vacatures(s) : [];
+    if(vs.length < 2) return '';
+    return `<div class="f-row"><label for="oo_vac">Voor welke functie</label>
+      <select id="oo_vac">${vs.map(v => `<option value="${h(String(v.id))}"${
+        String(c.vacatureId) === String(v.id) ? ' selected' : ''}>${h(v.functie || '(geen functie)')}${
+        v.locatie ? ' · ' + h(v.locatie) : ''}</option>`).join('')}</select>
+      <span class="meta">Op deze sessie draaien meerdere vacatures — kies waarvoor ${h(c.naam)} komt.</span></div>`;
+  };
+
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${h(c.naam)} aan een O&amp;O-sessie koppelen</div></div>
+    <div class="modal-b">
+      <!-- De fasewissel staat vóór de keuzelijst en niet in een tooltip: dit
+           is een traject-handeling en geen agenda-afspraak, en dat hoort
+           niemand achteraf te ontdekken. -->
+      <div class="note info" style="margin:0 0 14px">Hiermee komt ${h(c.naam)} op de fase
+        <b>O&amp;O sessie</b> te staan — die sessie vervangt het eerste en tweede gesprek.</div>
+      <div class="f-row"><label for="oo_sessie">Sessie</label>
+        <select id="oo_sessie">${groepen.map(g =>
+          `<optgroup label="${h(g.klant)}">${g.sessies.map(optie).join('')}</optgroup>`).join('')}</select></div>
+      <div id="oo_vacrij">${vacRij(lijst[0].id)}</div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="oo_ok">Koppelen</button></div>`, {onOpen(m){
+      const sel = m.querySelector('#oo_sessie');
+      const rij = m.querySelector('#oo_vacrij');
+      sel.onchange = () => { rij.innerHTML = vacRij(sel.value); };
+      m.querySelector('#oo_ok').onclick = async () => {
+        const s = CRM.oo.van(sel.value);
+        if(!s) return CRM.toast('Die sessie bestaat niet meer','err');
+        const vacSel = m.querySelector('#oo_vac');
+        const vacId = (vacSel && vacSel.value) || s.vacature_id || '';
+        CRM.modal.close();
+        await ooKoppel(c, s, vacId);
+      };
+    }});
+}
+
+async function ooKoppel(c, s, vacId){
+  const v = vacId ? (CRM.state.vacs || []).find(x => String(x.id) === String(vacId)) : null;
+  const doelKlant = (v && v.klant) || CRM.oo.klant(s) || '';
+  /* Loopt deze kandidaat al bij een ándere klant, dan raakt die klant hem
+     kwijt — koppelen overschrijft immers klant, vacature én fase. Dat gaat
+     langs dezelfde poort als het voorstellen (CRM.traject.poort in
+     js/traject.js, net als bij bewaarKandidaat hierboven): die bepaalt zelf
+     of er iets te verliezen valt, doet anders niets, en blokkeert een
+     plaatsing helemaal. */
+  if(CRM.traject && !await CRM.traject.poort(c,
+      {klant:doelKlant, vacatureId:vacId || '', functie:(v && v.functie) || ''})) return;
+  if(!await CRM.oo.koppel(c.id, s.id, vacId)) return CRM.toast('Koppelen mislukt','err');
+  CRM.toast('Aan de O&O-sessie gekoppeld','ok');
+  CRM.render();
+}
+
+/* ─── Loskoppelen ─────────────────────────────────────────────────
+   Bewust géén fasewissel: iemand van de sessie halen kan van alles
+   betekenen (verkeerde sessie, verzet naar een andere datum), en zelf
+   raden welke fase er dan hoort te staan levert een traject op dat niemand
+   heeft besloten. Dus zeggen we in het venster wat er níet gebeurt. */
+async function ooLoskoppelen(c){
+  const s = ooSessieVan(c);
+  const fase = CRM.faseNorm(c.fase) || 'geen fase';
+  const ok = await CRM.bevestig('Loskoppelen van de O&O-sessie?',
+    `${c.naam} staat daarna niet meer op ${s ? 'de sessie van ' + CRM.oo.label(s) : 'deze sessie'}. `
+    + `Let op: de fase blijft staan op "${fase}" — loskoppelen zet het traject niet terug. `
+    + 'Moet deze kandidaat uit het traject, gebruik dan Afmelden of Fase wijzigen.',
+    {knop:'Loskoppelen'});
+  if(!ok) return;
+  if(!await CRM.oo.ontkoppel(c.id)) return;
+  CRM.toast('Losgekoppeld van de sessie','ok');
+  CRM.render();
 }
 
 /* ─── Nazorg, warm houden, verjaardag en de felicitatiemail ───────

@@ -2738,68 +2738,286 @@ function tabInhoud(mount, k){
 }
 
 /* ─── Tab: vacatures ──────────────────────────────────────────── */
-/* ─── O&O-sessies van deze klant ──────────────────────────────────
-   Een sessie hoort bij de klánt, niet bij één vacature: er zitten geregeld
-   kandidaten voor meerdere functies in dezelfde sessie. De knop stond eerst
-   boven het bord Klanttrajecten (waar je niets hoort aan te maken) en daarna
-   even op de vacature (te smal). Hier hoort hij.
+/* ═══ O&O-sessies van deze klant ═══════════════════════════════════
+   Een sessie wordt gehouden ÓP een vacature, maar je kijkt ernaar per
+   relatie: "wanneer komen we bij Whisk langs en wie zit erin". Daarom staat
+   het overzicht hier, onder de vacatures, en niet alleen op de vacaturekaart.
 
-   Welke functies een sessie beslaat leiden we af uit wie erin zit, niet uit
-   een veld. Zo kan het label nooit iets anders zeggen dan de werkelijkheid,
-   en werkt "meerdere functies in één sessie" zonder databasewijziging.
+   Alles loopt via CRM.oo (js/data.js) — dezelfde bron als de vacaturekaart en
+   de kandidatenkaart. Vroeger las dit blok een eigen lijstje uit
+   js/recruitment.js en leidde het de functies af uit wie erin zat; dan zei de
+   klantkaart iets anders dan het sessievenster zodra iemand doorschoof.
+   Klant, functie en locatie komen nu uit de vacature; sessies van vóór die
+   wijziging vallen in CRM.oo terug op hun eigen tekstvelden, dus die blijven
+   gewoon leesbaar.
+
    (Tjeerd, 2 aug 2026: "via de klantenkaart kan ik matchen voor welke
    vacature(s) we de O&O sessie doen, soms meerdere functies in 1 sessie".) */
-function ooBlokHtml(k){
-  const D = CRM._rcDeel || {};
-  if(!D.ooSessies || !D.ooModal) return '';
-  /* Alleen bij een relatie waar ook echt iets loopt. Bij een lead of prospect
-     staat er geen vacature en geen kandidaat, en dan is een lege
-     O&O-sectie ("nog geen sessies") ruis op een kaart die juist over
-     acquisitie gaat. Hij verschijnt zodra er een vacature is, of zodra er al
-     een sessie voor deze klant bestaat. (Tjeerd, 3 aug 2026: "O&O sessie mag
-     weg in de kaart" — bij een lead, waar hij niets toevoegt.) */
-  const heeftVacature = (CRM.state.vacs||[]).some(v => v.klant === k.naam);
-  const heeftSessie   = D.ooSessies().some(s => s.klant === k.naam);
-  if(!heeftVacature && !heeftSessie) return '';
+
+/* Vier kandidaten per sessie is het streefgetal — daaronder is niet fout,
+   alleen nog niet vol. Eén constante, zodat de teller en de tekst in het
+   plan-venster niet uit elkaar kunnen lopen. */
+const OO_STREEF = 4;
+
+const vacIsOpen = v => (v.status || 'Open') === 'Open';
+
+/* Sorteervolgorde: aanstaande sessies eerst, oplopend (de eerstvolgende
+   bovenaan — dat is de sessie waar je nog kandidaten voor zoekt), daarna wat
+   geweest is, aflopend (de meest recente eerst). Sessies zonder datum staan
+   onderaan de aanstaande groep: ze zijn nog niet geweest, maar ze zijn ook
+   nergens in te plannen. */
+function ooVanKlant(naam){
+  if(!CRM.oo) return {komend:[], geweest:[], alles:[]};
   const vandaag = CRM.todayISO();
-  const sessies = D.ooSessies()
-    .filter(s => s.klant === k.naam)
-    .sort((a,b) => String(a.datum||'').localeCompare(String(b.datum||'')));
-  const komend = sessies.filter(s => !s.datum || s.datum >= vandaag);
-  /* NIET D.sessLeden(): die telt alleen wie op dit moment op fase 'O&O sessie'
-     staat. Dat is de goede maat bij het plannen ("zitten er al vier in?"),
-     maar niet hier: zodra de sessie is geweest schuift iedereen door naar
-     Eerste gesprek en zou een geslaagde sessie er als leeg bij staan.
-     sessDeelnemers/sessFuncties komen uit js/recruitment.js, zodat deze kaart
-     en het sessievenster gegarandeerd hetzelfde zeggen. */
-  const regel = s => {
-    const leden = D.sessDeelnemers ? D.sessDeelnemers(s.id) : [];
-    const functies = D.sessFuncties ? [D.sessFuncties(s.id)].filter(Boolean) : [];
-    const verleden = s.datum && s.datum < vandaag;
-    return `<button type="button" class="kl-oorij${verleden?' weg':''}" data-oo="${h(s.id)}">
-      <span class="kl-oodat num">${h(s.datum ? CRM.fmtDateShort(s.datum) : 'geen datum')}</span>
-      <span class="kl-oowat"><b>${h(functies.join(' · ') || s.functie || 'nog geen kandidaten')}</b>
-        ${s.locatie ? `<span class="meta">${h(s.locatie)}</span>` : ''}</span>
-      <span class="kl-ooaantal num${leden.length >= 4 ? ' goed' : ''}"
-        title="${verleden ? 'Deelnemers aan deze sessie' : 'Streef naar vier kandidaten per sessie'}"
-        >${leden.length}${verleden ? '' : '/4'}</span>
-    </button>`;
-  };
+  const alle = CRM.oo.bijKlant(naam);
+  const komend = alle.filter(s => !s.datum || s.datum >= vandaag)
+    .sort((a,b) => String(a.datum || '9999').localeCompare(String(b.datum || '9999')) ||
+                   String(a.tijd || '').localeCompare(String(b.tijd || '')));
+  const geweest = alle.filter(s => s.datum && s.datum < vandaag)
+    .sort((a,b) => String(b.datum).localeCompare(String(a.datum)));
+  return {komend, geweest, alles: komend.concat(geweest)};
+}
+
+/* Welke vacatures je aan een sessie mag hangen: de open vacatures van deze
+   klant, plus de vacatures die al aan déze sessie hangen — ook als die
+   inmiddels vervuld of gesloten zijn. Anders zou een sessie wijzigen stilletjes
+   een vacature loskoppelen die niemand heeft aangeraakt. */
+function ooVacKeuze(naam, alGekozen){
+  const houd = new Set((alGekozen || []).filter(Boolean).map(String));
+  const uit = (CRM.vacaturesVan(naam) || []).filter(v => vacIsOpen(v) || houd.has(String(v.id)));
+  /* Hangt er een vacature van een ándere relatie aan de sessie, dan zetten we
+     die er alsnog bij. Zonder hem staat hij niet in de lijst, verdwijnt zijn
+     vinkje en zou opslaan hem stilletjes loskoppelen. */
+  const bekend = new Set(uit.map(v => String(v.id)));
+  houd.forEach(id => {
+    if(bekend.has(id)) return;
+    const v = (CRM.state.vacs || []).find(x => String(x.id) === id);
+    if(v) uit.push(v);
+  });
+  return uit.sort((a,b) => String(a.functie||'').localeCompare(String(b.functie||''),'nl'));
+}
+
+function ooRegelHtml(s, vandaag){
+  const vacs   = CRM.oo.vacatures(s);
+  /* Twee verschillende tellingen, bewust:
+     • vóór de sessie tel je wie er nú op staat (leden) — dat is de vraag bij
+       het plannen: "zitten er al vier in?";
+     • ná de sessie tel je iedereen die erin heeft gezeten (deelnemers), want
+       dan is iedereen doorgeschoven naar een volgende fase en zou een
+       geslaagde sessie er als leeg bij staan. */
+  const verleden = !!(s.datum && s.datum < vandaag);
+  const mensen = CRM.oo.deelnemers(s.id);
+  const aantal = verleden ? mensen.length : CRM.oo.leden(s.id).length;
+  const loc = CRM.oo.locatie(s);
+  /* De functietitel is de doorklik naar de vacaturekaart, net als bij de
+     vacatureregels hierboven. Een oude sessie zonder vacature toont zijn eigen
+     functietekst, grijs — er is niets om heen te klikken. */
+  const wat = vacs.length
+    ? vacs.map(v => `<button type="button" class="kl-oovac" data-oovac="${h(String(v.id))}"
+        title="Open de vacaturekaart">${h(v.functie || 'vacature')}</button>`).join('')
+    : `<span class="kl-oolos">${h(CRM.oo.functie(s) || 'niet aan een vacature gekoppeld')}</span>`;
+  return `<div class="kl-oorij${verleden ? ' weg' : ''}">
+    <div class="kl-oodat">
+      <span class="num">${h(s.datum ? CRM.fmtDay(s.datum) : 'geen datum')}</span>
+      ${s.tijd ? `<span class="num kl-ootijd">${h(s.tijd)}</span>` : ''}
+    </div>
+    <div class="kl-oowat">
+      <div class="kl-oovacs">${wat}</div>
+      <div class="meta">${loc ? h(loc) : 'locatie nog niet ingevuld'}</div>
+      ${mensen.length ? `<div class="kl-oomensen">${mensen.map(c =>
+        `<button type="button" class="kl-ookand" data-ookand="${h(String(c.id))}"
+           title="Open de kandidatenkaart">${h(c.naam)}</button>`).join('')}</div>` : ''}
+    </div>
+    <span class="kl-ooaantal num${aantal >= OO_STREEF ? ' goed' : ''}"
+      title="${verleden ? 'Deelnemers aan deze sessie' : 'Streef naar ' + OO_STREEF + ' kandidaten per sessie'}"
+      >${aantal}${verleden ? '' : '/' + OO_STREEF}</span>
+    <button type="button" class="btn ghost sm kl-oobew" data-oobew="${h(String(s.id))}">Wijzigen</button>
+  </div>`;
+}
+
+function ooBlokHtml(k){
+  if(!CRM.oo) return '';
+  /* Alleen bij een relatie waar ook echt iets loopt. Bij een lead of prospect
+     staat er geen vacature en geen kandidaat, en dan is een lege O&O-sectie
+     ("nog geen sessies") ruis op een kaart die juist over acquisitie gaat.
+     (Tjeerd, 3 aug 2026: "O&O sessie mag weg in de kaart" — bij een lead, waar
+     hij niets toevoegt.) */
+  const open = (CRM.vacaturesVan(k.naam) || []).filter(vacIsOpen);
+  const {komend, alles} = ooVanKlant(k.naam);
+  if(!alles.length && !open.length) return '';
+  const vandaag = CRM.todayISO();
   return `<div class="kl-oo">
     <div class="kl-tabkop"><div class="h2">O&amp;O-sessies</div>
-      <span class="meta">${komend.length ? komend.length + ' gepland' : 'niets gepland'}</span>
+      <span class="meta">${komend.length
+        ? `<b class="num">${komend.length}</b> gepland` : 'niets gepland'}</span>
       <span class="spacer"></span>
-      <button class="btn ghost sm" id="k_oonieuw">+ Sessie plannen</button></div>
-    ${sessies.length ? `<div class="kl-oolijst">${sessies.map(regel).join('')}</div>`
-      : `<p class="meta" style="margin:0">Nog geen sessies voor deze klant. Plan er een en koppel er kandidaten aan — die komen dan op fase O&amp;O sessie te staan.</p>`}
+      ${open.length ? '<button class="btn ghost sm" id="k_oonieuw">+ Sessie plannen</button>' : ''}</div>
+    ${alles.length ? `<div class="kl-oolijst">${alles.map(s => ooRegelHtml(s, vandaag)).join('')}</div>` : ''}
+    ${!open.length
+      ? `<p class="meta kl-oohint">Een sessie hoort altijd bij een vacature, en bij deze relatie staat er geen open. Voeg hierboven eerst een vacature toe — daarna kun je er een sessie op plannen.</p>`
+      : (!alles.length
+        ? `<p class="meta kl-oohint">Nog geen sessies voor deze relatie. Plan er een op een van de open vacatures en koppel er kandidaten aan — die komen dan op fase O&amp;O sessie te staan.</p>`
+        : '')}
   </div>`;
 }
 
 function ooBlokBind(el, k){
-  const D = CRM._rcDeel || {};
+  if(!CRM.oo) return;
   const nieuw = el.querySelector('#k_oonieuw');
-  if(nieuw) nieuw.onclick = () => D.ooModal(null, {klant:k.naam, locatie:k.locatie || ''});
-  el.querySelectorAll('[data-oo]').forEach(b => b.onclick = () => D.ooModal(b.dataset.oo));
+  if(nieuw) nieuw.onclick = () => ooPlanModal(k, null);
+  el.querySelectorAll('[data-oobew]').forEach(b =>
+    b.onclick = () => ooPlanModal(k, b.dataset.oobew));
+  /* Eigen attributen (data-oovac / data-ookand) in plaats van de data-vopen en
+     data-kand van de vacaturelijst: dit blok moet blijven werken waar het ook
+     wordt ingehangen, zonder van de bindingen van een andere lijst af te
+     hangen. */
+  el.querySelectorAll('[data-oovac]').forEach(b =>
+    b.onclick = () => CRM.ga('hot', {id: b.dataset.oovac}));
+  el.querySelectorAll('[data-ookand]').forEach(b =>
+    b.onclick = () => CRM.ga('kandidaten', {id: b.dataset.ookand}));
+}
+
+/* ── Sessie plannen of wijzigen vanaf de relatiekaart ──────────────
+   Anders dan op de vacaturekaart (js/hot.js) staat de hoofdvacature hier niet
+   vast: je komt binnen bij de klant, dus je kiest zelf op wélke vacature de
+   sessie wordt gehouden. Extra vacatures vink je daarnaast aan — voor als er
+   kandidaten voor een tweede functie bij zitten.
+
+   Bewust GEEN "snel een kandidaat aanmaken met alleen een naam": zo ontstond er
+   een kaart zonder telefoonnummer, zonder bron en zonder intake, en die
+   vervuiling kwam pas bij de klant aan het licht. Koppelen doe je op de
+   vacature- of kandidatenkaart, waar de hele persoon in beeld is. */
+function ooPlanModal(k, sid){
+  const s = sid ? CRM.oo.van(sid) : null;
+  const extraNu = new Set(((s && Array.isArray(s.extra_vacatures)) ? s.extra_vacatures : []).map(String));
+  const opties = ooVacKeuze(k.naam, [s && s.vacature_id].concat([...extraNu]));
+  if(!opties.length)
+    return CRM.toast('Deze relatie heeft geen open vacature om een sessie op te plannen — voeg er eerst een toe','err');
+
+  /* Een oude sessie zonder vacature krijgt een lege keuze bovenaan: hem stil
+     aan de eerste de beste vacature hangen zou de geschiedenis verzinnen.
+     Wél verplicht bij opslaan, zodat zo'n sessie er alsnog een krijgt. */
+  const losseSessie = !!(s && !s.vacature_id);
+  /* Een nieuwe sessie begint op de eerste open vacature — die keuze is bijna
+     altijd goed en scheelt een klik. Een bestáánde sessie houdt de zijne, ook
+     als die leeg is: dan staat de lege keuze bovenaan en kies je hem zelf. */
+  const hoofdNu = s ? String(s.vacature_id || '') : String((opties[0] && opties[0].id) || '');
+  const vacVan = id => opties.find(v => String(v.id) === String(id)) || null;
+  /* De status erbij zodra een vacature niet meer open is, en de klantnaam als
+     het er eentje van een andere relatie is — anders staat er tweemaal
+     dezelfde functietitel zonder verschil. */
+  const optieLbl = v => (v.functie || 'vacature')
+    + (v.klant && v.klant !== k.naam ? ` — ${v.klant}` : '')
+    + (vacIsOpen(v) ? '' : ` (${v.status || 'gesloten'})`);
+
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">O&amp;O-sessie ${s ? 'wijzigen' : 'plannen'}</div>
+      <div class="meta" style="margin-top:2px">${h(k.naam)}</div></div>
+    <div class="modal-b" style="max-height:70vh;overflow-y:auto">
+      <div class="f-row"><label for="oo_vac">Op welke vacature?</label>
+        <select id="oo_vac">
+          ${losseSessie ? '<option value="">— nog niet gekoppeld —</option>' : ''}
+          ${opties.map(v => `<option value="${h(String(v.id))}"${
+            String(v.id) === hoofdNu ? ' selected' : ''}>${h(optieLbl(v))}</option>`).join('')}
+        </select>
+        <span class="hint">Klant, functie en locatie komen hieruit. Zitten er kandidaten voor een tweede functie bij, vink die dan onderaan aan.</span></div>
+      <div class="f-grid">
+        <div class="f-row"><label for="oo_datum">Datum</label>
+          <input type="date" id="oo_datum" value="${h(String((s && s.datum) || '').slice(0,10))}"></div>
+        <div class="f-row"><label for="oo_tijd">Tijd</label>
+          <input type="time" id="oo_tijd" value="${h((s && s.tijd) || '')}"></div>
+      </div>
+      <div class="f-row"><label for="oo_loc">Locatie</label>
+        <input type="text" id="oo_loc" value="${h((s && s.locatie) || '')}">
+        <span class="hint" id="oo_lochint"></span></div>
+      <div class="f-row"><label>Zitten er kandidaten voor een andere functie bij?</label>
+        <div id="oo_extra" class="kl-ooextra"></div></div>
+      <div class="note err" id="oo_err" style="display:none"></div>
+    </div>
+    <div class="modal-f">
+      ${s ? '<button class="btn sub" id="oo_weg">Verwijderen</button>' : ''}
+      <span class="spacer"></span>
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="oo_ok">${s ? 'Wijzigingen bewaren' : 'Sessie plannen'}</button>
+    </div>`, {onOpen(m){
+      const sel  = m.querySelector('#oo_vac');
+      const loc  = m.querySelector('#oo_loc');
+      const hint = m.querySelector('#oo_lochint');
+      const err  = m.querySelector('#oo_err');
+
+      /* De locatie volgt de gekozen vacature zolang de gebruiker er zelf niets
+         anders heeft neergezet. Bij een bestaande sessie met een eigen locatie
+         blijft die dus staan, ook als je van vacature wisselt. */
+      let locHandmatig = !!(s && s.locatie);
+      loc.oninput = () => { locHandmatig = true; };
+
+      const teken = () => {
+        const hoofd = vacVan(sel.value);
+        hint.textContent = hoofd && hoofd.locatie
+          ? `De locatie van deze vacature is ${hoofd.locatie}.`
+          : 'Waar de sessie plaatsvindt.';
+        if(!locHandmatig) loc.value = (hoofd && hoofd.locatie) || k.locatie || '';
+        /* De keuzelijst voor extra vacatures wordt opnieuw opgebouwd zodra de
+           hoofdvacature wisselt — die mag er niet twee keer in staan. Wat al
+           aangevinkt was onthouden we in extraNu, zodat opnieuw tekenen geen
+           vinkjes wist. */
+        const rest = opties.filter(v => String(v.id) !== String(sel.value));
+        const bak = m.querySelector('#oo_extra');
+        bak.innerHTML = rest.length
+          ? rest.map(v => `<label class="check"><input type="checkbox" value="${h(String(v.id))}"${
+              extraNu.has(String(v.id)) ? ' checked' : ''}>
+              <span>${h(optieLbl(v))}${v.locatie ? ` <span class="meta">${h(v.locatie)}</span>` : ''}</span></label>`).join('')
+          : `<span class="hint">${h(k.naam)} heeft verder geen vacature om bij te zetten.</span>`;
+        bak.querySelectorAll('input[type=checkbox]').forEach(i => i.onchange = () => {
+          if(i.checked) extraNu.add(i.value); else extraNu.delete(i.value);
+        });
+      };
+      sel.onchange = teken;
+      teken();
+
+      m.querySelector('#oo_ok').onclick = async () => {
+        const toon = tekst => { err.style.display = ''; err.textContent = tekst; };
+        if(!sel.value){ toon('Kies op welke vacature deze sessie wordt gehouden.'); sel.focus(); return; }
+        const datum = m.querySelector('#oo_datum').value;
+        if(!datum){ toon('Kies de datum van de sessie.'); m.querySelector('#oo_datum').focus(); return; }
+        /* Alleen de vinkjes die nog naast de gekozen hoofdvacature staan —
+           extraNu kan er nog eentje bevatten die je net tot hoofdvacature
+           promoveerde, en dan zou hij dubbel worden opgeslagen. */
+        const extra = [...extraNu].filter(id => id !== String(sel.value));
+        const rij = await CRM.oo.bewaar({
+          id: s ? s.id : null,
+          vacature_id: String(sel.value),
+          extra_vacatures: extra,
+          datum, tijd: m.querySelector('#oo_tijd').value || '',
+          locatie: loc.value.trim()
+        });
+        /* Ging het mis, dan heeft CRM.oo.bewaar de melding al gegeven; het
+           venster blijft open zodat je het opnieuw kunt proberen. */
+        if(!rij) return;
+        CRM.modal.close();
+        const v = vacVan(sel.value);
+        await CRM.logActiviteit('klant', k.naam, 'systeem',
+          `O&O-sessie ${s ? 'gewijzigd' : 'gepland'} op ${CRM.fmtDate(datum)}${
+            v ? ' voor ' + (v.functie || 'vacature') : ''}`);
+        CRM.toast(s ? 'Sessie bijgewerkt' : 'Sessie gepland','ok');
+        CRM.render();
+      };
+
+      const weg = m.querySelector('#oo_weg');
+      if(weg) weg.onclick = async () => {
+        const n = CRM.oo.deelnemers(s.id).length;
+        const ok = await CRM.bevestig('O&O-sessie verwijderen?',
+          `${CRM.oo.label(s)} verdwijnt.` + (n
+            ? ` ${n === 1 ? 'De gekoppelde kandidaat raakt' : `De ${n} gekoppelde kandidaten raken`} los van de sessie; de kaarten blijven staan.`
+            : ''),
+          {gevaarlijk:true, knop:'Ja, verwijderen'});
+        if(!ok) return;
+        CRM.modal.close();
+        await CRM.oo.verwijder(s.id);
+        CRM.toast('Sessie verwijderd','ok');
+        CRM.render();
+      };
+    }});
 }
 
 function tabVacatures(el, k, c){
