@@ -83,12 +83,12 @@
   position:absolute;top:-16mm;right:-14mm;width:80mm;height:80mm;
   border-radius:50%;background:var(--card-2);z-index:0;
 }
-.cvg-kopzone > *:not(.cvg-deco){position:relative;z-index:1}
+.cvg-kopzone > *:not(.cvg-deco):not(.cvg-foto){position:relative;z-index:1}
 
 /* Profielfoto: rond, binnen de decoratiecirkel rechtsboven — een echte foto
    in plaats van het abstracte vlak, zonder de kop-layout te hoeven omgooien. */
 .cvg-foto{
-  position:absolute;top:10mm;right:11mm;width:26mm;height:26mm;
+  position:absolute;z-index:1;top:10mm;right:11mm;width:26mm;height:26mm;
   border-radius:50%;overflow:hidden;background:var(--card-2);
   border:2.5mm solid var(--paper);box-sizing:content-box;
 }
