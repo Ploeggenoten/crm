@@ -182,7 +182,7 @@ function werkRijen(arr){
     if(!van && !tot && t(r.jaar)) van = t(r.jaar);
     const jv = jaarVan(van), jt = jaarVan(tot);
     const lopend = !t(tot) || LOPEND.test(t(tot));
-    const badge = jv ? "'" + String(jv).slice(-2) + '-' + (lopend || !jt ? '' : "'" + String(jt).slice(-2)) : '';
+    const badge = jv ? "'" + String(jv).slice(-2) + '-' + (lopend ? 'heden' : (!jt ? '' : "'" + String(jt).slice(-2))) : '';
     const periode = [mndJaar(van), lopend ? 'heden' : mndJaar(tot)].filter(Boolean).join(' – ');
     let taken = r.taken;
     if(typeof taken === 'string') taken = taken.split(/\r?\n/);
