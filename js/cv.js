@@ -660,11 +660,41 @@ function paginaAan(){
 }
 function paginaUit(){ document.getElementById('cvg-print-page')?.remove(); }
 
+/* Een A4-pagina is bij print altijd 297mm hoog, en CSS 'mm' is per spec
+   exact 96px/inch — dus 1122,52px is geen gok maar de vaste omrekening. Past
+   het vel daar met de normale opmaak niet in (te veel werkervaring/taken),
+   dan verkleinen we met CSS `zoom` — die telt, anders dan `transform`, ook
+   echt mee in Chrome's paginering, dus het vel schuift niet meer door naar
+   een tweede blad. Ondergrens 0,72 om de tekst leesbaar te houden; wordt die
+   geraakt, dan past het cv nog steeds niet volledig en zeggen we dat erbij. */
+const CVG_PAGINA_HOOGTE_PX = 297 * 96 / 25.4;
+const CVG_MIN_ZOOM = .72;
+function pasPaginaAan(){
+  const vel = paneelEl && paneelEl.querySelector('#cvg_vel');
+  if(!vel) return;
+  vel.style.zoom = '';
+  const hoogte = vel.scrollHeight;
+  if(hoogte <= CVG_PAGINA_HOOGTE_PX) return;
+  const schaal = CVG_PAGINA_HOOGTE_PX / hoogte;
+  vel.style.zoom = String(Math.max(CVG_MIN_ZOOM, schaal));
+  if(schaal < CVG_MIN_ZOOM)
+    CRM.toast('Dit cv is erg lang — past ook verkleind niet volledig op één pagina. Kort de werkervaring of taken in.');
+}
+
 let printTimer = null;
-function printAan(){ if(paneelEl){ paneelEl.classList.add('cvg-print'); paginaAan(); } }
+function printAan(){
+  if(!paneelEl) return;
+  paneelEl.classList.add('cvg-print');
+  paginaAan();
+  pasPaginaAan();
+}
 function printUit(){
   clearTimeout(printTimer); printTimer = null;
-  if(paneelEl) paneelEl.classList.remove('cvg-print');
+  if(paneelEl){
+    paneelEl.classList.remove('cvg-print');
+    const vel = paneelEl.querySelector('#cvg_vel');
+    if(vel) vel.style.zoom = '';
+  }
   paginaUit();
 }
 window.addEventListener('beforeprint', printAan);
