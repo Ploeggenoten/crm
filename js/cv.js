@@ -193,7 +193,7 @@ function werkRijen(arr){
       sleutel: jv ? jv * 100 + maandVan(van) : null,
       bedrijf: t(r.werkgever || r.bedrijf || r.organisatie),
       functie: t(r.functie || r.rol || r.titel),
-      badge, periode,
+      van, tot, badge, periode,
       taken: Array.isArray(taken) ? taken.map(x => t(x)).filter(Boolean) : []
     };
   }).filter(r => r.bedrijf || r.functie)
@@ -417,10 +417,19 @@ function zijkantHtml(c, o, er, werk){
     </div>
 
     ${werk.length ? `<div class="cvg-blok">
-      <div class="label" style="margin-bottom:4px">Taken per functie</div>
-      <div class="meta" style="margin-bottom:10px">Twee tot vier concrete taken, één per regel. Wordt bij de kandidaat bewaard.</div>
+      <div class="label" style="margin-bottom:4px">Werkervaring</div>
+      <div class="meta" style="margin-bottom:10px">Staat een datum of badge er verkeerd op? Corrigeer hier — dit
+        schrijft direct terug naar de kandidaatkaart, dus de fout komt niet terug bij een volgend cv.</div>
       ${werk.map(w => `<div class="cvg-taakveld">
-        <label for="cvg_tk${w.i}">${h(w.bedrijf || w.functie)}${w.badge ? ` <span class="num">${h(w.badge)}</span>` : ''}</label>
+        <div class="cvg-werkrij">
+          <input type="text" data-werk="${w.i}|werkgever" value="${h(w.bedrijf)}" placeholder="Werkgever">
+          <input type="text" data-werk="${w.i}|functie" value="${h(w.functie)}" placeholder="Functie">
+        </div>
+        <div class="cvg-werkrij">
+          <input type="text" data-werk="${w.i}|van" value="${h(w.van)}" placeholder="Van, bijv. 2024-01">
+          <input type="text" data-werk="${w.i}|tot" value="${h(w.tot)}" placeholder="Tot, bijv. heden">
+        </div>
+        <label for="cvg_tk${w.i}">Taken${w.badge ? ` <span class="num">${h(w.badge)}</span>` : ''}</label>
         <textarea id="cvg_tk${w.i}" data-taak="${w.i}" rows="3" placeholder="Instellen en bedienen van productiemachines&#10;Kwaliteitscontroles uitvoeren">${h(w.taken.join('\n'))}</textarea>
       </div>`).join('')}
     </div>` : ''}
@@ -451,16 +460,19 @@ function schaalBij(){
   schaal.style.height = (vel.offsetHeight * s) + 'px';
 }
 
-/* Taken terugschrijven naar de kandidaat. Alleen het cv-veld, zodat we
-   niets anders op de kaart aanraken (en in demo niets naar de database). */
-async function bewaarTaken(c){
+/* Werkervaring (taken, werkgever, functie, van/tot) terugschrijven naar de
+   kandidaat. Alleen het cv-veld, zodat we niets anders op de kaart aanraken
+   (en in demo niets naar de database). Dezelfde rijen als het
+   Werkervaring-blok op de kandidaatkaart (cv.werkgevers) — een correctie
+   hier staat dus ook meteen goed op de kaart, en bij het volgende cv. */
+async function bewaarWerk(c){
   const rij = CRM.state.cands.find(r => String(r.id) === String(c.id));
   if(rij) rij.cv = c.cv;
   if(!CRM.demo){
     const {error} = await CRM.sb.from('candidates').update({cv:c.cv}).eq('id', c.id);
-    if(error) return CRM.fout('Taken opslaan mislukt', error);
+    if(error) return CRM.fout('Werkervaring opslaan mislukt', error);
   }
-  CRM.toast('Taken bewaard bij de kandidaat', 'ok');
+  CRM.toast('Werkervaring bewaard bij de kandidaat', 'ok');
 }
 
 function open(kandidaat, opts){
@@ -569,7 +581,32 @@ function open(kandidaat, opts){
       ta.oninput = CRM.debounce(() => { if(zetTaken()){ vuil = true; teken(); } }, 200);
       ta.onblur  = () => {
         if(zetTaken()){ vuil = true; teken(); }
-        if(vuil){ vuil = false; bewaarTaken(c); }
+        if(vuil){ vuil = false; bewaarWerk(c); }
+      };
+    });
+
+    /* Werkgever, functie, van en tot: zelfde principe als taken hierboven.
+       Badge en periode worden altijd uit van/tot berekend (zie werkRijen),
+       dus dit is de plek om een verkeerd ingelezen datum recht te zetten —
+       zonder terug te hoeven naar de kandidaatkaart. */
+    zijEl.querySelectorAll('[data-werk]').forEach(inp => {
+      const [idxStr, sleutel] = inp.dataset.werk.split('|');
+      const idx = Number(idxStr);
+      const zetWerk = () => {
+        const rijen = (c.cv && Array.isArray(c.cv.werkgevers)) ? c.cv.werkgevers : null;
+        if(!rijen || !rijen[idx]) return false;
+        const nieuw = t(inp.value);
+        const oud = t(rijen[idx][sleutel]);
+        if(nieuw === oud) return false;
+        c.cv = Object.assign({}, c.cv);
+        c.cv.werkgevers = rijen.map((x, j) => j === idx ? Object.assign({}, x, {[sleutel]: nieuw}) : x);
+        return true;
+      };
+      let vuil = false;
+      inp.oninput = CRM.debounce(() => { if(zetWerk()){ vuil = true; teken(); } }, 200);
+      inp.onblur  = () => {
+        if(zetWerk()) vuil = true;
+        if(vuil){ vuil = false; bewaarWerk(c); tekenZij(); }
       };
     });
   }

@@ -48,6 +48,8 @@
 .cvg-taakveld:last-child{margin-bottom:0}
 .cvg-taakveld label{display:block;font-size:12px;font-weight:600;color:var(--txt-2);margin-bottom:4px}
 .cvg-taakveld label .num{color:var(--olive)}
+.cvg-werkrij{display:flex;gap:8px;margin-bottom:6px}
+.cvg-werkrij input{flex:1;min-width:0;font-size:12.5px}
 .cvg-taakveld textarea{min-height:58px;font-size:12.5px}
 
 /* Voorbeeld rechts */
