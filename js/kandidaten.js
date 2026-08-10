@@ -1063,6 +1063,7 @@ function kaart(mount, acties, id){
     </div>`;
 
 
+  if(c.foto) CRM.opslag.vulAfbeeldingen(mount);
   bindVelden(mount, c);
   bindSterren(mount, c);
   bindMist(mount, c);
@@ -1442,7 +1443,17 @@ function kopHtml(c){
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
   const gold = isGolden(c.id);
+  /* Profielfoto: alleen tonen als hij er is (uit het cv gehaald via
+     js/cvparse.js, fotoUitPdf). Zelfde tijdelijke-link-patroon als de eigen
+     profielfoto (CRM.tekenEigenAvatar): staat de ondertekende link al in de
+     sessiecache, dan direct de <img>; anders initialen-vrije lege ava met
+     data-opslagfoto, die CRM.opslag.vulAfbeeldingen() na het tekenen vult. */
+  const fotoNu = c.foto ? CRM.opslag.srcNu(c.foto) : '';
+  const fotoHtml = c.foto
+    ? `<div class="ava lg foto"${fotoNu ? '' : ` data-opslagfoto="${h(c.foto)}"`}>${fotoNu ? `<img src="${h(fotoNu)}" alt="">` : ''}</div>`
+    : '';
   return `<div class="card"><div class="card-b kd-hero">
+    ${fotoHtml}
     <div style="min-width:0;flex:1">
       <div class="h1" style="font-size:24px">${c.naam ? h(c.naam) : '<span class="kd-geennaam">Naam nog niet ingevuld</span>'}${gold?' '+goldenSter('lg'):''}</div>
       ${sterrenHtml(c)}

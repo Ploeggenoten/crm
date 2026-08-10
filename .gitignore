@@ -12,3 +12,11 @@ supabase/import-*.sql
 # (zie het kopcommentaar in js/cvparse.js). Op 3 aug 2026 heeft een parallelle
 # sessie ze met git add -A meegecommit en stonden er zeven echte cv's publiek.
 _cv_*
+
+# Margefacturen van Pronkert bevatten namen, uurlonen en registratienummers van
+# flexkrachten. De lezer (routines/*.py, *.sh) mag mee de repo in, de gegevens
+# zelf nooit. De weekroutine zet die daarom in de scratchpad, buiten deze map.
+routines/*.json
+routines/*.txt
+routines/*.pdf
+routines/*.xlsx

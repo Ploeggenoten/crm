@@ -85,6 +85,15 @@
 }
 .cvg-kopzone > *:not(.cvg-deco){position:relative;z-index:1}
 
+/* Profielfoto: rond, binnen de decoratiecirkel rechtsboven — een echte foto
+   in plaats van het abstracte vlak, zonder de kop-layout te hoeven omgooien. */
+.cvg-foto{
+  position:absolute;top:10mm;right:11mm;width:26mm;height:26mm;
+  border-radius:50%;overflow:hidden;background:var(--card-2);
+  border:2.5mm solid var(--paper);box-sizing:content-box;
+}
+.cvg-foto img{width:100%;height:100%;object-fit:cover;display:block}
+
 .cvg-top{display:flex;align-items:center;gap:16px}
 .cvg-logo{height:15px;width:auto;display:block}
 .cvg-pil{

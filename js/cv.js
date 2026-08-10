@@ -28,6 +28,7 @@ const NAAM_STANDEN = [
   {k:'geen',     lbl:'Naamloos'}
 ];
 const ONDERDELEN = [
+  {k:'foto',   lbl:'Profielfoto'},
   {k:'werk',   lbl:'Werkervaring'},
   {k:'skills', lbl:'Vaardigheden'},
   {k:'opl',    lbl:'Opleiding'},
@@ -38,7 +39,10 @@ const ONDERDELEN = [
 
 const STD = {
   naamStand:'voornaam', salaris:false,
-  aan:{werk:true, skills:true, opl:true, cert:true, talen:true, voorw:true}
+  /* Foto staat standaard AAN (wens Tjeerd, 10 aug 2026): is er een foto uit
+     het cv gehaald, dan komt hij meteen op het vel — de AM vinkt 'm uit als
+     hij 'm niet wil, in plaats van 'm er elke keer bij te moeten zetten. */
+  aan:{foto:true, werk:true, skills:true, opl:true, cert:true, talen:true, voorw:true}
 };
 
 function laadOpts(){
@@ -246,6 +250,7 @@ function extraRegels(c, ctx, o, welke){
 function beschikbaar(c, ctx){
   const cv = c.cv || {};
   return {
+    foto:   !!c.foto,
     werk:   werkRijen(cv.werkgevers).length > 0,
     skills: lijst(cv.skills).length > 0,
     opl:    oplRijen(cv.opleidingen).length > 0,
@@ -283,6 +288,7 @@ function bouwModel(c, ctx, o){
 
   const m = {
     stand, naam, ref: referentie(c.id),
+    fotoPad: aan('foto') ? c.foto : '',
     onder, pil: beschikbaarPil(c),
     schets: scrub(o.schets, c.naam, stand),
     werk:   aan('werk')   ? werkRijen(cv.werkgevers) : [],
@@ -331,6 +337,10 @@ function velHtml(m){
   return `
     <div class="cvg-kopzone">
       <div class="cvg-deco" aria-hidden="true"></div>
+      ${m.fotoPad ? (() => {
+        const nu = CRM.opslag.srcNu(m.fotoPad);
+        return `<div class="cvg-foto"${nu ? '' : ` data-opslagfoto="${h(m.fotoPad)}"`}>${nu ? `<img src="${h(nu)}" alt="">` : ''}</div>`;
+      })() : ''}
       <div class="cvg-top">
         <img class="cvg-logo" src="assets/logo-dark.png" alt="Ploeggenoten">
         ${m.pil ? `<span class="cvg-pil">${h(m.pil)}</span>` : ''}
@@ -535,6 +545,7 @@ function open(kandidaat, opts){
   function teken(){
     model = bouwModel(c, ctx, o);
     velEl.innerHTML = velHtml(model);
+    if(model.fotoPad) CRM.opslag.vulAfbeeldingen(velEl);
     const stand = NAAM_STANDEN.find(s => s.k === o.naamStand);
     standEl.textContent = 'Naam: ' + (stand ? stand.lbl.toLowerCase() : '') +
       ' · geen contactgegevens op het vel' + (model.leeg ? ' · weinig gegevens beschikbaar' : '');

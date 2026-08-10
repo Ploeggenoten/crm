@@ -126,7 +126,7 @@ let _fin = null, _finFout = null, _mist = [];
 
 function legeFin(){
   return { placements:[], installments:[], saldi:[], settings:{}, yukiOpen:[],
-           flexWeken:[], flexPl:[], flexAfspr:[], budget:[], actuals:[],
+           flexWeken:[], flexPl:[], flexAfspr:[], flexRegels:[], budget:[], actuals:[],
            tarieven:[], loans:[], loanPayments:[], tx:[], dismissed:[] };
 }
 
@@ -206,7 +206,7 @@ async function finLaad(force=false){
   if(CRM.demo){ _fin = Object.assign(legeFin(), {demo:true}); return _fin; }
 
   _mist = []; _finFout = null;
-  const [pl, inst, sal, st, yo, fw, fp, fa, bud, act, trf, ln, lp, tx, dis] = await Promise.all([
+  const [pl, inst, sal, st, yo, fw, fp, fa, bud, act, trf, ln, lp, tx, dis, fr] = await Promise.all([
     veiligQ('fin_placements','id'),        veiligQ('fin_installments','geplande_datum'),
     veiligQ('fin_bank_saldo','datum',false),veiligQ('fin_settings'),
     veiligQ('fin_yuki_open','datum'),      veiligQ('fin_flex_weken','week'),
@@ -214,7 +214,10 @@ async function finLaad(force=false){
     veiligQ('fin_costs_budget','vanaf_maand'), veiligQ('fin_costs_actual','maand'),
     veiligQ('fin_tarieven','klant'),       veiligQ('fin_loans','id'),
     veiligQ('fin_loan_payments','datum'),  veiligQ('fin_bank_tx','datum',false),
-    veiligQ('fin_dismissed_candidates')
+    veiligQ('fin_dismissed_candidates'),
+    /* Regels van de Pronkert-margefacturen. Bestaat de tabel nog niet (migratie
+       niet gedraaid), dan geeft veiligQ null terug en werkt de rest gewoon door. */
+    veiligQ('fin_flex_regels','week')
   ]);
   /* Alle kerntabellen geblokkeerd (RLS) of onbereikbaar → helemaal geen data. */
   if(pl===null && inst===null && sal===null){ _fin = null; return _fin; }
@@ -229,6 +232,7 @@ async function finLaad(force=false){
     flexWeken:    (fw||[]).slice().sort((a,b)=>String(a.week).localeCompare(String(b.week))),
     flexPl:       fp||[],
     flexAfspr:    fa||[],
+    flexRegels:   fr||[],
     budget:       bud||[],
     actuals:      act||[],
     tarieven:     trf||[],
@@ -462,6 +466,123 @@ function flexPlStats(f){
     verdiendAfgerond: gestoptRows.reduce((s,r) => s + (r.verdiend||0), 0)
   };
 }
+/* ─── Wat kwam er per week per flexkracht binnen ────────────────
+   Uit fin_flex_regels: elke regel van elke margefactuur van Pronkert. Alles
+   wordt hier AFGELEID (som), nooit opgeteld bij een vorige stand — een factuur
+   die opnieuw wordt ingelezen kan de cijfers dus niet verdubbelen.
+   Reserveringen (eindejaarsuitkering, atv) leveren wél marge maar géén uren;
+   dat onderscheid is bij het inlezen al gemaakt in de kolom `uren`.        */
+/* Eén flexkracht = één sleutel, ongeacht de bron. NIET op registratienummer:
+   dat staat wél op de PDF-factuur en níét op het Excel-marge-overzicht, waardoor
+   dezelfde persoon in tweeën viel (Sven kwam binnen als 32 u én als 114 u).
+   De naam staat op beide bronnen identiek: 'S. van Nicolaas (Sven)'. */
+const flexSleutel = r => String(`${r.naam||''} ${r.roepnaam||''}`)
+  .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+  .split(/[^a-z0-9]+/).filter(Boolean).join('-');
+
+function flexPerWeekKracht(f, nWeken){
+  const weken = new Map(), krachten = new Map();
+  (f.flexRegels||[]).forEach(r => {
+    const wk = String(r.week||'').slice(0,10); if(!wk) return;
+    const sleutel = flexSleutel(r);
+    const naam = tekst(r.roepnaam,'') || tekst(r.naam,'') || '?';
+    const w = weken.get(wk) || {week:wk, bedrag:0, uren:0, per:new Map()};
+    const cel = w.per.get(sleutel) || {naam, uren:0, marge:0};
+    cel.uren  += getal(r.uren);   cel.marge += getal(r.marge);
+    w.per.set(sleutel, cel);
+    w.bedrag += getal(r.marge);   w.uren += getal(r.uren);
+    weken.set(wk, w);
+    const k = krachten.get(sleutel) || {sleutel, naam, regnr:tekst(r.regnr,''),
+                                        functie:tekst(r.functie,''), uren:0, marge:0, laatste:''};
+    k.uren += getal(r.uren); k.marge += getal(r.marge);
+    if(wk > k.laatste) k.laatste = wk;
+    krachten.set(sleutel, k);
+  });
+  const rijen = [...weken.values()].sort((a,b) => b.week.localeCompare(a.week))
+                                   .slice(0, nWeken || 13);
+  /* Alleen kolommen tonen voor wie in de getoonde periode ook echt werkte. */
+  const inBeeld = new Set(); rijen.forEach(w => w.per.forEach((v,k) => { if(v.marge||v.uren) inBeeld.add(k); }));
+  const kolommen = [...krachten.values()].filter(k => inBeeld.has(k.sleutel))
+    .sort((a,b) => b.laatste.localeCompare(a.laatste) || b.marge - a.marge);
+  return {rijen, kolommen, krachten:[...krachten.values()], nWeken:weken.size};
+}
+
+/* ─── Wat de margefactuur over de tariefopbouw zegt ─────────────
+   Op elke factuurregel staat: uurloon, factor en tarief. Die factor is de
+   INKOOPfactor van Pronkert — uurloon × factor is wat zíj ons per uur rekenen.
+   Het tarief is wat de klant per uur betaalt. Daaruit volgt alles:
+
+     inkooptarief = uurloon × inkoopfactor
+     klantfactor  = klanttarief ÷ uurloon
+     margefactor  = klantfactor − inkoopfactor      ← de marge in factor
+     marge/uur    = margefactor × uurloon
+
+   Gewogen over de normale uren: overwerk en de reserveringen (eindejaars-
+   uitkering, atv) lopen op een eigen, lagere factor en zouden het beeld
+   vertroebelen. Hun marge telt wél mee in het bedrag en het percentage.   */
+function flexFactoren(f){
+  const per = new Map();
+  (f.flexRegels||[]).forEach(r => {
+    const sleutel = flexSleutel(r);
+    const k = per.get(sleutel) || {sleutel, naam: tekst(r.roepnaam,'') || tekst(r.naam,'') || '?',
+      regnr:'', functie: tekst(r.functie,''), klant: tekst(r.klant,''),
+      uren:0, marge:0, klantomzet:0, weken:new Map(), laatste:''};
+    const wk = String(r.week||'').slice(0,10);
+    k.uren += getal(r.uren); k.marge += getal(r.marge); k.klantomzet += getal(r.klantbedrag);
+    if(!k.klant && tekst(r.klant,'')) k.klant = tekst(r.klant,'');
+    if(!k.regnr && tekst(r.regnr,'')) k.regnr = tekst(r.regnr,'');
+    /* Tariefopbouw per week bijhouden en straks de LAATSTE week nemen: op de
+       kaart hoort te staan wat er nú geldt, niet een gemiddelde over maanden
+       waarin een tariefwijziging wegvalt. */
+    if(String(r.soort||'').trim().toLowerCase() === 'loon normale uren' && getal(r.uren)){
+      const u = getal(r.uren);
+      const w = k.weken.get(wk) || {nu:0, loon:0, tar:0, fac:0};
+      w.nu += u; w.loon += getal(r.uurloon)*u; w.tar += getal(r.tarief)*u; w.fac += getal(r.factor)*u;
+      k.weken.set(wk, w);
+      if(wk > k.laatste) k.laatste = wk;
+    }
+    per.set(sleutel, k);
+  });
+  /* Dezelfde koppelregel als de Edge Function: eerst het registratienummer,
+     anders de roepnaam — en alleen als die bij precies één plaatsing hoort. */
+  const woorden = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+                        .split(/[^a-z0-9]+/).filter(Boolean);
+  const zoekPl = k => {
+    const opNr = (f.flexPl||[]).find(x => x.regnr && String(x.regnr) === k.regnr);
+    if(opNr) return opNr;
+    const roep = woorden(k.naam)[0];
+    const kandidaten = (f.flexPl||[]).filter(x => woorden(x.kandidaat).includes(roep));
+    return kandidaten.length === 1 ? kandidaten[0] : null;
+  };
+  return [...per.values()].map(k => {
+    const nw = k.weken.get(k.laatste) || {nu:0, loon:0, tar:0, fac:0};
+    const loon = nw.nu ? nw.loon/nw.nu : null, tar = nw.nu ? nw.tar/nw.nu : null,
+          fac  = nw.nu ? nw.fac/nw.nu : null;
+    const klantfactor = (loon && tar != null) ? tar/loon : null;
+    /* Een eerdere week met een andere inkoopfactor = Pronkert heeft zijn opslag
+       aangepast. Dat mag niet stil gebeuren, dus het krijgt een chip. */
+    const eerder = [...k.weken.entries()].filter(([w]) => w !== k.laatste)
+      .map(([, v]) => v.nu ? v.fac/v.nu : null).filter(x => x);
+    const gewijzigd = (fac && eerder.length && eerder.some(x => Math.abs(x - fac) > 0.005))
+      ? eerder[eerder.length-1] : null;
+    const pl = zoekPl(k);
+    return {
+      plaatsing: pl,
+      plInkoop: pl ? getalOfNull(pl.inkoop_factor) : null,
+      sleutel:k.sleutel, naam:k.naam, regnr:k.regnr, functie:k.functie, klant:k.klant,
+      uren:k.uren, marge:k.marge, klantomzet:k.klantomzet, laatste:k.laatste,
+      uurloon: loon, inkoopfactor: fac || null, klanttarief: tar,
+      inkooptarief: (loon != null && fac) ? loon*fac : null,
+      klantfactor, margefactor: (klantfactor != null && fac) ? klantfactor - fac : null,
+      margePerUur: k.uren ? k.marge/k.uren : null,
+      margePct: k.klantomzet ? k.marge/k.klantomzet : null,
+      /* Wijkt de factor van de laatste factuur af van het gemiddelde, dan is er
+         iets veranderd aan de afspraak — dat mag niet stilletjes gebeuren. */
+      factorGewijzigd: (fac && k.facLaatst && Math.abs(k.facLaatst - fac) > 0.005) ? k.facLaatst : null
+    };
+  }).sort((a,b) => b.laatste.localeCompare(a.laatste) || b.marge - a.marge);
+}
+
 /* Wekelijkse marge-uitkering Pronkert: run-rate = gemiddelde laatste 4 weken × 52/12 */
 function flexStats(f){
   const wk = f.flexWeken.slice().sort((a,b) => String(a.week).localeCompare(String(b.week)));
@@ -2156,6 +2277,12 @@ function tabFlex(el, f){
   const dekking = vaste ? fx.maandRunRate/vaste : null;
   const weken = fx.weken.slice(-13);
   const maxW = Math.max(1, ...weken.map(w => getal(w.bedrag)));
+  const pwk = flexPerWeekKracht(f, 13);
+
+  /* Bijna aan de kosteloze overname: dáár stopt de marge. Onder de 15% van de
+     afgesproken uren is het tijd om met de klant te praten, niet als het al zover is. */
+  const bijnaOver = st.rows.filter(r => r.resterendUren != null && r.overnameUren
+    && r.resterendUren / r.overnameUren <= 0.15);
 
   const rij = (r, afgerond) => `
     <tr>
@@ -2173,6 +2300,92 @@ function tabFlex(el, f){
         ? `<b class="num">nog ${Math.round(r.resterendUren)} u</b>${r.overnameWaarde != null ? `<div class="rowsub">waarde ${eur(r.overnameWaarde)}</div>` : ''}`
         : (r.overnameWaarde != null ? `<b class="num">${eur(r.overnameWaarde)}</b>` : '<span class="meta">overname-uren?</span>')}</td>`}
     </tr>`;
+
+  /* Wat kwam er per week per persoon binnen — de vraag die elke vrijdag speelt.
+     Kolommen zijn de flexkrachten die in de getoonde weken gewerkt hebben. */
+  const knopInlezen = '<button class="btn sub sm" id="fin_marge_in">Margefactuur inlezen</button>';
+  const perWeekKaart = () => {
+    if(!pwk.rijen.length) return kaart('Per week en per persoon',
+      CRM.ui.leeg('Nog geen factuurregels ingelezen',
+        'Zodra de weekroutine de margefactuur van Pronkert leest, staat hier per week wat elke flexkracht opleverde. Je kunt een factuur ook zelf inlezen.'),
+      {acties: knopInlezen});
+    const cel = c => c ? `<span class="num pos">${eur(c.marge)}</span><div class="rowsub num">${num(c.uren,2)} u</div>`
+                       : '<span class="meta">—</span>';
+    const kop = '<th>Week</th>' + pwk.kolommen.map(k => `<th class="n">${H(k.naam)}</th>`).join('')
+              + '<th class="n">Totaal</th><th class="n">Uren</th>';
+    const rijen = pwk.rijen.map(w => `<tr>
+        <td><b class="num">${H(dKort(w.week))}</b></td>
+        ${pwk.kolommen.map(k => `<td class="n">${cel(w.per.get(k.sleutel))}</td>`).join('')}
+        <td class="n"><b class="num">${eur(w.bedrag)}</b></td>
+        <td class="n num">${num(w.uren,2)} u</td></tr>`).join('');
+    const somK = s => pwk.rijen.reduce((a,w) => {
+      const c = w.per.get(s); return {m:a.m + (c?c.marge:0), u:a.u + (c?c.uren:0)}; }, {m:0,u:0});
+    const voetrij = `<tr>
+        <td><b>Totaal ${pwk.rijen.length} ${pwk.rijen.length===1?'week':'weken'}</b></td>
+        ${pwk.kolommen.map(k => { const s = somK(k.sleutel);
+          return `<td class="n"><b class="num">${eur(s.m)}</b><div class="rowsub num">${num(s.u,2)} u</div></td>`; }).join('')}
+        <td class="n"><b class="num">${eur(pwk.rijen.reduce((a,w) => a + w.bedrag, 0))}</b></td>
+        <td class="n num">${num(pwk.rijen.reduce((a,w) => a + w.uren, 0),2)} u</td></tr>`;
+    return kaart('Per week en per persoon', tabel(kop, rijen + voetrij),
+      {plat:true, acties: knopInlezen,
+       voet:'Rechtstreeks uit de margefacturen van Pronkert. Uren zijn gewerkte uren — eindejaarsuitkering en atv leveren wel marge op, maar geen uren.'});
+  };
+
+  /* De opbouw van het uurtarief, rechtstreeks van de factuur: wat Pronkert ons
+     rekent, wat de klant betaalt, en het verschil — in factor én in euro's. */
+  const fct = flexFactoren(f);
+  const inkStd = Sn(f,'flex_inkoop_factor',1.8) || 1.8;
+  const factorKaart = () => {
+    if(!fct.length) return '';
+    const rijen = fct.map(k => `<tr>
+        <td><b>${H(k.naam)}</b><div class="rowsub">${H(k.functie || k.klant || '')}${
+          k.regnr ? ' · reg. ' + H(k.regnr) : ''}</div></td>
+        <td class="n num">${eur2(k.uurloon)}</td>
+        <td class="n"><b class="num">${num(k.inkoopfactor,4)}×</b>
+          <div class="rowsub num">${eur2(k.inkooptarief)}/uur</div>
+          ${k.factorGewijzigd ? `<div class="rowsub"><span class="chip amber">nu ${H(num(k.factorGewijzigd,4))}×</span></div>` : ''}</td>
+        <td class="n"><b class="num">${num(k.klantfactor,4)}×</b>
+          <div class="rowsub num">${eur2(k.klanttarief)}/uur</div></td>
+        <td class="n"><b class="num pos">${num(k.margefactor,4)}×</b></td>
+        <td class="n num pos">${eur2(k.margePerUur)}</td>
+        <td class="n num">${k.margePct != null ? pctF(k.margePct) : '—'}</td>
+        <td class="n num">${num(k.uren,2)} u</td>
+        <td class="n"><b class="num pos">${eur(k.marge)}</b>
+          <div class="rowsub num">van ${eur(k.klantomzet)} omzet</div></td>
+      </tr>`).join('');
+    const kop = '<th>Flexkracht</th><th class="n">Uurloon</th><th class="n">Inkoop Pronkert</th>'
+      + '<th class="n">Klant betaalt</th><th class="n">Marge-factor</th><th class="n">Marge/uur</th>'
+      + '<th class="n">Marge %</th><th class="n">Uren</th><th class="n">Verdiend</th>';
+    /* De factuur is leidend: bij elke import worden uurloon, inkoop- en
+       klantfactor op de plaatsing bijgewerkt. Zolang dat nog niet gebeurd is
+       rekent de app vooruit met een andere factor dan Pronkert factureert, en
+       staat élke verwachte marge en overname-waarde net verkeerd. */
+    const afwijkers = fct.filter(k => k.inkoopfactor &&
+      Math.abs(k.inkoopfactor - (k.plInkoop != null ? k.plInkoop : inkStd)) > 0.005);
+    const geenPl = fct.filter(k => !k.plaatsing);
+    const note = (afwijkers.length ? `<div class="note info" style="margin:0 0 12px">
+        De plaatsing rekent nog met een andere inkoopfactor dan de factuur:
+        ${afwijkers.map(k => `${H(k.naam)} staat op <b>${H(num(k.plInkoop != null ? k.plInkoop : inkStd,4))}×</b>,
+          Pronkert factureert <b>${H(num(k.inkoopfactor,4))}×</b>`).join(' · ')}.
+        Bij de eerstvolgende import wordt dat gelijkgetrokken — de factuur is leidend.
+      </div>` : '') +
+      (geenPl.length ? `<div class="note warn" style="margin:0 0 12px">
+        Niet aan een plaatsing te koppelen: ${geenPl.map(k =>
+          `${H(k.naam)}${k.regnr ? ' (reg. ' + H(k.regnr) + ')' : ''}`).join(', ')}.
+        Zet dat registratienummer op de juiste flexplaatsing, dan matcht elke volgende factuur vanzelf.
+      </div>` : '');
+    return kaart('Tariefopbouw per flexkracht — van de margefactuur',
+      note + tabel(kop, rijen),
+      {voet:'Inkoop = uurloon × factor van Pronkert. Klant betaalt = het tarief op dezelfde regel. '
+          + 'Marge-factor = klantfactor − inkoopfactor; × het uurloon geeft de marge per uur. '
+          + 'Factoren zijn gewogen over de normale uren — overwerk en eindejaarsuitkering/atv lopen op een eigen factor, maar tellen wel mee in het bedrag en het percentage.'});
+  };
+
+  const overnameNote = bijnaOver.length ? `<div class="note warn">
+      <b>Bijna aan de kosteloze overname.</b> ${bijnaOver.map(r =>
+        `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} — nog ${Math.round(r.resterendUren)} u`).join(' · ')}.
+      Daarna mag de klant hem kosteloos overnemen en stopt jouw marge. Nu is het moment voor een vervolgafspraak.
+    </div>` : '';
 
   const kopActief = '<th>Flexkracht</th><th class="n">Uurloon</th><th class="n">Factor</th>'
     + '<th class="n">Marge/uur</th><th class="n">Gewerkte uren</th><th class="n">Verdiend</th><th class="n">Tot kosteloze overname</th>';
@@ -2203,6 +2416,7 @@ function tabFlex(el, f){
     </div>
 
     <div class="stack">
+      ${overnameNote}
       ${kaart('Actief lopend',
         st.rows.length ? tabel(kopActief, st.rows.map(r => rij(r,false)).join(''))
           : CRM.ui.leeg('Geen actieve flexkrachten','Ze verschijnen automatisch vanuit het bord (Contract getekend, type Flex).'),
@@ -2211,6 +2425,10 @@ function tabFlex(el, f){
 
       ${st.gestoptRows.length ? kaart('Afgerond / gestopt — verdiende marge',
         tabel(kopKlaar, st.gestoptRows.map(r => rij(r,true)).join('')), {plat:true}) : ''}
+
+      ${factorKaart()}
+
+      ${perWeekKaart()}
 
       ${kaart('Wekelijkse marge (Pronkert)',
         weken.length ? `<div class="fin-bars">
@@ -2222,9 +2440,124 @@ function tabFlex(el, f){
         <p class="meta" style="margin-top:12px">Flex-omzet dit jaar (YTD): <b>${eur(fx.ytd)}</b>.
           Sven wordt wekelijks gefactureerd, Alain per 4 weken — recente weken kunnen tijdelijk lager
           lijken tot die factuur binnen is. De cashflow rekent met het gemiddelde van de laatste 4 weken.</p>`
-        : CRM.ui.leeg('Nog geen weekfacturen verwerkt','Importeer de Pronkert-margefacturen in de finance-app.'),
+        : CRM.ui.leeg('Nog geen weekfacturen verwerkt','Lees een margefactuur in — of wacht op de weekroutine, die dat maandag zelf doet.'),
         {acties:`<span class="meta">laatste ${weken.length} weken</span>`})}
     </div>`;
+
+  el.querySelectorAll('#fin_marge_in').forEach(b => b.onclick = () => openMargeImport(f));
+}
+
+/* ─── Margefactuur inlezen ──────────────────────────────────────
+   Normaal doet de weekroutine dit vanzelf (elke maandag, uit de mail). Dit
+   scherm is de terugval: open de PDF, selecteer alles, plak het hier.
+
+   De tekst gaat naar dezelfde Edge Function die de routine gebruikt, zodat het
+   voorbeeld nooit iets anders kan tonen dan wat er wordt opgeslagen. Eerst een
+   droogloop — je ziet per week en per persoon wat eruit komt — en pas na jouw
+   akkoord wordt er geschreven. Zelfde volgorde als de overeenkomst-lezer op de
+   klantkaart en de cv-lezer.                                              */
+async function margeFunctie(body){
+  const {data:{session}} = await CRM.sb.auth.getSession();
+  if(!session) throw new Error('geen actieve sessie — log opnieuw in');
+  /* De functie heet in Supabase `dynamic-worker` (naam die het dashboard zelf
+     verzon bij deploy-via-editor); de code staat in supabase/functions/pronkert-marge/. */
+  const resp = await fetch(SUPABASE_URL + '/functions/v1/dynamic-worker', {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token},
+    body: JSON.stringify(body)
+  });
+  const uit = await resp.json().catch(() => ({}));
+  if(resp.status === 404 || resp.status === 503)
+    throw Object.assign(new Error('nog niet gedeployed'), {setup:true});
+  if(!resp.ok){
+    /* uit.error kan een string of een object zijn — nooit rechtstreeks in een
+       melding plakken, anders leest de gebruiker "[object Object]". */
+    const reden = typeof uit.error === 'string' ? uit.error : (uit.error && uit.error.message) || '';
+    throw new Error(reden || ('de functie gaf status ' + resp.status));
+  }
+  return uit;
+}
+
+function margeVoorbeeldHtml(uit){
+  if(uit.waarschuwing) return `<div class="note err">${H(uit.waarschuwing)}</div>`;
+  const weken = uit.weken || [];
+  if(!weken.length) return `<div class="note warn">Geen factuurregels herkend. Weet je zeker dat je de héle tekst van de margefactuur hebt geplakt?</div>`;
+  return `<div class="note ok" style="margin-bottom:12px">
+      Factuur <b>${H(uit.factuur || '—')}</b>${uit.factuurdatum ? ' van ' + H(dOf(uit.factuurdatum)) : ''} —
+      ${uit.aantal_regels || 0} regels, totaal <b>${eur(uit.totaal)}</b> marge.
+      De optelling van de regels komt exact uit op het factuurtotaal.
+    </div>
+    ${weken.map(w => `<div style="margin-bottom:10px">
+      <div><b>Week ${H(String(w.weeknr))}</b> <span class="meta">(maandag ${H(dOf(w.week))})</span> —
+        <b class="num pos">${eur(w.bedrag)}</b> <span class="meta num">over ${num(w.uren,2)} uur</span></div>
+      <table class="tbl" style="margin-top:6px"><tbody>
+        ${(w.krachten||[]).map(k => `<tr>
+          <td>${H(k.roepnaam || k.naam)} <span class="meta">${H(k.functie||'')}</span></td>
+          <td class="n num">${num(k.uren,2)} u</td>
+          <td class="n num pos">${eur(k.marge)}</td>
+          <td class="n meta num">${k.marge_per_uur != null ? eur2(k.marge_per_uur) + '/uur' : ''}</td>
+        </tr>`).join('')}
+      </tbody></table></div>`).join('')}`;
+}
+
+function openMargeImport(f){
+  if(CRM.demo) return CRM.toast('In demo-modus lezen we geen echte facturen in');
+  let gelezen = null;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Margefactuur van Pronkert inlezen</div></div>
+    <div class="modal-b">
+      <p class="sub" style="margin:0 0 10px">Open de PDF, selecteer alles (⌘A) en plak het hieronder.
+        Je ziet eerst wat eruit komt; opslaan doe je daarna zelf.
+        Dezelfde factuur twee keer inlezen kan geen kwaad — de cijfers worden opnieuw berekend, niet opgeteld.</p>
+      <textarea id="fin_marge_ta" rows="7" spellcheck="false" placeholder="Plak hier de tekst van de margefactuur…"></textarea>
+      <div id="fin_marge_uit" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn ghost" id="fin_marge_lees">Lezen</button>
+      <button class="btn" id="fin_marge_op" disabled>Opslaan</button>
+    </div>`, {
+      onOpen(m){
+        const ta = m.querySelector('#fin_marge_ta'), uitEl = m.querySelector('#fin_marge_uit');
+        const opslaan = m.querySelector('#fin_marge_op'), lezen = m.querySelector('#fin_marge_lees');
+        setTimeout(() => ta && ta.focus(), 60);
+
+        const melding = (kl, tekst) => { uitEl.innerHTML = `<div class="note ${kl}">${H(tekst)}</div>`; };
+        const nietGedeployed = () => melding('warn',
+          'De functie pronkert-marge staat nog niet in Supabase. Eenmalig deployen — zie supabase/functions/pronkert-marge.');
+
+        lezen.onclick = async () => {
+          const tekst = (ta.value || '').trim();
+          if(tekst.length < 50) return melding('warn','Plak eerst de tekst van de factuur.');
+          lezen.disabled = true; uitEl.innerHTML = CRM.ui.laden();
+          try{
+            gelezen = await margeFunctie({tekst, droog:true});
+            uitEl.innerHTML = margeVoorbeeldHtml(gelezen);
+            opslaan.disabled = !!gelezen.waarschuwing || !(gelezen.weken||[]).length;
+          }catch(e){
+            gelezen = null; opslaan.disabled = true;
+            if(e.setup) nietGedeployed(); else melding('err','Lezen mislukt: ' + (e.message||''));
+          }
+          lezen.disabled = false;
+        };
+
+        opslaan.onclick = async () => {
+          if(!gelezen) return;
+          opslaan.disabled = true;
+          try{
+            const uit = await margeFunctie({tekst: (ta.value||'').trim()});
+            CRM.modal.close();
+            const n = (uit.weken||[]).length, onb = (uit.onbekend||[]).length;
+            CRM.toast(`${n} ${n===1?'week':'weken'} bijgewerkt` +
+              (onb ? ` — ${onb} flexkracht${onb===1?'':'en'} nog niet gekoppeld` : ''), 'ok');
+            await finLaad(true); CRM.render();
+          }catch(e){
+            opslaan.disabled = false;
+            if(e.setup) nietGedeployed(); else CRM.fout('Opslaan mislukt', e);
+          }
+        };
+      }
+    });
 }
 
 /* ═══ TAB: CASHFLOW ════════════════════════════════════════════
