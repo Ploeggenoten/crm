@@ -145,9 +145,16 @@ CRM.binnenGarantie = c => {
 /* Heeft hier ooit een plaatsing gestaan? Ook als die inmiddels gestopt is —
    tekenen is een gebeurtenis die heeft plaatsgevonden. Deze vraag staat los
    van de garantie: een stopper ná de garantie telde en telt mee als
-   plaatsing in de maand dat hij tekende. */
-CRM.teltAlsPlaatsing = c => !!c && !!c.geplaatstOp && !c.vervangt &&
-  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase, 'Gestopt'));
+   plaatsing in de maand dat hij tekende.
+
+   Een ACTIEVE vervanger telt gewoon mee als +1 (naam: Tjeerd, 10 aug 2026,
+   over Belal Shreky die Michal Ostrowski verving — de finance-app deed dit
+   al zo in boardPlaatsingen(), het CRM-dashboard nog niet). Alleen een
+   GESTOPTE vervanger blijft uitgezonderd: zijn voorganger is al als stop
+   geteld, meetellen zou dezelfde plek twee keer aftrekken (zie de langere
+   toelichting bij CRM.plaatsingenMaand hieronder). */
+CRM.teltAlsPlaatsing = c => !!c && !!c.geplaatstOp &&
+  (CRM.faseIn(c.fase, CRM.PLACED) || (CRM.faseIs(c.fase, 'Gestopt') && !c.vervangt));
 
 /* Trekt deze stop van de target af? Alleen binnen de garantietermijn. */
 CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp
