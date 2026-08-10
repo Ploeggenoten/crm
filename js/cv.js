@@ -83,6 +83,13 @@ function euroMnd(v){
 /* ─── Perioden ────────────────────────────────────────────────── */
 const MAAND = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 const LOPEND = /^(heden|nu|nog|huidig|current|present|now)$/i;
+/* Eén datum: 02-2018, 2018-02 of 2018. Twee ervan met iets ertussen vormen
+   een periode; rechts mag ook "heden" staan. De volgorde van de alternatieven
+   is bewust van lang naar kort, zodat "2020-08" niet als los jaartal 2020
+   wordt gelezen met een losse 08 erachter. */
+const D1 = String.raw`(?:\d{1,2}[-/](?:19|20)\d{2}|(?:19|20)\d{2}[-/]\d{1,2}|(?:19|20)\d{2})`;
+const PERIODE = new RegExp(
+  `^(${D1})\\s*(?:[–—]|-|t/m|tot(?:\\s+en\\s+met)?)\\s*(${D1}|heden|nu|nog|huidig|current|present|now)$`, 'i');
 function jaarVan(s){ const m = t(s).match(/(19|20)\d{2}/); return m ? Number(m[0]) : null; }
 /* Maand uit een datum, in beide schrijfwijzen: 2025-09 én 09-2025. Nodig om
    twee banen in hetzelfde jaar in de goede volgorde te zetten. */
@@ -153,20 +160,23 @@ function werkRijen(arr){
     if(typeof r === 'string') r = {functie:r};
     let van = t(r.van), tot = t(r.tot);
     if(!van && !tot && t(r.periode)){
-      /* Niet zomaar op een koppelteken splitsen: "09-2025" is één datum
-         (maand-jaar) en werd zo doormidden geknipt tot van="09" en
-         tot="2025". Gevolg: geen jaartal, geen badge, en die functie zakte
-         naar de bodem van het cv (naam: Tjeerd, 7 aug 2026). Een koppelteken
-         scheidt alleen als er spaties omheen staan; een lang streepje en het
-         woord "tot" scheiden altijd. */
+      /* Een periode splitsen is lastiger dan het lijkt, want het koppelteken
+         zit én ín een datum ("09-2025") én ertússen ("02-2018-04-2020").
+         Blind splitsen knipte 09-2025 doormidden; alleen splitsen bij spaties
+         eromheen liet 02-2018-04-2020 juist ongemoeid — dan was er geen
+         einddatum en zette het cv overal "heden" met een open jaarbadge
+         (naam: Tjeerd, 8 aug 2026).
+
+         Daarom herkennen we de VORM van een datum aan weerskanten in plaats
+         van te gokken op scheidingstekens. Zo werken al deze notaties:
+         02-2018-04-2020 · 01-2024-HEDEN · 09-2025 – 07-2026 ·
+         2020-08 – 2024-04 · 2020-2024 · 2018 tot heden. */
       const ruw = t(r.periode);
-      let d = ruw.split(/\s*[–—]\s*|\s+-\s+|\s+tot\s+/i);
-      /* "2020-2024" heeft geen spaties maar is wél een bereik — twee jaartallen
-         aan weerszijden van het streepje verraden dat. */
-      if(d.length < 2){
-        const jj = ruw.match(/^((?:19|20)\d{2})\s*-\s*((?:19|20)\d{2}|heden|nu)$/i);
-        if(jj) d = [jj[1], jj[2]];
-      }
+      let d = ruw.match(PERIODE) ? ruw.match(PERIODE).slice(1, 3) : [];
+      /* Herkent hij de vorm niet, dan valt hij terug op de oude manier: een
+         lang streepje, "tot", of een koppelteken met spaties eromheen. Beter
+         iets dan niets — en een halve datum is nog altijd leesbaar. */
+      if(d.length < 2) d = ruw.split(/\s*[–—]\s*|\s+-\s+|\s+tot\s+/i);
       van = t(d[0] || ''); tot = t(d[1] || '');
     }
     if(!van && !tot && t(r.jaar)) van = t(r.jaar);
