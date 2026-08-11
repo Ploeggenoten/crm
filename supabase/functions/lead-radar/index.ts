@@ -305,41 +305,58 @@ out center tags 600;`;
   const START = Date.now();
   const MAX_MS = 45_000;
   let calls = 0, budgetOp = false, tijdOp = false;
-  for (const q of QUERIES) {
-    if (budgetOp || tijdOp) break;
-    for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+
+  // Eén pagina ophalen en verwerken. Geeft terug hoeveel vacatures erop stonden
+  // (-1 bij een fout), zodat de aanroeper weet of er een volgende pagina is.
+  const haalPagina = async (q: string, pagina: number): Promise<number> => {
+    const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
+      `&results_per_page=${PER_PAGE}&what=${encodeURIComponent(q)}` +
+      `&where=${encodeURIComponent(WERKGEBIED)}&distance=${STRAAL_KM}` +
+      `&max_days_old=7&sort_by=date&content-type=application/json`;
+    try {
+      calls++;
+      const r = await fetch(url);
+      if (!r.ok) return -1;
+      const d = await r.json();
+      const treffers = d.results ?? [];
+      for (const job of treffers) {
+        const naam = (job.company?.display_name ?? "").trim();
+        if (!naam) continue;
+        const nn = norm(naam);
+        if (!nn || bekend.has(nn)) continue;
+        if (isBureau(naam)) continue;
+        const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
+        b.n++;
+        b.functies.add(q);
+        const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
+        if (plaats) b.plaatsen.add(plaats);
+        if (!b.url) b.url = job.redirect_url ?? "";
+        if (!b.sal && job.salary_min) b.sal = `€${Math.round(job.salary_min)}–${Math.round(job.salary_max ?? job.salary_min)}`;
+        bedrijven.set(nn, b);
+      }
+      return treffers.length;
+    } catch (e) { console.error("adzuna", q, pagina, e); return -1; }
+  };
+
+  // BREEDTE VÓÓR DIEPTE. Eerst van élke zoekterm pagina 1, daarna pas tweede en
+  // derde pagina's van de termen die helemaal vol zaten.
+  // De eerste versie werkte term voor term helemaal af, en dat pakte slecht uit:
+  // bij de eerste echte run was het budget van 24 aanroepen al op na ongeveer
+  // tien van de achttien termen. De laatste acht — expeditiemedewerker,
+  // assemblagemedewerker, voorman productie en de rest — kwamen dus nooit aan
+  // bod, elke run opnieuw. Nu krijgt elke term altijd zijn pagina 1.
+  let actief = QUERIES.map((q) => ({ q, pagina: 1 }));
+  for (let ronde = 1; ronde <= MAX_PAGINAS && actief.length; ronde++) {
+    const volgende: { q: string; pagina: number }[] = [];
+    for (const item of actief) {
       if (Date.now() - START > MAX_MS) { tijdOp = true; break; }
       if (calls >= MAX_CALLS) { budgetOp = true; break; }
-      const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
-        `&results_per_page=${PER_PAGE}&what=${encodeURIComponent(q)}` +
-        `&where=${encodeURIComponent(WERKGEBIED)}&distance=${STRAAL_KM}` +
-        `&max_days_old=7&sort_by=date&content-type=application/json`;
-      let aantal = 0;
-      try {
-        calls++;
-        const r = await fetch(url);
-        if (!r.ok) break;
-        const d = await r.json();
-        const treffers = d.results ?? [];
-        aantal = treffers.length;
-        for (const job of treffers) {
-          const naam = (job.company?.display_name ?? "").trim();
-          if (!naam) continue;
-          const nn = norm(naam);
-          if (!nn || bekend.has(nn)) continue;
-          if (isBureau(naam)) continue;
-          const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
-          b.n++;
-          b.functies.add(q);
-          const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
-          if (plaats) b.plaatsen.add(plaats);
-          if (!b.url) b.url = job.redirect_url ?? "";
-          if (!b.sal && job.salary_min) b.sal = `€${Math.round(job.salary_min)}–${Math.round(job.salary_max ?? job.salary_min)}`;
-          bedrijven.set(nn, b);
-        }
-      } catch (e) { console.error("adzuna", q, pagina, e); break; }
-      if (aantal < PER_PAGE) break;   // niet vol = laatste pagina
+      const aantal = await haalPagina(item.q, item.pagina);
+      // Precies vol = er is vrijwel zeker een volgende pagina.
+      if (aantal === PER_PAGE) volgende.push({ q: item.q, pagina: item.pagina + 1 });
     }
+    if (budgetOp || tijdOp) break;
+    actief = volgende;
   }
 
   // ── Wegschrijven ────────────────────────────────────────────────
