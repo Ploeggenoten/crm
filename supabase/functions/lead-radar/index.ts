@@ -18,8 +18,32 @@ const QUERIES = [
   "productiemedewerker", "operator productie", "procesoperator",
   "heftruckchauffeur", "orderpicker", "magazijnmedewerker",
   "teamleider productie", "teamleider logistiek", "verlader",
-  "machinebediende", "inpakmedewerker", "logistiek medewerker"
+  "machinebediende", "inpakmedewerker", "logistiek medewerker",
+  // Uitgebreid 11 aug 2026: dit zijn dezelfde functies onder een andere naam.
+  // Ze kostten niets extra's zolang we binnen de call-limiet blijven, en ze
+  // vangen vacatures die de twaalf hierboven lieten liggen.
+  "expeditiemedewerker", "assemblagemedewerker", "productiemedewerker voedsel",
+  "vorkheftruckchauffeur", "voorman productie", "medewerker magazijn"
 ];
+
+// ─── Werkgebied ──────────────────────────────────────────────────
+// Tot 11 aug 2026 zocht deze functie heel Nederland af. Daardoor stroomde de
+// radar vol met bedrijven in Zierikzee, Warmenhuizen en Ravenstein — buiten
+// het werkgebied, dus geen belwerk. Adzuna kan zelf op straal filteren, en dat
+// kost geen extra aanroepen: het scheelt alleen maar ruis.
+// De 40 km is dezelfde harde grens die de ochtendroutine aanhoudt (7 aug 2026).
+const WERKGEBIED = "Alphen aan den Rijn";
+const STRAAL_KM = 40;
+
+// ─── Aanroepbudget ───────────────────────────────────────────────
+// De gratis Adzuna-tier is krap en de bronnen spreken elkaar tegen (250 per
+// dag volgens hun documentatie, circa 1.000 per maand volgens hun eigen
+// developerpagina). We rekenen op de strengste van de twee: 1.000 per maand is
+// ~33 per dag. Met 24 per run blijft er ruimte over voor de keren dat iemand
+// in Sales op "Nu zoeken" drukt — die aanroepen tellen namelijk mee.
+const MAX_CALLS = 24;
+const PER_PAGE = 50;
+const MAX_PAGINAS = 3;
 
 // Uitzenders / detacheerders / platformen — geen leads, dat zijn wij zelf of
 // concurrenten. Twee lagen: (1) een concrete namenlijst, (2) een
@@ -253,29 +277,45 @@ out center tags 600;`;
   type Vondst = { plaatsen: Set<string>; functies: Set<string>; n: number; url: string; sal: string };
   const bedrijven = new Map<string, Vondst & { naam: string }>();
 
+  // Doorbladeren tot de vangst opdroogt. Eén pagina van 50 was voor brede
+  // termen als "magazijnmedewerker" te weinig: alles voorbij de vijftigste
+  // vacature zag de radar simpelweg nooit. Een volgende pagina halen we alleen
+  // op als de vorige helemaal vol zat — een halfvolle pagina is de laatste.
+  let calls = 0, budgetOp = false;
   for (const q of QUERIES) {
-    const url = `https://api.adzuna.com/v1/api/jobs/nl/search/1?app_id=${APP_ID}&app_key=${APP_KEY}` +
-      `&results_per_page=50&what=${encodeURIComponent(q)}&max_days_old=7&sort_by=date&content-type=application/json`;
-    try {
-      const r = await fetch(url);
-      if (!r.ok) continue;
-      const d = await r.json();
-      for (const job of d.results ?? []) {
-        const naam = (job.company?.display_name ?? "").trim();
-        if (!naam) continue;
-        const nn = norm(naam);
-        if (!nn || bekend.has(nn)) continue;
-        if (isBureau(naam)) continue;
-        const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
-        b.n++;
-        b.functies.add(q);
-        const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
-        if (plaats) b.plaatsen.add(plaats);
-        if (!b.url) b.url = job.redirect_url ?? "";
-        if (!b.sal && job.salary_min) b.sal = `€${Math.round(job.salary_min)}–${Math.round(job.salary_max ?? job.salary_min)}`;
-        bedrijven.set(nn, b);
-      }
-    } catch (e) { console.error("adzuna", q, e); }
+    if (budgetOp) break;
+    for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+      if (calls >= MAX_CALLS) { budgetOp = true; break; }
+      const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
+        `&results_per_page=${PER_PAGE}&what=${encodeURIComponent(q)}` +
+        `&where=${encodeURIComponent(WERKGEBIED)}&distance=${STRAAL_KM}` +
+        `&max_days_old=7&sort_by=date&content-type=application/json`;
+      let aantal = 0;
+      try {
+        calls++;
+        const r = await fetch(url);
+        if (!r.ok) break;
+        const d = await r.json();
+        const treffers = d.results ?? [];
+        aantal = treffers.length;
+        for (const job of treffers) {
+          const naam = (job.company?.display_name ?? "").trim();
+          if (!naam) continue;
+          const nn = norm(naam);
+          if (!nn || bekend.has(nn)) continue;
+          if (isBureau(naam)) continue;
+          const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
+          b.n++;
+          b.functies.add(q);
+          const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
+          if (plaats) b.plaatsen.add(plaats);
+          if (!b.url) b.url = job.redirect_url ?? "";
+          if (!b.sal && job.salary_min) b.sal = `€${Math.round(job.salary_min)}–${Math.round(job.salary_max ?? job.salary_min)}`;
+          bedrijven.set(nn, b);
+        }
+      } catch (e) { console.error("adzuna", q, pagina, e); break; }
+      if (aantal < PER_PAGE) break;   // niet vol = laatste pagina
+    }
   }
 
   const vandaag = new Date().toISOString().slice(0, 10);
@@ -306,6 +346,11 @@ out center tags 600;`;
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, gevonden: bedrijven.size, nieuw, bijgewerkt }),
-    { headers: { "Content-Type": "application/json" } });
+  // calls + budgetOp meegeven: de gratis tier is krap genoeg om te willen zien
+  // hoeveel er per run opgaat, en of een run vroegtijdig is afgekapt.
+  return new Response(JSON.stringify({
+    ok: true, gevonden: bedrijven.size, nieuw, bijgewerkt,
+    calls, budget: MAX_CALLS, afgekapt: budgetOp,
+    werkgebied: `${WERKGEBIED} +${STRAAL_KM}km`
+  }), { headers: { "Content-Type": "application/json" } });
 });

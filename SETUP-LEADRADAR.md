@@ -23,12 +23,25 @@ betrouwbaar kan:
 Uitzendbureaus, detacheerders en jullie eigen relaties worden automatisch
 weggefilterd (de radar kent de clients-tabel).
 
+**Werkgebied**: sinds 11 augustus 2026 zoekt de radar alleen binnen 40 km
+hemelsbreed van Alphen aan den Rijn — dezelfde harde grens die de
+ochtendroutine aanhoudt. Daarvóór werd heel Nederland afgezocht en liepen er
+bedrijven binnen uit Zierikzee, Warmenhuizen en Ravenstein, waar je toch nooit
+naartoe belt. Verhuist het werkgebied, pas dan `WERKGEBIED` en `STRAAL_KM`
+bovenin `supabase/functions/lead-radar/index.ts` aan en deploy opnieuw.
+
 ## Eenmalige setup (±5 minuten)
 
 1. **Gratis Adzuna-sleutel**: ga naar https://developer.adzuna.com → Register
    → bevestig je mail → onder "API access details" staan je **Application ID**
-   en **Application Key**. (Gratis tier: 250 aanroepen/dag — wij gebruiken er
-   ~12 per nacht.)
+   en **Application Key**.
+
+   Over het verbruik: Adzuna's documentatie noemt 250 aanroepen per dag, hun
+   developerpagina circa 1.000 per maand. Die spreken elkaar tegen, dus de
+   functie rekent op de strengste van de twee en stopt bij 24 aanroepen per
+   run (~720 per maand bij één run per nacht). Wat er overblijft is voor de
+   keren dat iemand in Sales op "Nu zoeken" drukt — die tellen mee. In het
+   antwoord van de functie zie je `calls`, `budget` en `afgekapt` staan.
 2. **Secrets plakken**: Supabase-dashboard → Edge Functions → Secrets →
    voeg toe: `ADZUNA_APP_ID` en `ADZUNA_APP_KEY` (zelf plakken — Claude typt
    geen sleutels).

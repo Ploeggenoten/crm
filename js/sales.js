@@ -662,7 +662,12 @@ function openOpvolgingen(){
   return (CRM.state.taken||[]).filter(t => !t.klaar).map(t => {
     const klant = t.entiteit === 'klant' ? t.ref
                 : t.entiteit === 'contact' ? klantVan.get(String(t.ref)) : '';
-    return klant ? Object.assign({}, t, {klantNaam: klant}) : null;
+    /* Hangt de taak aan een persoon, dan onthouden we wie. "Gerta bellen"
+       gaat over Gerta, niet over het bedrijf — dus daar hoor je te landen. */
+    return klant ? Object.assign({}, t, {
+      klantNaam: klant,
+      contactId: t.entiteit === 'contact' ? String(t.ref) : ''
+    }) : null;
   }).filter(Boolean)
     .filter(t => !mijn || t.voor === CRM.me())
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
@@ -690,7 +695,8 @@ function opvolgHTML(){
         <b class="trunc">${h(t.tekst)}</b>
         <div class="meta">${t.datum ? `<span class="num">${h(CRM.fmtDateShort(t.datum))}${t.tijd?' '+h(t.tijd):''}</span> · ` : ''}${h(t.voor||'')}</div>
       </div>
-      <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}">${h(t.klantNaam)}</button>
+      <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}"${
+        t.contactId ? ` data-opcontact="${h(t.contactId)}"` : ''}>${h(t.klantNaam)}</button>
     </div>`).join('')}`).join('')}</div></div>`;
 }
 function bindOpvolg(){
@@ -698,7 +704,20 @@ function bindOpvolg(){
     await taakKlaar(c.dataset.opvink, c.checked);
     tekenInhoud();
   });
-  CRM.$$('[data-opklant]', mountEl).forEach(b => b.onclick = () => openKlant(b.dataset.opklant));
+  /* Doorklikken vanuit een opvolging: geen tussenpaneel meer, meteen de
+     kaart waar je moet zijn. Hangt de taak aan een contactpersoon, dan is
+     dat zijn kaart — daar staan het nummer en de tijdlijn van díe persoon.
+     Anders de relatiekaart zelf.
+     (Tjeerd, 11 aug 2026: "als ik meteen rechts op de relatie druk, wil ik
+     ook precies komen op de contactpersoon van de relatie.") */
+  CRM.$$('[data-opklant]', mountEl).forEach(b => b.onclick = () => {
+    const cid = b.dataset.opcontact;
+    /* Verwijderde contactpersoon: dan is de relatiekaart de beste plek,
+       niet een kaart die niet meer bestaat. */
+    if(cid && (CRM.state.contacten||[]).some(x => String(x.id) === cid))
+      return CRM.ga('contacten', {id: cid});
+    CRM.ga('klanten', {id: b.dataset.opklant});
+  });
 }
 
 /* ─── Kansen-weergave ──────────────────────────────────────────── */
@@ -844,7 +863,14 @@ function tekenDrawer(dr, naam){
 
   CRM.$$('[data-close]', dr).forEach(b=>b.onclick=()=>CRM.drawer.close());
   CRM.$$('[data-dtab]', dr).forEach(b=>b.onclick=()=>{ dTab=b.dataset.dtab; tekenDrawer(dr, naam); });
-  dr.querySelector('[data-volledig]').onclick = () => { CRM.drawer.close(); CRM.ga('klanten',{id:naam}); };
+  /* Zelf CRM.drawer.close() aanroepen brak deze knop: sluiten doet een
+     history.back(), die asynchroon afgaat. CRM.ga() zet ondertussen met
+     pushState de nieuwe pagina neer, waarna die back() er meteen overheen
+     gaat — je klikt en er gebeurt zichtbaar niets.
+     CRM.ga() ruimt open panelen zelf al op, met vanGeschiedenis:true, en
+     dát gaat wél goed omdat het geen extra stap terugdraait.
+     (Tjeerd, 11 aug 2026: "de knop volledige klantkaart openen doet het niet.") */
+  dr.querySelector('[data-volledig]').onclick = () => CRM.ga('klanten',{id:naam});
   dr.querySelector('[data-plan]').onclick = () => planKennismaking(k, () => tekenDrawer(dr, naam));
   dr.querySelector('#sd_fase').onchange = e => { zetFase(naam, e.target.value).then(()=>tekenDrawer(dr,naam)); };
 
@@ -968,7 +994,8 @@ function tabInhoud(naam){
 }
 
 function bindTab(body, dr, naam){
-  CRM.$$('[data-volledig2]', body).forEach(b=>b.onclick=()=>{ CRM.drawer.close(); CRM.ga('klanten',{id:naam}); });
+  /* Zelfde valkuil als bij [data-volledig] hierboven: niet zelf sluiten. */
+  CRM.$$('[data-volledig2]', body).forEach(b=>b.onclick=()=>CRM.ga('klanten',{id:naam}));
 
   const bew = body.querySelector('[data-bewerk]');
   if(bew) bew.onclick = async () => {
