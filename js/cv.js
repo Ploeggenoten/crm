@@ -401,6 +401,11 @@ function velTekst(m){
    HET VENSTER
    ═══════════════════════════════════════════════════════════════ */
 let paneelEl = null, sluitHandler = null, schaalWaarnemer = null;
+/* Voor de bestandsnaam bij "Opslaan als PDF": Chrome/Safari stellen de
+   documenttitel voor als bestandsnaam. Zonder dit heette elk cv hetzelfde
+   als het browsertabblad ("Ploeggenoten CRM · Kandidaten.pdf") — geen naam
+   erbij, dus onbruikbaar zodra je er twee naast elkaar hebt staan. */
+let cvNaamVoorTitel = '', titelVoorPrint = null;
 
 function zijkantHtml(c, o, er, werk){
   const cv = c.cv || {};
@@ -490,6 +495,7 @@ function open(kandidaat, opts){
   if(!c){ CRM.toast('Kandidaat niet gevonden', 'err'); return; }
   const ctx = context(opts);
   const o = laadOpts();
+  cvNaamVoorTitel = t(c.naam) || 'Kandidaat';
 
   /* Profielschets voorvullen: de samenvatting uit de intake is precies
      waarvoor dit vlak bedoeld is. Anders een neutrale beginzin. */
@@ -698,6 +704,10 @@ function printAan(){
   paneelEl.classList.add('cvg-print');
   paginaAan();
   pasPaginaAan();
+  if(titelVoorPrint == null){
+    titelVoorPrint = document.title;
+    document.title = 'CV ' + cvNaamVoorTitel + ' - Ploeggenoten';
+  }
 }
 function printUit(){
   clearTimeout(printTimer); printTimer = null;
@@ -706,6 +716,7 @@ function printUit(){
     const vel = paneelEl.querySelector('#cvg_vel');
     if(vel) vel.style.zoom = '';
   }
+  if(titelVoorPrint != null){ document.title = titelVoorPrint; titelVoorPrint = null; }
   paginaUit();
 }
 window.addEventListener('beforeprint', printAan);
