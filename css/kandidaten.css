@@ -304,6 +304,8 @@ label.kd-taak input{margin-top:3px}
 .kd-looptklant a:hover{color:var(--olive);text-decoration:underline}
 .kd-looptvac{font-size:13px;font-weight:600;color:var(--green, #3d9968);margin-top:1px}
 .kd-looptvac.leeg{color:var(--muted);font-weight:500;font-style:italic}
+.kd-looptvac-knop{background:none;border:0;padding:0;font-family:inherit;cursor:pointer;text-align:left}
+.kd-looptvac-knop:hover{color:var(--olive);text-decoration:underline}
 
 /* ─── Kansen: één regel per vacature ──────────────────────────────
    Was een kaart per kans met balk, uitlegzin, alle blokkers en een knop over

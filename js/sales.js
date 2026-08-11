@@ -1393,13 +1393,87 @@ async function zetRadarStatus(id, status, notitie){
   return true;
 }
 
-/* "→ Lead": bedrijf als client in fase Lead zetten + radar-rij afvinken. */
+/* Wie is de contactpersoon bij deze radar-rij?
+   Scrape je vanaf LinkedIn, dan begin je meestal bij een persoon en niet bij
+   een bedrijf. Die persoon schrijft de extensie op twee plekken weg: sinds
+   11 aug 2026 gestructureerd in `concepten.contact`, en al langer als leesbare
+   regel in de notitie ("Contactpersoon: Naam (Functie) · E-mail: … · Tel: … ·
+   LinkedIn: …"). We lezen allebei: de gestructureerde versie als die er is, de
+   notitie als terugval — anders raken de rijen die er al stonden hun
+   contactpersoon kwijt, en dat zijn er nogal wat.
+   (Tjeerd, 11 aug 2026: "als ik het doorschiet naar lead, dan moet die wel
+   opgeslagen worden als contactpersoon in de relatiekaart.") */
+function contactUitRadar(r){
+  const c = r && r.concepten && r.concepten.contact;
+  const schoon = v => String(v || '').trim();
+  if(c && schoon(c.naam)) return {
+    naam: schoon(c.naam), functie: schoon(c.functie), email: schoon(c.email),
+    telefoon: schoon(c.telefoon), linkedin: schoon(c.linkedin)
+  };
+  const delen = String((r && r.notitie) || '').split(' · ');
+  const pak = kop => {
+    const d = delen.find(x => x.toLowerCase().startsWith(kop.toLowerCase()));
+    return d ? d.slice(kop.length).trim() : '';
+  };
+  const ruw = pak('Contactpersoon:');
+  if(!ruw) return null;
+  /* "Merle Lekkerkerk (Corporate recruiter)" → naam + functie apart. */
+  const m = ruw.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  const naam = schoon(m ? m[1] : ruw);
+  if(!naam) return null;
+  return {naam, functie: m ? schoon(m[2]) : '', email: pak('E-mail:'),
+          telefoon: pak('Tel:'), linkedin: pak('LinkedIn:')};
+}
+
+/* Contactpersoon op de relatiekaart zetten. Staat er al iemand met dezelfde
+   naam bij deze klant, dan laten we die met rust — liever niets doen dan een
+   dubbele Jan de Vries. Mislukt het opslaan, dan is dat geen reden om de lead
+   zelf te laten sneuvelen: die staat er dan gewoon zonder contactpersoon. */
+async function radarContactNaarKlant(r, klantNaam){
+  const c = contactUitRadar(r);
+  if(!c) return null;
+  const bestaat = (CRM.state.contacten || []).find(x =>
+    x.klant === klantNaam && String(x.naam || '').trim().toLowerCase() === c.naam.toLowerCase());
+  if(bestaat) return bestaat;
+  const rij = {
+    id: CRM.uid(), klant: klantNaam, naam: c.naam, functie: c.functie,
+    telefoon: c.telefoon, email: c.email, linkedin: c.linkedin,
+    /* Eerste contactpersoon bij een verse lead is het hoofdcontact. Heeft de
+       klant er al een, dan blijft die staan. */
+    hoofd: !(CRM.state.contacten || []).some(x => x.klant === klantNaam && x.hoofd),
+    note: `Overgenomen uit de Leadradar (${BRON_LBL[r.bron] || r.bron || 'onbekende bron'})`
+  };
+  CRM.state.contacten.unshift(rij);
+  if(!CRM.demo){
+    const {data, error} = await CRM.sb.from('crm_contacten').insert(rij).select().single();
+    if(error){
+      CRM.state.contacten.shift();
+      CRM.fout('Contactpersoon opslaan mislukt', error);
+      return null;
+    }
+    if(data) Object.assign(rij, data);
+  }
+  return rij;
+}
+
+/* "→ Lead": bedrijf als client in fase Lead zetten + radar-rij afvinken.
+   Daarna meteen de relatiekaart openen. Tjeerd (11 aug 2026): "als ik de lead
+   doorschiet, dan wil ik direct op de relatiekaart komen. Nu moet ik de lead
+   helemaal opzoeken." Doorschieten is geen eindpunt maar het begin van het
+   belwerk, dus de kaart hoort open te staan. */
 async function radarNaarLead(id){
   const r = radar.find(x=>x.id===id); if(!r) return;
   const bestaand = CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, r.bedrijf));
   if(bestaand){
     await zetRadarStatus(id, 'toegevoegd', 'Stond al in de pijplijn ('+faseVan(bestaand)+')');
-    return CRM.toast(`${r.bedrijf} staat al in de pijplijn (${faseVan(bestaand)})`);
+    /* Ook hier de contactpersoon meenemen: het bedrijf kende je al, deze
+       persoon misschien nog niet. */
+    const ct = await radarContactNaarKlant(r, bestaand.naam);
+    if(ct) CRM.logActiviteit('klant', bestaand.naam, 'systeem',
+      `Contactpersoon ${ct.naam}${ct.functie ? ` (${ct.functie})` : ''} overgenomen uit de Leadradar`);
+    CRM.toast(`${bestaand.naam} stond al in de pijplijn (${faseVan(bestaand)})${
+      ct ? ` — ${ct.naam} erbij gezet` : ''}`);
+    return CRM.ga('klanten', {id: bestaand.naam});
   }
   const vandaag = CRM.todayISO();
   const nVac = Number(r.vacatures)||1;
@@ -1422,8 +1496,12 @@ async function radarNaarLead(id){
   }
   CRM.logActiviteit('klant', r.bedrijf, 'systeem',
     `Gevonden via Leadradar: ${nVac} vacature${nVac===1?'':'s'} voor ${r.functies||'onbekende functies'}`);
+  const ct = await radarContactNaarKlant(r, r.bedrijf);
+  if(ct) CRM.logActiviteit('klant', r.bedrijf, 'systeem',
+    `Contactpersoon ${ct.naam}${ct.functie ? ` (${ct.functie})` : ''} overgenomen uit de Leadradar`);
   await zetRadarStatus(id, 'toegevoegd');
-  CRM.toast(`${r.bedrijf} staat nu als lead in je klantpijplijn — "pijplijn →" opent de kaart`, 'ok');
+  CRM.toast(`${r.bedrijf} staat nu als lead${ct ? ` — met ${ct.naam} als contactpersoon` : ''}`, 'ok');
+  CRM.ga('klanten', {id: r.bedrijf});
 }
 
 /* Negeren: de motor slaat genegeerde bedrijven voortaan over. */

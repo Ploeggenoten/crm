@@ -2072,11 +2072,22 @@ function takenBlokHtml(){
    het salesbord uit de stiltefilter halen terwijl er geen contact was.
    (Tjeerd, 6 aug 2026: notitie en taak erbij, mét dezelfde
    contactpersoon-koppeling als de belknoppen.) */
+/* LinkedIn als eigen contactsoort. Hoort thuis in CRM.ACT_SOORTEN (js/data.js),
+   maar dat bestand is van core — zie het VERZOEK AAN CORE onderaan. Tot die tijd
+   registreren we hem hier, en alleen als hij nog niet bestaat: alle tijdlijnen
+   lezen `CRM.ACT_SOORTEN[soort]` op, dus hiermee toont hij overal netjes in
+   plaats van als kale tekst met een bolletje.
+   (Tjeerd, 11 aug 2026: "ik doe ook veel leads contacten via LinkedIn. Hier moet
+   ook een optie voor zijn in het CRM bij activiteit & notities.") */
+if(CRM.ACT_SOORTEN && !CRM.ACT_SOORTEN.linkedin)
+  CRM.ACT_SOORTEN.linkedin = {ico:'🔗', lbl:'LinkedIn'};
+
 const SNEL_UITKOMSTEN = [
   ['bel',      'Gebeld',       'Gebeld',                          true],
   ['bel',      'Geen gehoor',  'Gebeld, geen gehoor',             true],
   ['bel',      'Voicemail',    'Gebeld, voicemail achtergelaten', true],
   ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd',               true],
+  ['linkedin', 'LinkedIn',     'Bericht via LinkedIn gestuurd',   true],
   ['mail',     'Gemaild',      'Gemaild',                         true],
   ['notitie',  'Notitie',      '',                                false],
   ['taak',     'Taak',         '',                                false]
@@ -2109,6 +2120,7 @@ function uitkomstenHtml(){
       </div>
       <div class="row tight" style="margin-top:6px">
         <button type="button" class="btn sm" data-uitok>Vastleggen</button>
+        <button type="button" class="btn ghost sm" data-uitoktaak>Vastleggen + taak</button>
         <button type="button" class="btn ghost sm" data-uitweg>Annuleren</button>
       </div>
     </div>`;
@@ -2148,6 +2160,7 @@ function bindUitkomsten(root, k, na, opts){
   const taakEl  = veld.querySelector('[data-uittaak]');
   const datumEl = veld.querySelector('[data-uitdatum]');
   const voorEl  = veld.querySelector('[data-uitvoor]');
+  const taakKnop = veld.querySelector('[data-uitoktaak]');
   const isTaak  = () => keuze != null && SNEL_UITKOMSTEN[keuze][0] === 'taak';
 
   /* Snelkeuzes rekenen lokaal, niet via toISOString — dat is UTC en zet
@@ -2175,6 +2188,9 @@ function bindUitkomsten(root, k, na, opts){
         ? 'Wat wil je vastleggen? Tip: @collega stuurt diegene een melding.'
         : 'Wat is er besproken? Leeg laten mag — Enter legt vast.';
     taakEl.hidden = soort !== 'taak';
+    /* "Vastleggen + taak" heeft geen zin bij de taak-uitkomst zelf — dat
+       IS al de taak. */
+    if(taakKnop) taakKnop.hidden = soort === 'taak';
     if(soort === 'taak'){
       datumEl.value = '';
       CRM.$$('[data-uitdag]', veld).forEach(x => x.classList.remove('sel'));
@@ -2185,7 +2201,7 @@ function bindUitkomsten(root, k, na, opts){
     tekenWie();
     tekst.value = ''; tekst.focus(); };
   const dicht = () => { veld.hidden = true; taakEl.hidden = true; keuze = null; wie = null; };
-  const vastleggen = async () => {
+  const vastleggen = async (metTaak) => {
     if(keuze == null) return;
     const [soort,, standaard, isContact] = SNEL_UITKOMSTEN[keuze];
     const extra = tekst.value.trim();
@@ -2235,12 +2251,27 @@ function bindUitkomsten(root, k, na, opts){
        stiltefilter op het salesbord halen. */
     if(isContact) await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
     na();
+    /* "Vastleggen + taak": pas ná het opslaan, zodat het contactmoment
+       vaststaat ook als de taak hierna wordt geannuleerd — de notitie is
+       het geheugen, de taak alleen het vervolg. Zelfde CRM.taakModal als
+       op de contactkaart (naam: Tjeerd, 10 aug 2026: "dit moet met al
+       deze knoppen"). */
+    if(metTaak && CRM.taakModal){
+      const naam = met ? met.naam : k.naam;
+      const r = await CRM.taakModal({
+        entiteit: met ? 'contact' : 'klant', ref: met ? String(met.id) : k.naam,
+        refLabel: met ? `${met.naam} (${k.naam})` : k.naam,
+        tekst: naam + ' '
+      });
+      if(r) na();
+    }
   };
   CRM.$$('[data-uitkomst]', root).forEach(b => b.onclick = () => toon(+b.dataset.uitkomst));
-  veld.querySelector('[data-uitok]').onclick = vastleggen;
+  veld.querySelector('[data-uitok]').onclick = () => vastleggen(false);
+  if(taakKnop) taakKnop.onclick = () => vastleggen(true);
   veld.querySelector('[data-uitweg]').onclick = dicht;
   tekst.onkeydown = e => {
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); vastleggen(); }
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); vastleggen(false); }
     if(e.key === 'Escape') dicht();
   };
 }
@@ -3202,7 +3233,7 @@ function tabKandidaten(el, k, c){
    Wie bewerkt wordt vastgelegd in extra.bewerkt; de tijdlijn toont
    "· bewerkt" zodat niemand denkt dat dit de oorspronkelijke tekst is.
    Gedeeld via CRM.bewerkActiviteit: de contactkaart gebruikt hem ook. */
-const BEWERKBAAR = new Set(['notitie','gesprek','bel','mail','whatsapp','bezoek']);
+const BEWERKBAAR = new Set(['notitie','gesprek','bel','mail','whatsapp','linkedin','bezoek']);
 /* Andere modules moeten "laatste contact" op een relatie kunnen bijwerken
    zonder de clients-tabel zelf aan te raken — de vacaturekaart legt
    belpogingen vast en het salesbord leest die stilte-teller.
@@ -3263,7 +3294,7 @@ function tabActiviteiten(el, k){
   el.innerHTML = `<div class="stack">
     <div class="card">
       <div class="card-h"><div class="h2">Activiteiten & notities</div><span class="spacer"></span>
-        <div class="row tight">${['bel','mail','whatsapp','gesprek','bezoek','notitie'].map(s =>
+        <div class="row tight">${['bel','mail','whatsapp','linkedin','gesprek','bezoek','notitie'].map(s =>
           `<button class="btn ghost sm" data-log="${s}">${h((CRM.ACT_SOORTEN[s]||{}).lbl||s)}</button>`).join('')}</div>
       </div>
       <div class="card-b">
@@ -4616,6 +4647,19 @@ CRM.registerModule('klanten', {
    van het financebord) hoort hij daar thuis — mét dezelfde harde
    voorwaarde `CRM.canSeeMoney()` vóór de query, niet erna. Voor een
    teamlid mag de query niet eens vertrekken. */
+
+/* VERZOEK AAN CORE — LinkedIn als activiteitsoort (11 aug 2026):
+   `CRM.ACT_SOORTEN` in js/data.js kent geen 'linkedin', terwijl er veel leads
+   via LinkedIn benaderd worden. Deze module registreert hem nu zelf bovenaan
+   (defensief, alleen als hij ontbreekt) zodat de knop werkt en tijdlijnen hem
+   tonen. Graag verplaatsen naar js/data.js:
+       linkedin:{ico:'🔗', lbl:'LinkedIn'}
+   en tegelijk 'linkedin' toevoegen aan CONTACT in js/opvolging.js (regel 91) —
+   een LinkedIn-bericht is net zo goed contact als een appje, dus het hoort mee
+   te tellen in "laatste contact" en in de stiltefilter. In deze module telt het
+   al mee (vierde kolom van SNEL_UITKOMSTEN), maar kandidaten en plaatsingen
+   lezen die lijst uit opvolging.js. Zodra beide staan, kan de registratie
+   bovenaan dit bestand weg. */
 
 /* VERZOEK AAN CORE:
    1. `crm_contacten` wordt inmiddels wél door CRM.load() opgehaald — de

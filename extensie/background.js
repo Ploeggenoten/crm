@@ -195,13 +195,30 @@ async function bewaarSales(d){
     d.notitie || '',
     d.url ? `${bron === 'website' ? 'Bron' : 'LinkedIn'}: ${d.url}` : ''
   ].filter(Boolean).join(' · ');
+  /* De contactpersoon staat hierboven in de notitie zodat je hem meteen leest,
+     maar het CRM moet er ook mee kúnnen werken: bij "→ Lead" maakt sales.js
+     hier een contactpersoon op de relatiekaart van. Een tekstregel uitpluizen
+     is daarvoor te wankel, dus dezelfde gegevens gaan nog een keer mee als
+     object. Dat kan zonder migratie in het jsonb-veld dat er al is; de vier
+     conceptteksten van de ochtendroutine zitten onder andere sleutels, dus ze
+     bijten elkaar niet.
+     (Tjeerd, 11 aug 2026: "ik scrape vaak vanuit LinkedIn vanuit een
+     contactpersoon … dan moet die wel opgeslagen worden als contactpersoon in
+     de relatiekaart.") */
+  const contact = d.naam ? {
+    naam: d.naam,
+    functie: d.contactfunctie || '',
+    email: d.email || '',
+    telefoon: d.telefoon || '',
+    linkedin: bron === 'linkedin' ? (d.url || '') : ''
+  } : null;
   const rij = {
     id: uid('lr'), bedrijf: d.bedrijf, plaats: d.plaats || '',
     functies: d.functie || (bron === 'website' ? 'via website' : 'via LinkedIn'),
     vacatures: Math.max(1, parseInt(d.vacatures, 10) || 1), bron,
     url: d.url || '', salaris_ind: d.salaris || '', gevonden_op: vandaag(),
     laatst_gezien: vandaag(), status: 'nieuw', status_door: '',
-    notitie, concepten: null
+    notitie, concepten: contact ? { contact } : null
   };
   return insert('crm_leadradar', rij);
 }

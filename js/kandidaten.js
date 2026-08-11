@@ -1150,6 +1150,11 @@ function kaart(mount, acties, id){
      doen toch?") */
   klik('#c_getekend', () => CRM.kandidaatFase && CRM.kandidaatFase(c.id, 'Contract getekend'));
   klik('#c_vac', () => vacatureKoppelen(c));
+  /* Zelfde actie, extra ingang: recht in het "Voorgesteld bij"-blok waar
+     "geen vacature gekoppeld" al staat, zodat je 'm daar meteen kunt
+     oplossen in plaats van pas bij de trajectknoppen verderop de kaart
+     (Tjeerd, 10 aug 2026). */
+  mount.querySelectorAll('[data-vac-koppel]').forEach(b => b.onclick = () => vacatureKoppelen(c));
   klik('#c_sollplus', () => sollKiesModal(c));
   mount.querySelectorAll('[data-sollhoofd]').forEach(b => b.onclick = () =>
     sollHoofdMaken(c, sollVan(c).find(r => String(r.id) === b.dataset.sollhoofd)));
@@ -2471,7 +2476,7 @@ function kansenHtml(c){
         <div class="label">${lp.geplaatst ? 'Werkt bij' : 'Voorgesteld bij'}</div>
         <div class="kd-looptklant"><a href="#klanten/${encodeURIComponent(lp.klant)}" data-klant="${h(lp.klant)}">${h(lp.klant)}</a></div>
         ${v ? `<div class="kd-looptvac">${h(v.functie||'')}${v.locatie?` · ${h(v.locatie)}`:''}</div>`
-            : `<div class="kd-looptvac leeg">geen vacature gekoppeld</div>`}
+            : `<button type="button" class="kd-looptvac leeg kd-looptvac-knop" data-vac-koppel>+ vacature koppelen…</button>`}
         <div class="meta">${h(lp.fase)}${lp.sinds ? ' sinds ' + h(CRM.fmtDate(lp.sinds)) : ''}${
           lp.klantBestaat ? '' : ' · die klant staat niet meer in het systeem'}</div>
       </div></div>`;

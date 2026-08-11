@@ -1303,7 +1303,11 @@
               ${c.beschikbaar ? `<span class="chip">${h(c.beschikbaar)}</span>` : ''}
             </div>`).join('')}</div>` : '';
       })()}
-      <div class="label" style="margin-bottom:8px">Zou hierop passen · uit de kaartenbak</div>
+      <div class="row" style="margin-bottom:8px;align-items:center">
+        <div class="label" style="margin:0">Zou hierop passen · uit de kaartenbak</div>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost sm" id="ovd_kandzoek">+ Kandidaat zoeken…</button>
+      </div>
       <div class="card ovd-lijstje">
         ${!t.teVullen
           ? `<div class="card-b"><p class="meta" style="margin:0">Alle posities zijn gevuld — er valt niets meer te werven.</p></div>`
@@ -1342,6 +1346,47 @@
     });
     const at = el.querySelector('#ovd_afvaltoon');
     if(at) at.onclick = () => { S.afvalOpen = !S.afvalOpen; tabKandidaten(el, v); };
+    /* Los van de automatische match-lijst: die kan leeg staan (geen kandidaat
+       scoort hoog genoeg) terwijl je toch iemand wilt koppelen die je zelf al
+       op het oog hebt (Tjeerd, 10 aug 2026). */
+    const kz = el.querySelector('#ovd_kandzoek');
+    if(kz) kz.onclick = () => kandidaatZoekModal(v, () => tabKandidaten(el, v));
+  }
+
+  /* Handmatig een kandidaat zoeken en voorstellen op deze vacature, buiten de
+     automatische match-score om. Zelfde route als de rest (CRM.voorstellen):
+     intake- en trajectpoort blijven gewoon gelden. */
+  function kandidaatZoekModal(v, opnieuwTekenen){
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Kandidaat zoeken voor ${h(v.functie || 'deze vacature')}</div>
+        <p class="sub" style="margin:6px 0 0">Ook kandidaten die niet in de automatische lijst staan — typ een naam.</p></div>
+      <div class="modal-b">
+        <input type="text" id="kz_zoek" placeholder="Naam…" autocomplete="off">
+        <div id="kz_lijst" class="card ovd-lijstje" style="margin-top:10px;max-height:320px;overflow-y:auto"></div>
+      </div>
+      <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {onOpen(m){
+      const inp = m.querySelector('#kz_zoek'), lijst = m.querySelector('#kz_lijst');
+      const teken = () => {
+        const q = inp.value.trim().toLowerCase();
+        const rijen = !q ? [] : CRM.kandidaten()
+          .filter(c => !['Afgevallen','Gestopt'].includes(c.fase) && (c.naam||'').toLowerCase().includes(q))
+          .slice(0, 20);
+        lijst.innerHTML = !q ? '' : rijen.length
+          ? rijen.map(c => `<div class="ovd-krij" data-kies="${h(c.id)}">
+              <b>${h(c.naam)}</b>
+              <span class="meta">${h([CRM.faseNorm(c.fase) || 'geen fase', c.klant ? 'traject bij ' + c.klant : ''].filter(Boolean).join(' · '))}</span>
+            </div>`).join('')
+          : '<div class="card-b"><p class="meta" style="margin:0">Geen kandidaat gevonden.</p></div>';
+        lijst.querySelectorAll('[data-kies]').forEach(r => r.onclick = async () => {
+          const id = r.dataset.kies;
+          CRM.modal.close();
+          const ok = await CRM.voorstellen(id, v);
+          if(ok){ CRM.toast('Voorgesteld', 'ok'); opnieuwTekenen(); }
+        });
+      };
+      inp.oninput = teken;
+      setTimeout(() => inp.focus(), 60);
+    }});
   }
 
   /* ── Inline bewerken op de kaart ──────────────────────────────
