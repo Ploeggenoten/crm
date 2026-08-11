@@ -33,15 +33,33 @@ const QUERIES = [
 // kost geen extra aanroepen: het scheelt alleen maar ruis.
 // De 40 km is dezelfde harde grens die de ochtendroutine aanhoudt (7 aug 2026).
 const WERKGEBIED = "Alphen aan den Rijn";
-const STRAAL_KM = 40;
+// Oplopende stralen. 40 km blijft het werkgebied — daar wonen de kandidaten en
+// daar hoort het belwerk. Maar een dag met nauwelijks vondsten is een lege
+// belijst, en dan is een bedrijf op 70 km alsnog beter dan niets. Hij verruimt
+// dus alleen als het dagdoel niet gehaald wordt, en stopt zodra dat wel zo is.
+// (Tjeerd, 11 aug 2026 — verzacht daarmee de harde 40 km-grens van 7 aug.)
+const STRALEN = [40, 60, 100];
+const STRAAL_KM = STRALEN[0];        // het werkgebied zelf, voor de meldingen
+const DOEL_PER_RUN = 30;             // leads per run: nieuw + opnieuw wervend
+
+// Buiten het werkgebied zoeken kost per straal opnieuw aanroepen. Achttien
+// termen × drie stralen past niet binnen de gratis tier, dus verder weg zoekt
+// hij alleen met de termen die het meeste opleveren.
+const KERN_QUERIES = [
+  "productiemedewerker", "magazijnmedewerker", "orderpicker",
+  "heftruckchauffeur", "logistiek medewerker", "operator productie"
+];
 
 // ─── Aanroepbudget ───────────────────────────────────────────────
 // De gratis Adzuna-tier is krap en de bronnen spreken elkaar tegen (250 per
 // dag volgens hun documentatie, circa 1.000 per maand volgens hun eigen
 // developerpagina). We rekenen op de strengste van de twee: 1.000 per maand is
-// ~33 per dag. Met 24 per run blijft er ruimte over voor de keren dat iemand
-// in Sales op "Nu zoeken" drukt — die aanroepen tellen namelijk mee.
-const MAX_CALLS = 24;
+// ~33 per dag. 18 termen op 40 km kost 18 aanroepen; verruimen kost er per
+// straal 6 bij (de KERN-termen). Een dag die tot 100 km moet doorzoeken komt zo
+// op 30. Haalt hij het doel binnen 40 km, dan stopt hij bij 18 en blijft er
+// ruimte over voor de keren dat iemand in Sales op "Nu zoeken" drukt — die
+// aanroepen tellen namelijk mee.
+const MAX_CALLS = 30;
 const PER_PAGE = 50;
 const MAX_PAGINAS = 3;
 
@@ -290,8 +308,35 @@ out center tags 600;`;
   const { data: clients } = await service.from("clients").select("naam");
   const bekend = new Set((clients ?? []).map((c) => norm(c.naam)));
 
-  type Vondst = { plaatsen: Set<string>; functies: Set<string>; n: number; url: string; sal: string };
+  type Vondst = { plaatsen: Set<string>; functies: Set<string>; n: number; url: string; sal: string; straal: number };
   const bedrijven = new Map<string, Vondst & { naam: string }>();
+
+  // Bestaande radar-rijen vooraf ophalen: nodig om tijdens het zoeken al te
+  // kunnen tellen hoeveel leads deze run oplevert, zonder per bedrijf de
+  // database te bevragen.
+  const { data: bestaandeRijen } = await service.from("crm_leadradar")
+    .select("id,bedrijf,status").limit(5000);
+  // Sleutel op kleine letters: dat is precies wat de ilike hiervoor deed, en
+  // wat de unieke index crm_leadradar_bedrijf op lower(bedrijf) afdwingt.
+  const perNaam = new Map<string, { id: string; status: string }>();
+  for (const r of bestaandeRijen ?? [])
+    perNaam.set(String(r.bedrijf ?? "").toLowerCase().trim(),
+                { id: String(r.id), status: String(r.status ?? "") });
+
+  // Hoeveel leads levert wat we tot nu toe hebben? Tjeerd (11 aug 2026) rekent
+  // "alles wat vandaag werft" mee: een nieuw bedrijf én een bedrijf dat al in de
+  // radar staat maar nu opnieuw vacatures heeft. Genegeerde bedrijven tellen
+  // niet mee — die heeft hij bewust weggezet.
+  const telLeads = () => {
+    let n = 0;
+    for (const [, b] of bedrijven) {
+      if (b.plaatsen.size >= 3) continue;
+      const best = perNaam.get(b.naam.toLowerCase().trim());
+      if (best && best.status === "genegeerd") continue;
+      n++;
+    }
+    return n;
+  };
 
   // Doorbladeren tot de vangst opdroogt. Eén pagina van 50 was voor brede
   // termen als "magazijnmedewerker" te weinig: alles voorbij de vijftigste
@@ -308,10 +353,10 @@ out center tags 600;`;
 
   // Eén pagina ophalen en verwerken. Geeft terug hoeveel vacatures erop stonden
   // (-1 bij een fout), zodat de aanroeper weet of er een volgende pagina is.
-  const haalPagina = async (q: string, pagina: number): Promise<number> => {
+  const haalPagina = async (q: string, pagina: number, straal: number): Promise<number> => {
     const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
       `&results_per_page=${PER_PAGE}&what=${encodeURIComponent(q)}` +
-      `&where=${encodeURIComponent(WERKGEBIED)}&distance=${STRAAL_KM}` +
+      `&where=${encodeURIComponent(WERKGEBIED)}&distance=${straal}` +
       `&max_days_old=7&sort_by=date&content-type=application/json`;
     try {
       calls++;
@@ -325,7 +370,7 @@ out center tags 600;`;
         const nn = norm(naam);
         if (!nn || bekend.has(nn)) continue;
         if (isBureau(naam)) continue;
-        const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "" };
+        const b = bedrijven.get(nn) ?? { naam, plaatsen: new Set(), functies: new Set(), n: 0, url: "", sal: "", straal };
         b.n++;
         b.functies.add(q);
         const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
@@ -335,28 +380,44 @@ out center tags 600;`;
         bedrijven.set(nn, b);
       }
       return treffers.length;
-    } catch (e) { console.error("adzuna", q, pagina, e); return -1; }
+    } catch (e) { console.error("adzuna", q, pagina, straal, e); return -1; }
   };
 
-  // BREEDTE VÓÓR DIEPTE. Eerst van élke zoekterm pagina 1, daarna pas tweede en
-  // derde pagina's van de termen die helemaal vol zaten.
-  // De eerste versie werkte term voor term helemaal af, en dat pakte slecht uit:
-  // bij de eerste echte run was het budget van 24 aanroepen al op na ongeveer
-  // tien van de achttien termen. De laatste acht — expeditiemedewerker,
-  // assemblagemedewerker, voorman productie en de rest — kwamen dus nooit aan
-  // bod, elke run opnieuw. Nu krijgt elke term altijd zijn pagina 1.
-  let actief = QUERIES.map((q) => ({ q, pagina: 1 }));
-  for (let ronde = 1; ronde <= MAX_PAGINAS && actief.length; ronde++) {
-    const volgende: { q: string; pagina: number }[] = [];
-    for (const item of actief) {
-      if (Date.now() - START > MAX_MS) { tijdOp = true; break; }
-      if (calls >= MAX_CALLS) { budgetOp = true; break; }
-      const aantal = await haalPagina(item.q, item.pagina);
-      // Precies vol = er is vrijwel zeker een volgende pagina.
-      if (aantal === PER_PAGE) volgende.push({ q: item.q, pagina: item.pagina + 1 });
+  // BREEDTE VÓÓR DIEPTE, en LOKAAL VÓÓR VER.
+  //
+  // Breedte: eerst van élke zoekterm pagina 1, pas daarna tweede pagina's van de
+  // termen die helemaal vol zaten. De versie daarvóór werkte term voor term
+  // helemaal af, en dan was het budget op na ongeveer tien van de achttien
+  // termen — de laatste acht kwamen elke run opnieuw niet aan bod.
+  //
+  // Ver: de radar begint binnen 40 km, want daar wonen de kandidaten. Levert dat
+  // te weinig op, dan verruimt hij naar 60 en zo nodig 100 km, en hij stopt
+  // zodra het dagdoel gehaald is. Tjeerd (11 aug 2026): "als er 0 binnenkomt,
+  // wil ik dat die verder kijkt dan de radius — minimaal 30 leads per dag."
+  // Buiten de eerste straal zoekt hij alleen met de KERN-termen: achttien termen
+  // per straal past niet binnen het gratis Adzuna-budget, en de brede termen
+  // leveren verreweg de meeste bedrijven op.
+  const doelGehaald = () => telLeads() >= DOEL_PER_RUN;
+  let bereikteStraal = STRALEN[0];
+  for (const straal of STRALEN) {
+    if (doelGehaald() || budgetOp || tijdOp) break;
+    bereikteStraal = straal;
+    const termen = straal === STRALEN[0] ? QUERIES : KERN_QUERIES;
+    let actief = termen.map((q) => ({ q, pagina: 1 }));
+    for (let ronde = 1; ronde <= MAX_PAGINAS && actief.length; ronde++) {
+      const volgende: { q: string; pagina: number }[] = [];
+      for (const item of actief) {
+        if (Date.now() - START > MAX_MS) { tijdOp = true; break; }
+        if (calls >= MAX_CALLS) { budgetOp = true; break; }
+        const aantal = await haalPagina(item.q, item.pagina, straal);
+        // Precies vol = er is vrijwel zeker een volgende pagina.
+        if (aantal === PER_PAGE) volgende.push({ q: item.q, pagina: item.pagina + 1 });
+      }
+      // Diepte alleen als het doel nog niet gehaald is: een tweede pagina kost
+      // evenveel als een hele extra zoekterm.
+      if (budgetOp || tijdOp || doelGehaald()) break;
+      actief = volgende;
     }
-    if (budgetOp || tijdOp) break;
-    actief = volgende;
   }
 
   // ── Wegschrijven ────────────────────────────────────────────────
@@ -369,15 +430,6 @@ out center tags 600;`;
   // over en doet niets.")
   // Nu: één select voor álle bestaande rijen, één batch-insert voor de nieuwe,
   // en de updates in blokken tegelijk.
-  const { data: bestaandeRijen } = await service.from("crm_leadradar")
-    .select("id,bedrijf,status").limit(5000);
-  // Sleutel op kleine letters: dat is precies wat de ilike hiervoor deed, en
-  // wat de unieke index crm_leadradar_bedrijf op lower(bedrijf) afdwingt.
-  const perNaam = new Map<string, { id: string; status: string }>();
-  for (const r of bestaandeRijen ?? [])
-    perNaam.set(String(r.bedrijf ?? "").toLowerCase().trim(),
-                { id: String(r.id), status: String(r.status ?? "") });
-
   const vandaag = new Date().toISOString().slice(0, 10);
   const teMaken: Record<string, unknown>[] = [];
   const teWijzigen: { id: string; velden: Record<string, unknown> }[] = [];
@@ -398,7 +450,15 @@ out center tags 600;`;
         id: "lr" + Date.now() + "-" + teMaken.length,   // teller, geen random:
         bedrijf: b.naam, bron: "adzuna", url: b.url,    // Date.now() is binnen
         salaris_ind: b.sal, gevonden_op: vandaag,       // één batch voor elke
-        status: "nieuw", ...velden                      // rij hetzelfde
+        status: "nieuw",                                // rij hetzelfde
+        // Buiten het werkgebied? Dan hoort dat op de kaart te staan, anders bel
+        // je een bedrijf waar je kandidaten niet naartoe krijgt zonder dat je
+        // het doorhad.
+        notitie: b.straal > STRAAL_KM
+          ? `Gevonden binnen ${b.straal} km van Alphen aan den Rijn — dus buiten het werkgebied van ${STRAAL_KM} km. `
+            + `De radar keek verder omdat er binnen de straal te weinig te halen viel.`
+          : "",
+        ...velden
       });
     }
   }
@@ -423,8 +483,11 @@ out center tags 600;`;
 
   // calls + budgetOp meegeven: de gratis tier is krap genoeg om te willen zien
   // hoeveel er per run opgaat, en of een run vroegtijdig is afgekapt.
+  const leads = nieuw + bijgewerkt;
   return antwoord({
     ok: true, gevonden: bedrijven.size, nieuw, bijgewerkt,
+    leads, doel: DOEL_PER_RUN, doel_gehaald: leads >= DOEL_PER_RUN,
+    straal_km: bereikteStraal, verruimd: bereikteStraal > STRAAL_KM,
     calls, budget: MAX_CALLS, afgekapt: budgetOp || tijdOp,
     reden: tijdOp ? "tijd" : budgetOp ? "budget" : "",
     duur_ms: Date.now() - START,
