@@ -89,7 +89,27 @@ const telPlaatsen = (s: string) =>
 
 const norm = (s: string) => s.toLowerCase().replace(/\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
 
+// ─── CORS ────────────────────────────────────────────────────────
+// Zonder deze headers kan het CRM deze functie niet aanroepen. Een
+// cross-origin POST mét Authorization-header laat de browser voorafgaan door
+// een OPTIONS-preflight, en die liep hier dood op een functie die alleen POST
+// kende. De fetch faalde dan met "Failed to fetch", en Sales toont bij precies
+// die fout "de zoekfunctie is nog niet gedeployed" — een misleidende melding,
+// want hij stond er wél. De nachtelijke cron merkte er niets van: die praat
+// server-naar-server en kent geen preflight.
+// (Tjeerd, 11 aug 2026: "Nu zoeken" gaf dit terwijl de deploy geslaagd was.)
+const CORS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-cron-key",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
+};
+const antwoord = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status, headers: { ...CORS, "Content-Type": "application/json" }
+  });
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const cronKey = req.headers.get("x-cron-key");
   const auth = req.headers.get("Authorization") ?? "";
   const service = createClient(
@@ -102,7 +122,7 @@ Deno.serve(async (req) => {
     const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: auth } } });
     const { data: { user } } = await anon.auth.getUser();
-    if (!user) return new Response(JSON.stringify({ error: "geen toegang" }), { status: 403 });
+    if (!user) return antwoord({ error: "geen toegang" }, 403);
   }
 
   // ── Extra modi voor de Claude-ochtendroutine ────────────────
@@ -113,8 +133,7 @@ Deno.serve(async (req) => {
   if (body.lijst) {
     const { data } = await service.from("crm_leadradar").select("*")
       .neq("status", "genegeerd").order("laatst_gezien", { ascending: false }).limit(120);
-    return new Response(JSON.stringify({ ok: true, rijen: data ?? [] }),
-      { headers: { "Content-Type": "application/json" } });
+    return antwoord({ ok: true, rijen: data ?? [] });
   }
 
   // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
@@ -145,8 +164,7 @@ Deno.serve(async (req) => {
         nieuw++;
       }
     }
-    return new Response(JSON.stringify({ ok: true, nieuw, bijgewerkt }),
-      { headers: { "Content-Type": "application/json" } });
+    return antwoord({ ok: true, nieuw, bijgewerkt });
   }
 
   // Modus 'opschonen': bestaande bureau-rijen uit de radar filteren.
@@ -164,8 +182,7 @@ Deno.serve(async (req) => {
         weg++;
       }
     }
-    return new Response(JSON.stringify({ ok: true, opgeschoond: weg }),
-      { headers: { "Content-Type": "application/json" } });
+    return antwoord({ ok: true, opgeschoond: weg });
   }
 
   // Modus 'osm': échte productie/logistiek-bedrijven uit OpenStreetMap (gratis,
@@ -217,7 +234,7 @@ out center tags 600;`;
         if (r.ok) { const j = await r.json(); elements = (j.elements ?? []) as Record<string, unknown>[]; gelukt = true; break; }
       } catch (_e) { /* time-out of fout → volgende server proberen */ }
     }
-    if (!gelukt) return new Response(JSON.stringify({ error: "overpass onbereikbaar", status: laatst }), { status: 502 });
+    if (!gelukt) return antwoord({ error: "overpass onbereikbaar", status: laatst }, 502);
 
     // Dedup tegen bestaande klanten én bestaande radar-rijen.
     const { data: clients2 } = await service.from("clients").select("naam");
@@ -262,13 +279,12 @@ out center tags 600;`;
         for (const row of rows) { const { error: e2 } = await service.from("crm_leadradar").insert(row); if (!e2) nieuw++; }
       }
     }
-    return new Response(JSON.stringify({ ok: true, regio, gescand: elements.length, nieuw, overgeslagen }),
-      { headers: { "Content-Type": "application/json" } });
+    return antwoord({ ok: true, regio, gescand: elements.length, nieuw, overgeslagen });
   }
 
   const APP_ID = Deno.env.get("ADZUNA_APP_ID"), APP_KEY = Deno.env.get("ADZUNA_APP_KEY");
   if (!APP_ID || !APP_KEY)
-    return new Response(JSON.stringify({ error: "secrets ADZUNA_APP_ID/ADZUNA_APP_KEY ontbreken" }), { status: 500 });
+    return antwoord({ error: "secrets ADZUNA_APP_ID/ADZUNA_APP_KEY ontbreken" }, 500);
 
   // Bestaande klanten/relaties uitsluiten
   const { data: clients } = await service.from("clients").select("naam");
@@ -348,9 +364,9 @@ out center tags 600;`;
 
   // calls + budgetOp meegeven: de gratis tier is krap genoeg om te willen zien
   // hoeveel er per run opgaat, en of een run vroegtijdig is afgekapt.
-  return new Response(JSON.stringify({
+  return antwoord({
     ok: true, gevonden: bedrijven.size, nieuw, bijgewerkt,
     calls, budget: MAX_CALLS, afgekapt: budgetOp,
     werkgebied: `${WERKGEBIED} +${STRAAL_KM}km`
-  }), { headers: { "Content-Type": "application/json" } });
+  });
 });
