@@ -715,8 +715,17 @@ async function afdrukken(c, ctx, o){
   if(!paneelEl) return;
   printAan();
   printTimer = setTimeout(printUit, 8000);
-  try{ window.print(); }catch(e){ CRM.fout('Afdrukken lukte niet', e); }
-  printUit();
+  /* GEEN printUit() hier na window.print(). Die stond hier eerst wél, en dat
+     was de bug achter een cv dat op 1 blad had moeten passen maar toch op
+     twee pagina's afdrukte: window.print() is niet op elk platform
+     blokkerend (op macOS keert de aanroep vaak meteen terug, ruim vóórdat
+     Chrome de afdruksnapshot maakt). Die vroege printUit() zette de zoom
+     dan alwéér terug naar '' vóórdat de pdf werd gegenereerd — het
+     zichtbare voorbeeld was verkleind, de opgeslagen pdf niet. Nu doet
+     alleen 'afterprint' (hierboven) dat, die vuurt pas als het
+     afdruk/pdf-venster echt dicht is; de setTimeout hierboven blijft als
+     vangnet als afterprint een keer niet vuurt. (naam: Tjeerd, 11 aug 2026) */
+  try{ window.print(); }catch(e){ CRM.fout('Afdrukken lukte niet', e); printUit(); }
 
   const stand = (NAAM_STANDEN.find(s => s.k === o.naamStand) || {}).lbl || o.naamStand;
   const waar = ctx.vac ? ' voor ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') : '';
