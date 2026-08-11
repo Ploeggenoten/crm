@@ -2034,6 +2034,59 @@ function blijftLiggen(M){
 }
 
 /* ─── Het tabblad ──────────────────────────────────────────────── */
+/* "Waar was ik het laatst mee bezig?" — Tjeerd, 11 aug 2026: "ik wil bij
+   sales duidelijk zien bij welke relatie ik laatst handelingen heb uitgevoerd,
+   dan kan ik in één oogopslag zien of ik een lead moet contacten of niet."
+   Het bord zet dat al op elke kaart, maar met 220 bedrijven scan je dat niet
+   in één oogopslag. Hier staat het op volgorde van tijd, nieuwste bovenaan.
+
+   Belangrijk verschil met de tegels hierboven: die tellen alleen gesprekken,
+   afspraken en fasewissels. Een notitie of een taak komt daar nergens in voor.
+   Dáárom zag je de notitie bij A2B online op dit tabblad niet terug terwijl
+   hij wél op de bordkaart stond. Deze lijst telt élke vastlegging mee.
+
+   Eén regel per relatie (de nieuwste), anders vult één druk traject de hele
+   lijst en zie je juist niet waar je overal geweest bent. */
+const LAATST_N = 12;
+function laatstGedaan(){
+  const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
+  const ctNaam   = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.naam]));
+  const bestaat  = new Set((CRM.state.clients||[]).map(c => c.naam));
+  const perKlant = new Map();
+  const zet = (naam, op, wat, met, tekst, door) => {
+    if(!naam || !op || !bestaat.has(naam)) return;
+    if(mijn && door !== CRM.me()) return;
+    const v = perKlant.get(naam);
+    if(!v || String(op) > String(v.op)) perKlant.set(naam, {naam, op, wat, met, tekst, door});
+  };
+  for(const a of (CRM.state.activiteiten||[])){
+    const naam = a.entiteit === 'klant' ? String(a.ref||'')
+               : a.entiteit === 'contact' ? klantVan.get(String(a.ref)) : '';
+    zet(naam, a.op, ((CRM.ACT_SOORTEN||{})[a.soort]||{}).lbl || a.soort || 'Activiteit',
+        a.entiteit === 'contact' ? (ctNaam.get(String(a.ref))||'') : '', a.tekst, a.door);
+  }
+  /* Een taak aanmaken is ook een handeling bij die relatie. */
+  for(const t of (CRM.state.taken||[]))
+    zet(t.entiteit === 'klant' ? String(t.ref||'')
+      : t.entiteit === 'contact' ? klantVan.get(String(t.ref)) : '',
+      t.created_at, 'Taak', t.entiteit === 'contact' ? (ctNaam.get(String(t.ref))||'') : '',
+      t.tekst, t.door);
+
+  const rijen = [...perKlant.values()].sort((a,b) => String(b.op).localeCompare(String(a.op)));
+  const top = rijen.slice(0, LAATST_N);
+  return `<div class="card s-kaart"><div class="card-h"><div class="h2">Laatst gedaan</div>
+      <span class="spacer"></span>
+      <span class="meta">${rijen.length ? `${top.length} van ${rijen.length} relaties` : ''}</span></div>
+    <div class="card-b s-lig">${
+      top.length ? top.map(r => `<button type="button" class="s-ligrij" data-laatstklant="${h(r.naam)}">
+          <b class="trunc">${h(r.naam)}</b>
+          <span class="meta trunc">${h(r.wat)}${r.met ? ' met ' + h(r.met) : ''} · ${h(CRM.geleden(r.op))}${
+            r.tekst ? ' · ' + h(String(r.tekst).slice(0, 70)) : ''}</span></button>`).join('')
+        : `<p class="meta">Nog niets vastgelegd${mijn ? ' op jouw naam' : ''}. Alles wat je op een
+           relatiekaart of contactpersoonkaart invoert — een notitie, een belpoging, een taak —
+           verschijnt hier.</p>`}</div></div>`;
+}
+
 function activiteitHTML(){
   const M = stuurcijfers();
   const p = M.p;
@@ -2065,6 +2118,7 @@ function activiteitHTML(){
     <div class="meta s-tegeluitleg">Een ingeplande afspraak wordt als gesprek vastgelegd en telt dus
       ook als contactmoment — de zes tegels vormen samen geen totaal.</div>
     ${noten.length ? `<div class="note info s-noot">${noten.map(n => `<div>${h(n)}</div>`).join('')}</div>` : ''}
+    ${laatstGedaan()}
     ${weekGrafiek(M)}
     ${persoonTabel(M)}
     <div class="grid c2 s-onder">${trechter(M)}${blijftLiggen(M)}</div>
@@ -2079,6 +2133,10 @@ function bindActiviteit(){
     maatKeuze = b.dataset.maat; V.zet('maat', maatKeuze); tekenInhoud();
   });
   CRM.$$('[data-ligklant]', mountEl).forEach(b => b.onclick = () => openKlant(b.dataset.ligklant));
+  /* Direct de kaart in, geen tussenpaneel — je klikt hier omdat je iets met
+     die relatie wilt, niet om er nog eens naar te kijken. */
+  CRM.$$('[data-laatstklant]', mountEl).forEach(b =>
+    b.onclick = () => CRM.ga('klanten', {id: b.dataset.laatstklant}));
 }
 
 /* ─── Hoofdweergave ────────────────────────────────────────────── */
