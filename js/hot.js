@@ -1318,13 +1318,28 @@
                 <span class="spacer"></span>
                 ${sig.map(x => `<span class="chip amber">${h(x.tekst)}</span>`).join('')}
                 ${m.c.beschikbaar ? `<span class="chip">${h(m.c.beschikbaar)}</span>` : ''}
+                <button type="button" class="btn ghost sm" data-voorstel="${h(m.c.id)}">Voorstellen</button>
               </div>`;
             }).join('') + `<div class="card-b" style="border-top:1px solid var(--line);background:var(--well)">
-              <span class="meta">Volgorde uit functiewoorden en reisafstand — hulpmiddel, geen oordeel. Voorstellen doe je op de kandidatenkaart.</span></div>`
+              <span class="meta">Volgorde uit functiewoorden en reisafstand — hulpmiddel, geen oordeel.</span></div>`
           : `<div class="card-b"><p class="meta" style="margin:0">Geen beschikbare kandidaat die genoeg op deze functie en locatie lijkt.</p></div>`}
       </div>`;
 
     CRM.$$('[data-cand]', el).forEach(x => x.onclick = () => CRM.ga('kandidaten', {id:x.dataset.cand}));
+    /* Rechtstreeks voorstellen vanaf de vacaturekaart (naam: Tjeerd, 10 aug
+       2026 — "dat je namen van kandidaten koppelt vanuit de vacaturekaart").
+       Gebruikt CRM.voorstellen (recruitment.js) — dezelfde route als de
+       kandidatenkaart en het bord, inclusief de intake- en trajectpoort.
+       stopPropagation: de knop zit IN de klikbare rij die naar de
+       kandidatenkaart navigeert; zonder dit zou je én voorstellen én
+       wegnavigeren in één klik. */
+    CRM.$$('[data-voorstel]', el).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      b.disabled = true;
+      const ok = await CRM.voorstellen(b.dataset.voorstel, v);
+      if(ok){ CRM.toast('Voorgesteld', 'ok'); tabKandidaten(el, v); }
+      else b.disabled = false;
+    });
     const at = el.querySelector('#ovd_afvaltoon');
     if(at) at.onclick = () => { S.afvalOpen = !S.afvalOpen; tabKandidaten(el, v); };
   }
@@ -2422,10 +2437,9 @@
    1. CRM.ga() zet alleen params.id in de hash en gebruikt replaceState. Een
       detailpagina is daardoor wel deelbaar (#hot/<id>) maar de terugknop van de
       browser slaat de stap over. Zou pushState hier kunnen?
-   2. Een gedeelde CRM.voorstellen(kandidaat, vacature) zou hier veel schelen:
-      js/kandidaten.js heeft die logica (fase → Voorgesteld, vacatureId zetten,
-      activiteit loggen), maar er is geen aanroepbare versie. Nu kan deze module
-      bij "wie zou kunnen passen" alleen dóórverwijzen naar de kandidatenkaart.
+   2. [OPGELOST, 10 aug 2026] CRM.voorstellen(id, vac) bestond al (recruitment.js)
+      maar werd hier nog niet gebruikt — "Zou hierop passen" verwees alleen door
+      naar de kandidatenkaart. Nu een "Voorstellen"-knop per rij, rechtstreeks.
 
    VERZOEK AAN KLANTEN (js/klanten.js):
    3. `aangemaakt` bepaalt hier hoe lang een vacature al openstaat. Bij vacatures

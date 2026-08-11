@@ -457,6 +457,7 @@ async function bewaarKandidaat(c){
     if(error) return CRM.fout('Opslaan mislukt', error);
   }
   CRM.toast('Opgeslagen','ok');
+  return true;
 }
 async function bewaarRij(tabel, veld, rij, bestaat){
   if(!Array.isArray(CRM.state[veld])) CRM.state[veld] = [];
@@ -2584,16 +2585,17 @@ async function vacatureKoppelen(c){
         const sel = m.querySelector('#kv_vac');
         const opt = sel.selectedOptions[0];
         CRM.modal.close();
-        const patch = {vacature_id: sel.value || '', klant: (opt && opt.dataset.klant) || ''};
+        const patch = {vacatureId: sel.value || '', klant: (opt && opt.dataset.klant) || ''};
         /* De functie van de vacature alleen overnemen als de kandidaat er zelf
            geen heeft — wat op zijn kaart staat is wat híj doet. */
         if(opt && opt.dataset.functie && !String(c.functie||'').trim()) patch.functie = opt.dataset.functie;
-        const rij = CRM.state.cands.find(r => String(r.id) === String(c.id));
-        if(rij) Object.assign(rij, patch);
-        if(!CRM.demo){
-          const {error} = await CRM.sb.from('candidates').update(patch).eq('id', c.id);
-          if(error) return CRM.fout('Koppelen mislukt', error);
-        }
+        /* Via bewaarKandidaat (i.p.v. rechtstreeks naar de database) i.p.v.
+           een eigen update — dat is dezelfde plek waar de trajectpoort al op
+           wacht (js/traject.js) zodra dit een lopend traject bij een andere
+           klant overschrijft. Zo kan deze knop altijd blijven staan, ook ná
+           Voorgesteld, zonder dat een klant stilletjes een kandidaat kwijtraakt. */
+        const ok = await bewaarKandidaat(Object.assign({}, c, patch));
+        if(!ok) return;
         await CRM.logActiviteit('kandidaat', c.id, 'systeem', sel.value
           ? `Gekoppeld aan ${opt.dataset.functie || 'een vacature'} bij ${opt.dataset.klant}`
           : 'Vacaturekoppeling losgemaakt');
@@ -2822,13 +2824,13 @@ function trajectHtml(c){
       ${inTraject(c) && !uitval && !CRM.PLACED.includes(CRM.faseNorm(c.fase))
         ? `<button class="btn sm" id="c_getekend">Contract getekend</button>` : ''}
       <button class="btn ghost sm" id="c_fase">Fase wijzigen…</button>
-      ${/* Alleen zolang er nog géén traject bij een klant loopt (faseIdx < 0:
-            instroom, of helemaal geen fase). Zodra iemand is voorgesteld,
-            verandert van vacature betekent dat een klant een kandidaat
-            kwijtraakt — dat loopt via de trajectpoort in js/traject.js en
-            niet via een stille update hier. */
-        !uitval && CRM.faseIdx(c.fase) < 0
-        ? `<button class="btn ghost sm" id="c_vac">${c.vacatureId ? 'Andere vacature…' : 'Vacature koppelen…'}</button>` : ''}
+      ${/* Altijd beschikbaar (naam: Tjeerd, 10 aug 2026 — "moet meteen +
+            koppel vacature staan"), ook ná Voorgesteld: verandert dat een
+            lopend traject bij een klant, dan vangt vacatureKoppelen() dat
+            zelf af via bewaarKandidaat → de trajectpoort in js/traject.js.
+            Geen stille overschrijving, wél een knop die nooit verdwijnt. */
+        !uitval
+        ? `<button class="btn ghost sm" id="c_vac">${c.vacatureId ? 'Andere vacature…' : '+ Vacature koppelen…'}</button>` : ''}
       ${kanIntake?`<button class="btn ghost sm" id="c_intake">Video-intake</button>`:''}
       ${inTraject(c)&&!uitval?`<button class="btn ghost sm" id="c_noshow" title="Afspraak wissen en de no-show tellen">No-show</button>`:''}
       ${inTraject(c)?`<button class="btn ghost sm" id="c_uitval">${uitval?'Uitvalgegevens bijwerken':'Afmelden'}</button>`:''}

@@ -2176,6 +2176,12 @@ function sollicitantForm(pre){
            óók op het recruitmentbord staan, in de kolom van zijn fase. */
         CRM.ga('kandidaten', {id:cand.id});
         CRM.toast(`${gg.naam} staat op ${fase} — koppel hier de vacature of wijzig de fase`, 'ok');
+        /* Soms is het gesprek (videocall + eerste intake) al geweest vóór
+           deze kandidaat er überhaupt in staat — dan hoeft de fase niet
+           apart via de kaart verder te worden gezet. De picker staat meteen
+           open; niets kiezen laat 'm gewoon op de zojuist gekozen fase staan
+           (naam: Tjeerd, 10 aug 2026). */
+        if(CRM.kandidaatFasePicker) CRM.kandidaatFasePicker(cand.id);
       };
     }});
 }
@@ -2368,7 +2374,12 @@ function sollicitantCvRoute(){
            akkoord het bestand en de pasfoto opslaan. Op een verse kaart staat
            alles aan — er valt niets te overschrijven. */
         CRM.cvParse.open({kandidaat:cand, bestand,
-          onKlaar: c => CRM.ga('kandidaten', {id:c.id})});
+          onKlaar: c => {
+            CRM.ga('kandidaten', {id:c.id});
+            /* Zelfde reden als bij het handmatige formulier: het gesprek kan
+               al verder zijn dan de fase die hier gekozen werd. */
+            if(CRM.kandidaatFasePicker) CRM.kandidaatFasePicker(c.id);
+          }});
       };
     }});
 }
@@ -3470,6 +3481,12 @@ function nieuweKandidaatModal(prefill){
            vóór de volgende stap, dus dat mag geen klik zijn die je kunt missen. */
         CRM.toast(`${cand.naam} staat in Intake — controleer de gegevens`, 'ok');
         CRM.ga('kandidaten', {id:cand.id});
+        /* Al verder in het proces bij het aanmaken (bv. videocall én eerste
+           gesprek al gehad)? Dan hoeft dat niet apart via de kandidaatkaart:
+           de fase-picker (dezelfde poortwachters als "Fase wijzigen…") staat
+           meteen open. Niets kiezen = gewoon op Intake laten staan (naam:
+           Tjeerd, 10 aug 2026). */
+        if(CRM.kandidaatFasePicker) CRM.kandidaatFasePicker(cand.id);
       };
     }});
 }
