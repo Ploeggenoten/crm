@@ -297,10 +297,18 @@ out center tags 600;`;
   // termen als "magazijnmedewerker" te weinig: alles voorbij de vijftigste
   // vacature zag de radar simpelweg nooit. Een volgende pagina halen we alleen
   // op als de vorige helemaal vol zat — een halfvolle pagina is de laatste.
-  let calls = 0, budgetOp = false;
+  // Tijdslimiet naast de call-limiet. Een trage Adzuna kan de functie anders
+  // over zijn maximale looptijd trekken, en dan krijgt het CRM nooit antwoord:
+  // de knop blijft draaien en er verschijnt geen melding. Liever een halve
+  // oogst mét antwoord dan een volle die nooit aankomt — wat we tot hier
+  // verzameld hebben, wordt gewoon weggeschreven.
+  const START = Date.now();
+  const MAX_MS = 45_000;
+  let calls = 0, budgetOp = false, tijdOp = false;
   for (const q of QUERIES) {
-    if (budgetOp) break;
+    if (budgetOp || tijdOp) break;
     for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+      if (Date.now() - START > MAX_MS) { tijdOp = true; break; }
       if (calls >= MAX_CALLS) { budgetOp = true; break; }
       const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
         `&results_per_page=${PER_PAGE}&what=${encodeURIComponent(q)}` +
@@ -334,39 +342,75 @@ out center tags 600;`;
     }
   }
 
+  // ── Wegschrijven ────────────────────────────────────────────────
+  // Hiervóór deed deze lus per bedrijf eerst een select en daarna nog een
+  // insert of update: twee netwerkrondjes per bedrijf, allemaal netjes op
+  // elkaar wachtend. Met twaalf zoekopdrachten van één pagina bleef dat net
+  // binnen de tijd. Met achttien zoekopdrachten en meerdere pagina's kwamen er
+  // zoveel bedrijven bij dat de functie eruit liep en "Nu zoeken" bleef hangen
+  // zonder ooit iets terug te geven. (Tjeerd, 11 aug 2026: "doet er heel lang
+  // over en doet niets.")
+  // Nu: één select voor álle bestaande rijen, één batch-insert voor de nieuwe,
+  // en de updates in blokken tegelijk.
+  const { data: bestaandeRijen } = await service.from("crm_leadradar")
+    .select("id,bedrijf,status").limit(5000);
+  // Sleutel op kleine letters: dat is precies wat de ilike hiervoor deed, en
+  // wat de unieke index crm_leadradar_bedrijf op lower(bedrijf) afdwingt.
+  const perNaam = new Map<string, { id: string; status: string }>();
+  for (const r of bestaandeRijen ?? [])
+    perNaam.set(String(r.bedrijf ?? "").toLowerCase().trim(),
+                { id: String(r.id), status: String(r.status ?? "") });
+
   const vandaag = new Date().toISOString().slice(0, 10);
-  let nieuw = 0, bijgewerkt = 0;
-  for (const [nn, b] of bedrijven) {
+  const teMaken: Record<string, unknown>[] = [];
+  const teWijzigen: { id: string; velden: Record<string, unknown> }[] = [];
+  for (const [, b] of bedrijven) {
     // 3+ steden = bureau-signaal: een eindfabriek werft voor de eigen vestiging.
     if (b.plaatsen.size >= 3) continue;
-    const { data: bestaand } = await service.from("crm_leadradar").select("id,status,vacatures").ilike("bedrijf", b.naam).limit(1);
-    if (bestaand?.length) {
-      // Genegeerde bedrijven met rust laten; anders 'laatst gezien' + telling verversen
-      if (bestaand[0].status !== "genegeerd") {
-        await service.from("crm_leadradar").update({
-          laatst_gezien: vandaag, vacatures: b.n,
-          functies: [...b.functies].slice(0, 6).join(", "),
-          plaats: [...b.plaatsen].slice(0, 3).join(", ")
-        }).eq("id", bestaand[0].id);
-        bijgewerkt++;
-      }
+    const velden = {
+      laatst_gezien: vandaag, vacatures: b.n,
+      functies: [...b.functies].slice(0, 6).join(", "),
+      plaats: [...b.plaatsen].slice(0, 3).join(", ")
+    };
+    const bestaand = perNaam.get(b.naam.toLowerCase().trim());
+    if (bestaand) {
+      // Genegeerde bedrijven met rust laten.
+      if (bestaand.status !== "genegeerd") teWijzigen.push({ id: bestaand.id, velden });
     } else {
-      await service.from("crm_leadradar").insert({
-        id: "lr" + Date.now() + Math.floor(Math.random() * 10000),
-        bedrijf: b.naam, plaats: [...b.plaatsen].slice(0, 3).join(", "),
-        functies: [...b.functies].slice(0, 6).join(", "), vacatures: b.n,
-        bron: "adzuna", url: b.url, salaris_ind: b.sal,
-        gevonden_op: vandaag, laatst_gezien: vandaag, status: "nieuw"
+      teMaken.push({
+        id: "lr" + Date.now() + "-" + teMaken.length,   // teller, geen random:
+        bedrijf: b.naam, bron: "adzuna", url: b.url,    // Date.now() is binnen
+        salaris_ind: b.sal, gevonden_op: vandaag,       // één batch voor elke
+        status: "nieuw", ...velden                      // rij hetzelfde
       });
-      nieuw++;
     }
+  }
+
+  let nieuw = 0, bijgewerkt = 0;
+  if (teMaken.length) {
+    const { error } = await service.from("crm_leadradar").insert(teMaken);
+    if (error) {
+      // Eén rotte rij mag de rest niet meeslepen — dan alsnog per stuk.
+      for (const rij of teMaken) {
+        const { error: e2 } = await service.from("crm_leadradar").insert(rij);
+        if (!e2) nieuw++;
+      }
+    } else nieuw = teMaken.length;
+  }
+  for (let i = 0; i < teWijzigen.length; i += 20) {
+    const blok = teWijzigen.slice(i, i + 20);
+    await Promise.all(blok.map((w) =>
+      service.from("crm_leadradar").update(w.velden).eq("id", w.id)));
+    bijgewerkt += blok.length;
   }
 
   // calls + budgetOp meegeven: de gratis tier is krap genoeg om te willen zien
   // hoeveel er per run opgaat, en of een run vroegtijdig is afgekapt.
   return antwoord({
     ok: true, gevonden: bedrijven.size, nieuw, bijgewerkt,
-    calls, budget: MAX_CALLS, afgekapt: budgetOp,
+    calls, budget: MAX_CALLS, afgekapt: budgetOp || tijdOp,
+    reden: tijdOp ? "tijd" : budgetOp ? "budget" : "",
+    duur_ms: Date.now() - START,
     werkgebied: `${WERKGEBIED} +${STRAAL_KM}km`
   });
 });
