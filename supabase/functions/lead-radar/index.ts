@@ -38,7 +38,12 @@ const WERKGEBIED = "Alphen aan den Rijn";
 // belijst, en dan is een bedrijf op 70 km alsnog beter dan niets. Hij verruimt
 // dus alleen als het dagdoel niet gehaald wordt, en stopt zodra dat wel zo is.
 // (Tjeerd, 11 aug 2026 — verzacht daarmee de harde 40 km-grens van 7 aug.)
-const STRALEN = [40, 60, 100];
+// 12 aug 2026 (Tjeerd): "doe maar 60 km range". 40 km was te krap om er 30
+// bruikbare leads per dag uit te halen; 60 km haalt het hele Rotterdamse
+// havengebied binnen (Botlek 35, Europoort 38, Maasvlakte 46) plus Moerdijk,
+// Utrecht-oost en zuidelijk Noord-Holland. 100 km blijft de noodstraal voor
+// een dag die anders leeg blijft.
+const STRALEN = [60, 100];
 const STRAAL_KM = STRALEN[0];        // het werkgebied zelf, voor de meldingen
 const DOEL_PER_RUN = 30;             // leads per run: nieuw + opnieuw wervend
 
@@ -86,6 +91,14 @@ const UITSLUITEN = [
   // bureaus met merknaam zonder bureau-woord (herkend uit eerdere runs)
   "logistic force", "pdz", "processionals", "profield", "attract", "jigler",
   "talect", "digiplein", "sectorinstituut", "raaak", "wr.nl",
+  // 12 aug 2026: deze kwamen er in de run van 11 aug alsnog doorheen omdat
+  // hun naam geen enkel bureau-woord bevat. Los per stuk toegevoegd.
+  "michael page", "page personnel", "robert half", "robert walters",
+  "innova search", "search & selection", "search en selection",
+  "jobforce", "job force", "leukebaan", "leuke baan", "switchup", "switch up",
+  "mvp solutions", "verbindt", "omwerven", "joof", "nivo werkt", "nivowerkt",
+  "employable", "vacat.nl", "techniekwerkt", "techniek werkt", "simplyhired",
+  "bebee", "glassdoor", "adzuna", "prestatie", "wanted uitzend",
   // onszelf / directe concurrent
   "ploeggenoten", "pronkert"
 ];
@@ -93,7 +106,11 @@ const UITSLUITEN = [
 // Naampatronen die vrijwel altijd op een bureau/bemiddelaar wijzen.
 // Fragmenten (geen woordgrens) omdat NL-bureaunamen vaak samengesteld zijn
 // (Perflexxion, Dujob, Apluspersoneel, NLwerkt, …).
-const AGENCY_RE = /(uitzend|detach|payroll|flex|werving|recruit|staffing|resourc|bemiddel|interim|secondment|inhuur|\bzzp\b|personeel|professional|\btalent|banenpagina|vacature|jobboard|jobbird|job\b|jobs|solliciteren|werkgeversdienst|employment agency|human\s?resources?|hr[-\s]?services|payrolling|contracting|planit|werkt\b|matchmak|\bprocess\s?jobs|\bhr\b)/i;
+// 12 aug 2026 uitgebreid: 'job\b' liet Jobforce door (geen woordgrens na job),
+// en search/selection/baan/banen/headhunt ontbraken helemaal. Let op dat
+// 'talent' hier NIET los mag staan: Watertalent en Luchttalent zijn juist
+// bronnen, geen bureaus - die vangen we af voordat isBureau draait.
+const AGENCY_RE = /(uitzend|detach|payroll|flex|werving|recruit|staffing|resourc|bemiddel|interim|secondment|inhuur|\bzzp\b|personeel|professional|\btalent|banenpagina|vacature|jobboard|jobbird|job\b|jobs|jobf|solliciteren|werkgeversdienst|employment agency|human\s?resources?|hr[-\s]?services|payrolling|contracting|planit|werkt\b|matchmak|\bprocess\s?jobs|\bhr\b|search\s*(&|en)\s*selecti|\bselectie\b|headhunt|\bbanen\b|\bbaan\b|executive\s?search|consultanc)/i;
 
 const isBureau = (naam: string) => {
   const n = naam.toLowerCase();
@@ -148,10 +165,37 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch (_) { /* leeg is prima */ }
 
   // Modus 'lijst': huidige radar teruggeven (voor de ochtendbriefing).
+  // De limiet stond op 120. Bij 30 leads per dag is de radar binnen een week
+  // groter dan dat, en dan ontdubbelt de ochtendroutine tegen een halve lijst
+  // en doet ze onderzoek over dat al gedaan is. (12 aug 2026)
   if (body.lijst) {
     const { data } = await service.from("crm_leadradar").select("*")
-      .neq("status", "genegeerd").order("laatst_gezien", { ascending: false }).limit(120);
+      .neq("status", "genegeerd").order("laatst_gezien", { ascending: false }).limit(5000);
     return antwoord({ ok: true, rijen: data ?? [] });
+  }
+
+  // Modus 'namen': alles waar de ochtendroutine tegen moet ontdubbelen, in één
+  // lichte respons. Niet alleen de radar: ook bestaande klanten en de
+  // contactpersonen-bedrijven, zodat er nooit een belscript wordt geschreven
+  // voor een relatie die Tjeerd al heeft. (12 aug 2026, op zijn verzoek)
+  if (body.namen) {
+    const [radar, klanten, contacten, kansen] = await Promise.all([
+      service.from("crm_leadradar").select("bedrijf,status,plaats,vacatures,functies").limit(5000),
+      service.from("clients").select("naam").limit(5000),
+      service.from("crm_contacten").select("klant").limit(5000),
+      service.from("crm_kansen").select("klant").limit(5000),
+    ]);
+    const uniek = (xs: unknown[]) =>
+      [...new Set(xs.map((x) => String(x ?? "").trim()).filter(Boolean))];
+    return antwoord({
+      ok: true,
+      radar: radar.data ?? [],
+      klanten: uniek((klanten.data ?? []).map((r: Record<string, unknown>) => r.naam)),
+      relaties: uniek([
+        ...(contacten.data ?? []).map((r: Record<string, unknown>) => r.klant),
+        ...(kansen.data ?? []).map((r: Record<string, unknown>) => r.klant),
+      ]),
+    });
   }
 
   // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
@@ -159,17 +203,40 @@ Deno.serve(async (req) => {
   if (Array.isArray(body.import)) {
     const vandaag = new Date().toISOString().slice(0, 10);
     let nieuw = 0, bijgewerkt = 0;
+    const alerts: string[] = [];
     for (const r of body.import as Record<string, unknown>[]) {
       const naam = String(r.bedrijf ?? "").trim();
       if (!naam) continue;
       const { data: bestaand } = await service.from("crm_leadradar")
-        .select("id,status").ilike("bedrijf", naam).limit(1);
+        .select("id,status,vacatures,functies").ilike("bedrijf", naam).limit(1);
       const velden: Record<string, unknown> = { laatst_gezien: vandaag };
       for (const k of ["plaats", "functies", "url", "salaris_ind", "notitie", "concepten"])
         if (r[k] != null) velden[k] = r[k];
       if (r.vacatures != null) velden.vacatures = Number(r.vacatures) || 1;
       if (bestaand?.length) {
         if (bestaand[0].status !== "genegeerd") {
+          // Nieuwe vacature bij een bedrijf dat we al kennen is een belsignaal:
+          // ze wierven al en breiden nu uit. Dat wil Tjeerd zien zonder de hele
+          // radar door te lopen, dus het wordt een melding. (12 aug 2026)
+          const oudAantal = Number(bestaand[0].vacatures ?? 0);
+          const nieuwAantal = Number(velden.vacatures ?? oudAantal);
+          const oudeFuncties = new Set(String(bestaand[0].functies ?? "")
+            .split(/[,;]/).map((p) => p.trim().toLowerCase()).filter(Boolean));
+          const verseFuncties = String(velden.functies ?? "")
+            .split(/[,;]/).map((p) => p.trim()).filter(Boolean)
+            .filter((f) => !oudeFuncties.has(f.toLowerCase()));
+          if (nieuwAantal > oudAantal || verseFuncties.length) {
+            const wat = verseFuncties.length
+              ? `nieuwe functie${verseFuncties.length > 1 ? "s" : ""}: ${verseFuncties.join(", ")}`
+              : `van ${oudAantal} naar ${nieuwAantal} vacatures`;
+            await service.from("crm_meldingen").insert({
+              id: "md" + Date.now() + Math.floor(Math.random() * 10000),
+              voor: "Tjeerd", van: "Leadradar", soort: "systeem",
+              tekst: `${naam} werft opnieuw — ${wat}.`,
+              entiteit: "lead", ref: String(bestaand[0].id),
+            });
+            alerts.push(`${naam}: ${wat}`);
+          }
           await service.from("crm_leadradar").update(velden).eq("id", bestaand[0].id);
           bijgewerkt++;
         }
@@ -182,7 +249,7 @@ Deno.serve(async (req) => {
         nieuw++;
       }
     }
-    return antwoord({ ok: true, nieuw, bijgewerkt });
+    return antwoord({ ok: true, nieuw, bijgewerkt, alerts });
   }
 
   // Modus 'opschonen': bestaande bureau-rijen uit de radar filteren.

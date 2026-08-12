@@ -5,7 +5,7 @@ Elke vrijdag stuurt Pronkert een margefactuur (`no-reply@pronkert.nl`, onderwerp
 Dit is de keten die dat zelf in het CRM zet.
 
 ```
-mail (vrijdag)  →  weekroutine (maandag)  →  Edge Function  →  Supabase  →  Finance → Flex
+mail (vrijdag)  →  weekroutine (zaterdag)  →  Edge Function  →  Supabase  →  Finance → Flex
 ```
 
 Drie onderdelen:
@@ -64,7 +64,7 @@ python3 pronkert_marge.py <facturen…> --json > /pad/buiten/de/repo/backfill.js
 
 ## Hoe het daarna loopt
 
-De weekroutine draait maandagochtend, vraagt de Edge Function welke
+De weekroutine draait zaterdagochtend, vraagt de Edge Function welke
 factuurnummers al verwerkt zijn, zoekt in Outlook de facturen die daar niet bij
 zitten, en stuurt de tekstlaag van elke nieuwe factuur in. Tjeerd krijgt één
 melding met het bedrag per week, de uitsplitsing per flexkracht en de nieuwe

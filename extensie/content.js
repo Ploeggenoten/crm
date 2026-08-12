@@ -450,7 +450,11 @@
   }
 
   // ─── Connectie-bericht (persoonlijk, jij verstuurt zelf) ────
-  const STD_SJABLOON = 'Hoi {voornaam}, leuk je profiel als {functie} bij {bedrijf} te zien. Ik help productie- en logistiekbedrijven aan goed personeel — maak graag kennis. Groet, {mij}';
+  // Sjabloon van Tjeerd, 12 aug 2026. Let op de lengte: LinkedIn kapt een
+  // connectie-notitie af op 300 tekens en dit sjabloon komt op 291 + de lengte
+  // van de voornaam. Voornamen tot en met 9 letters passen; bij 10 of meer gaat
+  // hij eroverheen en kleurt de teller in het paneel rood.
+  const STD_SJABLOON = 'Hi {voornaam}, ik merk altijd hetzelfde: leadbureaus leveren bereik zonder de juiste mensen, uitzenders sturen cv\'s van iemand die de vloer nooit zag. Wij filmen het echte werk op de vloer en pakken de volledige recruitment op. Alles no cure no pay. Lijkt me leuk om te bellen.\nGr,\n{mij}\nPloeggenoten';
   let instel = { naam: '', sjabloon: STD_SJABLOON };
   chrome.storage.local.get('pg_instel').then(o => { if (o && o.pg_instel) instel = { ...instel, ...o.pg_instel }; }).catch(() => {});
 

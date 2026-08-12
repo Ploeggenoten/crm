@@ -7,7 +7,9 @@ function toon(ingelogd, email) {
   if (ingelogd) $('wie').textContent = email || '';
 }
 
-const STD_SJABLOON = 'Hoi {voornaam}, leuk je profiel als {functie} bij {bedrijf} te zien. Ik help productie- en logistiekbedrijven aan goed personeel — maak graag kennis. Groet, {mij}';
+// Moet gelijk blijven aan STD_SJABLOON in content.js — die twee zijn de
+// fallback en de default in het instellingenscherm. (Tjeerd, 12 aug 2026)
+const STD_SJABLOON = 'Hi {voornaam}, ik merk altijd hetzelfde: leadbureaus leveren bereik zonder de juiste mensen, uitzenders sturen cv\'s van iemand die de vloer nooit zag. Wij filmen het echte werk op de vloer en pakken de volledige recruitment op. Alles no cure no pay. Lijkt me leuk om te bellen.\nGr,\n{mij}\nPloeggenoten';
 
 async function laadInstel() {
   const o = await chrome.storage.local.get('pg_instel');

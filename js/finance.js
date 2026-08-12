@@ -2440,7 +2440,7 @@ function tabFlex(el, f){
         <p class="meta" style="margin-top:12px">Flex-omzet dit jaar (YTD): <b>${eur(fx.ytd)}</b>.
           Sven wordt wekelijks gefactureerd, Alain per 4 weken — recente weken kunnen tijdelijk lager
           lijken tot die factuur binnen is. De cashflow rekent met het gemiddelde van de laatste 4 weken.</p>`
-        : CRM.ui.leeg('Nog geen weekfacturen verwerkt','Lees een margefactuur in — of wacht op de weekroutine, die dat maandag zelf doet.'),
+        : CRM.ui.leeg('Nog geen weekfacturen verwerkt','Lees een margefactuur in — of wacht op de weekroutine, die dat zaterdag zelf doet.'),
         {acties:`<span class="meta">laatste ${weken.length} weken</span>`})}
     </div>`;
 
@@ -2448,7 +2448,7 @@ function tabFlex(el, f){
 }
 
 /* ─── Margefactuur inlezen ──────────────────────────────────────
-   Normaal doet de weekroutine dit vanzelf (elke maandag, uit de mail). Dit
+   Normaal doet de weekroutine dit vanzelf (elke zaterdag, uit de mail). Dit
    scherm is de terugval: open de PDF, selecteer alles, plak het hier.
 
    De tekst gaat naar dezelfde Edge Function die de routine gebruikt, zodat het
