@@ -140,7 +140,12 @@ def lees_tekst(tekst, bestand=''):
         # Omzet naar de klant staat niet apart op de factuur, maar volgt uit
         # tarief × uren. Daarmee kun je de marge ook als percentage van de
         # klantomzet zien, en niet alleen als bedrag.
-        klantbedrag = round(tarief * uren, 2) if (tarief is not None and uren) else None
+        # Bij overwerk staat er een toeslagpercentage op de regel: de klant
+        # betaalt dan basistarief × dat percentage. Laat je dat weg, dan valt de
+        # klantomzet te laag uit (bij Alain in week 30 met €9,42).
+        toeslag = getal(r'toeslag ([\d.,]+)%')
+        klantbedrag = round(tarief * uren * ((toeslag / 100) if toeslag else 1), 2) \
+            if (tarief is not None and uren) else None
         regels.append(dict(
             klantbedrag=klantbedrag,
             factuur=factuurnr, factuurdatum=factuurdatum, bron='pdf',

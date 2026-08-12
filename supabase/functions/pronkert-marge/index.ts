@@ -101,7 +101,11 @@ export function leesFactuur(ruw: string) {
       uurloon, tarief, factor: uit(/factor ([\d.,]+)/), klant: "",
       // Omzet naar de klant staat niet apart op de factuur maar volgt uit
       // tarief x uren - daarmee is de marge ook als percentage te zien.
-      klantbedrag: (tarief != null && uren) ? rond(tarief * uren) : null,
+      // Bij overwerk staat er een toeslagpercentage op de regel: de klant
+      // betaalt dan basistarief x dat percentage. Laat je dat weg, dan valt de
+      // klantomzet te laag uit (bij Alain in week 30 met 9,42 euro).
+      klantbedrag: (tarief != null && uren)
+        ? rond(tarief * uren * ((uit(/toeslag ([\d.,]+)%/) ?? 100) / 100)) : null,
       marge: -getal(g.bedrag),
     });
   }
@@ -268,8 +272,58 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "regels zonder factuurnummer" }), { status: 400 });
   }
 
+  // BOTSING TUSSEN DE TWEE BRONNEN. Dezelfde week komt bij Pronkert in twee
+  // vormen binnen: de margefactuur (een nummer voor alles, bv. 267947) en het
+  // Excel-marge-overzicht (een nummer per flexkracht, bv. 267817/267845/267876).
+  // Dedupliceren gaat op factuurnummer, dus zonder deze controle zou week 30
+  // twee keer meetellen: 2.679,70 in plaats van 1.339,85.
+  const weekLijst = [...new Set(regels.map((r) => String(r.weekmaandag ?? r.week)))];
+  const { data: bestaand } = await service.from("fin_flex_regels")
+    .select("factuur,week,marge").in("week", weekLijst);
+  const andere = [...new Set((bestaand ?? [])
+    .filter((r) => !facturen.includes(String(r.factuur))).map((r) => String(r.factuur)))];
+
+  if (andere.length && !body.vervang && !body.verrijk) {
+    const alTotaal = rond((bestaand ?? [])
+      .filter((r) => !facturen.includes(String(r.factuur)))
+      .reduce((s, r) => s + Number(r.marge || 0), 0));
+    const nuTotaal = rond(regels.reduce((s, r) => s + (Number(r.marge) || 0), 0));
+    return new Response(JSON.stringify({
+      ok: false,
+      waarschuwing: `Deze week${weekLijst.length > 1 ? "en staan" : " staat"} al in het systeem via ` +
+        `factuur ${andere.join(", ")} (${alTotaal.toFixed(2)} euro). Dit bestand levert ` +
+        `${nuTotaal.toFixed(2)} euro voor dezelfde periode. Er is niets opgeslagen, anders ` +
+        `zou de marge dubbel tellen. Stuur 'vervang' mee om de oude regels te vervangen, of ` +
+        `'verrijk' om alleen de klantnamen aan te vullen.`,
+      weekLijst, bestaande_facturen: andere, al_geboekt: alTotaal, in_dit_bestand: nuTotaal,
+    }), { headers: { "Content-Type": "application/json" } });
+  }
+
+  // Verrijken: niets bijboeken, alleen invullen wat op de margefactuur ontbreekt.
+  // De klantnaam staat namelijk WEL op het Excel-overzicht en NIET op de PDF.
+  if (body.verrijk) {
+    let bij = 0;
+    const perPersoon = new Map<string, { week: string; klant: string }>();
+    for (const r of regels) {
+      const klant = String(r.klant ?? "").trim();
+      if (klant) perPersoon.set(`${r.weekmaandag ?? r.week}|${persoonSleutel(r)}`, { week: String(r.weekmaandag ?? r.week), klant });
+    }
+    const { data: rijen } = await service.from("fin_flex_regels")
+      .select("id,week,naam,roepnaam,klant").in("week", weekLijst);
+    for (const rij of rijen ?? []) {
+      if (String(rij.klant ?? "").trim()) continue;
+      const t = perPersoon.get(`${rij.week}|${persoonSleutel(rij)}`);
+      if (!t) continue;
+      await service.from("fin_flex_regels").update({ klant: t.klant }).eq("id", rij.id);
+      bij++;
+    }
+    return new Response(JSON.stringify({ ok: true, verrijkt: bij, weekLijst }),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
   // Eerst weg, dan opnieuw: dat maakt een tweede import onschadelijk.
   for (const f of facturen) await service.from("fin_flex_regels").delete().eq("factuur", f);
+  if (body.vervang) for (const f of andere) await service.from("fin_flex_regels").delete().eq("factuur", f);
 
   const rijen = regels.map((r) => ({
     factuur: String(r.factuur ?? ""), deelfactuur: String(r.deelfactuur ?? ""),

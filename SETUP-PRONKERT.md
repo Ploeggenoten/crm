@@ -85,6 +85,25 @@ Dat is niet theoretisch: op factuur 268245 (2 aug) waren vijf dagen van Sven
 eerst teruggeboekt en daarna opnieuw gefactureerd. Met alleen een weektotaal is
 zo'n correctie niet terug te vinden.
 
+## Twee bronnen voor dezelfde week — pas op met dubbeltellen
+
+Pronkert stuurt dezelfde week in twee vormen: de **margefactuur** (PDF, één
+nummer voor alles, bv. 267947) en het **marge-overzicht** (Excel, een nummer per
+flexkracht, bv. 267817/267845/267876). Dedupliceren gaat op factuurnummer, dus
+zonder controle zou week 30 twee keer meetellen: € 2.679,70 in plaats van
+€ 1.339,85.
+
+De functie weigert daarom een bestand waarvan de week al onder een ánder
+factuurnummer in het systeem staat, en zegt wat er al geboekt is. Twee uitwegen:
+
+* `{"vervang": true}` — gooi de bestaande regels van die week weg en neem deze.
+* `{"verrijk": true}` — boek niets bij, vul alleen de klantnaam aan. Die staat
+  namelijk wél op het Excel-overzicht en niet op de PDF.
+
+Verder is de PDF genoeg: marge, uren, uurloon, inkoop- en klantfactor en de
+klantomzet komen er tot op de cent hetzelfde uit als op het overzicht
+(gecontroleerd op week 30).
+
 ## Wat er wel en niet als "uur" telt
 
 Alleen `Loon normale uren` en `Loon overwerkuren` zijn gewerkte uren.
