@@ -123,6 +123,18 @@ CRM.CAO_PRIORITEIT = [
 
 CRM.caoBijNaam = naam => CRM.CAO_DATA.find(c => c.naam === naam) || null;
 
+/* Alle 59 namen, voorkeurslijst eerst — voor een <datalist> waar getypt
+   tekst zelf al filtert, maar de standaardvolgorde nog steeds moet
+   kloppen voor wie leeg begint te typen. */
+CRM.caoAlleNamenGesorteerd = () => {
+  const inPrio = n => CRM.CAO_PRIORITEIT.includes(n);
+  return CRM.CAO_DATA.map(c => c.naam).slice().sort((a,b) => {
+    const pa = inPrio(a), pb = inPrio(b);
+    if(pa !== pb) return pa ? -1 : 1;
+    return a.localeCompare(b);
+  });
+};
+
 /* Zoekt CAO's op (deel van) naam; voorkeurslijst eerst. Lege zoekterm geeft
    de voorkeurslijst als startpunt (i.p.v. alle 59 in willekeurige volgorde). */
 CRM.caoZoek = (zoekterm) => {
@@ -131,6 +143,47 @@ CRM.caoZoek = (zoekterm) => {
   if(!q) return CRM.CAO_DATA.filter(c => inPrio(c.naam));
   const treffers = CRM.CAO_DATA.filter(c => c.naam.toLowerCase().includes(q));
   return treffers.sort((a,b) => (inPrio(b.naam)?1:0) - (inPrio(a.naam)?1:0));
+};
+
+/* Losse trefwoorden die een AM typt in het Branche-veld en die niet
+   letterlijk in een CAO-naam voorkomen, maar er wel ondubbelzinnig naar
+   verwijzen. Alleen voor de voorkeurslijst — het is een sneltoets naar
+   de suggestie, geen vervanging van CRM.caoZoek. */
+CRM.CAO_TREFWOORDEN = {
+  'logistiek': 'Beroepsgoederenvervoer (TLN)', 'transport': 'Beroepsgoederenvervoer (TLN)',
+  'vervoer': 'Beroepsgoederenvervoer (TLN)', 'expeditie': 'Beroepsgoederenvervoer (TLN)',
+  'metaal': 'Metaal & Techniek 40 uur', 'techniek': 'Metaal & Techniek 40 uur',
+  'machinebouw': 'Metaal & Techniek 40 uur', 'staal': 'Metaal & Techniek 40 uur',
+  'kunststof': 'Kunststof- en rubber- en lijmindustrie', 'rubber': 'Kunststof- en rubber- en lijmindustrie',
+  'hout': 'Houtverwerkende industrie', 'timmer': 'Timmerindustrie',
+  'groen': 'Groen, Grond en Infrastructuur', 'hovenier': 'Hoveniersbedrijf in Nederland',
+  'bouw': 'Bouw & Infra', 'infra': 'Bouw & Infra',
+  'voeding': 'Groenten- en Fruitverwerkende Industrie', 'levensmiddel': 'Levensmiddelenbedrijf (Supermarkt)',
+  'vlees': 'Vleessector', 'drank': 'Drankindustrie en groothandel', 'graan': 'Graanbe- en verwerkende bedrijven',
+  'textiel': 'Mode-, Interieur-, Tapijt- en Textielindustrie', 'glas': 'Vlakglas glasbewerkings glazeniersbedrijf',
+  'groothandel': 'Technische Groothandel', 'agf': 'Groenten- en Fruitverwerkende Industrie',
+  'automotive': 'Motorvoertuigen- en tweewielerbedrijf 40 uur', 'auto': 'Motorvoertuigen- en tweewielerbedrijf 40 uur'
+};
+
+/* Voorstelt één CAO-naam op basis van vrije branchetekst — nooit meteen
+   opslaan, alleen als startpunt in het formulier (AM bevestigt of kiest
+   iets anders). Eerst een trefwoord-treffer, anders het CAO-woord met de
+   meeste overlap met de brancheteks; niets gevonden = lege string. */
+CRM.caoSuggestieVoorBranche = (brancheTekst) => {
+  const tekst = String(brancheTekst || '').toLowerCase();
+  if(!tekst.trim()) return '';
+  for(const woord in CRM.CAO_TREFWOORDEN)
+    if(tekst.includes(woord)) return CRM.CAO_TREFWOORDEN[woord];
+  const woorden = tekst.split(/[^a-zà-ÿ]+/).filter(w => w.length >= 4);
+  if(!woorden.length) return '';
+  let beste = '', besteScore = 0;
+  CRM.CAO_DATA.forEach(c => {
+    const naamLc = c.naam.toLowerCase();
+    const score = woorden.filter(w => naamLc.includes(w)).length
+      + (CRM.CAO_PRIORITEIT.includes(c.naam) ? 0.5 : 0);
+    if(score > besteScore){ besteScore = score; beste = c.naam; }
+  });
+  return besteScore >= 1 ? beste : '';
 };
 
 /* Kostprijsfactor + verkoopfactor-voorstel, exact zoals tabblad

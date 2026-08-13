@@ -61,3 +61,18 @@ create table if not exists oo_sessions (
 alter table oo_sessions add column if not exists vacature_id     text default '';
 alter table oo_sessions add column if not exists extra_vacatures jsonb default '[]'::jsonb;
 alter table oo_sessions add column if not exists tijd            text default '';
+
+-- ═══════════════════════════════════════════════════════════════
+-- BLOK 12 — CAO per klant (11 aug 2026)
+--
+-- Bepaalt via js/kostprijs.js welke kostprijsfactor bij een klant hoort
+-- (Pronkert-rekentool nagebouwd) en dus welke verkoopfactor het systeem
+-- voorstelt (kostprijsfactor + 0,6, vaste marge-afspraak Tjeerd). Eén
+-- keer per klant invullen — het systeem doet daarna zelf een voorstel op
+-- basis van de branche, de AM bevestigt of kiest een andere CAO.
+--
+-- js/klanten.js (bewaarCao) vangt de ontbrekende kolom al netjes op tot
+-- dit gedraaid is, dus dit blok is niet dringend — maar zonder deze
+-- kolom slaat de CAO nergens permanent op.
+-- ═══════════════════════════════════════════════════════════════
+alter table clients add column if not exists cao text default '';

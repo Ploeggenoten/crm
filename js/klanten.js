@@ -584,6 +584,22 @@ async function bewaarTeam(k, team){
   }
   CRM.toast('Opgeslagen','ok');
 }
+/* CAO los opslaan — zelfde reden als bewaarTeam: de kolom bestaat pas na
+   supabase/nog-te-draaien.sql, en tot die tijd mag een mislukte cao-update
+   de rest van het klantformulier niet meeslepen. */
+async function bewaarCao(k, cao){
+  const i = CRM.state.clients.findIndex(c => c.naam === k.naam);
+  if(i >= 0) CRM.state.clients[i].cao = cao;
+  k.cao = cao;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('clients').update({cao}).eq('naam', k.naam);
+    if(error){
+      if(/cao.*(column|schema)|column.*cao|schema cache/i.test(error.message||''))
+        return CRM.toast('Kolom "cao" bestaat nog niet — draai eerst supabase/nog-te-draaien.sql','err');
+      return CRM.fout('CAO opslaan mislukt', error);
+    }
+  }
+}
 async function bewaarRij(tabel, veld, rij, bestaat){
   const lijst = CRM.state[veld];
   const i = lijst.findIndex(r => String(r.id) === String(rij.id));
@@ -1165,6 +1181,7 @@ function gegevensHtml(k){
       ${rij('E-mail',   k.email ? `<a href="mailto:${h(k.email)}" title="${h(k.email)}">${h(k.email)}</a>` : '')}
       ${rij('Website',  web ? `<a href="${h(web)}" target="_blank" rel="noopener">${h(webTekst)}</a>` : '')}
       ${rij('Branche',  k.branche ? h(k.branche) : '')}
+      ${rij('CAO',      k.cao ? h(k.cao) : '')}
       ${rij('Plaats',   k.locatie ? h(k.locatie) : '')}
       ${rij('Sinds',    k.sinds ? `<span class="num">${h(maandJaar(k.sinds))}</span>` : '')}
       ${rij('Eigenaar', k.eigenaar ? h(k.eigenaar) : '')}
@@ -1602,6 +1619,20 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         <label class="check"><input type="checkbox" id="af_actief"${a.actief === false ? '' : ' checked'}> Deze afspraak is actief</label>
         </div></div>
 
+      <div class="card kl-af-sec kl-af-kp" id="af_kp" hidden><div class="card-h"><div class="h2">Kostprijs-assistent</div></div>
+        <div class="card-b">
+          <p class="meta kl-af-uitleg">CAO, contractfase en bruto uurloon geven de kostprijsfactor van Pronkert; de
+            voorgestelde factor is die kostprijs plus de vaste marge van 0,6.</p>
+          <div class="f-grid kl-af-vbin">
+            <div class="f-row"><label for="kp_cao">CAO</label><select id="kp_cao">${caoOptiesHtml(k.cao||'')}</select></div>
+            <div class="f-row"><label for="kp_fase">Contractfase</label>
+              <select id="kp_fase">${CRM.CONTRACTFASE.map(f=>`<option value="${h(f.naam)}"${f.naam==='Fase 1/2'?' selected':''}>${h(f.naam)}</option>`).join('')}</select></div>
+            <div class="f-row"><label for="kp_loon">Bruto uurloon</label>
+              <input type="number" id="kp_loon" min="0" step="0.05" placeholder="Bijv. 16,50"></div>
+          </div>
+          <div id="kp_uit"></div>
+        </div></div>
+
       <div class="card kl-af-sec"><div class="card-h"><div class="h2" id="af_tariefkop">Fee per functiegroep</div><span class="spacer"></span>
           <button class="btn sub sm" id="af_regel_add">+ Regel</button></div>
         <div class="card-b">
@@ -1687,6 +1718,7 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         const std = dr.querySelector('#af_std');
         std.max = uitzend ? 10 : 100; std.step = uitzend ? 0.05 : 0.1;
         dr.querySelector('#af_ovnrij').hidden = !uitzend;
+        dr.querySelector('#af_kp').hidden = !uitzend;
         dr.querySelectorAll('.kl-af-sec').forEach(sec => {
           const kop = sec.querySelector('.h2');
           if(kop && /Grondslag|Facturatie en garantie|Voorbeeldberekening/.test(kop.textContent))
@@ -1722,10 +1754,51 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         if(er && String(er.id) !== String(a.id)) return afspraakDrawer(k, er.id);
         if(bestaat) return afspraakDrawer(k, null, true, sk);
         a.soort = sk;
-        tekenSoortSeg(); zetSoort(); voorbeeld();
+        /* tekenRegels() moet mee: 'vorm' (percentage/vast/maanden vs.
+           factor) hangt af van de soort, en zonder herteken bleef hier een
+           %-veld staan nadat je naar Uitzenden wisselde (bug, losstaand van
+           de kostprijs-assistent, gevonden tijdens het testen ervan). */
+        tekenSoortSeg(); zetSoort(); tekenRegels(); voorbeeld(); kpBereken();
       }
       tekenSoortSeg();
       zetSoort();
+
+      /* ── Kostprijs-assistent (alleen bij uitzenden) ─────────────
+         Rekent live mee met CAO + contractfase + uurloon en zet op één
+         klik de voorgestelde verkoopfactor in het standaardfactor-veld.
+         Zet nooit zelf iets in de tarieventabel — de AM kiest zelf of
+         het voorstel ook echt de standaardfactor wordt. */
+      function kpBereken(){
+        const cao = dr.querySelector('#kp_cao').value;
+        const fase = dr.querySelector('#kp_fase').value;
+        const loon = Number(dr.querySelector('#kp_loon').value);
+        const uit = dr.querySelector('#kp_uit');
+        if(!cao){ uit.innerHTML = '<p class="meta kl-af-leeg">Kies een CAO om de kostprijs te zien.</p>'; return; }
+        if(!loon){ uit.innerHTML = '<p class="meta kl-af-leeg">Vul een bruto uurloon in om de kostprijs te zien.</p>'; return; }
+        const r = CRM.kostprijsfactor(cao, fase, loon);
+        if(!r){ uit.innerHTML = '<p class="meta kl-af-leeg">Kan hier niet mee rekenen — controleer CAO, fase en uurloon.</p>'; return; }
+        const factorTxt = n => n.toLocaleString('nl-NL', {minimumFractionDigits:4, maximumFractionDigits:4});
+        uit.innerHTML = `
+          <div class="tblwrap"><table class="tbl kl-af-tbl"><tbody>
+            <tr><td>Kostprijsfactor (Pronkert)</td><td class="num n">${h(factorTxt(r.kostprijsfactor))}×</td></tr>
+            <tr><td>Kostprijs per uur</td><td class="num n">${h(CRM.euro(r.tariefKostprijs))}</td></tr>
+          </tbody><tfoot>
+            <tr class="kl-af-fee"><td>Voorgestelde verkoopfactor <span class="meta">(kostprijs + 0,6)</span></td>
+              <td class="num n">${h(factorTxt(r.verkoopfactorVoorstel))}×</td></tr>
+          </tfoot></table></div>
+          <p class="meta kl-af-waarom">Marge bij dit uurloon: ${h(CRM.euro(r.margeEurPerUur))}/u.</p>
+          <button type="button" class="btn sub sm" id="kp_gebruik">↳ Gebruik als standaardfactor</button>`;
+        uit.querySelector('#kp_gebruik').onclick = () => {
+          dr.querySelector('#af_std').value = r.verkoopfactorVoorstel.toFixed(2);
+          voorbeeld();
+          CRM.toast('Standaardfactor ingevuld — controleer en sla op', 'ok');
+        };
+      }
+      ['#kp_cao','#kp_fase','#kp_loon'].forEach(sel => {
+        const el = dr.querySelector(sel);
+        el.addEventListener('input', kpBereken); el.addEventListener('change', kpBereken);
+      });
+      kpBereken();
 
       /* ── Fee-regels: rijen toevoegen en verwijderen ───────────── */
       const regelsEl = dr.querySelector('#af_regels');
@@ -3751,6 +3824,19 @@ const heeftVestigingVelden = () => {
   return !!rij && 'adres' in rij;
 };
 
+/* CAO-keuzelijst, voorkeur (productie/logistiek/industrie) gescheiden van
+   de rest — een select i.p.v. vrije tekst, want een tikfout in een
+   CAO-naam laat CRM.kostprijsfactor stil "" teruggeven en niemand ziet
+   dat de kostprijs dan nergens op gebaseerd is. */
+function caoOptiesHtml(gekozen){
+  const optie = n => `<option value="${h(n)}"${n===gekozen?' selected':''}>${h(n)}</option>`;
+  const voorkeur = CRM.CAO_PRIORITEIT;
+  const overig = CRM.caoAlleNamenGesorteerd().filter(n => !voorkeur.includes(n));
+  return `<option value=""${gekozen?'':' selected'}>— kies CAO —</option>
+    <optgroup label="Productie · logistiek · industrie">${voorkeur.map(optie).join('')}</optgroup>
+    <optgroup label="Overige CAO's">${overig.map(optie).join('')}</optgroup>`;
+}
+
 function klantModal(k){
   const vest = heeftVestigingVelden();
   CRM.modal.open(`
@@ -3765,6 +3851,10 @@ function klantModal(k){
           ${CRM.SALES_FASES.map(f=>`<option value="${h(f.k)}"${k.fase===f.k?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
         <div class="f-row"><label>Eigenaar (AM)</label><input type="text" id="g_eig" value="${h(k.eigenaar||'')}"></div>
         <div class="f-row"><label>Branche</label><input type="text" id="g_br" value="${h(k.branche||'')}"></div>
+        <div class="f-row"><label>CAO</label>
+          <select id="g_cao">${caoOptiesHtml(k.cao||'')}</select>
+          <div class="hint" id="g_cao_hint" hidden>Voorstel op basis van de branche — controleer en pas aan indien nodig.</div>
+        </div>
         <div class="f-row"><label>Locatie</label><input type="text" id="g_loc" value="${h(k.locatie||'')}"></div>
         <div class="f-row"><label>Telefoon</label><input type="tel" id="g_tel" value="${h(k.telefoon||'')}"></div>
         <div class="f-row"><label>E-mail</label><input type="email" id="g_mail" value="${h(k.email||'')}"></div>
@@ -3813,6 +3903,19 @@ function klantModal(k){
           if(el && val && (forceer || !el.value.trim())) el.value = val; };
         zet('#g_adres', d.adres); zet('#g_pc', d.postcode); zet('#g_pl', d.plaats);
       });
+    }
+    /* CAO-suggestie: alleen als het veld nog leeg is (nooit een handmatige
+       keuze overschrijven) en alleen als voorstel in het invoerveld — de
+       AM ziet 'm staan en bevestigt door op te slaan, of typt iets anders.
+       Tjeerd, 11 aug 2026: "voorstel + handmatige bevestiging". */
+    { const brEl = m.querySelector('#g_br'), caoEl = m.querySelector('#g_cao'), hintEl = m.querySelector('#g_cao_hint');
+      const suggereer = () => {
+        if(!brEl || !caoEl || caoEl.value || caoEl.dataset.aangepast) return;
+        const voorstel = CRM.caoSuggestieVoorBranche(brEl.value);
+        if(voorstel){ caoEl.value = voorstel; if(hintEl) hintEl.hidden = false; }
+      };
+      if(caoEl) caoEl.addEventListener('change', () => { caoEl.dataset.aangepast = '1'; if(hintEl) hintEl.hidden = true; });
+      if(brEl){ brEl.addEventListener('blur', suggereer); suggereer(); }
     }
     { const adresVeld = m.querySelector('#g_adres');
       if(adresVeld) adresVeld.addEventListener('blur', () => {
@@ -3877,10 +3980,12 @@ function klantModal(k){
       /* Team los opslaan: de kolom kan ontbreken zolang de aanvulling-SQL
          niet gedraaid is — dan mag de rest van de wijziging niet sneuvelen. */
       const nieuweNaam = m.querySelector('#g_naam').value.trim();
+      const nieuweCao = m.querySelector('#g_cao').value.trim();
       CRM.modal.close();
       /* Eerst de gewone velden onder de huidige naam, dán pas hernoemen —
          andersom zoekt bewaarKlant een rij die net van naam veranderd is. */
       await bewaarKlant(k.naam, w);
+      if(nieuweCao !== (k.cao||'')) await bewaarCao(k, nieuweCao);
       if(faseGewisseld)
         CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oudeFase||'—'} → ${nieuweFase||'—'}`);
       if(nieuweNaam && nieuweNaam !== k.naam){
