@@ -84,12 +84,18 @@
 
 /* Taken in de rail */
 .ck-taken{display:flex;flex-direction:column;gap:2px}
-label.ck-taak{display:flex;align-items:flex-start;gap:10px;padding:8px 8px;border-radius:var(--r-s);cursor:pointer}
-label.ck-taak:hover{background:var(--card-2)}
-label.ck-taak > span{flex:1;min-width:0}
-label.ck-taak b{display:block;font-size:12.5px;font-weight:600}
-label.ck-taak .meta{display:block;margin-top:2px}
-label.ck-taak input{margin-top:3px;flex:0 0 auto}
+.ck-taak{display:flex;align-items:flex-start;gap:4px;border-radius:var(--r-s)}
+.ck-taak:hover{background:var(--card-2)}
+.ck-taak label{display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;padding:8px 8px;cursor:pointer}
+.ck-taak > label > span{flex:1;min-width:0}
+.ck-taak b{display:block;font-size:12.5px;font-weight:600}
+.ck-taak .meta{display:block;margin-top:2px}
+.ck-taak input{margin-top:3px;flex:0 0 auto}
+/* Bewerken: pas zichtbaar bij hover, net als bij de relatiekaart (.kl-taakbewerk). */
+.ck-taakbewerk{background:none;border:none;padding:0;margin:10px 8px 0 0;font:600 11px/1 var(--body);
+  color:transparent;cursor:pointer}
+.ck-taak:hover .ck-taakbewerk{color:var(--muted)}
+.ck-taakbewerk:hover{color:var(--olive,#3D6400)!important;text-decoration:underline}
 .ck-afleiding{margin:9px 0 0;font-style:italic;line-height:1.45}
 
 /* ─── Signalen ───────────────────────────────────────────────── */

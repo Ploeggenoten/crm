@@ -793,6 +793,7 @@ function taakRijHTML(r){
     <div class="tk-t"${klik}><b>${h(r.tekst)}</b>
       ${r.sub?`<span class="tk-s">${h(r.sub)}</span>`:''}</div>
     ${wanneerHTML(r.id, r.datum || '')}
+    <button type="button" class="tk-bewerk" data-bewerk="${h(r.id)}" title="Taak aanpassen — onderwerp, tijd, voor wie" aria-label="Taak aanpassen">✎</button>
   </div>`;
 }
 
@@ -992,6 +993,18 @@ async function datumZetten(id, datum, na){
   if(na) na();
 }
 
+/* ─── Een taak volledig bewerken ──────────────────────────────────
+   Datum en prioriteit zijn hierboven al één klik; onderwerp en tijd
+   hadden geen invoerveld op de rij zelf — daarvoor gaat de potloodknop
+   naar hetzelfde gedeelde taakvenster als "Meer…", nu in bewerkstand.
+   (Tjeerd, 13 aug 2026.) */
+async function taakBewerken(id, na){
+  const t = (CRM.state.taken||[]).find(x => String(x.id)===String(id));
+  if(!t) return;
+  const rij = await CRM.taakModal({bewerken:t});
+  if(rij && na) na();
+}
+
 /* ─── Snel een taak toevoegen ────────────────────────────────────
    Voor mezelf, vandaag, normale prioriteit. Wie meer wil (een collega,
    een andere datum) drukt op "Meer…" en krijgt het gedeelde taakvenster
@@ -1072,6 +1085,11 @@ function bindTaken(mount){
   CRM.$$('.tk-wanneer', el).forEach(s => {
     s.onclick = e => e.stopPropagation();
     s.onchange = () => datumZetten(s.dataset.wanneer, s.value, opnieuw);
+  });
+
+  /* Onderwerp, tijd, voor wie: het volledige taakvenster in bewerkstand. */
+  CRM.$$('.tk-bewerk', el).forEach(b => b.onclick = e => {
+    e.stopPropagation(); taakBewerken(b.dataset.bewerk, opnieuw);
   });
 
   /* Snel iets opschrijven. Na het opslaan blijft de cursor in het veld

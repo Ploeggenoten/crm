@@ -650,11 +650,14 @@ function vervolgHtml(ct){
 
   const lijst = mijn.length
     ? `<div class="ck-taken">${mijn.sort((a,b)=>String(a.datum||'').localeCompare(String(b.datum||'')))
-        .map(t => `<label class="ck-taak"><input type="checkbox" data-taak="${h(t.id)}">
-          <span><b>${h(t.tekst)}</b><span class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${
-            t.voor ? ' · voor ' + h(t.voor) : ''}${
-            t.prioriteit === 'Hoog' ? ' <span class="chip amber">Hoog</span>' : ''}</span></span>
-          </label>`).join('')}</div>
+        .map(t => `<div class="ck-taak">
+          <label><input type="checkbox" data-taak="${h(t.id)}">
+            <span><b>${h(t.tekst)}</b><span class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${
+              t.voor ? ' · voor ' + h(t.voor) : ''}${
+              t.prioriteit === 'Hoog' ? ' <span class="chip amber">Hoog</span>' : ''}</span></span>
+          </label>
+          <button type="button" class="lnk ck-taakbewerk" data-taakbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
+        </div>`).join('')}</div>
        <p class="meta ck-afleiding">Afgeleid: deze taken staan bij ${h(ct.klant||'de relatie')} en noemen deze persoon.</p>`
     : `<p class="meta" style="margin:0">Geen open taak die deze persoon noemt.</p>`;
 
@@ -918,6 +921,12 @@ function bindKaart(mount, ct, klant){
     CRM.toast('Taak afgevinkt','ok');
     CRM.navBadges();
     opnieuw();
+  });
+  mount.querySelectorAll('[data-taakbewerk]').forEach(b => b.onclick = async () => {
+    const t = (CRM.state.taken||[]).find(x => String(x.id) === b.dataset.taakbewerk);
+    if(!t) return;
+    const rij = await CRM.taakModal({bewerken:t});
+    if(rij){ CRM.navBadges(); opnieuw(); }
   });
 }
 

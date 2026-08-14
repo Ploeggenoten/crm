@@ -791,27 +791,34 @@ CRM.verwerkTags = (tekst, entiteit='', ref='') => {
   return [...getagd];
 };
 
-/* ─── Gedeeld taakvenster — DE manier om een taak te maken ──────
-   Elke module gebruikt dit (geen eigen taakformulieren), zodat
+/* ─── Gedeeld taakvenster — DE manier om een taak te maken óf aan te
+   passen ── Elke module gebruikt dit (geen eigen taakformulieren), zodat
    toewijzen aan een collega, prioriteit en Outlook overal werkt.
-   opts: {entiteit, ref, refLabel, tekst, datum, voor}              */
+   opts: {entiteit, ref, refLabel, tekst, datum, voor}
+   opts.bewerken: geef een bestaande rij uit CRM.state.taken mee en het
+   venster wordt een bewerkvenster (titel, knop en UPDATE i.p.v. INSERT)
+   in plaats van "Nieuwe taak" — zelfde velden, zelfde validatie.
+   (Tjeerd, 13 aug 2026: "een ingeplande taak moet je nog kunnen
+   aanpassen — datum, onderwerp, tijd etc.") */
 CRM.taakModal = (opts = {}) => new Promise(res => {
   const team = CRM.teamNamen();
-  const outlookOk = CRM.outlook?.verbonden?.();
+  const bewerk = opts.bewerken || null;
+  const basis = bewerk || opts;
+  const outlookOk = !bewerk && CRM.outlook?.verbonden?.();
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Nieuwe taak</div>
+    <div class="modal-h"><div class="h2">${bewerk ? 'Taak aanpassen' : 'Nieuwe taak'}</div>
       ${opts.refLabel ? `<div class="meta" style="margin-top:2px">bij ${h(opts.refLabel)}</div>` : ''}</div>
     <div class="modal-b">
       <div class="f-row"><label>Wat moet er gebeuren?</label>
-        <input type="text" id="tk_tekst" value="${h(opts.tekst||'')}" placeholder="Bijv. terugbellen over het voorstel">
+        <input type="text" id="tk_tekst" value="${h(basis.tekst||'')}" placeholder="Bijv. terugbellen over het voorstel">
         <div class="hint">Tip: noem een collega met @naam in een notitie om diegene een melding te sturen.</div></div>
       <div class="f-grid">
         <div class="f-row"><label>Voor wie</label>
           <select id="tk_voor">${team.map(n =>
-            `<option value="${h(n)}"${n===CRM.me()?' selected':''}>${h(n)}${n===CRM.me()?' (ik)':''}</option>`).join('')}
+            `<option value="${h(n)}"${n===(basis.voor||CRM.me())?' selected':''}>${h(n)}${n===CRM.me()?' (ik)':''}</option>`).join('')}
           </select></div>
         <div class="f-row"><label>Datum</label>
-          <input type="date" id="tk_datum" value="${h(opts.datum || CRM.todayISO())}">
+          <input type="date" id="tk_datum" value="${h(basis.datum || (bewerk ? '' : CRM.todayISO()))}">
           <!-- Snelkeuzes vóór het datumveld langs: een opvolgtaak is bijna
                altijd "over een week of twee" — dat moet één klik zijn, de
                kalender blijft er voor de uitzondering. (Tjeerd, 4 aug 2026:
@@ -826,15 +833,15 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
              morgen en weet je niet of dat vóór of ná het gesprek van 10:00
              moet. Leeg laten mag: niet elke taak hoort op een klok. -->
         <div class="f-row"><label>Tijd <span class="meta">optioneel</span></label>
-          <input type="time" id="tk_tijd" value="${h(opts.tijd || '')}"></div>
+          <input type="time" id="tk_tijd" value="${h(basis.tijd || '')}"></div>
         <div class="f-row"><label>Prioriteit</label>
-          <select id="tk_prio"><option value="">Normaal</option><option value="Hoog">Hoog</option></select></div>
+          <select id="tk_prio"><option value=""${basis.prioriteit?'':' selected'}>Normaal</option><option value="Hoog"${basis.prioriteit==='Hoog'?' selected':''}>Hoog</option></select></div>
       </div>
       ${outlookOk ? `<label class="check"><input type="checkbox" id="tk_outlook" checked> Ook in mijn Outlook To Do</label>` : ''}
     </div>
     <div class="modal-f">
       <button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="tk_save">Taak aanmaken</button>
+      <button class="btn" id="tk_save">${bewerk ? 'Wijzigen' : 'Taak aanmaken'}</button>
     </div>`, {onOpen(m){
       const inp = m.querySelector('#tk_tekst'); setTimeout(()=>inp.focus(),60);
       m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
@@ -853,9 +860,28 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
         if(!tekst){ inp.focus(); return; }
         const voor = m.querySelector('#tk_voor').value;
         const tijd = m.querySelector('#tk_tijd').value || '';
-        const rij = { id:CRM.uid(), tekst, datum:m.querySelector('#tk_datum').value || null,
+        const datum = m.querySelector('#tk_datum').value || null;
+        const prioriteit = m.querySelector('#tk_prio').value;
+
+        /* ── Bewerken: dezelfde rij bijwerken, geen nieuwe aanmaken ── */
+        if(bewerk){
+          const oud = {tekst:bewerk.tekst, datum:bewerk.datum, tijd:bewerk.tijd, voor:bewerk.voor, prioriteit:bewerk.prioriteit};
+          Object.assign(bewerk, {tekst, datum, tijd, voor, prioriteit});
+          if(!CRM.demo){
+            const {error} = await sb.from('crm_taken')
+              .update({tekst, datum, tijd, voor, prioriteit}).eq('id', bewerk.id);
+            if(error){ Object.assign(bewerk, oud); return CRM.fout('Taak aanpassen mislukt', error); }
+          }
+          CRM.modal.close();
+          CRM.toast('Taak aangepast','ok');
+          navBadges();
+          res(bewerk);
+          return;
+        }
+
+        const rij = { id:CRM.uid(), tekst, datum,
           tijd, klaar:false, entiteit:opts.entiteit||'', ref:String(opts.ref||''),
-          voor, door:CRM.me(), prioriteit:m.querySelector('#tk_prio').value,
+          voor, door:CRM.me(), prioriteit,
           created_at:new Date().toISOString() };
         CRM.state.taken.push(rij);
         if(!CRM.demo){

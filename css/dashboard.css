@@ -329,6 +329,18 @@
 }
 .tk-rij:hover .tk-wanneer,.tk-wanneer:focus{border-color:var(--line-2);background-color:#fff}
 
+/* Bewerken: onderwerp en tijd horen niet op de rij zelf (te veel velden
+   voor één regel), dus dit potloodje opent het volledige taakvenster.
+   Pas zichtbaar bij hover/focus — anders staat elke rij vol knopjes. */
+.tk-bewerk{
+  width:19px;height:19px;flex:0 0 19px;padding:0;border-radius:999px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:1px solid transparent;
+  font-size:11px;color:var(--line-2);opacity:0;transition:opacity .12s,border-color .12s,color .12s;
+}
+.tk-rij:hover .tk-bewerk,.tk-bewerk:focus{opacity:1;border-color:var(--line);color:var(--muted)}
+.tk-bewerk:hover{border-color:var(--olive-l);color:var(--olive)}
+
 /* Afgevinkt blijft staan waar het stond, doorgestreept. Zie de toelichting
    in js/dashboard.js: opnieuw sorteren haalt de regel onder je muis weg. */
 .tk-rij.af{opacity:.55}

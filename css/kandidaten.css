@@ -214,11 +214,18 @@
 
 /* ─── Taken ───────────────────────────────────────────────────── */
 .kd-taken{display:flex;flex-direction:column;gap:2px}
-label.kd-taak{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:var(--r-s);cursor:pointer}
-label.kd-taak:hover{background:var(--card-2)}
-label.kd-taak b{font-size:13px;font-weight:600}
-label.kd-taak.klaar b{text-decoration:line-through;color:var(--muted);font-weight:500}
-label.kd-taak input{margin-top:3px}
+.kd-taak{display:flex;align-items:flex-start;gap:4px;border-radius:var(--r-s)}
+.kd-taak:hover{background:var(--card-2)}
+.kd-taak label{display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;padding:9px 10px;cursor:pointer}
+.kd-taak b{font-size:13px;font-weight:600}
+.kd-taak.klaar b{text-decoration:line-through;color:var(--muted);font-weight:500}
+.kd-taak input{margin-top:3px}
+/* Bewerken: pas zichtbaar bij hover, zelfde patroon als de relatiekaart
+   (.kl-taakbewerk) en contactkaart (.ck-taakbewerk). */
+.kd-taakbewerk{background:none;border:none;padding:0;margin:11px 10px 0 0;font:600 11px/1 var(--body);
+  color:transparent;cursor:pointer}
+.kd-taak:hover .kd-taakbewerk{color:var(--muted)}
+.kd-taakbewerk:hover{color:var(--olive,#3D6400)!important;text-decoration:underline}
 
 @media (max-width:900px){
   .kd-meter{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;flex:1 1 100%}

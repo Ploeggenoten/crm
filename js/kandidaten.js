@@ -853,6 +853,10 @@ const VELDEN = [
   {k:'telefoon',    lbl:'Telefoon',          t:'tel'},
   {k:'email',       lbl:'E-mail',            t:'email'},
   {k:'woonplaats',  lbl:'Woonplaats',        t:'text'},
+  /* candidates.geboortedatum bestaat al in de database (voor de
+     verjaardagstaak in js/opvolging.js) maar had nog geen invoerveld op
+     de kaart zelf — die kwam alleen binnen via de cv-lezer. */
+  {k:'geboortedatum', lbl:'Geboortedatum',   t:'date', toon:v => CRM.fmtDate(v)},
   /* Bij een plaatsing is het exacte adres nodig voor de papieren; de
      CV-lezer vult deze velden voor als het cv ze bevat. */
   {k:'adres',       lbl:'Adres',             t:'text'},
@@ -3259,17 +3263,25 @@ function tabTaken(el, c){
     <div class="card-h"><div class="h2">Taken</div><span class="spacer"></span>
       <button class="btn sm" id="kt_nieuw">Taak toevoegen</button></div>
     <div class="card-b">${taken.length ? `<div class="kd-taken">${taken.map(t => `
-      <label class="kd-taak${t.klaar?' klaar':''}">
-        <input type="checkbox" data-taak="${h(t.id)}"${t.klaar?' checked':''}>
-        <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
-          <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${t.voor?' · '+h(t.voor):''}</div></div>
-        ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
-      </label>`).join('')}</div>` : CRM.ui.leeg('Geen taken','Zet je volgende stap voor deze kandidaat vast.')}</div></div>`;
+      <div class="kd-taak${t.klaar?' klaar':''}">
+        <label><input type="checkbox" data-taak="${h(t.id)}"${t.klaar?' checked':''}>
+          <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
+            <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${t.voor?' · '+h(t.voor):''}</div></div>
+          ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
+        </label>
+        <button type="button" class="lnk kd-taakbewerk" data-taakbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
+      </div>`).join('')}</div>` : CRM.ui.leeg('Geen taken','Zet je volgende stap voor deze kandidaat vast.')}</div></div>`;
   el.querySelector('#kt_nieuw').onclick = () => nieuweTaak(c);
   el.querySelectorAll('[data-taak]').forEach(cb => cb.onchange = async () => {
     const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
     await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:cb.checked}), true);
     CRM.render();
+  });
+  el.querySelectorAll('[data-taakbewerk]').forEach(b => b.onclick = async () => {
+    const t = CRM.state.taken.find(x => String(x.id) === b.dataset.taakbewerk);
+    if(!t) return;
+    const rij = await CRM.taakModal({bewerken:t});
+    if(rij){ CRM.navBadges(); CRM.render(); }
   });
 }
 

@@ -862,6 +862,12 @@ function lijst(mount){
    ═══════════════════════════════════════════════════════════════ */
 const TABS = ['vacatures','kandidaten','activiteiten','evaluaties','documenten'];
 let klantOpen = null, tabActief = 'vacatures', groepeer = P.get('groepeer','fase');
+/* Accountnotitie: staat in bewerkstand zolang er niets is (niets te
+   bewaren) of zolang je zelf op "Bewerken" hebt gedrukt. Ná opslaan valt
+   hij terug naar leestand — een tekstveld dat voor altijd openstaat geeft
+   geen idee of je laatste wijziging ook echt vastligt.
+   (Tjeerd, 13 aug 2026: "opslaan is opslaan".) */
+let notitieBewerken = false;
 
 /* ─── Twee indelingen van de kaart (Tjeerd, 4 aug 2026) ───────────
    Bij een relatie zónder vacatures ben je aan het bellen en noteren: de
@@ -883,7 +889,7 @@ function kaart(mount, acties, naam){
     mount.querySelector('#kl_terug').onclick = () => CRM.ga('klanten');
     return;
   }
-  if(klantOpen !== naam){ klantOpen = naam; tabActief = eersteTab(naam); contactZoek = ''; contactAlles = false; }
+  if(klantOpen !== naam){ klantOpen = naam; tabActief = eersteTab(naam); contactZoek = ''; contactAlles = false; notitieBewerken = false; }
   if(!TABS.includes(tabActief)) tabActief = eersteTab(naam);
 
   const c = cijfers(naam);
@@ -2155,6 +2161,11 @@ function takenBlokHtml(){
 if(CRM.ACT_SOORTEN && !CRM.ACT_SOORTEN.linkedin)
   CRM.ACT_SOORTEN.linkedin = {ico:'🔗', lbl:'LinkedIn'};
 
+/* Taak stond hier ooit ook als losse uitkomst, maar taken horen bij de
+   rail/het dashboard te staan, niet als activiteit tussen de belpogingen
+   (Tjeerd, 13 aug 2026: "taken hoeft niet hier, mag gewoon zoals altijd").
+   "Vastleggen + taak" hieronder blijft wél bestaan — dat is een taak ná
+   een gelogd contactmoment, geen losse uitkomst. */
 const SNEL_UITKOMSTEN = [
   ['bel',      'Gebeld',       'Gebeld',                          true],
   ['bel',      'Geen gehoor',  'Gebeld, geen gehoor',             true],
@@ -2162,8 +2173,7 @@ const SNEL_UITKOMSTEN = [
   ['whatsapp', 'WhatsApp',     'WhatsApp gestuurd',               true],
   ['linkedin', 'LinkedIn',     'Bericht via LinkedIn gestuurd',   true],
   ['mail',     'Gemaild',      'Gemaild',                         true],
-  ['notitie',  'Notitie',      '',                                false],
-  ['taak',     'Taak',         '',                                false]
+  ['notitie',  'Notitie',      '',                                false]
 ];
 /* De knoppenrij plus het invulveldje dat ná een klik verschijnt. Eén klik
    en Enter is genoeg ("Gebeld, geen gehoor" staat er dan), maar wíe wil,
@@ -2177,20 +2187,6 @@ function uitkomstenHtml(){
       <div class="label" data-uitkop style="margin-bottom:4px"></div>
       <div class="row tight kl-uitwie" data-uitwie style="margin-bottom:6px"></div>
       <textarea rows="2" data-uittekst placeholder="Wat is er besproken? Leeg laten mag — Enter legt vast."></textarea>
-      ${/* Alleen bij een taak: wanneer moet het af? Dezelfde snelkeuzes als
-           in het taakvenster, zodat je niet hoeft na te rekenen. */''}
-      <div class="kl-uittaak" data-uittaak hidden style="margin-top:8px">
-        <div class="row tight" style="align-items:center">
-          <span class="meta">wanneer</span>
-          ${[[1,'morgen'],[7,'over 1 week'],[14,'over 2 weken'],['m','over 1 maand']].map(([v,l]) =>
-            `<button type="button" class="chip btn-like" data-uitdag="${v}">${l}</button>`).join('')}
-          <input type="date" data-uitdatum style="max-width:160px">
-        </div>
-        <div class="row tight" style="align-items:center;margin-top:6px">
-          <span class="meta">voor</span>
-          <select data-uitvoor style="max-width:180px"></select>
-        </div>
-      </div>
       <div class="row tight" style="margin-top:6px">
         <button type="button" class="btn sm" data-uitok>Vastleggen</button>
         <button type="button" class="btn ghost sm" data-uitoktaak>Vastleggen + taak</button>
@@ -2230,87 +2226,26 @@ function bindUitkomsten(root, k, na, opts){
       tekst.focus();
     });
   };
-  const taakEl  = veld.querySelector('[data-uittaak]');
-  const datumEl = veld.querySelector('[data-uitdatum]');
-  const voorEl  = veld.querySelector('[data-uitvoor]');
   const taakKnop = veld.querySelector('[data-uitoktaak]');
-  const isTaak  = () => keuze != null && SNEL_UITKOMSTEN[keuze][0] === 'taak';
-
-  /* Snelkeuzes rekenen lokaal, niet via toISOString — dat is UTC en zet
-     's avonds de verkeerde dag neer (zelfde valkuil als in taakModal). */
-  const isoLokaal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')
-                       + '-' + String(d.getDate()).padStart(2,'0');
-  CRM.$$('[data-uitdag]', veld).forEach(b => b.onclick = () => {
-    const d = new Date();
-    if(b.dataset.uitdag === 'm') d.setMonth(d.getMonth() + 1);
-    else d.setDate(d.getDate() + Number(b.dataset.uitdag));
-    datumEl.value = isoLokaal(d);
-    CRM.$$('[data-uitdag]', veld).forEach(x => x.classList.toggle('sel', x === b));
-  });
 
   const toon = i => { keuze = i;
     const [soort,, standaard] = SNEL_UITKOMSTEN[i];
     veld.hidden = false;
     /* Bij bellen en appen is de uitkomst de kop ("Gebeld, geen gehoor").
-       Notitie en taak hebben geen standaardzin — daar is de tekst zelf de
-       inhoud, dus daar dient de kop alleen als opschrift. */
-    veld.querySelector('[data-uitkop]').textContent = standaard || (soort === 'taak' ? 'TAAK' : 'NOTITIE');
-    tekst.placeholder = soort === 'taak'
-      ? 'Wat moet er gebeuren? Bijv. offerte nabellen'
-      : soort === 'notitie'
-        ? 'Wat wil je vastleggen? Tip: @collega stuurt diegene een melding.'
-        : 'Wat is er besproken? Leeg laten mag — Enter legt vast.';
-    taakEl.hidden = soort !== 'taak';
-    /* "Vastleggen + taak" heeft geen zin bij de taak-uitkomst zelf — dat
-       IS al de taak. */
-    if(taakKnop) taakKnop.hidden = soort === 'taak';
-    if(soort === 'taak'){
-      datumEl.value = '';
-      CRM.$$('[data-uitdag]', veld).forEach(x => x.classList.remove('sel'));
-      voorEl.innerHTML = (CRM.teamNamen ? CRM.teamNamen() : [CRM.me()])
-        .map(n => `<option value="${h(n)}"${n === CRM.me() ? ' selected' : ''}>${h(n)}${
-          n === CRM.me() ? ' (ik)' : ''}</option>`).join('');
-    }
+       Notitie heeft geen standaardzin — daar is de tekst zelf de inhoud,
+       dus daar dient de kop alleen als opschrift. */
+    veld.querySelector('[data-uitkop]').textContent = standaard || 'NOTITIE';
+    tekst.placeholder = soort === 'notitie'
+      ? 'Wat wil je vastleggen? Tip: @collega stuurt diegene een melding.'
+      : 'Wat is er besproken? Leeg laten mag — Enter legt vast.';
     tekenWie();
     tekst.value = ''; tekst.focus(); };
-  const dicht = () => { veld.hidden = true; taakEl.hidden = true; keuze = null; wie = null; };
+  const dicht = () => { veld.hidden = true; keuze = null; wie = null; };
   const vastleggen = async (metTaak) => {
     if(keuze == null) return;
     const [soort,, standaard, isContact] = SNEL_UITKOMSTEN[keuze];
     const extra = tekst.value.trim();
     const met = wie;
-
-    /* ── Taak: geen activiteit maar een taak, wél op dezelfde persoon ── */
-    if(soort === 'taak'){
-      if(!extra){ tekst.focus(); CRM.toast('Schrijf even op wat er moet gebeuren'); return; }
-      const rij = {
-        id: CRM.uid(), tekst: extra + (met ? ' — ' + met.naam : ''),
-        datum: datumEl.value || null, tijd: '', klaar: false,
-        entiteit: met ? 'contact' : 'klant', ref: met ? String(met.id) : k.naam,
-        contact_id: met ? String(met.id) : null,
-        voor: voorEl.value || CRM.me(), door: CRM.me(), prioriteit: '',
-        created_at: new Date().toISOString()
-      };
-      dicht();
-      (CRM.state.taken || (CRM.state.taken = [])).push(rij);
-      if(!CRM.demo){
-        let {error} = await CRM.sb.from('crm_taken').insert(rij);
-        /* contact_id komt uit supabase/nog-te-draaien.sql; is die nog niet
-           gedraaid, dan is een taak zónder koppeling beter dan geen taak. */
-        if(error && /contact_id/.test(String(error.message||''))){
-          const zonder = Object.assign({}, rij); delete zonder.contact_id;
-          ({error} = await CRM.sb.from('crm_taken').insert(zonder));
-        }
-        if(error){ CRM.fout('Taak opslaan mislukt', error); return; }
-      }
-      if(rij.voor !== CRM.me())
-        CRM.meld(rij.voor, 'taak', `${CRM.me()} heeft je een taak gegeven: "${rij.tekst}" — ${k.naam}`
-          + (rij.datum ? ` (${CRM.fmtDate(rij.datum)})` : ''), 'taak', rij.id);
-      CRM.verwerkTags(extra, 'klant', k.naam);
-      CRM.toast('Taak aangemaakt','ok');
-      na();
-      return;
-    }
 
     /* ── Bellen, appen, notitie: activiteit ── */
     const regel = standaard ? (extra ? standaard + ': ' + extra : standaard) : extra;
@@ -2421,12 +2356,14 @@ function railTaken(el, k){
   el.innerHTML = `<div class="kl-taken">${taken.map(t => {
     const wie = [t.voor ? 'voor ' + t.voor : '', t.door && t.door !== t.voor ? 'van ' + t.door : '']
       .filter(Boolean).join(' · ');
-    return `<label class="kl-taak">
-      <input type="checkbox" data-taak="${h(t.id)}">
-      <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
-        <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${wie ? ' · ' + h(wie) : ''}</div></div>
-      ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
-    </label>`;
+    return `<div class="kl-taak">
+      <label><input type="checkbox" data-taak="${h(t.id)}">
+        <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
+          <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${wie ? ' · ' + h(wie) : ''}</div></div>
+        ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
+      </label>
+      <button type="button" class="lnk kl-taakbewerk" data-taakbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
+    </div>`;
   }).join('')}</div>`;
   el.querySelectorAll('[data-taak]').forEach(cb => cb.onchange = async () => {
     const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
@@ -2434,6 +2371,15 @@ function railTaken(el, k){
     await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:true}), true);
     CRM.navBadges();
     railTaken(el, k);
+  });
+  /* Niet alleen afvinken — ook aanpassen als de datum of het onderwerp
+     toch anders moet. Zelfde gedeelde taakvenster als overal, nu in
+     bewerkstand (Tjeerd, 13 aug 2026). */
+  el.querySelectorAll('[data-taakbewerk]').forEach(b => b.onclick = async () => {
+    const t = CRM.state.taken.find(x => String(x.id) === b.dataset.taakbewerk);
+    if(!t) return;
+    const rij = await CRM.taakModal({bewerken:t});
+    if(rij){ CRM.navBadges(); railTaken(el, k); }
   });
 }
 
@@ -3374,13 +3320,7 @@ function tabActiviteiten(el, k){
         ${uitkomstenHtml()}
         ${CRM.ui.tijdlijn(items)}</div>
     </div>
-    <div class="card">
-      <div class="card-h"><div class="h2">Accountnotitie</div></div>
-      <div class="card-b">
-        <div class="f-row" style="margin-bottom:10px"><textarea id="n_note" placeholder="Vaste afspraken, tarieven, voorkeuren, wie beslist…">${h(k.note||'')}</textarea></div>
-        <button class="btn ghost sm" id="n_bewaar">Opslaan</button>
-      </div>
-    </div>
+    <div class="card">${notitieHtml(k)}</div>
   </div>`;
 
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logVia(k, b.dataset.log, 'Wat leg je vast? Tip: @collega stuurt diegene een melding.'));
@@ -3400,7 +3340,40 @@ function tabActiviteiten(el, k){
   });
   el.querySelectorAll('[data-abewerk]').forEach(b => b.onclick = () =>
     CRM.bewerkActiviteit(alle[+b.dataset.abewerk].a, () => tabActiviteiten(el, k)));
-  el.querySelector('#n_bewaar').onclick = () => bewaarKlant(k.naam, {note: el.querySelector('#n_note').value.trim()});
+  bindNotitie(el, k);
+}
+
+/* ─── Accountnotitie: leesstand of bewerkstand, nooit allebei ─────
+   Zonder notitie (niets te bewaren) of net op "Bewerken" gedrukt: een
+   textarea met Opslaan/Annuleren. Mét een opgeslagen notitie: platte
+   tekst met een Bewerken-knop, zodat duidelijk is dat het vastligt in
+   plaats van dat er permanent een open tekstveld staat te wachten. */
+function notitieHtml(k){
+  if(k.note && !notitieBewerken) return `
+    <div class="card-h"><div class="h2">Accountnotitie</div>
+      <button class="btn ghost sm" id="n_bewerk">Bewerken</button></div>
+    <div class="card-b"><p style="white-space:pre-wrap;margin:0">${h(k.note)}</p></div>`;
+  return `
+    <div class="card-h"><div class="h2">Accountnotitie</div></div>
+    <div class="card-b">
+      <div class="f-row" style="margin-bottom:10px"><textarea id="n_note" placeholder="Vaste afspraken, tarieven, voorkeuren, wie beslist…">${h(k.note||'')}</textarea></div>
+      <div class="row tight">
+        <button class="btn ghost sm" id="n_bewaar">Opslaan</button>
+        ${k.note ? '<button class="btn ghost sm" id="n_annuleer">Annuleren</button>' : ''}
+      </div>
+    </div>`;
+}
+function bindNotitie(el, k){
+  const bewerk = el.querySelector('#n_bewerk');
+  if(bewerk) bewerk.onclick = () => { notitieBewerken = true; tabActiviteiten(el, k); };
+  const annuleer = el.querySelector('#n_annuleer');
+  if(annuleer) annuleer.onclick = () => { notitieBewerken = false; tabActiviteiten(el, k); };
+  const bewaar = el.querySelector('#n_bewaar');
+  if(bewaar) bewaar.onclick = async () => {
+    await bewaarKlant(k.naam, {note: el.querySelector('#n_note').value.trim()});
+    notitieBewerken = false;
+    tabActiviteiten(el, k);
+  };
 }
 
 /* Activiteit of notitie vastleggen. @collega in de tekst geeft die
