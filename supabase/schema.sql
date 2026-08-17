@@ -579,10 +579,27 @@ begin
 end $$;
 
 -- ─── 9. Realtime ──────────────────────────────────────────────
+-- Alle tabellen die het CRM (en de marketing/finance-apps op dezelfde
+-- database) beschrijven, in de realtime-publicatie — anders staat de
+-- listener in js/core.js wel aan (postgres_changes → sync(tabel)) maar
+-- komt er nooit een signaal binnen. Precies dat gat zat er al voor
+-- `candidates`: zette een collega een kandidaat op Uitval, dan zag
+-- niemand anders dat totdat ze zelf ververste (Tjeerd, 14 aug 2026:
+-- "ik wil dat alles realtime is").
+-- fin_* mag hierin: Supabase's realtime respecteert RLS per ontvanger,
+-- dus alleen Tjeerds eigen sessie krijgt daar ooit een signaal van (zie
+-- blok 6/7 hierboven) — een collega ziet er niets extra's door.
 do $$
 declare t text;
 begin
-  foreach t in array array['crm_leads','crm_activiteiten','crm_taken','crm_kansen','crm_meldingen','crm_stukken']
+  foreach t in array array[
+    'candidates','clients','vacatures','profiles','targets',
+    'crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen',
+    'crm_contacten','crm_meldingen','oo_sessions','crm_afspraken','crm_trajecten',
+    'crm_sollicitaties','crm_stukken','crm_leadradar','crm_verwijderingen',
+    'mkt_ad_besluiten','mkt_kanalen','mkt_meta_betaald','mkt_meta_stats','mkt_posts','mkt_taken',
+    'fin_installments','fin_placements','fin_settings'
+  ]
   loop
     begin execute format('alter publication supabase_realtime add table %I', t);
     exception when duplicate_object then null; end;

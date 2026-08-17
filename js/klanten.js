@@ -3903,6 +3903,14 @@ function klantModal(k){
     const pcVeld = m.querySelector('#g_pc');
     if(pcVeld){
       let autoPc = false;
+      /* PDOK's /free zoekt fuzzy: bestaat de straat niet in de opgegeven
+         plaats, dan komt er gewoon de beste treffer ELDERS in Nederland
+         terug in plaats van niets. Geverifieerd met "Raadhuisstraat 1,
+         Bodegraven" (bestaat niet): dat gaf zonder controle stilletjes
+         de postcode van Beilen terug. Daarom hieronder de woonplaats van
+         de treffer vergelijken met wat er is opgegeven, en bij een
+         mismatch niets overnemen (Tjeerd, 14 aug 2026). */
+      const normPlaats = s => String(s||'').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
       const zoekPc = CRM.debounce(async () => {
         const adres = (m.querySelector('#g_adres')?.value || '').trim();
         const plaats = ((m.querySelector('#g_pl')?.value || m.querySelector('#g_loc')?.value) || '').trim();
@@ -3913,7 +3921,9 @@ function klantModal(k){
             + encodeURIComponent(adres + ' ' + plaats));
           const d = await r.json();
           const doc = d && d.response && d.response.docs && d.response.docs[0];
-          if(doc && doc.postcode){
+          const gevonden = normPlaats(doc && doc.woonplaatsnaam), gezocht = normPlaats(plaats);
+          if(doc && doc.postcode
+             && (gevonden === gezocht || gevonden.includes(gezocht) || gezocht.includes(gevonden))){
             pcVeld.value = String(doc.postcode).replace(/^(\d{4})\s*([A-Za-z]{2})$/, '$1 $2').toUpperCase();
             autoPc = true;
             /* Plaats én Locatie netjes meeschrijven als ze nog leeg

@@ -433,37 +433,49 @@ async function veilig(promise, naam){
   }catch(e){ console.warn('Laden '+naam, e); CRM.laadfouten.push(naam); return []; }
 }
 
+/* Eén centrale plek voor "welke tabel hoort bij welk CRM.state-veld en
+   hoe haal je hem op" — CRM.load() (bij het inloggen) én de realtime-sync
+   hieronder (als een collega iets wijzigt) gebruiken dezelfde definitie.
+   Vroeger stond die sortering alleen in CRM.load(); de realtime-sync had
+   zijn eigen kortere lijst met dezelfde tabelnamen los uitgeschreven, en
+   dat kon zonder dat iemand het merkte uit elkaar gaan lopen. Nu kan dat
+   niet meer: er is maar één lijst. (Tjeerd, 14 aug 2026: "ik wil dat
+   alles realtime is".) */
+const TABEL_QUERY = {
+  candidates:        {veld:'cands',         q:() => sb.from('candidates').select('*')},
+  clients:           {veld:'clients',       q:() => sb.from('clients').select('*')},
+  vacatures:         {veld:'vacs',          q:() => sb.from('vacatures').select('*')},
+  profiles:          {veld:'profiles',      q:() => sb.from('profiles').select('*')},
+  targets:           {veld:'targets',       q:() => sb.from('targets').select('*')},
+  crm_leads:         {veld:'leads',         q:() => sb.from('crm_leads').select('*').order('binnen_op',{ascending:false})},
+  crm_activiteiten:  {veld:'activiteiten',  q:() => sb.from('crm_activiteiten').select('*').order('op',{ascending:false}).limit(2000)},
+  crm_taken:         {veld:'taken',         q:() => sb.from('crm_taken').select('*').order('datum')},
+  crm_documenten:    {veld:'documenten',    q:() => sb.from('crm_documenten').select('*').order('op',{ascending:false})},
+  crm_kansen:        {veld:'kansen',        q:() => sb.from('crm_kansen').select('*').order('created_at',{ascending:false})},
+  crm_contacten:     {veld:'contacten',     q:() => sb.from('crm_contacten').select('*').order('naam')},
+  crm_meldingen:     {veld:'meldingen',     q:() => sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200)},
+  oo_sessions:       {veld:'ooSessions',    q:() => sb.from('oo_sessions').select('*')},
+  /* De commerciële afspraken (fee-percentages per klant) worden hier
+     centraal opgehaald sinds 31 jul 2026. Daarvoor deed elke module dat
+     zelf, en de kandidatenkaart deed het helemaal niet — met als gevolg
+     dat wie 's ochtends vanaf het dashboard doorklikte te horen kreeg
+     "er is nog geen commerciële afspraak vastgelegd bij deze klant",
+     terwijl die afspraak gewoon bestond. Pas ná het openen van Relaties
+     klopte het bedrag. Dat is precies het soort stille fout waar
+     vertrouwen op sneuvelt: het scherm liegt en niemand kan zien dat het
+     liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
+  crm_afspraken:     {veld:'afspraken',     q:() => sb.from('crm_afspraken').select('*')},
+  crm_trajecten:     {veld:'trajecten',     q:() => sb.from('crm_trajecten').select('*').order('op',{ascending:false})},
+  crm_sollicitaties: {veld:'sollicitaties', q:() => sb.from('crm_sollicitaties').select('*').order('op',{ascending:false})}
+};
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
   CRM.laadfouten = [];
-  const [cands, clients, vacs, profiles, targets, leads, acts, taken, docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, sollicitaties] = await Promise.all([
-    veilig(sb.from('candidates').select('*'), 'candidates'),
-    veilig(sb.from('clients').select('*'), 'clients'),
-    veilig(sb.from('vacatures').select('*'), 'vacatures'),
-    veilig(sb.from('profiles').select('*'), 'profiles'),
-    veilig(sb.from('targets').select('*'), 'targets'),
-    veilig(sb.from('crm_leads').select('*').order('binnen_op',{ascending:false}), 'crm_leads'),
-    veilig(sb.from('crm_activiteiten').select('*').order('op',{ascending:false}).limit(2000), 'crm_activiteiten'),
-    veilig(sb.from('crm_taken').select('*').order('datum'), 'crm_taken'),
-    veilig(sb.from('crm_documenten').select('*').order('op',{ascending:false}), 'crm_documenten'),
-    veilig(sb.from('crm_kansen').select('*').order('created_at',{ascending:false}), 'crm_kansen'),
-    veilig(sb.from('crm_contacten').select('*').order('naam'), 'crm_contacten'),
-    veilig(sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200), 'crm_meldingen'),
-    veilig(sb.from('oo_sessions').select('*'), 'oo_sessions'),
-    /* De commerciële afspraken (fee-percentages per klant) worden hier
-       centraal opgehaald sinds 31 jul 2026. Daarvoor deed elke module dat
-       zelf, en de kandidatenkaart deed het helemaal niet — met als gevolg
-       dat wie 's ochtends vanaf het dashboard doorklikte te horen kreeg
-       "er is nog geen commerciële afspraak vastgelegd bij deze klant",
-       terwijl die afspraak gewoon bestond. Pas ná het openen van Relaties
-       klopte het bedrag. Dat is precies het soort stille fout waar
-       vertrouwen op sneuvelt: het scherm liegt en niemand kan zien dat het
-       liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
-    veilig(sb.from('crm_afspraken').select('*'), 'crm_afspraken'),
-    veilig(sb.from('crm_trajecten').select('*').order('op',{ascending:false}), 'crm_trajecten'),
-    veilig(sb.from('crm_sollicitaties').select('*').order('op',{ascending:false}), 'crm_sollicitaties')
-  ]);
-  Object.assign(CRM.state, {cands, clients, vacs, profiles, targets, leads, activiteiten:acts, taken, documenten:docs, kansen, contacten, meldingen, ooSessions, afspraken, trajecten, sollicitaties, _loaded:true});
+  const namen = Object.keys(TABEL_QUERY);
+  const rijen = await Promise.all(namen.map(t => veilig(TABEL_QUERY[t].q(), t)));
+  const nieuw = {}; namen.forEach((t,i) => { nieuw[TABEL_QUERY[t].veld] = rijen[i]; });
+  Object.assign(CRM.state, nieuw, {_loaded:true});
+  const cands = CRM.state.cands;
   /* Welke kandidaatkolommen bestaan er écht? PostgREST weigert een hele
      insert/update zodra er één onbekende kolom in staat ("Could not find the
      'uren' column of 'candidates' in the schema cache"). Eén nog niet
@@ -1136,21 +1148,36 @@ CRM.accountModal = () => {
 };
 
 /* ─── Realtime ────────────────────────────────────────────────── */
+/* Elke tabel uit TABEL_QUERY staat op één kanaal — dus alles wat een
+   collega ergens in het CRM opslaat, komt hier binnen (Tjeerd, 14 aug
+   2026: "ik wil dat alles realtime is"). Vereist wél dat de tabel ook
+   echt in Supabase' realtime-publicatie zit; zie supabase/schema.sql
+   blok 9 — dat draai je zelf één keer in de SQL Editor. */
 function realtime(){
   if(CRM._rt) return;
-  CRM._rt = sb.channel('crm')
-    .on('postgres_changes',{event:'*',schema:'public',table:'candidates'}, () => sync('candidates'))
-    .on('postgres_changes',{event:'*',schema:'public',table:'crm_leads'},  () => sync('crm_leads'))
-    .on('postgres_changes',{event:'*',schema:'public',table:'crm_activiteiten'}, () => sync('crm_activiteiten'))
-    .on('postgres_changes',{event:'*',schema:'public',table:'crm_taken'},  () => sync('crm_taken'))
-    .on('postgres_changes',{event:'*',schema:'public',table:'crm_meldingen'}, () => sync('crm_meldingen'))
-    .subscribe();
+  let kanaal = sb.channel('crm');
+  Object.keys(TABEL_QUERY).forEach(tabel => {
+    kanaal = kanaal.on('postgres_changes', {event:'*', schema:'public', table:tabel}, () => sync(tabel));
+  });
+  CRM._rt = kanaal.subscribe();
 }
-const sync = CRM.debounce(async tabel => {
-  const map = {candidates:'cands', crm_leads:'leads', crm_activiteiten:'activiteiten', crm_taken:'taken', crm_meldingen:'meldingen'};
-  const veld = map[tabel]; if(!veld) return;
-  const d = await veilig(sb.from(tabel).select('*'), tabel);
-  CRM.state[veld] = d;
+/* Per tabel een eigen debounce-timer, niet één gedeelde. Met één timer
+   voor alle tabellen ving een wijziging op tabel B de wachtende sync van
+   tabel A af (CRM.debounce gebruikt clearTimeout op DEZELFDE timer) —
+   onschuldig zolang er maar vijf tabellen waren die zelden tegelijk
+   wijzigden, maar met alle tabellen erbij (16) botsen twee collega's die
+   tegelijk iets anders opslaan al snel, en dan bleef de eerste tabel
+   stilletjes verouderd staan totdat er toevallig nóg een wijziging op
+   kwam. */
+const _syncTimer = {}, _syncLater = {};
+function sync(tabel){
+  clearTimeout(_syncTimer[tabel]);
+  _syncTimer[tabel] = setTimeout(() => syncNu(tabel), 700);
+}
+async function syncNu(tabel){
+  const cfg = TABEL_QUERY[tabel]; if(!cfg) return;
+  const d = await veilig(cfg.q(), tabel);
+  CRM.state[cfg.veld] = d;
   navBadges();
   if(CRM.modules[CRM.view]?.herlaadBijSync !== false){
     /* Niet hertekenen terwijl iemand een veld invult. Elke opslag komt als
@@ -1161,13 +1188,13 @@ const sync = CRM.debounce(async tabel => {
     const a = document.activeElement;
     const blokOpen = document.querySelector('#viewmount .kd-blokform');
     if(blokOpen || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount'))){
-      clearTimeout(CRM._syncLater);
-      CRM._syncLater = setTimeout(() => sync(tabel), 2500);
+      clearTimeout(_syncLater[tabel]);
+      _syncLater[tabel] = setTimeout(() => syncNu(tabel), 2500);
       return;
     }
     CRM.render();
   }
-}, 700);
+}
 
 /* ─── Auth ────────────────────────────────────────────────────── */
 async function start(user){

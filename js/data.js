@@ -938,7 +938,12 @@ CRM.besteMatches = (kandidaat, n=5) => (CRM.state.vacs||[])
 })();
 
 /* ─── Kwalificatie- en zoekhelpers (filters, Source-kaart) ────── */
-CRM.BESCHIKBAAR = ['direct','in overleg','niet'];
+/* 'direct', 'in overleg' en 'niet' bestonden al en staan al in de database
+   — nooit hernoemen, anders matcht een opgeslagen waarde geen enkele optie
+   meer. De twee tussenopties zijn erbij gekomen omdat "in overleg" te vaag
+   was om iemand snel te kunnen inplannen (Tjeerd, 14 aug 2026: "direct
+   beschikbaar, op korte termijn beschikbaar, nu niet beschikbaar"). */
+CRM.BESCHIKBAAR = ['direct','binnen 2 weken','binnen 1 maand','in overleg','niet'];
 CRM.PLOEGEN     = ['geen','2-ploegen','3-ploegen','5-ploegen','wisselend'];
 CRM.VERVOER     = ['auto','ov','fiets','elektrische fiets','geen'];
 CRM.sterren = n => { const s=Math.max(0,Math.min(5,Number(n)||0));
@@ -955,7 +960,7 @@ CRM.binnenRadius = (kandidaat, plaats, km) => {
    staan niet in een traject en mogen hier nooit in meetellen. */
 CRM.isActiefLopend = c => !!c.fase &&
   (!CRM.DONE.includes(c.fase) || CRM.PLACED.includes(c.fase) && !c.gestoptOp);
-CRM.isBeschikbaar  = c => c.beschikbaar === 'direct' || c.beschikbaar === 'in overleg'
+CRM.isBeschikbaar  = c => ['direct','binnen 2 weken','binnen 1 maand','in overleg'].includes(c.beschikbaar)
   || (c.fase === 'Afgevallen' && c.recyclebaar === true);
 
 /* Kandidaat-volledigheid: tegen vervuiling in het systeem. */

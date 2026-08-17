@@ -867,8 +867,12 @@ const VELDEN = [
   {k:'talen',       lbl:'Talen',             t:'text'},
   {k:'rijbewijs',   lbl:'Rijbewijs',         t:'text'},
   {k:'vervoer',     lbl:'Vervoer',           t:'select', opts:['', ...CRM.VERVOER]},
-  {k:'maandloon',   lbl:'Maandloon',         t:'number', toon:v => v ? CRM.euro(v) : ''},
-  {k:'toeslagPct',  lbl:'Toeslagen',         t:'number', toon:v => v ? CRM.pct(v) : ''},
+  /* Maandloon en ploegentoeslag stonden hier óók, met dezelfde waarde als
+     "Bruto maandloon"/"Ploegentoeslag" in Contract & salaris verderop —
+     twee velden voor precies hetzelfde getal (Tjeerd, 14 aug 2026: "dit
+     is dubbel"). Dat blok is de juiste plek: het is contractstof (rekent
+     mee in de fee) en verschijnt pas als er een traject is; hier vóór die
+     tijd zou het een salaris tonen dat nog niet is afgesproken. */
   /* Hierheen verhuisd uit het blok bovenaan Werkervaring (naam: Tjeerd,
      7 aug 2026). Huidige functie en huidig bedrijf stonden daar dubbel —
      die staan al bovenaan de loopbaan. Wat er níet uit af te leiden is
@@ -1587,6 +1591,9 @@ function bewerkVeld(span, c){
       });
       meterBij(c);
       salarisBij(c);
+      /* Postcode uit het adres opzoeken — niet awaiten, dit veld is al
+         terug in leesstand vóór het antwoord er is (Tjeerd, 14 aug 2026). */
+      if(veld.k === 'adres') postcodeAanvullen(c);
     }
   };
   el.onblur = () => sluit(true);
@@ -1595,6 +1602,40 @@ function bewerkVeld(span, c){
     if(e.key === 'Escape'){ e.preventDefault(); sluit(false); }
   };
   if(veld.t === 'select') el.onchange = () => sluit(true);
+}
+
+/* Postcode opzoeken via de gratis PDOK-locatieserver (Kadaster, geen key,
+   geen kosten) — zelfde bron en opmaak als de postcode-aanvulling op de
+   klantkaart (js/klanten.js). Vult alleen aan, overschrijft nooit een
+   handmatig ingevulde postcode. (Tjeerd, 14 aug 2026: "als je het adres
+   invult, dat die automatisch de postcode pakt".)
+   PDOK's /free zoekt fuzzy: bestaat de straat niet in die plaats (typo,
+   of een straatnaam die toevallig ook ergens anders voorkomt), dan komt
+   er gewoon de beste treffer ELDERS in Nederland terug — geen lege
+   respons. Geverifieerd met "Raadhuisstraat 1, Bodegraven" (bestaat
+   niet): dat gaf zonder controle stilletjes de postcode van Beilen
+   terug. Daarom hieronder de woonplaats van de treffer vergelijken met
+   wat je zocht, en bij een mismatch niets opslaan. */
+const normPlaats = s => String(s||'').toLowerCase().trim()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '');
+async function postcodeAanvullen(c){
+  const adres = String(c.adres||'').trim();
+  const plaats = String(c.woonplaats||'').trim();
+  if(!adres || !/\d/.test(adres) || !plaats || String(c.postcode||'').trim()) return;
+  try{
+    const r = await fetch('https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?rows=1&fq=type:adres&q='
+      + encodeURIComponent(adres + ' ' + plaats));
+    const d = await r.json();
+    const doc = d && d.response && d.response.docs && d.response.docs[0];
+    if(!doc || !doc.postcode || String(c.postcode||'').trim()) return;   // intussen zelf ingevuld
+    const gevonden = normPlaats(doc.woonplaatsnaam), gezocht = normPlaats(plaats);
+    if(gevonden !== gezocht && !gevonden.includes(gezocht) && !gezocht.includes(gevonden)) return;
+    c.postcode = String(doc.postcode).replace(/^(\d{4})\s*([A-Za-z]{2})$/, '$1 $2').toUpperCase();
+    await bewaarKandidaat(c);
+    document.querySelectorAll('.kd-w[data-veld="postcode"]').forEach(span => {
+      span.textContent = c.postcode; span.classList.remove('leeg');
+    });
+  }catch(e){ /* stil — een postcode is een extraatje, geen kernveld */ }
 }
 
 /* Totaal-jaarsalaris live bijwerken na het wijzigen van een looncomponent. */
