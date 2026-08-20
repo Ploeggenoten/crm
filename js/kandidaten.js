@@ -3389,6 +3389,7 @@ function videocallModal(c){
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="vc_ok">Videocall inplannen</button></div>`, {onOpen(m){
+    CRM.dictee?.hang(m.querySelector('#vc_body'));
     const naarMail = m.querySelector('#vc_naarmail');
     if(naarMail) naarMail.onclick = () => { CRM.modal.close(); springNaarVeld('email', c); };
 

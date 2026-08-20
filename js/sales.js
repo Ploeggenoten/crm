@@ -89,6 +89,7 @@ function formModal(titel, velden, knop='Opslaan'){
           CRM.modal.close(); res(uit);
         };
         m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
+        m.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
         setTimeout(()=>m.querySelector('#fm_'+velden[0].k)?.focus(), 60);
       }});
   });
@@ -996,6 +997,7 @@ function tabInhoud(naam){
 function bindTab(body, dr, naam){
   /* Zelfde valkuil als bij [data-volledig] hierboven: niet zelf sluiten. */
   CRM.$$('[data-volledig2]', body).forEach(b=>b.onclick=()=>CRM.ga('klanten',{id:naam}));
+  body.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
 
   const bew = body.querySelector('[data-bewerk]');
   if(bew) bew.onclick = async () => {

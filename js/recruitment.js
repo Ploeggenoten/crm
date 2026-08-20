@@ -1875,6 +1875,7 @@ function openLead(id){
         ? `<button class="btn" id="rc_naarkand">Open kandidaatkaart →</button>`
         : `<button class="btn" id="rc_door">→ Kandidaat maken</button>`}
     </div>`, {onOpen(dr){
+      CRM.dictee?.hang(dr.querySelector('#rc_note'));
       dr.querySelector('#rc_cvbtn').onclick = () => cvModal(l);
       /* Het cv-bestand openen gaat via een link die pas bij het klikken
          wordt ondertekend en kort geldig is (js/cvparse.js). */
@@ -3159,6 +3160,7 @@ function uitvalForm(c, doel){
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="uv_ok">${edit?'Bijwerken':afgevallen?'Afmelden':'Stop vastleggen'}</button></div>`, {onOpen(m){
+      CRM.dictee?.hang(m.querySelector('#uv_txt'));
       const cat = m.querySelector('#uv_cat');
       const sync = () => {
         if(afgevallen){
@@ -3615,6 +3617,7 @@ function snelBewerk(id){
       <div class="spacer"></div>
       <button class="btn ghost" id="sb_volledig">Volledige kandidaatkaart →</button>
     </div>`, {onOpen(dr){
+      CRM.dictee?.hang(dr.querySelector('#sb_note'));
       const upd = () => {
         const el = dr.querySelector('#sb_totsal'); if(!el) return;
         const loon = +dr.querySelector('#sb_loon').value || 0;
@@ -3764,6 +3767,7 @@ function planAfspraak(c){
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="pa_ok">Inplannen</button></div>`, {onOpen(m){
+    CRM.dictee?.hang(m.querySelector('#pa_body'));
     m.querySelector('#pa_ok').onclick = async () => {
       const d = {
         titel:m.querySelector('#pa_titel').value.trim(),
@@ -3945,6 +3949,7 @@ function intakeForm(id){
       <button class="btn ghost" id="ig_annuleer">Sluiten</button>
     </div>`, {onClose:opruimen, onOpen(dr){
       const $ = sel => dr.querySelector(sel);
+      dr.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
 
       /* ── Conceptopslag: alles wat in het paneel staat, als één object ── */
       const lees = () => {

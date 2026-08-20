@@ -372,6 +372,7 @@ CRM.vraag = (titel, opts={}) => new Promise(res => {
       onClose(){ res(null); },
       onOpen(m){
       const inp = m.querySelector('#vr_in'); setTimeout(()=>inp.focus(),60);
+      if(multi) CRM.dictee?.hang(inp);
       const sluit = v => { CRM.modal._onClose = null; CRM.modal.close(); res(v); };
       const ok = ()=> sluit(inp.value.trim() || null);
       m.querySelector('#vr_ok').onclick = ok;
@@ -856,6 +857,7 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
       <button class="btn" id="tk_save">${bewerk ? 'Wijzigen' : 'Taak aanmaken'}</button>
     </div>`, {onOpen(m){
       const inp = m.querySelector('#tk_tekst'); setTimeout(()=>inp.focus(),60);
+      CRM.dictee?.hang(inp);
       m.querySelector('[data-mclose]').onclick = () => { CRM.modal.close(); res(null); };
       /* Snelkeuzes: lokaal rekenen, niet via toISOString — dat is UTC en
          zet 's avonds de verkeerde dag neer. */

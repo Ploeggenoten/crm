@@ -2151,6 +2151,7 @@
 
     const veld = el.querySelector('[data-uitveld]');
     const tekst = veld.querySelector('[data-uittekst]');
+    CRM.dictee?.hang(tekst);
     let keuze = null;
     const dicht = () => { veld.hidden = true; keuze = null; };
     const vastleggen = async () => {
@@ -2227,6 +2228,7 @@
         <button class="btn" id="ov_ntsave">Opslaan</button>
       </div>`, {onOpen(m){
         const inp = m.querySelector('#ov_nt'); setTimeout(()=>inp.focus(), 60);
+        CRM.dictee?.hang(inp);
         m.querySelector('#ov_ntsave').onclick = async () => {
           const tekst = inp.value.trim();
           if(!tekst){ inp.focus(); return; }

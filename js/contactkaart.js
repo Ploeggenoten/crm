@@ -883,6 +883,7 @@ function bindKaart(mount, ct, klant){
      als de taak daarna wordt geannuleerd is het gesprek vastgelegd — de
      notitie is het geheugen, de taak alleen het vervolg. */
   { const veld = mount.querySelector('#ck_snelnotitie');
+    CRM.dictee?.hang(veld);
     const bewaarNotitie = async () => {
       const tekst = (veld.value || '').trim();
       if(!tekst){ CRM.toast('Schrijf eerst je notitie','err'); return false; }
@@ -944,6 +945,7 @@ function verslagModal(ct, na){
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="cv_ok">Verslag opslaan</button></div>`, {onOpen(m){
     setTimeout(()=>m.querySelector('#cv_tekst').focus(), 60);
+    CRM.dictee?.hang(m.querySelector('#cv_tekst'));
     m.querySelector('#cv_ok').onclick = async () => {
       const tekst = m.querySelector('#cv_tekst').value.trim();
       if(!tekst) return CRM.toast('Schrijf eerst het verslag','err');
@@ -1004,6 +1006,7 @@ function bewerk(klantnaam, ct, na){
       <button class="btn" id="cb_ok">Opslaan</button>
     </div>`, {onOpen(m){
       setTimeout(()=>m.querySelector(kiesKlant && !n.klant ? '#cb_klant' : '#cb_naam').focus(), 60);
+      CRM.dictee?.hang(m.querySelector('#cb_note'));
       m.querySelector('#cb_ok').onclick = async () => {
         const rij = Object.assign({}, n, {
           klant:    kiesKlant ? m.querySelector('#cb_klant').value : n.klant,
