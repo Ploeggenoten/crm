@@ -39,6 +39,7 @@
 <link rel="stylesheet" href="css/intake.css?v=20260810h4">
 <link rel="stylesheet" href="css/swo.css?v=20260810h4">
 <link rel="stylesheet" href="css/pva.css?v=20260810h4">
+<link rel="stylesheet" href="css/dictee.css?v=20260817a">
 
 <!-- ─── Login ────────────────────────────────────────────────── -->
 <div id="loginscreen" style="display:none">
@@ -84,6 +85,9 @@
 <script src="js/core.js?v=20260814b"></script>
 <!-- Gedeelde rekenlogica die meerdere modules gebruiken. -->
 <script src="js/data.js?v=20260814a"></script>
+<!-- Spraak-naar-tekst bij notitievelden (gratis, ingebouwd in de browser).
+     Moet vóór de modules staan die CRM.dictee gebruiken. -->
+<script src="js/dictee.js?v=20260817a"></script>
 <!-- Kostprijsfactor per CAO/contractfase (Pronkert-rekentool nagebouwd). -->
 <script src="js/kostprijs.js?v=20260811kf1"></script>
 <!-- Outlook-koppeling per gebruiker (Microsoft Graph + deeplink-terugval) -->

@@ -2202,6 +2202,7 @@ function bindUitkomsten(root, k, na, opts){
   const vast = (opts && opts.contact) || null;
   const veld = root.querySelector('[data-uitveld]'); if(!veld) return;
   const tekst = veld.querySelector('[data-uittekst]');
+  CRM.dictee?.hang(tekst);
   const wieEl = veld.querySelector('[data-uitwie]');
   let keuze = null, wie = null;
   /* Mét wie? Tjeerd (5 aug 2026): "ik werk vanuit de relatiekaart, maar
@@ -2334,6 +2335,7 @@ function railNotities(mount, k){
   const blok = mount.querySelector('.kl-r-nt');
   if(blok) bindUitkomsten(blok, k, teken);
   const inp = mount.querySelector('#rn_tekst');
+  CRM.dictee?.hang(inp);
   mount.querySelector('#rn_opslaan').onclick = async () => {
     const tekst = inp.value.trim(); if(!tekst) return;
     await CRM.logActiviteit('klant', k.naam, 'notitie', tekst);
@@ -3364,6 +3366,7 @@ function notitieHtml(k){
     </div>`;
 }
 function bindNotitie(el, k){
+  CRM.dictee?.hang(el.querySelector('#n_note'));
   const bewerk = el.querySelector('#n_bewerk');
   if(bewerk) bewerk.onclick = () => { notitieBewerken = true; tabActiviteiten(el, k); };
   const annuleer = el.querySelector('#n_annuleer');

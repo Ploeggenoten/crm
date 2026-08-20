@@ -1425,6 +1425,7 @@ function snelbalkHtml(c){
 function bindSnelbalk(mount, c){
   const ta = mount.querySelector('#kd_snel');
   if(!ta) return;
+  CRM.dictee?.hang(ta);
   const tekstOf = () => ta.value.trim();
   const doe = async soort => {
     const tekst = tekstOf();
