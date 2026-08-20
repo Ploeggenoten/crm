@@ -621,15 +621,22 @@ function bouwTaken(){
       const d = kort(t.datum);
       /* Kandidaten en contactpersonen noemen we bij naam; staat de naam er
          niet (verwijderde kaart, import zonder koppeling), dan valt het
-         weg in plaats van dat er een id in de regel komt te staan. */
+         weg in plaats van dat er een id in de regel komt te staan.
+         Een taak op een contactpersoon (entiteit 'contact', zo legt de
+         uitkomstenrij op de relatiekaart ze vast) toonde hier een kaal id
+         en was niet doorklikbaar — nu de naam mét zijn relatie, en de klik
+         gaat naar zijn eigen kaart. */
+      const ctRij = t.entiteit === 'contact'
+        ? (CRM.state.contacten||[]).find(x => String(x.id) === String(t.ref)) : null;
       const refNaam = t.entiteit === 'kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || '')
+                    : t.entiteit === 'contact' ? (ctRij ? ctRij.naam + (ctRij.klant ? ' ('+ctRij.klant+')' : '') : '')
                     : (t.ref || '');
       const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
       const rij = { id:String(t.id), tekst:t.tekst || '(lege taak)', datum:d,
         prio: prioNorm(t.prioriteit),
         sub: [refNaam, van].filter(Boolean).join(' · '),
         mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
-           : t.entiteit==='lead' ? 'recruitment' : '',
+           : t.entiteit==='lead' ? 'recruitment' : (ctRij ? 'contacten' : ''),
         ref: t.ref || '' };
       const g = !d ? 'geen' : d < nu ? 'over' : d === nu ? 'vandaag'
               : d <= eindWeek ? 'week' : 'later';

@@ -640,13 +640,21 @@ function vervolgHtml(ct){
 
   const naam = String(ct.naam||'').toLowerCase();
   const voor = voornaamVan(ct.naam).toLowerCase();
-  const alle = (CRM.state.taken||[]).filter(t =>
+  /* Twee soorten taken horen op deze kaart. Eerst wat er ÉCHT aan deze
+     persoon hangt (entiteit 'contact' — zo legt de uitkomstenrij ze vast);
+     die waren hier onzichtbaar terwijl juist dat de nette koppeling is
+     (Tjeerd, 20 aug 2026). Daarnaast, als vangnet, de klant-taken die de
+     naam van deze persoon noemen — voor wie de taak op de relatie zette. */
+  const direct = (CRM.state.taken||[]).filter(t =>
+    !t.klaar && t.entiteit === 'contact' && String(t.ref) === String(ct.id));
+  const klantTaken = (CRM.state.taken||[]).filter(t =>
     !t.klaar && t.entiteit === 'klant' && String(t.ref) === String(ct.klant||''));
-  const mijn = alle.filter(t => {
+  const genoemd = klantTaken.filter(t => {
     const s = String(t.tekst||'').toLowerCase();
     return naam && (s.includes(naam) || (voor.length > 2 && woordIn(s, voor)));
   });
-  const rest = alle.length - mijn.length;
+  const mijn = direct.concat(genoemd);
+  const rest = klantTaken.length - genoemd.length;
 
   const lijst = mijn.length
     ? `<div class="ck-taken">${mijn.sort((a,b)=>String(a.datum||'').localeCompare(String(b.datum||'')))
@@ -658,8 +666,8 @@ function vervolgHtml(ct){
           </label>
           <button type="button" class="lnk ck-taakbewerk" data-taakbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
         </div>`).join('')}</div>
-       <p class="meta ck-afleiding">Afgeleid: deze taken staan bij ${h(ct.klant||'de relatie')} en noemen deze persoon.</p>`
-    : `<p class="meta" style="margin:0">Geen open taak die deze persoon noemt.</p>`;
+       ${genoemd.length ? `<p class="meta ck-afleiding">Deels afgeleid: taken bij ${h(ct.klant||'de relatie')} die deze persoon noemen tellen ook mee.</p>` : ''}`
+    : `<p class="meta" style="margin:0">Geen open taak bij deze persoon.</p>`;
 
   return `<div class="card kl-railkaart ck-railkaart">
     <div class="card-h"><div class="h2">Vervolg</div><span class="spacer"></span>
@@ -846,8 +854,12 @@ function bindKaart(mount, ct, klant){
      op een contact-id zou daar als een kaal id verschijnen. De naam van de
      persoon staat in de kop van het venster én, als je hem overneemt, in de
      taaktekst — daar vindt de kaart hem straks weer terug. */
+  /* Rechtstreeks aan de persoon, niet meer via de relatie met de naam in de
+     tekst: sinds 20 aug 2026 tonen de relatiekaart, deze kaart én het
+     dashboard contact-taken gewoon bij naam, dus de omweg is niet meer
+     nodig. Zelfde koppeling als de uitkomstenrij op de relatiekaart. */
   const taak = () => CRM.taakModal({
-    entiteit:'klant', ref: ct.klant || '',
+    entiteit:'contact', ref: String(ct.id),
     refLabel: `${ct.naam}${ct.klant ? ' (' + ct.klant + ')' : ''}`,
     tekst: ct.naam + ' '
   }).then(r => { if(r) opnieuw(); });
@@ -1277,11 +1289,9 @@ CRM.contactKaart = {
       vullen (Recruitment, Kandidaten) horen daar dan een keuzelijst voor
       te krijgen — zonder dat blijft de kolom leeg en verandert er niets.
 
-   5. crm_taken.contact_id (punt 4) is de enige nette oplossing voor de
-      taken op deze kaart. Een taak hangt nu aan de relatie, want het
-      dashboard en de meldingen vertalen alleen 'klant', 'kandidaat' en
-      'lead' naar een module — een taak op een contact-id zou daar als een
-      kaal id verschijnen. Tot die kolom er is toont deze kaart de open
-      taken van de relatie die de persoon bij naam noemen, met "afgeleid"
-      erbij. Dat is bewust: liever zichtbaar onzeker dan onzichtbaar fout.
+   5. OPGELOST (20 aug 2026): taken hangen nu rechtstreeks aan de persoon
+      (entiteit 'contact'). Het dashboard vertaalt ze naar naam + kaart,
+      de relatiekaart-rail telt ze mee ("bij <naam>") en deze kaart toont
+      ze bovenaan het Vervolg-blok. De naam-match op klant-taken blijft
+      als vangnet bestaan voor taken die tóch op de relatie zijn gezet.
    ═══════════════════════════════════════════════════════════════ */

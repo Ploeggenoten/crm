@@ -2349,7 +2349,17 @@ function railNotities(mount, k){
 
 function railTaken(el, k){
   if(!el) return;
-  const taken = (CRM.state.taken||[]).filter(t => t.entiteit === 'klant' && t.ref === k.naam && !t.klaar)
+  /* Niet alleen de taken die aan de relatie zelf hangen, ook die aan haar
+     contactpersonen. Een taak die je via de belknoppen op een persoon zet
+     (entiteit 'contact') was hier onzichtbaar — terwijl juist dát de nette
+     manier van vastleggen is. Alleen het Opvolgingen-tabblad van Sales
+     telde ze mee, dus de kaart en de lijst spraken elkaar tegen.
+     (Tjeerd, 20 aug 2026: "de taak is niet altijd te zien daar.") */
+  const ctNaam = new Map((CRM.state.contacten||[]).filter(x => x.klant === k.naam)
+    .map(x => [String(x.id), x.naam]));
+  const taken = (CRM.state.taken||[]).filter(t => !t.klaar
+      && ((t.entiteit === 'klant' && t.ref === k.naam)
+       || (t.entiteit === 'contact' && ctNaam.has(String(t.ref)))))
     .sort((a,b) => String(a.datum||'').localeCompare(String(b.datum||'')));
   if(!taken.length){
     el.innerHTML = '<p class="meta" style="margin:0">Geen open taken bij deze klant.</p>';
@@ -2358,10 +2368,12 @@ function railTaken(el, k){
   el.innerHTML = `<div class="kl-taken">${taken.map(t => {
     const wie = [t.voor ? 'voor ' + t.voor : '', t.door && t.door !== t.voor ? 'van ' + t.door : '']
       .filter(Boolean).join(' · ');
+    const bijPersoon = t.entiteit === 'contact' ? ctNaam.get(String(t.ref)) : '';
     return `<div class="kl-taak">
       <label><input type="checkbox" data-taak="${h(t.id)}">
         <div style="flex:1;min-width:0"><b>${h(t.tekst)}</b>
-          <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${wie ? ' · ' + h(wie) : ''}</div></div>
+          <div class="meta"><span class="num">${h(CRM.fmtDate(t.datum))}</span>${wie ? ' · ' + h(wie) : ''}${
+            bijPersoon ? ' · bij ' + h(bijPersoon) : ''}</div></div>
         ${t.prioriteit==='Hoog'?'<span class="chip amber">Hoog</span>':''}
       </label>
       <button type="button" class="lnk kl-taakbewerk" data-taakbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
