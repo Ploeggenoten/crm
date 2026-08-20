@@ -67,6 +67,31 @@
 .s-ct:last-child{border-bottom:none}
 .s-ct b{font-size:13.5px;font-weight:600;display:block}
 
+/* ─── Opvolgingen: context, verzetten en vastleggen ín de lijst ──
+   De regel vertelt waarom je belt (fase, stilte, laatste notitie); de
+   knoppen erachter doen wat je anders op de kaart moest doen. */
+.s-opv .meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s-opvfase{--fk:var(--line-2);font-size:10.5px;padding:1px 8px;border-color:var(--fk);color:var(--txt-2)}
+.s-opvamber{color:var(--amber);font-weight:600}
+.s-opvrood{color:var(--red);font-weight:600}
+.s-opvlaatst{color:var(--muted);font-style:italic}
+.s-opvdatum{
+  width:auto;flex:0 0 auto;max-width:132px;cursor:pointer;
+  font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--txt-2);
+  background-color:transparent;border-color:transparent;border-radius:999px;
+  padding:2px 22px 2px 8px;background-position:right 7px center;
+}
+.s-opv:hover .s-opvdatum,.s-opvdatum:focus{border-color:var(--line-2);background-color:#fff}
+/* Bewerken pas zichtbaar bij hover — zelfde patroon als op de kaarten. */
+.s-opvbewerk{background:none;border:none;padding:0;font:600 11px/1 var(--body);color:transparent;cursor:pointer}
+.s-opv:hover .s-opvbewerk{color:var(--muted)}
+.s-opvbewerk:hover{color:var(--olive,#3D6400)!important;text-decoration:underline}
+/* Het uitgeklapte vastleg-blok onder de rij: licht kader zodat duidelijk
+   is bij wélke opvolging hij hoort. */
+.s-opvuit{margin:0 0 10px 26px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:8px;background:var(--card-2)}
+.s-opvuit[hidden]{display:none}
+
 /* Knoppenbalk boven een tabblad in het detailpaneel. */
 .s-actbar{margin-bottom:12px}
 

@@ -673,6 +673,52 @@ function openOpvolgingen(){
     .filter(t => !mijn || t.voor === CRM.me())
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
 }
+/* Context bij een opvolging: waarom bel je, zonder door te klikken. De
+   fase zegt waar de relatie staat, de stilte hoe lang er niets is gehoord,
+   en de laatste notitie waar het over ging. Alles zit al in CRM.state —
+   dit is lezen, geen nieuwe administratie. (Tjeerd, 20 aug 2026: "in sales
+   is opvolgen het belangrijkste".) */
+function opvContext(t){
+  const k = CRM.klant(t.klantNaam);
+  const uit = [];
+  if(k && k.fase){
+    const f = CRM.SALES_FASES.find(x => x.k === k.fase);
+    uit.push(`<span class="chip s-opvfase"${f?` style="--fk:${f.c}"`:''}>${h(k.fase)}</span>`);
+  }
+  const dgn = k ? CRM.dagenGeleden(k.laatst_contact) : null;
+  if(dgn != null && dgn >= 1)
+    uit.push(`<span class="num${dgn >= 30 ? ' s-opvrood' : dgn >= 14 ? ' s-opvamber' : ''}">${dgn} dg${dgn===1?'':'n'} stil</span>`);
+  /* De laatste échte activiteit — ook die van de contactpersoon als de
+     taak daaraan hangt, want dat gesprek is meestal de aanleiding. */
+  const acts = CRM.activiteitenVoor('klant', t.klantNaam)
+    .concat(t.contactId ? CRM.activiteitenVoor('contact', t.contactId) : [])
+    .sort((a,b) => String(b.op||'').localeCompare(String(a.op||'')));
+  if(acts[0] && acts[0].tekst){
+    const s = String(acts[0].tekst);
+    uit.push(`<span class="s-opvlaatst" title="${h(s)}">„${h(s.length > 72 ? s.slice(0,72) + '…' : s)}"</span>`);
+  }
+  return uit.join(' · ');
+}
+/* Snel verzetten zonder venster — dezelfde vaste keuzes als het dashboard
+   (vandaag/morgen/vrijdag/volgende week), plus de eigen datum van de taak
+   als die niet in het rijtje zit. */
+function opvKeuzes(datum){
+  const nu = CRM.todayISO();
+  const plus = n => { const d = new Date(); d.setDate(d.getDate()+n);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const maandag = w => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay()+6)%7) + w*7);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const vr = (() => { const d = new Date(maandag(0)); d.setDate(d.getDate()+4);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const keuzes = [
+    {v:nu, t:'Vandaag'}, {v:plus(1), t:'Morgen'},
+    ...(vr > nu ? [{v:vr, t:'Vrijdag'}] : []),
+    {v:maandag(1), t:'Volgende week'}, {v:'', t:'Geen datum'}
+  ];
+  const eigen = (datum && !keuzes.some(x => x.v === datum)) ? [{v:datum, t:CRM.fmtDateShort(datum)}] : [];
+  return eigen.concat(keuzes).map(x =>
+    `<option value="${h(x.v)}"${x.v === (datum||'') ? ' selected' : ''}>${h(x.t)}</option>`).join('');
+}
 function opvolgHTML(){
   const alle = openOpvolgingen();
   if(!alle.length) return CRM.ui.leeg('Geen open opvolgingen',
@@ -690,20 +736,69 @@ function opvolgHTML(){
   ].filter(([,ts]) => ts.length);
   return `<div class="card"><div class="card-b" style="padding-top:6px">${groepen.map(([lbl, ts, extra]) => `
     <div class="label" style="margin:12px 0 6px${extra?';color:var(--red)':''}">${h(lbl)} · <span class="num">${ts.length}</span></div>
-    ${ts.map(t => `<div class="s-ct">
+    ${ts.map(t => { const ctx = opvContext(t); return `<div class="s-ct s-opv">
       <label class="check" style="margin:0"><input type="checkbox" data-opvink="${h(t.id)}"></label>
       <div style="flex:1;min-width:0">
         <b class="trunc">${h(t.tekst)}</b>
-        <div class="meta">${t.datum ? `<span class="num">${h(CRM.fmtDateShort(t.datum))}${t.tijd?' '+h(t.tijd):''}</span> · ` : ''}${h(t.voor||'')}</div>
+        <div class="meta">${t.datum ? `<span class="num">${h(CRM.fmtDateShort(t.datum))}${t.tijd?' '+h(t.tijd):''}</span> · ` : ''}${h(t.voor||'')}${ctx ? ' · ' + ctx : ''}</div>
       </div>
+      <select class="s-opvdatum" data-opvdatum="${h(t.id)}" title="Verzetten">${opvKeuzes(t.datum||'')}</select>
+      <button type="button" class="btn sm ghost" data-opvlog="${h(t.id)}" title="Uitkomst vastleggen zonder de lijst te verlaten">Vastleggen</button>
+      <button type="button" class="lnk s-opvbewerk" data-opvbewerk="${h(t.id)}" title="Taak aanpassen">bewerk</button>
       <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}"${
         t.contactId ? ` data-opcontact="${h(t.contactId)}"` : ''}>${h(t.klantNaam)}</button>
-    </div>`).join('')}`).join('')}</div></div>`;
+    </div>
+    <div class="s-opvuit" data-opvuit="${h(t.id)}" hidden></div>`; }).join('')}`).join('')}</div></div>`;
 }
 function bindOpvolg(){
   CRM.$$('[data-opvink]', mountEl).forEach(c => c.onchange = async () => {
     await taakKlaar(c.dataset.opvink, c.checked);
     tekenInhoud();
+  });
+  /* Verzetten ín de lijst — de reden dat je doorklikte was meestal alleen
+     de datum (Tjeerd, 20 aug 2026: "ik wil meteen de taak kunnen
+     aanpassen naar een andere dag"). */
+  CRM.$$('[data-opvdatum]', mountEl).forEach(s => s.onchange = async () => {
+    const t = CRM.state.taken.find(x => String(x.id) === s.dataset.opvdatum); if(!t) return;
+    const oud = t.datum;
+    t.datum = s.value || null;
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('crm_taken').update({datum:t.datum}).eq('id', t.id);
+      if(error){ t.datum = oud; return CRM.fout('Verzetten mislukt', error); }
+    }
+    CRM.navBadges();
+    tekenInhoud();
+  });
+  /* Volledig bewerken (onderwerp, tijd, voor wie) — zelfde gedeelde
+     venster als op de kaarten en het dashboard. */
+  CRM.$$('[data-opvbewerk]', mountEl).forEach(b => b.onclick = async () => {
+    const t = CRM.state.taken.find(x => String(x.id) === b.dataset.opvbewerk); if(!t) return;
+    const rij = await CRM.taakModal({bewerken:t});
+    if(rij){ CRM.navBadges(); tekenInhoud(); }
+  });
+  /* Uitkomst vastleggen zonder de lijst te verlaten: klap dezelfde
+     uitkomstenrij uit als op de relatiekaart (CRM.uitkomsten — gedeelde
+     logica, geen kopie), gebonden aan de klant en, als de taak aan een
+     persoon hangt, aan die persoon. Bellen → vastleggen → afvinken of
+     verzetten, allemaal op één scherm. Deliberaat níét automatisch
+     afvinken na het vastleggen: "gebeld, geen gehoor" is een uitkomst,
+     maar de taak is dan niet af — dat blijft een besluit van de AM. */
+  CRM.$$('[data-opvlog]', mountEl).forEach(b => b.onclick = () => {
+    const id = b.dataset.opvlog;
+    const cont = mountEl.querySelector(`[data-opvuit="${CSS.escape(id)}"]`);
+    if(!cont || !CRM.uitkomsten) return;
+    const stondOpen = !cont.hidden;
+    CRM.$$('[data-opvuit]', mountEl).forEach(c => { c.hidden = true; c.innerHTML = ''; });
+    if(stondOpen) return;
+    const t = openOpvolgingen().find(x => String(x.id) === id); if(!t) return;
+    const k = CRM.klant(t.klantNaam); if(!k) return;
+    const ct = t.contactId ? (CRM.state.contacten||[]).find(x => String(x.id) === t.contactId) : null;
+    cont.innerHTML = CRM.uitkomsten.html();
+    CRM.uitkomsten.bind(cont, k, () => tekenInhoud(), ct ? {contact:ct} : undefined);
+    cont.hidden = false;
+    /* De knoppenrij toont álle uitkomsten; de eerste klik daarop opent het
+       tekstveld. Meteen zichtbaar maken zou hier kunnen, maar de rij is
+       compact genoeg — één klik extra houdt de lijst rustig. */
   });
   /* Doorklikken vanuit een opvolging: geen tussenpaneel meer, meteen de
      kaart waar je moet zijn. Hangt de taak aan een contactpersoon, dan is
