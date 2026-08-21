@@ -1766,7 +1766,8 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           : 'Standaardpercentage <span class="meta">(als geen functiegroep past)</span>';
         const std = dr.querySelector('#af_std');
         std.max = uitzend ? 10 : 100; std.step = uitzend ? 0.05 : 0.1;
-        dr.querySelector('#af_ovnrij').hidden = !uitzend;
+        /* Zelfde display-truc als hieronder: hidden werkt niet op een f-row. */
+        dr.querySelector('#af_ovnrij').style.display = uitzend ? '' : 'none';
         dr.querySelector('#af_kp').hidden = !uitzend;
         dr.querySelectorAll('.kl-af-sec').forEach(sec => {
           const kop = sec.querySelector('.h2');
@@ -1775,10 +1776,13 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         });
         /* Bij uitzenden loopt facturatie én garantie volledig via Pronkert
            (Tjeerd, 22 aug 2026) — dus ook de betaaltermijn weg; alleen de
-           notitie blijft. De sectiekop zegt dan waarom hij zo leeg is. */
+           notitie blijft. De sectiekop zegt dan waarom hij zo leeg is.
+           Via style.display, niet het hidden-attribuut: .f-row heeft
+           display:flex in de css en die wint van [hidden] — de velden
+           bleven daardoor gewoon zichtbaar staan. */
         const gs = dr.querySelector('#af_gs'), gm = dr.querySelector('#af_gm'),
               fm = dr.querySelector('#af_fm'), bt = dr.querySelector('#af_bt');
-        [gs, gm, fm, bt].forEach(el => { if(el) el.closest('.f-row').hidden = uitzend; });
+        [gs, gm, fm, bt].forEach(el => { if(el) el.closest('.f-row').style.display = uitzend ? 'none' : ''; });
         const fgKop = [...dr.querySelectorAll('.kl-af-sec .h2')].find(x => /Facturatie|Notitie/.test(x.textContent));
         if(fgKop) fgKop.textContent = uitzend ? 'Notitie (facturatie en garantie lopen via Pronkert)' : 'Facturatie en garantie';
       };
