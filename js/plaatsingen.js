@@ -974,8 +974,6 @@ function teken(){
       ${rGeen.map(rijHtml).join('')}
     </div></section>`;
 
-  uit += zzpBlokHtml();
-
   uit += `<section class="card pl-sec pl-tl">
     <div class="card-h"><div class="h2">${S.weergave === 'tabel' ? 'Plaatsingen' : 'Tijdlijn op ' + h(AS_LABEL())}</div>
       <span class="chip num">${alles.length}</span>
@@ -992,6 +990,12 @@ function teken(){
           ? 'Niemand binnen deze filters. Verruim de periode of haal een filter weg.'
           : 'Er staat nog geen plaatsing in het systeem.')}</div>`}
   </section>`;
+
+  /* Het ZZP-blok (en de flex-overnameprojectie daarin) ónder de
+     plaatsingenlijst: de W&S-plaatsingen zijn het hoofdwerk van dit
+     scherm, ZZP is de bijvangst (Tjeerd, 21 aug 2026: "hoeft niet
+     bovenin"). */
+  uit += zzpBlokHtml();
 
   wrap.innerHTML = uit;
 
