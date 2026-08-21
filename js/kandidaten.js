@@ -1264,10 +1264,13 @@ async function bewaarKlus(rij, nieuw){
   }
   return true;
 }
-function klusModal(c, klus){
-  const k = klus || {id:CRM.uid(), kandidaat_id:String(c.id), klant:'', functie:c.functie||'',
+function klusModal(c, klus, concept){
+  /* `concept` is een nog niet opgeslagen invulling die terugkomt nadat de
+     overlap-vraag met Annuleren is beantwoord — het venster heropent dan
+     voorgevuld in plaats van leeg. */
+  const k = klus || Object.assign({id:CRM.uid(), kandidaat_id:String(c.id), klant:'', functie:c.functie||'',
     start:CRM.todayISO(), eind:'', marge:null, eenheid:'dag', gewerkt:null,
-    gefactureerd:false, telt_als_plaatsing:false, notitie:'', door:CRM.me()};
+    gefactureerd:false, telt_als_plaatsing:false, notitie:'', door:CRM.me()}, concept || {});
   const nieuw = !klus;
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${nieuw?'Klus plannen':'Klus bewerken'}</div>
@@ -1300,15 +1303,29 @@ function klusModal(c, klus){
       if(!klant) return toon('Vul de klant in.');
       if(!start || !eind) return toon('Start- én einddatum zijn verplicht — een klus heeft tegenwoordig altijd een einddatum.');
       if(eind < start) return toon('De einddatum ligt vóór de startdatum.');
-      /* Eén klus tegelijk: overlap met een andere klus van deze ZZP'er is
-         geen planning maar een dubbele boeking. */
-      const botst = klussenVan(c).find(x => x.id !== k.id && !(eind < x.start || start > x.eind));
-      if(botst) return toon(`Overlapt met de klus bij ${botst.klant||'?'} (${CRM.fmtDateShort(botst.start)} – ${CRM.fmtDateShort(botst.eind)}) — één klus tegelijk.`);
-      const rij = Object.assign({}, k, {klant, start, eind,
+      /* Alle invoer NU uitlezen: de overlap-vraag hieronder vervangt dit
+         venster (er is er maar één), waarna de velden niet meer bestaan —
+         daardoor ging een bevestigde dubbele klus eerst stil verloren. */
+      const invoer = {klant, start, eind,
         functie: m.querySelector('#kz_functie').value.trim(),
         marge: m.querySelector('#kz_marge').value === '' ? null : Number(m.querySelector('#kz_marge').value),
         eenheid: m.querySelector('#kz_eenheid').value,
-        notitie: m.querySelector('#kz_note').value.trim()});
+        notitie: m.querySelector('#kz_note').value.trim()};
+      /* Meerdere klussen verspreid inplannen hoort gewoon te kunnen
+         (Tjeerd, 22 aug 2026) — ook met overlappende periodes, bv. twee
+         dagen per week bij de één en drie bij de ander. Overlap is dus
+         geen blokkade meer, wél een bevestigingsvraag: een dúbbele
+         boeking moet een bewuste keuze zijn, geen ongeluk. */
+      const botst = klussenVan(c).find(x => x.id !== k.id && !(eind < x.start || start > x.eind));
+      if(botst){
+        const ja = await CRM.bevestig('Deze klus overlapt met een andere',
+          `${c.naam} staat van ${CRM.fmtDateShort(botst.start)} t/m ${CRM.fmtDateShort(botst.eind)} al ingepland bij ${botst.klant||'?'}. `
+          + 'Deeltijdklussen naast elkaar kan prima — plan hem alleen bewust dubbel in.',
+          {knop:'Toch inplannen'});
+        /* Nee = terug naar het venster, mét wat er al was ingevuld. */
+        if(!ja) return klusModal(c, klus, nieuw ? Object.assign({}, k, invoer) : null);
+      }
+      const rij = Object.assign({}, k, invoer);
       if(!await bewaarKlus(rij, nieuw)) return;
       if(!nieuw) Object.assign(k, rij);
       CRM.modal.close();
