@@ -1022,6 +1022,9 @@ function kaart(mount, acties, naam){
   /* Rail: commerciële afspraken (alleen achter CRM.canSeeMoney) */
   railAfspraak(mount, k);
 
+  /* CAO-voorwaardenkaart: uitlezen-knop + eerder uitgelezen tekst erbij. */
+  bindCao(mount, k);
+
   /* Rail: komende afspraken (alleen met gekoppelde Outlook) */
   railAfspraken(mount, k);
   railMailwisseling(mount, k);
@@ -1252,8 +1255,110 @@ function caoBlokHtml(k){
       ${rij('IKB', n(cao.ikb, '%'))}
     </div>
     ${cao.info ? `<p class="meta" style="margin:10px 0 0">${h(cao.info)}</p>` : ''}
-    <p class="meta" style="margin:10px 0 0">Uit de Pronkert-brondata — wat hier niet staat (bijv. reiskosten) kent die tool niet; leg dat vast in de accountnotitie.</p>
+    <p class="meta" style="margin:10px 0 0">Rekencijfers uit de Pronkert-brondata (voor de kostprijsfactor).</p>
+    <div id="cao_extra"></div>
+    <button class="btn ghost sm kl-railknop" id="cao_lees">CAO-tekst uitlezen…</button>
     </div></div>`;
+}
+
+/* ─── De CAO-tekst zelf uitlezen ──────────────────────────────────
+   De Pronkert-cijfers hierboven zijn de rékentabel (kostprijsfactor).
+   Voor een offer aan een kandidaat wil je de échte voorwaarden uit de
+   cao-tekst: proeftijd, toeslagen, reiskosten, pensioen (Tjeerd, 22 aug
+   2026: "hij moet echt de cao zelf uitlezen; het document staat bij de
+   klant in Documenten"). Zelfde route als het cv-inlezen door Claude
+   (js/cvclaude.js): opdracht op het klembord, jij sleept het cao-pdf in
+   claude.ai, plakt het antwoord terug — geen API, geen kosten. Het
+   resultaat wordt bewaard als crm_stukken-rij (soort 'cao', per klant),
+   dus één keer uitlezen en het hele team ziet het. */
+const CAO_LEESVELDEN = [
+  ['proeftijd','Proeftijd'], ['opzegtermijn','Opzegtermijn'],
+  ['vakantiedagen','Vakantiedagen'], ['adv_atv','ADV/ATV'],
+  ['vakantiegeld','Vakantiegeld'], ['eindejaarsuitkering','Eindejaarsuitkering / 13e maand'],
+  ['ploegentoeslag','Ploegentoeslag'], ['overwerktoeslag','Overwerktoeslag'],
+  ['toeslag_weekend_nacht','Toeslag weekend/nacht'], ['reiskosten','Reiskostenvergoeding'],
+  ['pensioen','Pensioen'], ['loonschalen','Loonschalen'],
+  ['geplande_loonsverhogingen','Geplande loonsverhogingen'],
+  ['uitzendkrachten','Bepalingen voor uitzendkrachten/inleen'],
+  ['overige_bijzonderheden','Overige bijzonderheden']
+];
+const CAO_DEMO_KEY = k => 'cao_stuk_demo:' + k;
+async function caoStukVan(klantnaam){
+  if(CRM.demo){
+    try{ return JSON.parse(localStorage.getItem(CAO_DEMO_KEY(klantnaam)) || 'null'); }catch(e){ return null; }
+  }
+  try{
+    const {data} = await CRM.sb.from('crm_stukken').select('*')
+      .eq('soort','cao').eq('klant', klantnaam)
+      .order('updated_at',{ascending:false}).limit(1);
+    return (data && data[0]) || null;
+  }catch(e){ return null; }
+}
+async function vulCaoExtra(mount, k){
+  const el = mount.querySelector('#cao_extra'); if(!el) return;
+  const stuk = await caoStukVan(k.naam);
+  if(!stuk || !stuk.velden){ el.innerHTML = ''; return; }
+  const rijen = CAO_LEESVELDEN
+    .filter(([key]) => stuk.velden[key])
+    .map(([key,lbl]) => `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
+      <span class="kl-gg-val" style="white-space:normal">${h(String(stuk.velden[key]))}</span></div>`);
+  el.innerHTML = rijen.length ? `
+    <div class="kl-af-soortkop label" style="margin-top:12px">Uit de CAO-tekst</div>
+    <div class="kl-gg">${rijen.join('')}</div>
+    <p class="meta" style="margin:8px 0 0">Uitgelezen ${h(CRM.fmtDate(stuk.updated_at || stuk.created_at))}${stuk.door ? ' door ' + h(stuk.door) : ''} — controleer bij twijfel het cao-document zelf.</p>` : '';
+}
+function bindCao(mount, k){
+  const knop = mount.querySelector('#cao_lees');
+  if(knop) knop.onclick = () => caoLeesModal(k);
+  vulCaoExtra(mount, k);
+}
+function caoLeesModal(k){
+  const prompt = `Lees de bijgevoegde cao (${k.cao || 'zie bijlage'}) zorgvuldig door en geef ALLEEN een JSON-object terug, zonder uitleg eromheen, met exact deze sleutels:\n\n{${CAO_LEESVELDEN.map(([key]) => `"${key}"`).join(', ')}}\n\nPer sleutel: een korte, feitelijke samenvatting in het Nederlands mét het artikel- of hoofdstuknummer waar het staat. Zegt de cao er niets over, gebruik dan null. Verzin niets — alleen wat er letterlijk in de tekst staat. Bedragen en percentages altijd overnemen zoals ze er staan, met de datum of periode waarvoor ze gelden.`;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">CAO-tekst uitlezen</div>
+      <p class="sub" style="margin:6px 0 0">${h(k.cao || 'CAO')} · via Claude, zonder API-kosten</p></div>
+    <div class="modal-b">
+      <ol class="sub" style="margin:0 0 14px;padding-left:18px;line-height:1.7">
+        <li><button type="button" class="lnk" id="cl_kopieer">Kopieer de opdracht</button> (komt op je klembord)</li>
+        <li>Open <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a>, sleep het cao-pdf uit Documenten erin en plak de opdracht erbij</li>
+        <li>Plak het antwoord hieronder en sla op</li>
+      </ol>
+      <div class="f-row"><label for="cl_antwoord">Antwoord van Claude</label>
+        <textarea id="cl_antwoord" style="min-height:140px;font-family:ui-monospace,monospace;font-size:12px" placeholder='{"proeftijd": "…", …}'></textarea></div>
+      <div class="note err" id="cl_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="cl_ok">Opslaan</button></div>`, {onOpen(m){
+    m.querySelector('#cl_kopieer').onclick = async () => {
+      try{ await navigator.clipboard.writeText(prompt); CRM.toast('Opdracht staat op je klembord','ok'); }
+      catch(e){ CRM.toast('Kopiëren lukte niet — selecteer de tekst zelf','err'); }
+    };
+    m.querySelector('#cl_ok').onclick = async () => {
+      const err = m.querySelector('#cl_err');
+      let txt = m.querySelector('#cl_antwoord').value.trim();
+      /* Claude zet er soms een ```json-blok omheen — dat pellen we eraf,
+         net als bij het cv-inlezen. */
+      txt = txt.replace(/^```(json)?\s*/i, '').replace(/```\s*$/, '');
+      const begin = txt.indexOf('{'), eind = txt.lastIndexOf('}');
+      if(begin >= 0 && eind > begin) txt = txt.slice(begin, eind + 1);
+      let velden;
+      try{ velden = JSON.parse(txt); }
+      catch(e){ err.style.display=''; err.textContent = 'Dit is geen leesbaar antwoord — plak het hele JSON-blok, inclusief de accolades.'; return; }
+      if(!velden || typeof velden !== 'object'){ err.style.display=''; err.textContent = 'Het antwoord bevat geen voorwaarden.'; return; }
+      const rij = {id: CRM.uid(), soort:'cao', klant:k.naam, kandidaat_id:'',
+        titel: k.cao || 'CAO', velden, versie:1, status:'concept', door:CRM.me(),
+        updated_at: new Date().toISOString()};
+      if(CRM.demo){
+        try{ localStorage.setItem(CAO_DEMO_KEY(k.naam), JSON.stringify(rij)); }catch(e){}
+      }else{
+        const {error} = await CRM.sb.from('crm_stukken').insert(rij);
+        if(error){ err.style.display=''; err.textContent = 'Opslaan mislukt: ' + error.message; return; }
+      }
+      CRM.modal.close();
+      CRM.toast('CAO-voorwaarden opgeslagen — het hele team ziet ze nu op deze kaart','ok');
+      CRM.render();
+    };
+  }});
 }
 
 /* Alle afspraken van deze klant, nieuwste ingangsdatum eerst. */
