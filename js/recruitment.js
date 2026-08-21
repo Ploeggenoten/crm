@@ -1769,6 +1769,37 @@ function cvHtml(lead){
     ${cv.op ? `<div class="meta" style="margin-top:8px">Ingelezen ${h(CRM.fmtDate(cv.op))}${cv.door?' door '+h(cv.door):''}</div>` : ''}`;
 }
 
+/* ─── Eén sollicitant verwijderen ─────────────────────────────────
+   Vanuit het leadpaneel, per persoon — bewust NIET in de bulkbalk (zie de
+   notitie daar: onomkeerbaar hoort niet in een knop die twintig rijen
+   tegelijk raakt). Voor de per-ongeluk aangemaakte rij; verwijderen kon
+   eerst alleen via de kandidatenkaart, maar een sollicitant die nooit
+   kandidaat is geworden hééft die kaart niet (Tjeerd, 21 aug 2026).
+   Is de sollicitant al doorgeschoten, dan blijft de kandidaatkaart
+   bestaan — die heeft zijn eigen, zwaardere verwijderflow met logboek en
+   anonimiseren (js/kandverwijder.js). */
+async function verwijderLead(l){
+  const ok = await CRM.bevestig('Sollicitant verwijderen?',
+    `${leadNaam(l)} verdwijnt uit de sollicitantenlijst, inclusief notities en geschiedenis. `
+    + 'Dit is niet terug te draaien.'
+    + (l.kandidaat_id ? ' De kandidaatkaart die uit deze sollicitant is gemaakt blijft bestaan — verwijderen daarvan gaat via de kaart zelf.' : ''),
+    {knop:'Verwijderen'});
+  if(!ok) return;
+  if(!CRM.demo){
+    /* Eerst de lead zelf: een wees-logregel is geen ramp, een
+       half-verwijderde lead wel. Activiteiten daarna, best-effort. */
+    const {error} = await CRM.sb.from('crm_leads').delete().eq('id', l.id);
+    if(error) return CRM.fout('Verwijderen mislukt', error);
+    try{ await CRM.sb.from('crm_activiteiten').delete().eq('entiteit','lead').eq('ref', String(l.id)); }
+    catch(e){ console.warn('lead-activiteiten opruimen', e); }
+  }
+  CRM.state.leads = (CRM.state.leads||[]).filter(x => String(x.id) !== String(l.id));
+  CRM.state.activiteiten = (CRM.state.activiteiten||[]).filter(a => !(a.entiteit === 'lead' && String(a.ref) === String(l.id)));
+  CRM.drawer.close();
+  CRM.toast('Sollicitant verwijderd','ok');
+  tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
+}
+
 function openLead(id){
   const l = leadById(id); if(!l) return;
   /* Rijen die uit de kandidatentabel komen hebben al een kaart. Het
@@ -1870,11 +1901,13 @@ function openLead(id){
         ${statusBestaat(l.status) ? '' : `<option value="${h(l.status)}" selected>${h(l.status||'(geen status)')} — bestaat niet meer</option>`}
         ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${l.status===s.k?'selected':''}>${h(s.k)}</option>`).join('')}
       </select>
+      <button class="btn ghost danger" id="rc_del" title="Sollicitant verwijderen">Verwijderen…</button>
       <div class="spacer"></div>
       ${doorgeschoten
         ? `<button class="btn" id="rc_naarkand">Open kandidaatkaart →</button>`
         : `<button class="btn" id="rc_door">→ Kandidaat maken</button>`}
     </div>`, {onOpen(dr){
+      dr.querySelector('#rc_del').onclick = () => verwijderLead(l);
       CRM.dictee?.hang(dr.querySelector('#rc_note'));
       dr.querySelector('#rc_cvbtn').onclick = () => cvModal(l);
       /* Het cv-bestand openen gaat via een link die pas bij het klikken
