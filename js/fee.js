@@ -50,7 +50,11 @@ const STANDAARD_AFSPRAAK  = {
 
 const SOORTEN = [
   {k:'ws',          lbl:'Werving & Selectie'},
-  {k:'detachering', lbl:'Detachering'},
+  /* Detachering doen we niet (meer) — alleen W&S en uitzenden (Tjeerd,
+     22 aug 2026). `weg:true` haalt hem uit de keuzeknoppen, maar de soort
+     blijft bestaan zodat een ooit vastgelegde detachering-afspraak gewoon
+     leesbaar en bewerkbaar blijft in plaats van als '—' te renderen. */
+  {k:'detachering', lbl:'Detachering', weg:true},
   {k:'uitzenden',   lbl:'Uitzenden'}
 ];
 const FACTUURMOMENTEN = [

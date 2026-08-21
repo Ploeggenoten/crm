@@ -3350,7 +3350,8 @@ const afspraakVan = c => CRM.fee.voorKlant(c.klant, c.geplaatstOp || null, isFle
 function flexRegel(c){
   if(!c.uurloon) return '<span class="meta">Vul het bruto uurloon in — daarmee rekent de finance-app het tarief uit.</span>';
   if(!CRM.magOpbrengstZien || !CRM.magOpbrengstZien())
-    return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent de marge uit.</span>';
+    return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent de marge uit.</span>'
+      + (c.uren ? `<div class="kd-flexuit">kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand</div>` : '');
 
   let a = null, factor = null, overname = null;
   try{
@@ -3365,7 +3366,8 @@ function flexRegel(c){
   const tarief = uitFactuur ? Number(c.tarief) : (factor != null ? c.uurloon * factor : null);
   if(tarief == null)
     return `<span class="meta">Vul het factuurtarief in, of leg een omrekenfactor voor deze functie vast
-      bij ${h(c.klant||'deze klant')} op de klantkaart — dan rekent de kaart de marge zelf uit.</span>`;
+      bij ${h(c.klant||'deze klant')} op de klantkaart — dan rekent de kaart de marge zelf uit.</span>`
+      + (c.uren ? `<div class="kd-flexuit">kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand (${c.uren} u/wk)</div>` : '');
 
   const marge = tarief - c.uurloon;
   const uur = n => '€' + n.toFixed(2).replace('.', ',');
@@ -3377,6 +3379,11 @@ function flexRegel(c){
 
   const regels = [`marge ${uur(marge)} per uur`];
   if(c.uren) regels.push(`${CRM.euro(Math.round(marge * c.uren))} per week bij ${c.uren} uur`);
+  /* Het maand-equivalent van het uurloon zelf — voor het offergesprek:
+     een kandidaat denkt in "wat verdien ik per maand", de flexkaart
+     rekent in uren (Tjeerd, 22 aug 2026: "per uur en dan berekenen naar
+     maand"). 52/12 = gemiddeld 4,33 weken per maand. */
+  if(c.uren) regels.push(`kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand`);
   /* Wat levert deze plaatsing op tot de klant hem kosteloos mag overnemen?
      Dat is de horizon waarop je bij uitzenden stuurt (naam: Tjeerd, 7 aug
      2026). Zonder overnamegrens loopt het door en zeggen we dat ook. */

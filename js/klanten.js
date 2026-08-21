@@ -924,6 +924,7 @@ function kaart(mount, acties, naam){
               : notitiesBlokHtml()}
           ${gegevensHtml(k)}
           ${afspraakBlokHtml()}
+          ${caoBlokHtml(k)}
           ${salesModus(k.naam)
             ? ''
             : (CRM.contactKaart ? CRM.contactKaart.railHtml(k.naam) : contactBlokHtml())}
@@ -1223,6 +1224,38 @@ function afspraakBlokHtml(){
     <div class="card-b" id="af_body"></div></div>`;
 }
 
+/* ─── CAO-voorwaarden op de kaart ─────────────────────────────────
+   Staat er een CAO op de klant, dan horen de belangrijkste voorwaarden
+   meteen zichtbaar te zijn (Tjeerd, 22 aug 2026: "vrije dagen, ATV/ADV,
+   reiskosten — meteen te zien in de klantenkaart"). De cijfers komen
+   1-op-1 uit de Pronkert-brondata (CRM.CAO_DATA, js/kostprijs.js) — één
+   bron, niets zelf verzonnen. Wat de brondata níét kent (zoals een
+   reiskostenvergoeding) staat er ook niet: liever eerlijk afwezig dan
+   geraden. */
+function caoBlokHtml(k){
+  const cao = (CRM.CAO_DATA || []).find(x => x.naam === (k.cao || ''));
+  if(!cao) return '';
+  const rij = (lbl, val) => val === '' ? '' :
+    `<div class="kl-gg-rij"><span class="kl-gg-lbl">${h(lbl)}</span>
+      <span class="kl-gg-val">${val}</span></div>`;
+  const n = (x, eenheid='') => (x == null || x === 0) ? '' : `<span class="num">${h(x)}</span>${eenheid}`;
+  return `<div class="card kl-railkaart">
+    <div class="card-h"><div class="h2">CAO-voorwaarden</div><span class="spacer"></span>
+      <span class="meta trunc" style="max-width:150px" title="${h(cao.naam)}">${h(cao.naam)}</span></div>
+    <div class="card-b"><div class="kl-gg">
+      ${rij('Vakantiegeld', `<span class="num">${h(cao.vakantiegeld)}</span>%`)}
+      ${rij('Extra verlofdagen', n(cao.verlofdagen))}
+      ${rij('Extra feestdagen', n(cao.feestdagen))}
+      ${rij('ADV/ATV', cao.advDagen ? `<span class="num">${h(cao.advDagen)}</span> dgn · <span class="num">${h(cao.advPct)}</span>%` : '')}
+      ${rij('Eindejaarsuitkering', n(cao.eju, '%'))}
+      ${rij('Pensioen werkgever-extra', n(cao.pensioenExtra, '%'))}
+      ${rij('IKB', n(cao.ikb, '%'))}
+    </div>
+    ${cao.info ? `<p class="meta" style="margin:10px 0 0">${h(cao.info)}</p>` : ''}
+    <p class="meta" style="margin:10px 0 0">Uit de Pronkert-brondata — wat hier niet staat (bijv. reiskosten) kent die tool niet; leg dat vast in de accountnotitie.</p>
+    </div></div>`;
+}
+
 /* Alle afspraken van deze klant, nieuwste ingangsdatum eerst. */
 function afsprakenVan(naam){
   if(!feeAan()) return [];
@@ -1293,11 +1326,19 @@ function railAfspraak(mount, k){
   const blok = soort => {
     const ruw = perSoort[soort];
     const a = CRM.fee.normaliseer(ruw);
-    const verlopen = !CRM.fee.geldigOp(ruw, CRM.todayISO()) || !a.actief;
     const uitzend = a.soort === 'uitzenden';
     const bereik = uitzend ? factorBereik(a) : feeBereik(a);
+    /* Zeg wáárom hij niet loopt. "Loopt vandaag niet" zonder reden liet
+       je raden: staat het vinkje uit, of klopt de looptijd niet? Precies
+       dat overkwam Tjeerd (21 aug 2026: factor 2,35 ingevuld, melding
+       bleef staan terwijl de looptijd vandaag gewoon omvatte). */
+    const vandaag = CRM.todayISO();
+    const reden = !a.actief ? 'staat op niet-actief — zet het vinkje "Deze afspraak is actief" aan via Beheren'
+      : (a.ingang && vandaag < a.ingang) ? `gaat pas in op ${CRM.fmtDate(a.ingang)}`
+      : (a.einde && vandaag > a.einde)   ? `is verlopen op ${CRM.fmtDate(a.einde)} — leg de nieuwe voorwaarden vast`
+      : '';
     return `
-      ${verlopen ? '<div class="note warn kl-af-note">Deze afspraak loopt vandaag niet — leg de nieuwe voorwaarden vast.</div>' : ''}
+      ${reden ? `<div class="note warn kl-af-note">Deze afspraak ${h(reden)}.</div>` : ''}
       <div class="kl-af-soortkop label">${h(soortLbl(a.soort))}</div>
       <div class="kl-gg">
         ${rij(uitzend ? 'Factor' : 'Fee', bereik ? `<span class="num">${h(bereik)}</span>` : '')}
@@ -1727,13 +1768,17 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         dr.querySelector('#af_kp').hidden = !uitzend;
         dr.querySelectorAll('.kl-af-sec').forEach(sec => {
           const kop = sec.querySelector('.h2');
-          if(kop && /Grondslag|Facturatie en garantie|Voorbeeldberekening/.test(kop.textContent))
-            sec.hidden = uitzend && kop.textContent !== 'Facturatie en garantie';
+          if(kop && /Grondslag|Facturatie|Notitie \(facturatie|Voorbeeldberekening/.test(kop.textContent))
+            sec.hidden = uitzend && !/Facturatie|Notitie \(facturatie/.test(kop.textContent);
         });
-        /* Betaaltermijn geldt óók bij uitzenden; alleen de garantievelden
-           erin niet. Die twee demp je, in plaats van de hele sectie. */
-        const gs = dr.querySelector('#af_gs'), gm = dr.querySelector('#af_gm'), fm = dr.querySelector('#af_fm');
-        [gs, gm, fm].forEach(el => { if(el) el.closest('.f-row').hidden = uitzend; });
+        /* Bij uitzenden loopt facturatie én garantie volledig via Pronkert
+           (Tjeerd, 22 aug 2026) — dus ook de betaaltermijn weg; alleen de
+           notitie blijft. De sectiekop zegt dan waarom hij zo leeg is. */
+        const gs = dr.querySelector('#af_gs'), gm = dr.querySelector('#af_gm'),
+              fm = dr.querySelector('#af_fm'), bt = dr.querySelector('#af_bt');
+        [gs, gm, fm, bt].forEach(el => { if(el) el.closest('.f-row').hidden = uitzend; });
+        const fgKop = [...dr.querySelectorAll('.kl-af-sec .h2')].find(x => /Facturatie|Notitie/.test(x.textContent));
+        if(fgKop) fgKop.textContent = uitzend ? 'Notitie (facturatie en garantie lopen via Pronkert)' : 'Facturatie en garantie';
       };
 
       /* ── Dienstverleningsknoppen: geen exclusieve keuze ─────────
@@ -1743,7 +1788,9 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
          concept wisselt gewoon van soort, zodat je niets kwijtraakt. */
       const soortSeg = dr.querySelector('#af_soortseg');
       const tekenSoortSeg = () => {
-        soortSeg.innerHTML = CRM.fee.SOORTEN.map(s => {
+        /* Soorten met weg:true (detachering) niet meer aanbieden — tenzij
+           je juist zo'n oude afspraak aan het bewerken bent. */
+        soortSeg.innerHTML = CRM.fee.SOORTEN.filter(s => !s.weg || s.k === a.soort).map(s => {
           const loopt = perSoort[s.k] && String(perSoort[s.k].id) !== String(a.id);
           return `<button data-soort="${h(s.k)}"${s.k === a.soort ? ' class="on"' : ''}>${h(s.lbl)}${
             loopt ? ' <span class="kl-af-vinkje">✓</span>' : ''}</button>`;
@@ -1793,6 +1840,15 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
               <td class="num n">${h(factorTxt(r.verkoopfactorVoorstel))}×</td></tr>
           </tfoot></table></div>
           <p class="meta kl-af-waarom">Marge bij dit uurloon: ${h(CRM.euro(r.margeEurPerUur))}/u.</p>
+          ${(() => {
+            /* Wat levert dit op tót de kosteloze overname? Marge per uur ×
+               de overnamegrens uit het veld hieronder — dat is het bedrag
+               dat deze uitzendafspraak maximaal waard is voor de klant
+               hem gratis mag overnemen (Tjeerd, 22 aug 2026). */
+            const ovn = Number(dr.querySelector('#af_ovn').value);
+            return ovn > 0 ? `<p class="meta kl-af-waarom">Tot overname (<span class="num">${h(ovn)}</span> uur):
+              <b class="num">${h(CRM.euro(r.margeEurPerUur * ovn))}</b> marge.</p>` : '';
+          })()}
           <button type="button" class="btn sub sm" id="kp_gebruik">↳ Gebruik als standaardfactor</button>`;
         uit.querySelector('#kp_gebruik').onclick = () => {
           dr.querySelector('#af_std').value = r.verkoopfactorVoorstel.toFixed(2);
@@ -1800,7 +1856,7 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           CRM.toast('Standaardfactor ingevuld — controleer en sla op', 'ok');
         };
       }
-      ['#kp_cao','#kp_fase','#kp_loon'].forEach(sel => {
+      ['#kp_cao','#kp_fase','#kp_loon','#af_ovn'].forEach(sel => {
         const el = dr.querySelector(sel);
         el.addEventListener('input', kpBereken); el.addEventListener('change', kpBereken);
       });
@@ -4179,7 +4235,7 @@ function vacatureModal(k, v, opts){
         <div class="f-row"><label>Status</label><select id="v_status">
           ${VAC_STATUS.map(s=>`<option${(n.status||'Open')===s?' selected':''}>${s}</option>`).join('')}</select></div>
         <div class="f-row"><label>Type</label><select id="v_type">
-          ${['W&S','Flex','Detachering'].map(s=>`<option${(n.type||'W&S')===s?' selected':''}>${s}</option>`).join('')}</select></div>
+          ${['W&S','Flex'].concat((n.type||'')==='Detachering'?['Detachering']:[]).map(s=>`<option${(n.type||'W&S')===s?' selected':''}>${s}</option>`).join('')}</select></div>
         <div class="f-row"><label>Open sinds</label><input type="date" id="v_sinds" value="${h(String(n.aangemaakt||'').slice(0,10))}"></div>
         <div class="f-row"><label>Maandloon vanaf</label><input type="number" id="v_smin" value="${n.sal_min==null?'':n.sal_min}"></div>
         <div class="f-row"><label>Maandloon tot</label><input type="number" id="v_smax" value="${n.sal_max==null?'':n.sal_max}"></div>
