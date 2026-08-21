@@ -1676,6 +1676,8 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
               <select id="kp_fase">${CRM.CONTRACTFASE.map(f=>`<option value="${h(f.naam)}"${f.naam==='Fase 1/2'?' selected':''}>${h(f.naam)}</option>`).join('')}</select></div>
             <div class="f-row"><label for="kp_loon">Bruto uurloon</label>
               <input type="number" id="kp_loon" min="0" step="0.05" placeholder="Bijv. 16,50"></div>
+            <div class="f-row"><label for="kp_vf">Verkoopfactor <span class="meta">(leeg = kostprijs + 0,6)</span></label>
+              <input type="number" id="kp_vf" min="0" step="0.05" placeholder="Bijv. 2,35"></div>
           </div>
           <div id="kp_uit"></div>
         </div></div>
@@ -1831,15 +1833,24 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         const r = CRM.kostprijsfactor(cao, fase, loon);
         if(!r){ uit.innerHTML = '<p class="meta kl-af-leeg">Kan hier niet mee rekenen — controleer CAO, fase en uurloon.</p>'; return; }
         const factorTxt = n => n.toLocaleString('nl-NL', {minimumFractionDigits:4, maximumFractionDigits:4});
+        /* Eigen verkoopfactor ingevuld? Dan rekent alles daarmee — de
+           vaste +0,6 is het voorstel, niet de wet (Tjeerd, 22 aug 2026:
+           "ik wil ook zelf de verkoopfactor kunnen invullen en dat hij
+           het voor mij uitrekent"). Leeg veld = het voorstel. */
+        const eigenVf = Number(dr.querySelector('#kp_vf').value) || null;
+        const vf = eigenVf || r.verkoopfactorVoorstel;
+        const margeUur = (vf - r.kostprijsfactor) * loon;
         uit.innerHTML = `
           <div class="tblwrap"><table class="tbl kl-af-tbl"><tbody>
             <tr><td>Kostprijsfactor (Pronkert)</td><td class="num n">${h(factorTxt(r.kostprijsfactor))}×</td></tr>
             <tr><td>Kostprijs per uur</td><td class="num n">${h(CRM.euro(r.tariefKostprijs))}</td></tr>
           </tbody><tfoot>
-            <tr class="kl-af-fee"><td>Voorgestelde verkoopfactor <span class="meta">(kostprijs + 0,6)</span></td>
-              <td class="num n">${h(factorTxt(r.verkoopfactorVoorstel))}×</td></tr>
+            <tr class="kl-af-fee"><td>${eigenVf ? 'Jouw verkoopfactor' : 'Voorgestelde verkoopfactor <span class="meta">(kostprijs + 0,6)</span>'}</td>
+              <td class="num n">${h(factorTxt(vf))}×</td></tr>
           </tfoot></table></div>
-          <p class="meta kl-af-waarom">Marge bij dit uurloon: ${h(CRM.euro(r.margeEurPerUur))}/u.</p>
+          ${eigenVf && margeUur < 0 ? '<div class="note warn kl-af-note">Deze factor ligt ónder de kostprijs — elke gewerkte uur kost dan geld.</div>' : ''}
+          <p class="meta kl-af-waarom">Marge bij dit uurloon: ${h(CRM.euro(margeUur))}/u
+            (klanttarief ${h(CRM.euro(vf * loon))}/u)${eigenVf ? ` · verschil met kostprijs: ${h(factorTxt(vf - r.kostprijsfactor))} factorpunt` : ''}.</p>
           ${(() => {
             /* Wat levert dit op tót de kosteloze overname? Marge per uur ×
                de overnamegrens uit het veld hieronder — dat is het bedrag
@@ -1847,16 +1858,16 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
                hem gratis mag overnemen (Tjeerd, 22 aug 2026). */
             const ovn = Number(dr.querySelector('#af_ovn').value);
             return ovn > 0 ? `<p class="meta kl-af-waarom">Tot overname (<span class="num">${h(ovn)}</span> uur):
-              <b class="num">${h(CRM.euro(r.margeEurPerUur * ovn))}</b> marge.</p>` : '';
+              <b class="num">${h(CRM.euro(margeUur * ovn))}</b> marge.</p>` : '';
           })()}
           <button type="button" class="btn sub sm" id="kp_gebruik">↳ Gebruik als standaardfactor</button>`;
         uit.querySelector('#kp_gebruik').onclick = () => {
-          dr.querySelector('#af_std').value = r.verkoopfactorVoorstel.toFixed(2);
+          dr.querySelector('#af_std').value = vf.toFixed(2);
           voorbeeld();
           CRM.toast('Standaardfactor ingevuld — controleer en sla op', 'ok');
         };
       }
-      ['#kp_cao','#kp_fase','#kp_loon','#af_ovn'].forEach(sel => {
+      ['#kp_cao','#kp_fase','#kp_loon','#kp_vf','#af_ovn'].forEach(sel => {
         const el = dr.querySelector(sel);
         el.addEventListener('input', kpBereken); el.addEventListener('change', kpBereken);
       });
