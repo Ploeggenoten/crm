@@ -69,22 +69,20 @@
        na een herlaad terug: het is dan nog steeds niet gezien.
 
    ─── Keuze: broadcast, geen tabel ───────────────────────────────
-   Supabase Realtime kan twee dingen. Optie 1: de tabel `candidates` in
-   de publicatie hangen en op de wijziging luisteren. Dat is hier de
-   verkeerde route:
-     · schema.sql blok 9 zet realtime aan voor zes crm_*-tabellen;
-       `candidates` staat er bewust niet bij, en dat is niet aan deze
-       module om te veranderen;
-     · een rij-wijziging vertelt niet wie hem maakte, dus "binnengehaald
-       door" zou ontbreken — precies het stukje dat het nuttig maakt;
-     · elke sessie die de rij ziet moet dan zelf de oude fase kennen om
-       te weten of dit een nieuwe plaatsing is. Bij een herlaadbeurt
-       weet niemand dat, en dan knalt de confetti bij het opstarten.
-   Optie 2, en wat het geworden is: een eigen broadcast-kanaal
-   ('crm-feest'). Een gebeurtenis is dan precies wat hij is — iets wat
-   nu gebeurt — met alle tekst erin, zonder database, zonder migratie,
-   zonder geschiedenis die zich later alsnog kan afspelen. En omdat het
-   een eigen kanaal is hoeft er niets in js/core.js bij.
+   Supabase Realtime kan twee dingen, en sinds 21 aug 2026 gebruiken we
+   ze allebei. De hoofdroute is een eigen broadcast-kanaal ('crm-feest'):
+   een gebeurtenis is dan precies wat hij is — iets wat nu gebeurt — met
+   alle tekst erin (tellers uitgerekend door de afzender, "binnengehaald
+   door" erbij). Maar broadcast bereikt alleen wie op dat moment een
+   levende websocket heeft, en in de praktijk bleef hij weleens stil:
+   collega's zagen het feest pas na een refresh. Daarom luistert dit
+   kanaal er nu óók naar de rijwijziging op `candidates` zelf (die staat
+   sinds 14 aug in de realtime-publicatie — daardoor beweegt het bord
+   bij collega's al live mee, dus die route komt aantoonbaar aan). De
+   rij kent de doener niet, maar wél de AM (`rec`) — en dat is toch al
+   de naam die de eer krijgt. Dubbel of bij het opstarten vieren kan
+   niet: de drie regels hieronder gelden voor beide routes, en de
+   pg-route telt bovendien alleen een plaatsing van vandaag.
 
    ─── Drie regels tegen confetti op het verkeerde moment ─────────
    1. NIET DUBBEL. Elke gebeurtenis krijgt een eigen id. Wie hem zelf
@@ -1057,6 +1055,34 @@ function verbind(){
     kanaal.on('broadcast', {event:'getekend'}, bericht => {
       const ev = bericht && bericht.payload;
       if(ev && typeof ev === 'object' && !gezienHeeft(ev.id) && magVieren(ev)) vier(ev);
+    });
+    /* Vangnet naast de broadcast: de rijwijziging zelf. Sinds 14 aug 2026
+       staat `candidates` in de realtime-publicatie (daardoor beweegt het
+       bord bij collega's al live mee), en die route komt aantoonbaar aan
+       waar de broadcast in de praktijk weleens stil bleef — dan zag een
+       collega het feest pas na een handmatige refresh (Tjeerd, 21 aug
+       2026: "dit moet bij iedereen live zijn als die sleept").
+       Dubbel vieren kan niet: wie de broadcast wél ontving, wordt door
+       regel 3 van magVieren (zelfde kandidaat binnen tien minuten)
+       tegengehouden — net als de doener zelf, die lokaal al vierde.
+       Alleen een plaatsing van vandáág telt: een bewerking aan een oude
+       plaatsing (loon aanvullen) is geen nieuw feest. */
+    kanaal.on('postgres_changes', {event:'UPDATE', schema:'public', table:'candidates'}, p => {
+      const r = p && p.new;
+      if(!r || !CRM.PLACED || !CRM.PLACED.includes(r.fase)) return;
+      if(!r.geplaatst_op || String(r.geplaatst_op) < (CRM.todayISO ? CRM.todayISO() : '')) return;
+      if(gezienHeeft(r.id)) return;
+      const am = String(r.rec || '').trim();
+      const t  = tellers(String(r.id), null, am);
+      const ev = {
+        eid: 'pg' + Date.now() + Math.random().toString(36).slice(2),
+        ts:  Date.now(), id: String(r.id),
+        kandidaat: r.naam || '', klant: r.klant || '', functie: r.functie || '',
+        am, door: am, maand: t.maand, totaal: t.totaal, amTotaal: t.amTotaal,
+        fee: feeVan(String(r.id))
+      };
+      ev.ck = kandSleutel(ev);
+      if(magVieren(ev)) vier(ev);
     });
     kanaal.subscribe(status => { verbonden = (status === 'SUBSCRIBED'); });
   }catch(e){
