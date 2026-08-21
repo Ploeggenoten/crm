@@ -941,6 +941,16 @@ function teamStats(f){
       const d = daysBetween(c.since, c.geplaatst_op); if(d != null){ ttfSom += d; ttfN++; }
     }
   }
+  /* ZZP-klusmarge telt mee in de omzet van de AM op wiens naam de ZZP'er
+     staat (regel Tjeerd, 21 aug 2026): gewerkt × marge per afgeronde klus,
+     geplande klussen nog niet — alleen wat er echt verdiend is. */
+  for(const k of (CRM.state.klussen || [])){
+    if(k.gewerkt == null || k.gewerkt === '' || k.marge == null) continue;
+    const c = CRM.kandidaat(k.kandidaat_id);
+    const rec = (String((c && c.rec)||'Samen').trim()) || 'Samen';
+    per[rec] = per[rec] || {n:0, omzet:0};
+    per[rec].omzet += getal(k.gewerkt) * getal(k.marge);
+  }
   return {recruiters: Object.entries(per).map(([rec,v]) => ({rec, ...v})).sort((a,b) => b.omzet - a.omzet),
           timeToFill: ttfN ? Math.round(ttfSom/ttfN) : null};
 }
@@ -1008,6 +1018,21 @@ function stopSignalen(f){
 function acties(f){
   const t = todayISO(), warnDgn = Sn(f,'waarschuwing_dgn',21);
   const list = [];
+  /* ZZP-klussen waarvan de laatste werkdag is geweest en die nog niet
+     gefactureerd zijn — dé afspraak uit het ZZP-ontwerp (Tjeerd, 21 aug
+     2026): na de laatste werkdag automatisch een melding dat er
+     gefactureerd mag worden. De klussen komen uit crm_klussen (CRM.state);
+     afvinken gebeurt hier, met de knop in de actielijst. */
+  for(const kz of (CRM.state.klussen || [])){
+    if(kz.gefactureerd || !kz.eind || kz.eind >= t) continue;
+    const kand = CRM.kandidaat(kz.kandidaat_id);
+    const som = (kz.gewerkt != null && kz.gewerkt !== '' && kz.marge != null)
+      ? getal(kz.gewerkt) * getal(kz.marge) : null;
+    list.push({soort:'zzp_factuur', urg:2, zzp:kz,
+      txt:`ZZP-klus van ${(kand && kand.naam) || '?'} bij ${kz.klant || '—'} is afgelopen — marge factureren${
+        som != null ? `: ${eur(som)} (${kz.gewerkt} ${kz.eenheid==='uur'?'uur':'dgn'} × ${eur(getal(kz.marge))})`
+                    : ' (vul eerst de gewerkte ' + (kz.eenheid==='uur'?'uren':'dagen') + ' in op de kandidaatkaart)'}`});
+  }
   for(const p of f.placements){
     if(p.concept){
       list.push({soort:'concept', urg:2, p,
@@ -1885,9 +1910,10 @@ function tabVandaag(el, f){
   const brief = cfoBriefing(f);
 
   const ICO = {factureren:'🧾', te_laat:'⏰', vervanging:'🔁', stop:'✂️', afronden:'📥',
-               stop_signaal:'🛑', saldo:'🏦', flex:'🟢', concept:'✨', terug:'↩️'};
+               stop_signaal:'🛑', saldo:'🏦', flex:'🟢', concept:'✨', terug:'↩️', zzp_factuur:'🧾'};
   const actieItems = lijst.map(a => {
     const wie = a.p ? `${a.p.kandidaat||'—'} · ${a.p.klant||'—'}`
+              : a.zzp ? 'ZZP · ' + (a.zzp.klant||'—')
               : (a.c ? `${a.c.naam||'—'} · ${a.c.klant||''}` : 'Algemeen');
     const bedrag = a.i ? ` · ${eur(bedragVan(a.i))} excl. btw` : '';
     return {ico: ICO[a.soort] || '•', titel: a.txt, tekst: wie + bedrag,
@@ -1938,8 +1964,11 @@ function tabVandaag(el, f){
 
     <div class="grid c2">
       ${kaart(`Acties (${lijst.length})`,
-        actieItems.length ? CRM.ui.tijdlijn(actieItems)
-                          : `<div class="note ok">Geen openstaande acties — alles is bij.</div>`,
+        (actieItems.length ? CRM.ui.tijdlijn(actieItems)
+                          : `<div class="note ok">Geen openstaande acties — alles is bij.</div>`)
+        + lijst.filter(a => a.soort === 'zzp_factuur' && a.zzp.gewerkt != null && a.zzp.gewerkt !== '' && a.zzp.marge != null)
+            .map(a => `<div class="fin-pot"><span>ZZP-marge ${H((CRM.kandidaat(a.zzp.kandidaat_id)||{}).naam||'?')} · ${H(a.zzp.klant||'—')}</span>
+              <button type="button" class="btn ghost sm" data-zzpfact="${H(String(a.zzp.id))}">✓ Gefactureerd</button></div>`).join(''),
         {acties: lijst.length ? finLink('vandaag','Afhandelen in de finance-app') : ''})}
       <div class="stack">
         ${kaart('Belastingpotjes', potHtml, {voet:'Btw = ontvangen btw dit kwartaal − voorbelasting. Vpb = percentage over de winst YTD (waar mogelijk verankerd op Yuki). Doorgeefgeld: reserveer het apart.'})}
@@ -1959,6 +1988,21 @@ function tabVandaag(el, f){
       Alle cijfers hier komen uit dezelfde formules als de finance-app. Bewerken —
       facturen afvinken, fee bevestigen, instellingen — doe je in de finance-app.
     </div>`;
+
+  /* ZZP-klus als gefactureerd afvinken — dit is de ene bewerking die hier
+     wél mag: de klus leeft in crm_klussen (CRM-data, team-RLS), niet in de
+     fin_*-tabellen van de finance-app. */
+  el.querySelectorAll('[data-zzpfact]').forEach(b => b.onclick = async () => {
+    const kz = (CRM.state.klussen||[]).find(x => String(x.id) === b.dataset.zzpfact);
+    if(!kz) return;
+    kz.gefactureerd = true;
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('crm_klussen').update({gefactureerd:true}).eq('id', kz.id);
+      if(error){ kz.gefactureerd = false; return CRM.fout('Afvinken mislukt', error); }
+    }
+    CRM.toast('Klus staat op gefactureerd','ok');
+    tabVandaag(el, f);
+  });
 }
 
 /* Kandidaten die deze maand tekenden/stopten, geteld zoals het bord. */
@@ -3867,5 +3911,33 @@ CRM.registerModule('finance', {
     toon();
   }
 });
+
+/* ─── Flex-overname voor de eindkalender (js/plaatsingen.js) ─────
+   Restant-uren tot kosteloze overname per actieve flexkracht, plus de
+   verwachte datum (restant ÷ uren per week). Rekenwerk blijft hier — één
+   plek (flexPlBerekening); Plaatsingen vraagt het alleen op. Alleen voor
+   de eigenaar: de fin_*-tabellen zijn met RLS afgeschermd, dus bij een
+   teamlid komt er gewoon niets terug. */
+CRM.finFlexOvername = async () => {
+  if(!CRM.canSeeMoney || !CRM.canSeeMoney()) return [];
+  const [fp, fa, st] = await Promise.all([
+    veiligQ('fin_flex_plaatsingen','id'),
+    veiligQ('fin_flex_afspraken','klant'),
+    veiligQ('fin_settings', null)
+  ]);
+  if(!fp) return [];
+  const f = { flexPl: fp, flexAfspr: fa||[],
+              settings: Object.fromEntries((st||[]).map(r=>[r.key, r.value])) };
+  return fp.filter(x => !x.gestopt_op && !x.concept).map(x => {
+    const b = flexPlBerekening(f, x);
+    if(b.resterendUren == null || b.resterendUren <= 0) return null;
+    const wkn = b.urenPw ? b.resterendUren / b.urenPw : null;
+    let verwacht = null;
+    if(wkn != null){ const d = new Date(); d.setDate(d.getDate() + Math.round(wkn*7));
+      verwacht = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    return {naam: x.naam || '?', klant: x.klant || '', resterendUren: b.resterendUren,
+            overnameUren: b.overnameUren, verwacht};
+  }).filter(Boolean).sort((a,b) => String(a.verwacht||'9999').localeCompare(String(b.verwacht||'9999')));
+};
 
 })();

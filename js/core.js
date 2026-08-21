@@ -467,7 +467,11 @@ const TABEL_QUERY = {
      liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
   crm_afspraken:     {veld:'afspraken',     q:() => sb.from('crm_afspraken').select('*')},
   crm_trajecten:     {veld:'trajecten',     q:() => sb.from('crm_trajecten').select('*').order('op',{ascending:false})},
-  crm_sollicitaties: {veld:'sollicitaties', q:() => sb.from('crm_sollicitaties').select('*').order('op',{ascending:false})}
+  crm_sollicitaties: {veld:'sollicitaties', q:() => sb.from('crm_sollicitaties').select('*').order('op',{ascending:false})},
+  /* ZZP-klussen (21 aug 2026): elke klus van een ZZP-kandidaat een eigen
+     rij. Bestaat de tabel nog niet (migratie niet gedraaid), dan zet
+     veilig() een lege lijst neer en degradeert de ZZP-weergave netjes. */
+  crm_klussen:       {veld:'klussen',       q:() => sb.from('crm_klussen').select('*').order('start')}
 };
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;

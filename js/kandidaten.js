@@ -447,7 +447,10 @@ async function bewaarKandidaat(c){
      opslag vanuit dit bestand langskomt — en niet bij de knop, want dan
      mis je de routes die er later bij komen. Zie js/traject.js. */
   const oud = CRM.state.cands.find(r => String(r.id) === String(c.id));
-  if(oud && oud.klant && c.klant !== oud.klant && CRM.traject &&
+  /* Bij een ZZP'er is een klantwissel gewoon de volgende klus, geen
+     verloren traject — de poortvraag zou daar elke planning onderbreken
+     (ZZP-ontwerp, 21 aug 2026). */
+  if(oud && oud.klant && c.klant !== oud.klant && String(c.type||'') !== 'ZZP' && CRM.traject &&
      !await CRM.traject.poort(oud, {klant:c.klant, vacatureId:c.vacatureId, functie:c.functie})) return;
   const rij = CRM.candToRow(c);
   const i = CRM.state.cands.findIndex(r => String(r.id) === String(c.id));
@@ -927,7 +930,7 @@ const naamVan = id => {
   return k ? k.naam + (k.klant ? ' ('+k.klant+')' : '') : (id ? String(id) : '');
 };
 const TRAJECT_VELDEN = [
-  {k:'type',         lbl:'Type',            t:'select', opts:['','W&S','Flex']},
+  {k:'type',         lbl:'Type',            t:'select', opts:['','W&S','Flex','ZZP']},
   {k:'datum',        lbl:'Afspraakdatum',   t:'date',   toon:v => CRM.fmtDate(v)},
   {k:'tijd',         lbl:'Tijd',            t:'time'},
   {k:'volgendeActie',lbl:'Volgende actie',  t:'text'},
@@ -1045,6 +1048,7 @@ function kaart(mount, acties, id){
             <div class="tabs" id="c_tabs">${tabsHtml(c)}</div>
             <div id="c_tabinhoud"></div>
           </div>
+          ${klussenHtml(c)}
           ${trajectHtml(c)}
           <!-- De O&O-sessie staat pal onder Traject: een sessie ís een stap
                in dat traject (hij vervangt voorstellen, het eerste én het
@@ -1192,7 +1196,178 @@ function kaart(mount, acties, id){
     const v = CRM.state.vacs.find(v => String(v.id) === b.dataset.voorstel);
     if(v) voorstellen(c, v);
   });
+  bindKlussen(mount, c);
   tabInhoud(mount, c);
+}
+
+/* ─── Klussen (alleen type ZZP) ───────────────────────────────────
+   Een ZZP'er is één kaart; elke klus een rij in crm_klussen. Ploeggenoten
+   factureert alleen de marge — vast bedrag per gewerkte dag of per uur,
+   verschilt per klant. Eén klus tegelijk (serieel); een overlappende
+   planning wordt geweigerd. Een klus van minstens zes maanden mag als
+   plaatsing tellen — met één bevestigingsklik, nooit ongemerkt.
+   (Ontwerp met Tjeerd, 21 aug 2026.) */
+const isZZP = c => String(c.type||'') === 'ZZP';
+const klussenVan = c => (CRM.state.klussen||[])
+  .filter(k => String(k.kandidaat_id) === String(c.id))
+  .sort((a,b) => String(b.start).localeCompare(String(a.start)));
+function klusStatus(k){
+  const nu = CRM.todayISO();
+  if(k.gefactureerd) return {lbl:'gefactureerd', cls:''};
+  if(k.eind < nu)    return {lbl:'te factureren', cls:'amber'};
+  if(k.start <= nu)  return {lbl:'loopt', cls:'green'};
+  return {lbl:'gepland', cls:'blue'};
+}
+const margeLbl = k => k.marge != null && k.marge !== ''
+  ? CRM.euro(k.marge) + '/' + (k.eenheid === 'uur' ? 'uur' : 'dag') : '—';
+function klussenHtml(c){
+  if(!isZZP(c)) return '';
+  const ks = klussenVan(c);
+  return `<div class="card">
+    <div class="card-h"><div class="h2">Klussen</div><span class="spacer"></span>
+      <button class="btn sm" id="kz_nieuw">+ Klus plannen</button></div>
+    <div class="card-b">${ks.length ? `<div class="kd-velden">${ks.map(k => {
+      const st = klusStatus(k);
+      const klaarTeMelden = !k.gefactureerd && k.eind < CRM.todayISO() && (k.gewerkt == null || k.gewerkt === '');
+      return `<div class="kd-veld" style="align-items:center">
+        <span class="label">${h(CRM.fmtDateShort(k.start))} – ${h(CRM.fmtDateShort(k.eind))}</span>
+        <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>${h(k.klant||'—')}</b>${k.functie?` · ${h(k.functie)}`:''}
+          · <span class="num">${margeLbl(k)}</span>
+          ${k.gewerkt != null && k.gewerkt !== '' ? ` · <span class="num">${h(k.gewerkt)} ${k.eenheid==='uur'?'uur':'dgn'} gewerkt</span>` : ''}
+          <span class="chip ${st.cls}">${st.lbl}</span>
+          ${klaarTeMelden ? `<button type="button" class="btn ghost sm" data-klusaf="${h(k.id)}">Uren invullen</button>` : ''}
+          <button type="button" class="lnk tl-bewerk" data-klusbewerk="${h(k.id)}">bewerk</button>
+        </span></div>`;
+    }).join('')}</div>`
+    : '<p class="meta" style="margin:0">Nog geen klus gepland. Plan de eerste — de kaart-klant loopt vanzelf mee.</p>'}
+    ${CRM.state._mist_crm_klussen ? '<div class="note warn" style="margin-top:10px">De tabel <code>crm_klussen</code> bestaat nog niet — draai eerst supabase/nog-te-draaien.sql (blok 12).</div>' : ''}
+    </div></div>`;
+}
+function bindKlussen(mount, c){
+  if(!isZZP(c)) return;
+  const el = mount.querySelector('#kz_nieuw');
+  if(el) el.onclick = () => klusModal(c, null);
+  mount.querySelectorAll('[data-klusbewerk]').forEach(b => b.onclick = () =>
+    klusModal(c, (CRM.state.klussen||[]).find(k => String(k.id) === b.dataset.klusbewerk)));
+  mount.querySelectorAll('[data-klusaf]').forEach(b => b.onclick = () =>
+    klusAfronden(c, (CRM.state.klussen||[]).find(k => String(k.id) === b.dataset.klusaf)));
+}
+async function bewaarKlus(rij, nieuw){
+  if(nieuw) (CRM.state.klussen || (CRM.state.klussen = [])).push(rij);
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('crm_klussen').upsert(rij);
+    if(error){
+      if(nieuw) CRM.state.klussen = CRM.state.klussen.filter(x => x.id !== rij.id);
+      CRM.fout('Klus opslaan mislukt', error); return false;
+    }
+  }
+  return true;
+}
+function klusModal(c, klus){
+  const k = klus || {id:CRM.uid(), kandidaat_id:String(c.id), klant:'', functie:c.functie||'',
+    start:CRM.todayISO(), eind:'', marge:null, eenheid:'dag', gewerkt:null,
+    gefactureerd:false, telt_als_plaatsing:false, notitie:'', door:CRM.me()};
+  const nieuw = !klus;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${nieuw?'Klus plannen':'Klus bewerken'}</div>
+      <p class="sub" style="margin:6px 0 0">${h(c.naam)} · ZZP</p></div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label>Klant</label>
+          <input type="text" id="kz_klant" value="${h(k.klant)}" list="kz_klanten">
+          <datalist id="kz_klanten">${(CRM.state.clients||[]).map(x=>`<option value="${h(x.naam)}">`).join('')}</datalist></div>
+        <div class="f-row"><label>Functie</label><input type="text" id="kz_functie" value="${h(k.functie||'')}"></div>
+        <div class="f-row"><label>Startdatum</label><input type="date" id="kz_start" value="${h(k.start||'')}"></div>
+        <div class="f-row"><label>Einddatum <span class="meta">verplicht</span></label>
+          <input type="date" id="kz_eind" value="${h(k.eind||'')}"></div>
+        <div class="f-row"><label>Marge</label><input type="number" id="kz_marge" step="0.01" min="0" value="${k.marge!=null?h(k.marge):''}" placeholder="70"></div>
+        <div class="f-row"><label>Per</label><select id="kz_eenheid">
+          <option value="dag"${k.eenheid!=='uur'?' selected':''}>gewerkte dag</option>
+          <option value="uur"${k.eenheid==='uur'?' selected':''}>gewerkt uur</option></select></div>
+      </div>
+      <div class="f-row"><label>Notitie</label><textarea id="kz_note" rows="2">${h(k.notitie||'')}</textarea></div>
+      <div class="note err" id="kz_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="kz_ok">${nieuw?'Plannen':'Opslaan'}</button></div>`, {onOpen(m){
+    CRM.dictee?.hang(m.querySelector('#kz_note'));
+    m.querySelector('#kz_ok').onclick = async () => {
+      const err = m.querySelector('#kz_err');
+      const toon = t => { err.style.display=''; err.textContent = t; };
+      const klant = m.querySelector('#kz_klant').value.trim();
+      const start = m.querySelector('#kz_start').value, eind = m.querySelector('#kz_eind').value;
+      if(!klant) return toon('Vul de klant in.');
+      if(!start || !eind) return toon('Start- én einddatum zijn verplicht — een klus heeft tegenwoordig altijd een einddatum.');
+      if(eind < start) return toon('De einddatum ligt vóór de startdatum.');
+      /* Eén klus tegelijk: overlap met een andere klus van deze ZZP'er is
+         geen planning maar een dubbele boeking. */
+      const botst = klussenVan(c).find(x => x.id !== k.id && !(eind < x.start || start > x.eind));
+      if(botst) return toon(`Overlapt met de klus bij ${botst.klant||'?'} (${CRM.fmtDateShort(botst.start)} – ${CRM.fmtDateShort(botst.eind)}) — één klus tegelijk.`);
+      const rij = Object.assign({}, k, {klant, start, eind,
+        functie: m.querySelector('#kz_functie').value.trim(),
+        marge: m.querySelector('#kz_marge').value === '' ? null : Number(m.querySelector('#kz_marge').value),
+        eenheid: m.querySelector('#kz_eenheid').value,
+        notitie: m.querySelector('#kz_note').value.trim()});
+      if(!await bewaarKlus(rij, nieuw)) return;
+      if(!nieuw) Object.assign(k, rij);
+      CRM.modal.close();
+      CRM.toast(nieuw?'Klus gepland':'Klus bijgewerkt','ok');
+      /* De kaart-klant loopt mee met de actuele klus — zonder
+         trajectpoortvraag (bewaarKandidaat slaat die voor ZZP over). */
+      if(rij.start <= CRM.todayISO() && rij.eind >= CRM.todayISO() && c.klant !== klant){
+        c.klant = klant;
+        await bewaarKandidaat(c);
+      }
+      CRM.render();
+      /* Zes maanden of langer? Dan mag hij als plaatsing tellen — regel
+         Tjeerd. Voorstel + bevestiging, nooit stilzwijgend. */
+      const mnd = (new Date(eind) - new Date(start)) / (1000*60*60*24*30.44);
+      if(mnd >= 6 && !rij.telt_als_plaatsing && !CRM.PLACED.includes(CRM.faseNorm(c.fase))){
+        const ja = await CRM.bevestig('Deze klus duurt ' + Math.round(mnd) + ' maanden — als plaatsing tellen?',
+          'Een ZZP-klus van minstens 6 maanden telt als plaatsing in het jaardoel (zoals een flexplaatsing: het aantal telt mee, het geld loopt via de marge). De kaart gaat dan op Contract getekend met vandaag als tekendatum.',
+          {knop:'Ja, telt als plaatsing'});
+        if(ja){
+          rij.telt_als_plaatsing = true;
+          await bewaarKlus(rij, false);
+          c.fase = 'Contract getekend'; c.geplaatstOp = CRM.todayISO(); c.start = start; c.klant = klant;
+          await bewaarKandidaat(c);
+          CRM.render();
+        }
+      }
+    };
+  }});
+}
+/* Uren of dagen invullen ná de laatste werkdag, van het urenbriefje van de
+   klant. De factuur zelf vink je af in Finance — hier leg je alleen vast
+   wat er gewerkt is. */
+function klusAfronden(c, k){
+  if(!k) return;
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Klus afronden</div>
+      <p class="sub" style="margin:6px 0 0">${h(k.klant)} · ${h(CRM.fmtDateShort(k.start))} – ${h(CRM.fmtDateShort(k.eind))}</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label>Gewerkt (${k.eenheid==='uur'?'uren':'dagen'}, van het urenbriefje van de klant)</label>
+        <input type="number" id="kz_gewerkt" step="0.5" min="0" value="${k.gewerkt!=null?h(k.gewerkt):''}"></div>
+      ${k.marge!=null?`<p class="meta" id="kz_som" style="margin:0"></p>`:''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="kz_afok">Vastleggen</button></div>`, {onOpen(m){
+    const inp = m.querySelector('#kz_gewerkt'); setTimeout(()=>inp.focus(),60);
+    const som = m.querySelector('#kz_som');
+    const rekent = () => { if(som && inp.value !== '')
+      som.textContent = 'Te factureren: ' + CRM.euro(Number(inp.value) * Number(k.marge)) + ' (' + inp.value + ' × ' + CRM.euro(k.marge) + ')'; };
+    inp.oninput = rekent; rekent();
+    m.querySelector('#kz_afok').onclick = async () => {
+      if(inp.value === '') return;
+      const rij = Object.assign({}, k, {gewerkt: Number(inp.value)});
+      if(!await bewaarKlus(rij, false)) return;
+      Object.assign(k, rij);
+      CRM.modal.close();
+      CRM.toast('Vastgelegd — de klus staat nu als te factureren in Finance','ok');
+      CRM.render();
+    };
+  }});
 }
 
 /* ─── Mailen met de kandidaat ─────────────────────────────────────

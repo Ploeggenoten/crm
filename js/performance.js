@@ -226,7 +226,7 @@ function blokBasis(){
   const geenSince  = cs.filter(c => !kort(c.since));
   const geenBron   = cs.filter(c => !(c.bron||'').trim());
   const plaatsingen= cs.filter(isPlaatsing);
-  const zonderLoon = plaatsingen.filter(c => (c.type||'W&S') !== 'Flex' && !c.vervangt && c.maandloon == null);
+  const zonderLoon = plaatsingen.filter(c => !['Flex','ZZP'].includes(c.type||'W&S') && !c.vervangt && c.maandloon == null);
 
   const punten = [];
   if(geenFase.length) punten.push([geenFase.length,
@@ -674,8 +674,9 @@ function blokNaar(){
 
 /* ═══ 1. PLAATSINGEN ═════════════════════════════════════════════ */
 function blokPlaatsingen(p, D){
-  const ws   = D.getekend.filter(c => (c.type||'W&S')!=='Flex').length;
+  const ws   = D.getekend.filter(c => !['Flex','ZZP'].includes(c.type||'W&S')).length;
   const flex = D.getekend.filter(c => c.type==='Flex').length;
+  const zzp  = D.getekend.filter(c => c.type==='ZZP').length;
   const duur = D.cohort.filter(duurzaam);
   const gestoptCohort = D.cohort.filter(c => CRM.faseIs(c.fase,'Gestopt'));
   const tijdTotStop = gestoptCohort.map(c => dagenTussen(c.geplaatstOp, c.gestoptOp)).filter(n => n!=null && n>=0);
@@ -696,7 +697,7 @@ function blokPlaatsingen(p, D){
       <span class="meta">${h(p.lbl)} · ${h(bereikLbl(p))}</span></div>
     <div class="grid c4">
       ${CRM.ui.kpi('Getekend', `<span class="num">${D.getekend.length}</span>`,
-        `<span class="meta num">${ws} W&amp;S · ${flex} Flex</span>${sGet?`<div class="pf-spark">${sGet}</div>`:''}`, 'accent')}
+        `<span class="meta num">${ws} W&amp;S · ${flex} Flex${zzp?` · ${zzp} ZZP`:''}</span>${sGet?`<div class="pf-spark">${sGet}</div>`:''}`, 'accent')}
       ${CRM.ui.kpi('Netto', CRM.plusMin(D.netto),
         `<span class="meta num">${D.getekend.length} getekend − ${D.gestopt.length} gestopt</span>${sNet?`<div class="pf-spark">${sNet}</div>`:''}`)}
       ${CRM.ui.kpi('Duurzaam', D.cohort.length ? pctTxt(duur.length, D.cohort.length) : '<span class="meta">—</span>',
@@ -1076,12 +1077,13 @@ const isPlaatsing = c => !!kort(c.geplaatstOp) &&
    er niet is. */
 const FEE_REDEN = {
   flex:         'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee',
+  zzp:          'ZZP — de opbrengst loopt via de klus-marge, niet via een W&S-fee',
   vervanging:   'Kosteloze vervanging onder de garantie — levert geen nieuwe fee op',
   geenafspraak: 'Geen commerciële afspraak vastgelegd bij deze klant',
   geenloon:     'Bruto maandsalaris ontbreekt bij de kandidaat',
   geenpct:      'De afspraak noemt geen percentage voor deze functie'
 };
-const FEE_KORT = {flex:'flex', vervanging:'vervanging', geenafspraak:'geen afspraak',
+const FEE_KORT = {flex:'flex', zzp:'zzp', vervanging:'vervanging', geenafspraak:'geen afspraak',
                   geenloon:'geen maandloon', geenpct:'geen percentage'};
 
 /* De fee van één plaatsing, of de reden dat die er niet is.
@@ -1091,6 +1093,7 @@ const FEE_KORT = {flex:'flex', vervanging:'vervanging', geenafspraak:'geen afspr
 function feeVan(c){
   if(!CRM.magOpbrengstZien() || !CRM.fee) return {bedrag:null, reden:'geenafspraak'};
   if((c.type||'W&S') === 'Flex')      return {bedrag:null, reden:'flex'};
+  if((c.type||'') === 'ZZP')          return {bedrag:null, reden:'zzp'};
   if(c.vervangt)                      return {bedrag:null, reden:'vervanging'};
   const a = CRM.fee.voorKlant(c.klant, c.geplaatstOp);
   if(!a)                              return {bedrag:null, reden:'geenafspraak'};
@@ -1778,7 +1781,7 @@ const posNum = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : nul
 /* Conversie uit de eigen CRM-data: van afgeronde W&S-trajecten, welk deel
    van de voorstellen en gesprekken werd uiteindelijk een plaatsing? */
 function conversies(){
-  const cs = CRM.kandidaten().filter(c => (c.type||'W&S') !== 'Flex');
+  const cs = CRM.kandidaten().filter(c => !['Flex','ZZP'].includes(c.type||'W&S'));
   const klaar = cs.filter(c => CRM.faseIn(c.fase, CRM.DONE) || c.geplaatstOp);
   const vg = klaar.filter(c => verste(c) >= fIdx('Voorgesteld')).length;
   const gs = klaar.filter(c => verste(c) >= fIdx('Eerste gesprek')).length;

@@ -541,6 +541,39 @@ begin
            for all to authenticated using (true) with check (true)';
 end $$;
 
+-- ZZP-klussen (21 aug 2026). Een ZZP'er is één kandidaatkaart (type 'ZZP');
+-- elke klus is een eigen rij. Ploeggenoten factureert alleen de MARGE
+-- (vast bedrag per gewerkte dag of per uur, verschilt per klant — bij
+-- Tegelhuis €70/dag), dus er is geen omzet/inkoop-administratie nodig.
+-- `eind` is verplicht: klussen hebben tegenwoordig wettelijk een
+-- einddatum. `gewerkt` vul je bij het afronden in, van het urenbriefje
+-- van de klant. `telt_als_plaatsing` wordt alleen waar bij een klus van
+-- minstens 6 maanden, na expliciete bevestiging (regel Tjeerd).
+create table if not exists crm_klussen (
+  id            text primary key,
+  kandidaat_id  text not null,
+  klant         text default '',
+  functie       text default '',
+  start         date not null,
+  eind          date not null,
+  marge         numeric,                    -- bedrag per eenheid
+  eenheid       text default 'dag',         -- 'dag' of 'uur'
+  gewerkt       numeric,                    -- dagen of uren, bij afronden
+  gefactureerd  boolean default false,
+  telt_als_plaatsing boolean default false,
+  notitie       text default '',
+  door          text default '',
+  created_at    timestamptz default now()
+);
+create index if not exists crm_klussen_kand on crm_klussen(kandidaat_id);
+do $$
+begin
+  execute 'alter table crm_klussen enable row level security';
+  execute 'drop policy if exists klussen_team on crm_klussen';
+  execute 'create policy klussen_team on crm_klussen
+           for all to authenticated using (true) with check (true)';
+end $$;
+
 -- ─── 8. RLS: team mag alles in crm_* lezen/schrijven ──────────
 -- (Financiële cijfers zitten in fin_*-tabellen; die houden hun eigen,
 --  striktere policies waardoor alleen Tjeerd erbij kan.)
@@ -596,7 +629,7 @@ begin
     'candidates','clients','vacatures','profiles','targets',
     'crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen',
     'crm_contacten','crm_meldingen','oo_sessions','crm_afspraken','crm_trajecten',
-    'crm_sollicitaties','crm_stukken','crm_leadradar','crm_verwijderingen',
+    'crm_sollicitaties','crm_stukken','crm_leadradar','crm_verwijderingen','crm_klussen',
     'mkt_ad_besluiten','mkt_kanalen','mkt_meta_betaald','mkt_meta_stats','mkt_posts','mkt_taken',
     'fin_installments','fin_placements','fin_settings'
   ]

@@ -76,3 +76,41 @@ alter table oo_sessions add column if not exists tijd            text default ''
 -- kolom slaat de CAO nergens permanent op.
 -- ═══════════════════════════════════════════════════════════════
 alter table clients add column if not exists cao text default '';
+
+-- ═══════════════════════════════════════════════════════════════
+-- BLOK 13 — ZZP-klussen (21 aug 2026)
+--
+-- Een ZZP'er is één kandidaatkaart (type 'ZZP'); elke klus een eigen rij.
+-- Ploeggenoten factureert alleen de marge (vast bedrag per gewerkte dag of
+-- per uur, verschilt per klant). Einddatum verplicht (regelgeving).
+-- Volledige uitleg bij de tabel in schema.sql. Veilig om opnieuw te draaien.
+-- ═══════════════════════════════════════════════════════════════
+create table if not exists crm_klussen (
+  id            text primary key,
+  kandidaat_id  text not null,
+  klant         text default '',
+  functie       text default '',
+  start         date not null,
+  eind          date not null,
+  marge         numeric,
+  eenheid       text default 'dag',
+  gewerkt       numeric,
+  gefactureerd  boolean default false,
+  telt_als_plaatsing boolean default false,
+  notitie       text default '',
+  door          text default '',
+  created_at    timestamptz default now()
+);
+create index if not exists crm_klussen_kand on crm_klussen(kandidaat_id);
+do $$
+begin
+  execute 'alter table crm_klussen enable row level security';
+  execute 'drop policy if exists klussen_team on crm_klussen';
+  execute 'create policy klussen_team on crm_klussen
+           for all to authenticated using (true) with check (true)';
+end $$;
+do $$
+begin
+  execute 'alter publication supabase_realtime add table crm_klussen';
+exception when duplicate_object then null;
+end $$;

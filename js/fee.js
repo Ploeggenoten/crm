@@ -430,6 +430,8 @@ function geenFeeReden(kandidaat){
   const c = kandidaat || {};
   if(String(c.type || 'W&S') === 'Flex')
     return 'Flex-plaatsing — de opbrengst loopt via gewerkte uren, niet via een W&S-fee.';
+  if(String(c.type || '') === 'ZZP')
+    return 'ZZP — de opbrengst loopt via de klus-marge (gewerkte dagen of uren), niet via een W&S-fee.';
   if(c.vervangt)
     return 'Kosteloze vervanging binnen de garantie — de fee is al gefactureerd op de voorganger.';
   return '';

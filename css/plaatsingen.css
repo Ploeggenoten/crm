@@ -305,3 +305,14 @@
      horizontaal binnen .tblwrap in plaats van de cellen te persen. */
   .pl-tbl{table-layout:auto;min-width:900px}
 }
+
+/* ─── ZZP-blok: wie werkt, wat loopt af, eindkalender ──────────── */
+.pl-zzpgroep + .pl-zzpgroep{margin-top:14px}
+.pl-zzprij{
+  display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;
+  background:none;border:none;border-bottom:1px solid var(--line);
+  padding:7px 2px;cursor:pointer;font-family:var(--body);font-size:13.5px;color:var(--txt);
+}
+.pl-zzprij:last-child{border-bottom:none}
+button.pl-zzprij:hover{background:var(--card-2)}
+.pl-zzprij b{font-weight:600;flex:0 1 auto;min-width:0}

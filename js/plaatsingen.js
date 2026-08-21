@@ -974,6 +974,8 @@ function teken(){
       ${rGeen.map(rijHtml).join('')}
     </div></section>`;
 
+  uit += zzpBlokHtml();
+
   uit += `<section class="card pl-sec pl-tl">
     <div class="card-h"><div class="h2">${S.weergave === 'tabel' ? 'Plaatsingen' : 'Tijdlijn op ' + h(AS_LABEL())}</div>
       <span class="chip num">${alles.length}</span>
@@ -1010,6 +1012,86 @@ function teken(){
       ? h(T.zichtbaar + ' van ' + T.totaal + ' plaatsingen in beeld — ' + weg.join(' · ') + ' niet.' + plichtNoot)
       : h(T.totaal + ' plaatsingen, allemaal in beeld.' + plichtNoot)
   }</p>`);
+
+  /* ZZP-blok: doorklikken naar de kaart, en de flex-overnameprojectie
+     asynchroon erbij (die leest fin_*-tabellen, alleen voor de eigenaar). */
+  wrap.querySelectorAll('[data-zzpkand]').forEach(b => b.onclick = () =>
+    CRM.ga('kandidaten', {id: b.dataset.zzpkand}));
+  vulOvername();
+}
+
+/* ─── ZZP: wie werkt er, wat loopt af, wat moet gefactureerd ─────
+   Een ZZP'er is één kandidaatkaart (type 'ZZP'); zijn klussen staan in
+   crm_klussen (gepland op de kaart). Dit blok is het overzicht: loopt nu,
+   loopt binnenkort af, te factureren (laatste werkdag geweest, nog geen
+   factuur) en beschikbaar. Plus de eindkalender: wanneer stoppen mensen —
+   klus-eindes voor iedereen, de flex-overnamemomenten alleen voor wie
+   geldcijfers mag zien (de restant-uren komen uit de fin_*-tabellen).
+   (Ontwerp met Tjeerd, 21 aug 2026.) */
+function zzpBlokHtml(){
+  const zzpers = CRM.kandidaten().filter(c => String(c.type||'') === 'ZZP');
+  const klussen = CRM.state.klussen || [];
+  if(!zzpers.length && !klussen.length) return '';
+  const nu = CRM.todayISO();
+  const naam = id => (CRM.kandidaat(id)||{}).naam || '?';
+  const over14 = (() => { const d = new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })();
+  const loopt   = klussen.filter(k => k.start <= nu && k.eind >= nu);
+  const looptAf = loopt.filter(k => k.eind <= over14);
+  const teFact  = klussen.filter(k => !k.gefactureerd && k.eind < nu);
+  const bezet   = new Set(loopt.map(k => String(k.kandidaat_id)));
+  const vrij    = zzpers.filter(c => !bezet.has(String(c.id)));
+  const rij = (k, extra='') => `<button type="button" class="pl-zzprij" data-zzpkand="${h(String(k.kandidaat_id))}">
+    <b>${h(naam(k.kandidaat_id))}</b>
+    <span class="meta">${h(k.klant||'—')}${k.functie?' · '+h(k.functie):''}</span>
+    <span class="meta num" style="margin-left:auto">${h(CRM.fmtDateShort(k.start))} – ${h(CRM.fmtDateShort(k.eind))}${extra}</span>
+  </button>`;
+  const groep = (titel, inhoud, chip='') => inhoud ? `<div class="pl-zzpgroep">
+    <div class="label" style="margin:0 0 6px">${h(titel)}${chip}</div>${inhoud}</div>` : '';
+  return `<section class="card pl-sec">
+    <div class="card-h"><div class="h2">ZZP</div>
+      <span class="chip num">${zzpers.length}</span><span class="spacer"></span>
+      <span class="meta">klussen plan je op de kandidaatkaart</span></div>
+    <div class="card-b">
+      ${teFact.length ? `<div class="note warn" style="margin:0 0 14px"><b>${teFact.length} klus${teFact.length===1?'':'sen'} te factureren</b> — de laatste werkdag is geweest. ${teFact.map(k => `${h(naam(k.kandidaat_id))} bij ${h(k.klant)}${k.gewerkt!=null&&k.marge!=null?` (${h(k.gewerkt)} ${k.eenheid==='uur'?'uur':'dgn'} × ${h(CRM.euro(k.marge))} = <b>${h(CRM.euro(k.gewerkt*k.marge))}</b>)`:' — vul eerst de gewerkte '+(k.eenheid==='uur'?'uren':'dagen')+' in op de kaart'}`).join(' · ')}. Afvinken gebeurt in Finance.</div>` : ''}
+      ${groep('Loopt nu', loopt.filter(k=>!looptAf.includes(k)).map(k=>rij(k)).join(''))}
+      ${groep('Loopt binnen 2 weken af', looptAf.map(k=>rij(k)).join(''))}
+      ${groep('Beschikbaar', vrij.map(c => `<button type="button" class="pl-zzprij" data-zzpkand="${h(String(c.id))}">
+        <b>${h(c.naam)}</b><span class="meta">${h(c.functie||'—')}</span>
+        <span class="meta" style="margin-left:auto">geen klus gepland</span></button>`).join(''))}
+      ${!loopt.length && !vrij.length && !teFact.length ? '<p class="meta" style="margin:0">Nog geen ZZP’ers — zet het type op de kandidaatkaart op ZZP en plan daar een klus.</p>' : ''}
+      ${eindkalenderHtml(klussen)}
+      ${CRM.canSeeMoney && CRM.canSeeMoney() ? '<div id="pl_overname"></div>' : ''}
+    </div></section>`;
+}
+/* De eindkalender: aflopende klussen de komende twee maanden, op datum. */
+function eindkalenderHtml(klussen){
+  const nu = CRM.todayISO();
+  const tot = (() => { const d = new Date(); d.setDate(d.getDate()+62); return d.toISOString().slice(0,10); })();
+  const naam = id => (CRM.kandidaat(id)||{}).naam || '?';
+  const eindes = klussen.filter(k => k.eind >= nu && k.eind <= tot)
+    .sort((a,b) => String(a.eind).localeCompare(String(b.eind)));
+  if(!eindes.length) return '';
+  return `<div class="pl-zzpgroep"><div class="label" style="margin:14px 0 6px">Eindkalender — komende 2 maanden</div>
+    ${eindes.map(k => `<div class="pl-zzprij" style="cursor:default">
+      <span class="num" style="min-width:74px">${h(CRM.fmtDateShort(k.eind))}</span>
+      <b>${h(naam(k.kandidaat_id))}</b><span class="meta">klus bij ${h(k.klant||'—')} loopt af</span>
+    </div>`).join('')}</div>`;
+}
+/* Flex-overname: verwachte datum waarop de overname-uren vol zijn —
+   restant-uren ÷ uren per week. Rekenwerk en gegevens komen uit de
+   Finance-module (CRM.finFlexOvername, alleen voor de eigenaar). */
+async function vulOvername(){
+  const el = M.mount && M.mount.querySelector('#pl_overname');
+  if(!el || !CRM.finFlexOvername) return;
+  try{
+    const rijen = await CRM.finFlexOvername();
+    if(!rijen || !rijen.length){ el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="pl-zzpgroep"><div class="label" style="margin:14px 0 6px">Flex — op weg naar kosteloze overname <span class="meta">(alleen voor jou)</span></div>
+      ${rijen.map(r => `<div class="pl-zzprij" style="cursor:default">
+        <span class="num" style="min-width:74px">${r.verwacht ? '± ' + h(CRM.fmtDateShort(r.verwacht)) : '—'}</span>
+        <b>${h(r.naam)}</b><span class="meta">${h(r.klant||'')} · nog <span class="num">${h(Math.round(r.resterendUren))}</span> uur van de ${h(Math.round(r.overnameUren))}</span>
+      </div>`).join('')}</div>`;
+  }catch(e){ console.warn('flex-overname', e); }
 }
 
 /* Wat de periodefilter nu betekent, in gewone taal. */
