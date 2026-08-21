@@ -1081,10 +1081,11 @@ const FEE_REDEN = {
   vervanging:   'Kosteloze vervanging onder de garantie — levert geen nieuwe fee op',
   geenafspraak: 'Geen commerciële afspraak vastgelegd bij deze klant',
   geenloon:     'Bruto maandsalaris ontbreekt bij de kandidaat',
-  geenpct:      'De afspraak noemt geen percentage voor deze functie'
+  geenpct:      'De afspraak noemt geen percentage voor deze functie',
+  onwaarschijnlijk: 'De berekende fee is onwaarschijnlijk hoog (boven €50.000) — controleer het bruto maandloon op de kandidaatkaart; daar staat vermoedelijk een jaarsalaris of een tikfout'
 };
 const FEE_KORT = {flex:'flex', zzp:'zzp', vervanging:'vervanging', geenafspraak:'geen afspraak',
-                  geenloon:'geen maandloon', geenpct:'geen percentage'};
+                  geenloon:'geen maandloon', geenpct:'geen percentage', onwaarschijnlijk:'fee onwaarschijnlijk — check maandloon'};
 
 /* De fee van één plaatsing, of de reden dat die er niet is.
    bereken() zoekt de afspraak bewust niet zelf op — die halen we er eerst
@@ -1100,8 +1101,18 @@ function feeVan(c){
   const r = CRM.fee.bereken(c, a);
   if(r.fee == null)
     return {bedrag:null, reden: (r.grondslag && !r.grondslag.compleet) ? 'geenloon' : 'geenpct'};
+  /* Vangnet tegen datavervuiling: één kandidaat met een jaarsalaris in
+     het maandloonveld gaf een "fee" van €1,8 miljoen die élk cijfer op
+     dit scherm sloopte — 99% klantconcentratie, gemiddelde fee €610k,
+     projectie €45 mln (Carwash Easy and Go, 21 aug 2026). Zo'n bedrag
+     is in deze markt geen fee maar een tikfout: hij telt nergens meer
+     mee en krijgt een eigen, zichtbare reden zodat je het maandloon
+     op de kaart herstelt in plaats van gekke totalen te lezen. */
+  if(r.fee > FEE_MAX) return {bedrag:null, reden:'onwaarschijnlijk'};
   return {bedrag:r.fee, reden:''};
 }
+/* Ruim boven de hoogste echte fee (~€17k) maar ver onder elke tikfout. */
+const FEE_MAX = 50000;
 
 /* Wanneer is deze kandidaat bij de klant voorgesteld? Dat staat NIET als
    veld in de database; we lezen de eerste historieregel van de fase
