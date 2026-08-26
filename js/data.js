@@ -242,7 +242,16 @@ CRM.kandidatenVan = klant => CRM.kandidaten().filter(c => c.klant === klant);
 
 /* Klantnamen normaliseren (bord ↔ sales ↔ finance schrijven ze net anders). */
 CRM.normKlant = s => String(s||'').toLowerCase().replace(/\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?)\b/g,'').replace(/[^a-z0-9]/g,'').trim();
-CRM.zelfdeKlant = (a,b) => { const x=CRM.normKlant(a), y=CRM.normKlant(b); return !!x && !!y && (x===y || x.slice(0,8)===y.slice(0,8)); };
+/* Alleen een EXACTE match na normaliseren telt als "dezelfde klant". Er stond
+   hier ooit ook een fallback op de eerste 8 tekens van de genormaliseerde
+   naam (voor typefouten/afwijkende spelling), maar die vond "Vreugdenhil
+   Dairy Foods" en "Vreugdenhil Youngplants" — twee aparte bedrijven onder
+   dezelfde familienaam — ten onrechte dezelfde klant, waardoor doorschieten
+   van de tweede stilzwijgend aan de eerste koppelde (Tjeerd, 25 aug 2026).
+   Twee losse klanten die niet automatisch matchen is een zichtbaar ongemak
+   (los aanmaken); twee losse klanten die wél automatisch samensmelten is een
+   stille datafout. Dat laatste weegt zwaarder. */
+CRM.zelfdeKlant = (a,b) => { const x=CRM.normKlant(a), y=CRM.normKlant(b); return !!x && !!y && x===y; };
 
 /* Actieve klanten = klanten met een lopende of geplaatste kandidaat, of
    handmatig als klant gemarkeerd in de clients-tabel. */

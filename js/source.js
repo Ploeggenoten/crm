@@ -231,10 +231,11 @@ async function laadOmzet(){
   return _omzet;
 }
 /* Klantnamen bucketen zoals CRM.zelfdeKlant ze vergelijkt (genormaliseerd,
-   eerste 8 tekens). Zo kunnen we één keer tellen in plaats van per klant
-   opnieuw door alle rijen te lopen — bij 222 klanten × 349 kandidaten
-   scheelt dat tienduizenden vergelijkingen per hertekening. */
-const klantSleutel = naam => { const x = CRM.normKlant(naam); return x ? x.slice(0,8) : ''; };
+   volledige naam — geen prefix meer, zie CRM.zelfdeKlant in data.js). Zo
+   kunnen we één keer tellen in plaats van per klant opnieuw door alle rijen
+   te lopen — bij 222 klanten × 349 kandidaten scheelt dat tienduizenden
+   vergelijkingen per hertekening. */
+const klantSleutel = naam => CRM.normKlant(naam);
 function telPerKlant(rijen, naamVan, waardeVan){
   const tel = {};
   rijen.forEach(r => { const k = klantSleutel(naamVan(r)); if(k) tel[k] = (tel[k]||0) + waardeVan(r); });

@@ -472,6 +472,31 @@ begin
            with check (auth.jwt()->>''email'' = ''tjeerd@ploeggenoten.nl'')';
 end $$;
 
+-- ─── 7f. Campagne → klant, handmatige koppeling ───────────────
+-- De automatische matching (js/marketing.js, koppelCampagne) herkent een
+-- klant in de Meta-campagnenaam, of anders aan de leads die diezelfde naam
+-- dragen. Lukt geen van beide — een afkorting, een andere spelling, een
+-- campagnenaam die niets met de klantnaam gemeen heeft — dan bleef het
+-- bedrag zichtbaar "niet toegewezen" staan (bewust: nooit een gokje). Deze
+-- tabel is het overschrijfmechanisme: één keer een campagnenaam aan een
+-- klant koppelen, en dat geldt met terugwerkende kracht voor alle maanden
+-- én voor toekomstige dagregels met dezelfde campagnenaam. Weegt zwaarder
+-- dan de automatische matching (Tjeerd, 25 aug 2026: "de advertentienaam
+-- kan vaak anders lijken dan de klantnaam").
+create table if not exists mkt_campagne_klant (
+  campagne    text primary key,        -- exacte campagnenaam uit mkt_meta_stats
+  klant       text not null,           -- klantnaam, overgenomen uit clients.naam
+  door        text default '',
+  aangemaakt  timestamptz default now()
+);
+
+do $$
+begin
+  execute 'alter table mkt_campagne_klant enable row level security';
+  execute 'drop policy if exists team_all on mkt_campagne_klant';
+  execute 'create policy team_all on mkt_campagne_klant for all to authenticated using (true) with check (true)';
+end $$;
+
 -- ─── 7e. Afgesloten trajecten (js/traject.js) ─────────────────
 -- Eén kandidaat heeft één veld `klant`. Stel je dezelfde persoon bij een
 -- tweede klant voor, dan wordt de eerste overschreven en raakt die klant
@@ -630,7 +655,7 @@ begin
     'crm_leads','crm_activiteiten','crm_taken','crm_documenten','crm_kansen',
     'crm_contacten','crm_meldingen','oo_sessions','crm_afspraken','crm_trajecten',
     'crm_sollicitaties','crm_stukken','crm_leadradar','crm_verwijderingen','crm_klussen',
-    'mkt_ad_besluiten','mkt_kanalen','mkt_meta_betaald','mkt_meta_stats','mkt_posts','mkt_taken',
+    'mkt_ad_besluiten','mkt_kanalen','mkt_meta_betaald','mkt_meta_stats','mkt_posts','mkt_taken','mkt_campagne_klant',
     'fin_installments','fin_placements','fin_settings'
   ]
   loop

@@ -48,7 +48,7 @@
 
   const M = {
     geladen:false, bezig:null,      // bezig = de lopende laad-belofte
-    meta:[], besluiten:[], posts:[], kanalen:[], taken:[], betaald:[],
+    meta:[], besluiten:[], posts:[], kanalen:[], taken:[], betaald:[], campKlant:[],
     metaFout:null, postsFout:null, kanalenFout:null, takenFout:null, betaaldFout:null, isDemo:false,
     tab:'prestatie', periode:30,
     /* Prestatie-filters. `periode` is het venster in dagen (0 = alles),
@@ -220,13 +220,18 @@
          herkent en wegschrijft — één getal per maand, leesbaar voor het hele
          team. De banktransacties zelf (fin_bank_tx en alle andere fin_-tabellen)
          raken we niet aan en mogen we ook niet lezen; die blijven bij Finance. */
-      const [a,b,c,d,e,f] = await Promise.all([
+      const [a,b,c,d,e,f,g] = await Promise.all([
         veilig(CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000)),
         veilig(CRM.sb.from('mkt_ad_besluiten').select('*').order('created_at',{ascending:false})),
         veilig(CRM.sb.from('mkt_posts').select('*')),
         veilig(CRM.sb.from('mkt_kanalen').select('*').order('volgorde')),
         veilig(CRM.sb.from('mkt_taken').select('*').order('datum').order('created_at')),
-        veilig(CRM.sb.from('mkt_meta_betaald').select('*').order('maand',{ascending:false}))
+        veilig(CRM.sb.from('mkt_meta_betaald').select('*').order('maand',{ascending:false})),
+        /* Handmatige overschrijving voor campagnes die de automatische
+           matching niet herkent (koppelCampagne in ketenData) — zie
+           schema.sql 7f. Ontbreekt de tabel nog (migratie niet gedraaid),
+           dan degradeert de app netjes: gewoon geen overschrijvingen. */
+        veilig(CRM.sb.from('mkt_campagne_klant').select('*'))
       ]);
       M.meta = a.rows; M.metaFout = a.fout;
       M.besluiten = b.rows;
@@ -234,6 +239,7 @@
       M.kanalen = d.rows; M.kanalenFout = d.fout;
       M.taken = e.rows; M.takenFout = e.fout;
       M.betaald = f.rows; M.betaaldFout = f.fout;
+      M.campKlant = g.rows;
       M.geladen = true;
       telBadge();
     })();
@@ -623,13 +629,20 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       }
       return best;
     };
+    /* Handmatige koppeling (mkt_campagne_klant) — weegt zwaarder dan de
+       automatische matching hieronder: Tjeerd/Bryan zei het expliciet, dus
+       daar twijfelen we niet meer over. Sleutel = exacte campagnenaam. */
+    const overrideKlant = new Map((M.campKlant||[]).map(r => [r.campagne, r.klant]));
     const campCache = new Map();
     const koppelCampagne = naam => {
       if(campCache.has(naam)) return campCache.get(naam);
       const ck = fKey(naam);
       let uit = {naam, kkey:'', klant:'', hoe:'niet'};
-      const treffer = klantInNaam(naam);
-      if(treffer){
+      const handmatig = overrideKlant.get(naam);
+      const treffer = handmatig ? kKey(handmatig) : klantInNaam(naam);
+      if(handmatig){
+        uit = {naam, kkey:treffer, klant:handmatig, hoe:'handmatig'};
+      }else if(treffer){
         uit = {naam, kkey:treffer, klant:klantNaam.get(treffer), hoe:'naam'};
       }else{
         const viaLead = perCampLead.get(ck);
@@ -977,6 +990,35 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     teken();
   }
 
+  /* Campagne handmatig aan een klant koppelen — zie schema.sql 7f. Geldt
+     met terugwerkende kracht: M._idx wordt geleegd zodat ketenData()
+     opnieuw rekent en de overschrijving meteen in élke maand doorwerkt,
+     niet alleen in nieuwe dagregels. */
+  async function campagneKoppel(campagne, klant){
+    if(!klant){
+      const oud = M.campKlant;
+      M.campKlant = M.campKlant.filter(r => r.campagne !== campagne);
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('mkt_campagne_klant').delete().eq('campagne', campagne);
+        if(error){ M.campKlant = oud; CRM.fout('Loskoppelen mislukt', error); return; }
+      }
+      M._idx = null; CRM.toast(`${campagne} weer losgekoppeld`, 'ok'); teken(); return;
+    }
+    const rij = {campagne, klant, door:CRM.me()};
+    const oud = M.campKlant;
+    M.campKlant = [...M.campKlant.filter(r => r.campagne !== campagne), rij];
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('mkt_campagne_klant').upsert(rij);
+      if(error){
+        M.campKlant = oud;
+        CRM.fout('Campagne koppelen mislukt', error); teken(); return;
+      }
+    }
+    M._idx = null;
+    CRM.toast(`${campagne} → ${klant}`, 'ok');
+    teken();
+  }
+
   /* ═══ 5d. WAT WERKT — leren van je eigen cijfers ══════════════ */
   const gem = a => a.length ? a.reduce((x,y) => x+y, 0) / a.length : 0;
   function watWerkt(){
@@ -1199,6 +1241,9 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     });
     sorteer('data-ks', M.kSort);
     sorteer('data-vs', M.vSort);
+    CRM.$$('[data-koppelcamp]', root).forEach(sel => sel.onchange = () => {
+      if(sel.value) campagneKoppel(sel.dataset.koppelcamp, sel.value);
+    });
     const uitlegKnop = root.querySelector('#mkt_uitleg');
     if(uitlegKnop) uitlegKnop.onclick = () => { M.uitleg = !M.uitleg; teken(); };
 
@@ -2154,6 +2199,23 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
           ${r.leadZonderKlant ? `<span class="chip amber" style="margin-left:6px">lead zonder klant</span>` : ''}
           ${!perKlant && r.losseSet ? `<span class="chip" style="margin-left:6px">advertentieset zonder vacature</span>` : ''}
           ${(() => {
+            /* Zonder klant én we tonen de klantentabel: elke campagne krijgt
+               hier een eigen koppel-select. Dat is de handmatige overschrijving
+               (mkt_campagne_klant) — voor als de naam te veel afwijkt om
+               automatisch te herkennen (Tjeerd, 25 aug 2026). */
+            if(perKlant && r.geenKlant){
+              const klanten = [...D.klantNaam.values()].sort((a,b) => a.localeCompare(b,'nl'));
+              return `<div class="rowsub" style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+                ${[...r.campagnes].sort((a,b) => a.localeCompare(b,'nl')).map(c => `
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span>${h(c)}</span>
+                    <select data-koppelcamp="${h(c)}" style="font-size:12px">
+                      <option value="">Koppel aan klant…</option>
+                      ${klanten.map(k => `<option value="${h(k)}">${h(k)}</option>`).join('')}
+                    </select>
+                  </div>`).join('')}
+              </div>`;
+            }
             const onder = perKlant
               ? (r.campagnes.size ? [...r.campagnes].join(' · ') : 'geen campagne gevonden')
               : r.label;
