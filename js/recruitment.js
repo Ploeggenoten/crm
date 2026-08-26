@@ -907,7 +907,7 @@ function rijHtml(l){
     <td><span class="rc-prio" title="Prioriteit ${h(l.prioriteit||'onbekend')}" style="background:${prioKleur(l.prioriteit)}"></span></td>
     <td>
       <div class="rc-naam">${h(leadNaam(l))}</div>
-      <div class="rowsub">${h(l.woonplaats||'—')}${l.cv?' · cv':''}${
+      <div class="rowsub">${h(l.woonplaats||'—')}${(l.cv||l.cv_url)?' · cv':''}${
         dub > 1 ? ` · <span class="rc-dub" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">${dub}× in de lijst</span>` : ''}${
         ken.kands.length ? ` · <span class="rc-dub" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>` : ''}</div>
     </td>
@@ -1592,6 +1592,7 @@ function wegwerkModus(status){
                  <button class="btn ghost sm" id="ww_koppel" style="margin-left:8px">Koppelen</button>`}</span></div>
           ${l.kwalificatie ? `<div class="rc-kv"><span class="label">Kwalificatie</span><span>${h(l.kwalificatie)}</span></div>` : ''}
           ${l.agent_notitie ? `<div class="rc-kv"><span class="label">Agent</span><span>${h(l.agent_notitie)}</span></div>` : ''}
+          ${l.cv_url ? `<div class="rc-kv"><span class="label">CV</span><span><a href="${h(l.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : ''}
           ${bel || contact ? `<div class="rc-kv"><span class="label">Eerder</span><span>${
             bel ? bel + '× gebeld' : ''}${bel && contact ? ' · ' : ''}${
             contact ? 'laatste contact ' + h(CRM.geleden(contact) || CRM.fmtDate(contact)) : ''}</span></div>` : ''}
@@ -1752,12 +1753,16 @@ function qaHtml(antwoorden){
 function cvHtml(lead){
   const cv = lead.cv;
   const bestand = CRM.cvParse ? CRM.cvParse.bestandHtml(lead) : '';
-  if(!cv) return `<p class="meta" style="margin:0">Nog geen cv gekoppeld.</p>`;
+  /* Een cv dat de WhatsApp-bot aanleverde is een link (cv_url), geen geparsed
+     bestand. Die moet altijd te openen zijn — ook naast een geparsed cv, want
+     het origineel zegt meer dan de samenvatting. */
+  const link = lead.cv_url ? `<div class="rc-kv"><span class="label">Bestand</span><span><a href="${h(lead.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : '';
+  if(!cv) return link || `<p class="meta" style="margin:0">Nog geen cv gekoppeld.</p>`;
   const lijst = (t, arr) => (arr && arr.length)
     ? `<div class="rc-kv"><span class="label">${h(t)}</span><div class="row tight">${arr.map(x=>`<span class="chip">${h(x)}</span>`).join('')}</div></div>` : '';
   const opl = Array.isArray(cv.opleidingen) ? cv.opleidingen : [];
   return `
-    ${bestand}
+    ${bestand}${link}
     ${cv.functie ? `<div class="rc-kv"><span class="label">Functie</span><span>${h(cv.functie)}</span></div>` : ''}
     ${cv.ervaringJaren ? `<div class="rc-kv"><span class="label">Ervaring</span><span class="num">${h(cv.ervaringJaren)} jaar</span></div>` : ''}
     ${lijst('Talen', cv.talen)}
