@@ -195,6 +195,11 @@ const uurGeleden = iso => {
 };
 /* Alleen kleuren uit :root — geen losse hexcodes in een module. */
 const prioKleur = p => ({Hoog:'var(--red)', Midden:'var(--amber)', Laag:'var(--muted)'})[p] || 'var(--line-2)';
+/* De score (0–100) die de WhatsApp-agent meegeeft. Eén plek voor de
+   kleurgrenzen: het getal staat in de rij, de belronde én het paneel, en
+   drie losse kopieën van dezelfde grens lopen vroeg of laat uit elkaar —
+   dan zegt het ene scherm "groen" en het andere niets. */
+const scoreKlas = s => s >= 70 ? 'green' : s >= 45 ? 'amber' : '';
 
 /* ─── Vacaturekoppeling ───────────────────────────────────────────
    Hierop leunt de hele marketingmeting: leads per plaatsing, per klant
@@ -543,8 +548,24 @@ function leadsGefilterd(negeerStatus){
       if(!hooi.includes(q) && (!telNorm(q) || telNorm(l.telefoon).indexOf(telNorm(q)) !== 0)) return false;
     }
     return true;
-  }).sort((a,b) => String(b.binnen_op||'').localeCompare(String(a.binnen_op||'')));
+  }).sort((a,b) => prioRang(a) - prioRang(b)
+                || String(b.binnen_op||'').localeCompare(String(a.binnen_op||'')));
 }
+/* Eerst prioriteit, dan binnenkomst. De WhatsApp-agent geeft leads een
+   prioriteit mee; wie op Hoog binnenkomt is al gekwalificeerd en hoort
+   bovenaan de lijst — ook (juist) achter het filter "Van mij", waar de AM
+   zijn eigen belwerk pakt. Zonder deze voorrang zakt zo'n lead onder elke
+   nieuwere Laag-reactie weg.
+   Alleen het openstaande werk krijgt de voorrang: een afgesloten lead die
+   ooit Hoog was zou anders eeuwig bovenaan het totaaloverzicht plakken.
+   Leads zonder prioriteit (import, formulier, handmatig) houden onderling
+   gewoon nieuwste-eerst — de sortering is stabiel, dus voor hen verandert
+   er niets. De belronde en de kolom 'Nieuw' op het bord sorteren daarna
+   bewust opnieuw op oudste-eerst: daar is de volgorde "wie wacht het
+   langst", en die afweging blijft daar gelden. */
+const PRIO_RANG = {Hoog:0, Midden:1, Laag:2};
+const prioRang = l => (CRM.LEAD_OPEN.includes(l.status) && PRIO_RANG[l.prioriteit] != null)
+  ? PRIO_RANG[l.prioriteit] : 3;
 /* Oudste eerst — de volgorde waarin je ze wegwerkt. */
 const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
 
@@ -919,7 +940,7 @@ function rijHtml(l){
     <td><span class="chip">${h(l.bron||'—')}</span>${l.campagne?`<div class="rowsub trunc" style="max-width:118px">${h(l.campagne)}</div>`:''}</td>
     <td>${vacCelHtml(l, v)}</td>
     <td>
-      ${l.score != null ? `<span class="chip ${l.score>=70?'green':l.score>=45?'amber':''} num">${h(l.score)}</span>` : ''}
+      ${l.score != null ? `<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent — prioriteit ${h(l.prioriteit||'onbekend')}">${h(l.score)}</span>` : ''}
       <div class="rowsub trunc" style="max-width:150px">${h(l.kwalificatie||'')}</div>
     </td>
     <td>
@@ -1273,7 +1294,9 @@ function leadKaartHtml(l){
   if(l.bron) chips.push(`<span class="chip">${h(l.bron)}</span>`);
   if(l.woonplaats) chips.push(`<span class="chip" title="Woonplaats">${h(l.woonplaats)}</span>`);
   if(!v) chips.push(`<span class="chip amber" title="${vacWeg(l)?'De gekoppelde vacature bestaat niet meer':'Nog niet aan een vacature gekoppeld'}">${vacWeg(l)?'vacature weg':'geen vacature'}</span>`);
-  if(l.cv) chips.push(`<span class="chip">cv</span>`);
+  /* Een cv is er ook als de WhatsApp-bot alleen een link (cv_url) aanleverde —
+     zelfde regel als in de rij, anders lijkt een botlead cv-loos op het bord. */
+  if(l.cv || l.cv_url) chips.push(`<span class="chip">cv</span>`);
   if(bel) chips.push(`<span class="chip num" title="Belpogingen">${bel}× gebeld</span>`);
   if(dub > 1) chips.push(`<span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst">${dub}× in de lijst</span>`);
   if(ken.kands.length) chips.push(`<span class="chip purple" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>`);
@@ -1556,6 +1579,7 @@ function wegwerkModus(status){
     const dub = ken.leads.length + 1;
     const st = stilstand(l);
     const wa = waLink(l.telefoon);
+    const qa = qaHtml(l.antwoorden);
     const pct = Math.round(i / stapel.length * 100);
     box.innerHTML = `
       <div class="modal-h">
@@ -1572,11 +1596,16 @@ function wegwerkModus(status){
             <div class="sub">${h(l.woonplaats || 'woonplaats onbekend')} · ${h(l.bron || 'onbekende bron')}${
               l.campagne ? ' · ' + h(l.campagne) : ''}</div>
           </div>
+          <div class="row tight" style="justify-content:flex-end">
+          ${/* Het oordeel van de WhatsApp-agent, vóór je belt: wie een 85
+               aan de lijn krijgt voert een ander gesprek dan bij een 30. */
+            l.score != null ? `<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent — prioriteit ${h(l.prioriteit||'onbekend')}">${h(l.score)}</span>` : ''}
           ${status === 'Nieuw'
             ? `<span class="chip ${ouderdomKlas(dg)} num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${
                 dg == null ? 'datum onbekend' : dg === 0 ? 'vandaag binnen' : dg + ' dag' + (dg===1?'':'en') + ' op Nieuw'}</span>`
             : st ? `<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`
             : `<span class="chip num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op)||'—')} in het systeem</span>`}
+          </div>
         </div>
         <div class="rc-wwbel">
           ${l.telefoon
@@ -1601,6 +1630,10 @@ function wegwerkModus(status){
             ken.kands.length ? `${dub > 1 ? '<br>' : ''}Er is al een kandidaatkaart: ${
               ken.kands.map(c => h(eerderTekst(c))).join(' · ')}. Ga na of dit dezelfde persoon is voordat je opnieuw begint.` : ''}</span></div>` : ''}
         </div>
+        ${/* Wat de bot allemaal al vroeg (vervoer, ploegen, beschikbaarheid) is
+             precies wat je aan de telefoon wilt kunnen naslaan — maar de ronde
+             moet licht blijven, dus ingeklapt tot je het nodig hebt. */
+          qa ? `<details class="rc-wwqa"><summary>Antwoorden van de WhatsApp-agent</summary>${qa}</details>` : ''}
         <div class="f-row" style="margin-top:14px"><label for="ww_note">Notitie (optioneel)</label>
           <input type="text" id="ww_note" placeholder="Bijv. belt maandag terug">
           <span class="hint">Terwijl je hier typt werken de cijfertoetsen niet — Enter zet ze weer aan.</span></div>
@@ -1738,6 +1771,12 @@ function videocallPlannen(l, naAfloop){
 }
 /* ─── Leaddetail ──────────────────────────────────────────────── */
 function qaHtml(antwoorden){
+  /* Supabase geeft jsonb als object terug, maar een webhook of import kan er
+     net zo goed een string van maken. Die alsnog lezen — anders staat er
+     "geen vragen vastgelegd" terwijl het hele gesprek er wél is. */
+  if(typeof antwoorden === 'string' && /^[\[{]/.test(antwoorden.trim())){
+    try{ antwoorden = JSON.parse(antwoorden); }catch(e){ return ''; }
+  }
   if(!antwoorden || typeof antwoorden !== 'object') return '';
   const paren = Array.isArray(antwoorden)
     ? antwoorden.map(a => [a.vraag || a.q || 'Vraag', a.antwoord || a.a || ''])
@@ -1836,8 +1875,10 @@ function openLead(id){
           ${l.status === 'Nieuw' && dg != null && dg >= NIEUW_LETOP
             ? `<span class="chip ${ouderdomKlas(dg)} num">${dg} dag${dg===1?'':'en'} op Nieuw</span>` : ''}
           ${dubbelAantal(l) > 1 ? `<span class="chip purple num" title="Zelfde telefoonnummer">${dubbelAantal(l)}× in de lijst</span>` : ''}
-          ${l.prioriteit?`<span class="chip">Prioriteit ${h(l.prioriteit)}</span>`:''}
-          ${l.score!=null?`<span class="chip num">Score ${h(l.score)}</span>`:''}
+          ${/* Dezelfde kleurtaal als de stip in de lijst en de chip in de rij —
+               het paneel mag niet neutraal ogen waar de lijst rood zegt. */
+            l.prioriteit?`<span class="chip"><i class="dot" style="background:${prioKleur(l.prioriteit)}"></i>Prioriteit ${h(l.prioriteit)}</span>`:''}
+          ${l.score!=null?`<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent (0–100)">Score ${h(l.score)}</span>`:''}
           ${belPogingen(l.id)?`<span class="chip">${belPogingen(l.id)}× gebeld</span>`:''}
           ${laatsteContact(l.id)?`<span class="chip" title="Laatste keer bellen, appen, mailen of spreken">contact ${h(CRM.geleden(laatsteContact(l.id)))}</span>`:''}
         </div>

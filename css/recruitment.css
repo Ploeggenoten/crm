@@ -249,6 +249,10 @@ table.rc-qa th{text-align:left;font-weight:500;color:var(--muted);padding:6px 14
   width:34%;vertical-align:top;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12.5px}
 table.rc-qa td{padding:6px 0;border-bottom:1px solid var(--line)}
 table.rc-qa tr:last-child td{border-bottom:none}
+/* Dezelfde antwoorden in de belronde: ingeklapt, zodat de ronde licht blijft. */
+.rc-wwqa{margin-top:12px}
+.rc-wwqa summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.rc-wwqa[open] summary{margin-bottom:4px}
 
 /* ─── Doorschietformulier ────────────────────────────────────── */
 .rc-vol{background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);padding:10px 12px}

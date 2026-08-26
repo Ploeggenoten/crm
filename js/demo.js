@@ -202,6 +202,105 @@
     };
   });
 
+  /* ── WhatsApp-botleads ─────────────────────────────────────────
+     De bot schrijft straks rechtstreeks in crm_leads. Deze zes kaarten zijn
+     de uitkomsten die dat kan opleveren, zodat elke schermtoestand vóór de
+     livegang te zien is in plaats van pas bij de eerste echte lead:
+       - gekwalificeerd (bot1/bot2) → antwoorden, score, cv_url gevuld
+       - herbruikbaar (bot3)        → goed persoon, verkeerde vacature
+       - afgevallen (bot4)          → reden staat in de kwalificatie
+       - vangnet (bot5)             → reageerde nooit op WhatsApp; alleen de
+         ruwe Meta-gegevens, dus géén antwoorden en géén notitie — precies zo
+         moet hij tóch als openstaand werk bij een AM in beeld staan
+       - dubbel (bot6)              → zelfde nummer als een bestaande lead,
+         zodat de paarse chip "2× in de lijst" aangaat (recruitment.js)
+     `antwoorden` is een object met de letterlijke WhatsApp-vragen als sleutel:
+     zo levert de bot het aan en zo toont de leadkaart het. `cv_url` is een
+     link (SharePoint), geen geparsed cv — de bot parseert niets. `form_id`
+     komt mee uit het Meta-leadformulier; de app leest het (nog) nergens,
+     maar het hoort bij wat de bot wegschrijft en moet dus meelopen. */
+  const BOT = [
+    { id:'bot1', naam:'Dennis van der Laan', telefoon:'06 2456 7811', email:'',
+      woonplaats:'Gouda', bron:'Meta', campagne:'Operators Zoetermeer – aug',
+      form_id:'meta-form-8842', vacature_id:'Good Life Foods::Operator',
+      klant:'Good Life Foods', functie:'Operator',
+      status:'Nieuw', prioriteit:'Hoog', score:85,
+      kwalificatie:'Qualified — auto, direct beschikbaar',
+      agent_notitie:'WhatsApp-agent: 4 jaar ervaring als operator in de voedingsmiddelenindustrie, 3-ploegen is geen bezwaar. Wil teruggebeld worden, het liefst vanavond na 19:00.',
+      antwoorden:{'Woonplaats':'Gouda','Vervoer':'auto','Ploegen':'3-ploegen is prima','Beschikbaar':'per direct','Taal':'NL'},
+      cv_url:'https://ploeggenoten.sharepoint.com/sites/recruitment/cv/dennis-van-der-laan.pdf',
+      eigenaar:'Tjerk',
+      binnen_op:new Date(Date.now() - 2*3600000).toISOString(),
+      opvolgen_op:null, kandidaat_id:'', notities:[] },
+    { id:'bot2', naam:'Kimberly Verhoeven', telefoon:'06 2456 7812', email:'',
+      woonplaats:'Leiden', bron:'Meta', campagne:'Magazijn Rijnsburg – aug',
+      form_id:'meta-form-8851', vacature_id:'Whisk Food::Magazijnmedewerker',
+      klant:'Whisk Food', functie:'Magazijnmedewerker',
+      status:'Nieuw', prioriteit:'Hoog', score:72,
+      kwalificatie:'Qualified — ov (Leiden–Rijnsburg is te doen), beschikbaar per 1 september',
+      agent_notitie:'WhatsApp-agent: 2 jaar magazijnervaring bij een groothandel, heeft nog een opzegtermijn van twee weken. Reist met ov; de busverbinding Leiden–Rijnsburg maakt dat haalbaar.',
+      antwoorden:{'Woonplaats':'Leiden','Vervoer':'ov','Ploegen':'liever dagdienst','Beschikbaar':'per 1 september','Taal':'NL'},
+      cv_url:'',
+      eigenaar:'Rajesh',
+      binnen_op:new Date(Date.now() - 5*3600000).toISOString(),
+      opvolgen_op:null, kandidaat_id:'', notities:[] },
+    { id:'bot3', naam:'Ruben Slootweg', telefoon:'06 2456 7813', email:'',
+      woonplaats:'Waddinxveen', bron:'Meta', campagne:'Procesoperators – aug',
+      form_id:'meta-form-8863', vacature_id:'Burg Siroop::Procesoperator',
+      klant:'Burg Siroop', functie:'Procesoperator',
+      status:'Potentieel — andere vacature', prioriteit:'Midden', score:64,
+      kwalificatie:'Goed profiel, maar Waddinxveen–Zaandam is te ver — bewaren voor productiewerk rond Gouda/Bodegraven',
+      agent_notitie:'WhatsApp-agent: procesoperator met VAPRO A, maar wil maximaal een halfuur reizen en Zaandam valt daarbuiten. Nadrukkelijk wél interesse in werk dichter bij huis.',
+      antwoorden:{'Woonplaats':'Waddinxveen','Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'in overleg','Taal':'NL'},
+      cv_url:'',
+      eigenaar:'Tjeerd',
+      binnen_op:new Date(Date.now() - 26*3600000).toISOString(),
+      opvolgen_op:null, kandidaat_id:'', notities:[] },
+    { id:'bot4', naam:'Priscilla de Groot', telefoon:'06 2456 7814', email:'',
+      woonplaats:'Zoetermeer', bron:'Meta', campagne:'Heftruck Bodegraven – aug',
+      form_id:'meta-form-8842', vacature_id:'Starcuisine::Heftruckchauffeur',
+      klant:'Starcuisine', functie:'Heftruckchauffeur',
+      status:'Niet geschikt', prioriteit:'Laag', score:31,
+      kwalificatie:'Afgewezen — geen heftruckcertificaat en wil niet in ploegen; beide zijn harde eisen van de klant',
+      agent_notitie:'WhatsApp-agent: geen certificaat en niet bereid dat te halen, zoekt uitsluitend dagdienst. Netjes afgesloten met een bedankje.',
+      antwoorden:{'Woonplaats':'Zoetermeer','Vervoer':'auto','Certificaat':'nee','Ploegen':'alleen dagdienst','Beschikbaar':'per direct','Taal':'NL'},
+      cv_url:'',
+      eigenaar:'Tjeerd',
+      binnen_op:new Date(Date.now() - 30*3600000).toISOString(),
+      opvolgen_op:null, kandidaat_id:'', notities:[] },
+    /* Vangnet: klikte op de Meta-advertentie maar reageerde nooit in
+       WhatsApp. De bot heeft dus niets om te scoren of samen te vatten —
+       prioriteit leeg, geen antwoorden, geen notitie. Zo is te controleren
+       dat zo iemand kaal maar zichtbaar op 'Nieuw' blijft staan in plaats
+       van stilletjes te verdwijnen. */
+    { id:'bot5', naam:'Wesley Vink', telefoon:'06 2456 7815', email:'',
+      woonplaats:'', bron:'Meta', campagne:'Operators Zoetermeer – aug',
+      form_id:'meta-form-8842', vacature_id:'Good Life Foods::Operator',
+      klant:'Good Life Foods', functie:'Operator',
+      status:'Nieuw', prioriteit:'', score:null,
+      kwalificatie:'', agent_notitie:'', antwoorden:null, cv_url:'',
+      eigenaar:'Tjeerd',
+      binnen_op:new Date(Date.now() - 20*3600000).toISOString(),
+      opvolgen_op:null, kandidaat_id:'', notities:[] }
+  ];
+  /* Dubbele sollicitatie: dezelfde persoon reageert op een tweede campagne.
+     Naam en nummer komen bewust uit LEADS[2] in plaats van hardgecodeerd —
+     de namen hierboven worden berekend, en een kopie die stilletjes uit de
+     pas loopt zou de dubbeldetectie juist NIET laten afgaan. Nummer gelijk
+     is genoeg (CRM.telSleutel), zelfde naam maakt de demo geloofwaardig. */
+  BOT.push({ id:'bot6', naam:LEADS[2].naam, telefoon:LEADS[2].telefoon, email:'',
+    woonplaats:LEADS[2].woonplaats, bron:'Meta', campagne:'Inpak Bodegraven – aug',
+    form_id:'meta-form-8877', vacature_id:'Van Vliet Zoetwaren::Inpakmedewerker',
+    klant:'Van Vliet Zoetwaren', functie:'Inpakmedewerker',
+    status:'Nieuw', prioriteit:'Midden', score:58,
+    kwalificatie:'Qualified — reageerde eerder deze maand ook al op een andere campagne',
+    agent_notitie:'WhatsApp-agent: solliciteerde deze maand op twee campagnes; dat is een sterk vertreksignaal. Antwoorden komen overeen met de eerdere aanmelding.',
+    antwoorden:{'Woonplaats':LEADS[2].woonplaats,'Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'per direct','Taal':'NL'},
+    cv_url:'', eigenaar:LEADS[2].eigenaar,
+    binnen_op:new Date(Date.now() - 3600000).toISOString(),
+    opvolgen_op:null, kandidaat_id:'', notities:[] });
+  LEADS.push(...BOT);
+
   const ACTS = [];
   KLANTEN.slice(0,14).forEach((k,i)=>{
     ['bel','mail','gesprek','notitie'].slice(0, 1+(i%4)).forEach((s,j)=>ACTS.push({
@@ -221,7 +320,12 @@
     {id:'t2',tekst:'SWO Kontent Structures nabellen',datum:d(0),klaar:false,entiteit:'klant',ref:'Kontent Structures',voor:'Tjeerd',door:'Tjeerd',prioriteit:''},
     {id:'t3',tekst:'Meeloopdag Whisk voorbereiden',datum:d(1),klaar:false,entiteit:'klant',ref:'Whisk Food',voor:'Tjerk',door:'Tjeerd',prioriteit:''},
     {id:'t4',tekst:'Nazorg bellen dag 14',datum:d(-2),klaar:false,entiteit:'kandidaat',ref:'demo9',voor:'Tjeerd',door:'Tjeerd',prioriteit:'Hoog'},
-    {id:'t5',tekst:'Vacaturetekst Lasser afmaken',datum:d(2),klaar:false,entiteit:'',ref:'',voor:'Tjeerd',door:'Tjeerd',prioriteit:''}
+    {id:'t5',tekst:'Vacaturetekst Lasser afmaken',datum:d(2),klaar:false,entiteit:'',ref:'',voor:'Tjeerd',door:'Tjeerd',prioriteit:''},
+    /* Door de bot aangemaakt, niet door een collega: `door` is de agent zelf.
+       Zo is te zien hoe een terugbelverzoek uit WhatsApp bij de juiste AM in
+       de takenlijst landt en via entiteit 'lead' naar de leadkaart doorklikt
+       (dashboard.js stuurt dat naar de recruitmentmodule). */
+    {id:'t6',tekst:'Terugbellen Dennis van der Laan — voorkeur: vanavond na 19:00',datum:d(0),klaar:false,entiteit:'lead',ref:'bot1',voor:'Tjerk',door:'WhatsApp-agent',prioriteit:'Hoog'}
   ];
 
   const KANSEN = [
