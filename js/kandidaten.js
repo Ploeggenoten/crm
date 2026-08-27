@@ -3456,7 +3456,24 @@ function flexRegel(c){
       bij ${h(c.klant||'deze klant')} op de klantkaart — dan rekent de kaart de marge zelf uit.</span>`
       + (c.uren ? `<div class="kd-flexuit">kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand (${c.uren} u/wk)</div>` : '');
 
-  const marge = tarief - c.uurloon;
+  /* De kostprijs is niet het kale uurloon: Pronkert rekent er vakantiegeld,
+     EJU, pensioen etc. bovenop (zie de kostprijs-assistent op de klantkaart,
+     CRM.kostprijsfactor). Die basis (CAO + contractfase) staat sinds 25 aug
+     2026 bij de uitzendafspraak zelf — ontbreekt hij (oude afspraak, nog
+     niet ingevuld), dan valt de marge terug op het kale uurloon en zeggen
+     we dat er expliciet bij, in plaats van een te hoge marge stilzwijgend
+     als kloppend te tonen (Tjeerd, 25 aug 2026: "als dit niet zo is, moet
+     hij dit mij vragen"). */
+  let kostprijsUur = c.uurloon, kostprijsWaarschuwing = '';
+  if(a && a.cao && a.contractfase){
+    const kp = CRM.kostprijsfactor(a.cao, a.contractfase, c.uurloon);
+    if(kp) kostprijsUur = kp.tariefKostprijs;
+    else kostprijsWaarschuwing = `<div class="note warn kd-flexwarn">Kan niet rekenen met CAO ${h(a.cao)} / ${h(a.contractfase)} — controleer de afspraak bij ${h(c.klant||'deze klant')}. Marge hieronder gebruikt voorlopig het kale uurloon.</div>`;
+  } else {
+    kostprijsWaarschuwing = `<div class="note warn kd-flexwarn">Geen CAO/contractfase vastgelegd bij de afspraak van ${h(c.klant||'deze klant')} — de marge hieronder gebruikt daarom het kale uurloon
+      als kostprijs, niet wat Pronkert er werkelijk bovenop rekent (vakantiegeld, EJU, pensioen). Vul dit aan bij Commerciële afspraken → Kostprijs-assistent voor de échte marge.</div>`;
+  }
+  const marge = tarief - kostprijsUur;
   const uur = n => '€' + n.toFixed(2).replace('.', ',');
   const bron = uitFactuur
     ? (factor != null
@@ -3464,7 +3481,7 @@ function flexRegel(c){
         : 'factuurtarief')
     : `afgeleid uit factor ${String(factor).replace('.', ',')}×`;
 
-  const regels = [`marge ${uur(marge)} per uur`];
+  const regels = [`marge ${uur(marge)} per uur${kostprijsUur !== c.uurloon ? ` <span class="meta">(kostprijs ${uur(kostprijsUur)}/u incl. CAO-opslag)</span>` : ''}`];
   if(c.uren) regels.push(`${CRM.euro(Math.round(marge * c.uren))} per week bij ${c.uren} uur`);
   /* Het maand-equivalent van het uurloon zelf — voor het offergesprek:
      een kandidaat denkt in "wat verdien ik per maand", de flexkaart
@@ -3485,7 +3502,8 @@ function flexRegel(c){
 
   return `Klanttarief <b class="num">${uur(tarief)}</b> per uur
     <span class="meta">${h(bron)}</span>
-    <div class="kd-flexuit">${regels.join('<span class="kd-flexpunt">·</span>')}</div>`;
+    <div class="kd-flexuit">${regels.join('<span class="kd-flexpunt">·</span>')}</div>
+    ${kostprijsWaarschuwing}`;
 }
 
 function totaalRegel(c){

@@ -452,6 +452,17 @@ create index if not exists crm_afspraken_klant on crm_afspraken(klant, actief);
 -- uitzendafspraak: na zoveel gewerkte uren mag de klant kosteloos overnemen
 -- (Thermon: 1200 uur). De factor zelf staat in fee_standaard/fee_regels.
 alter table crm_afspraken add column if not exists overname_uren int;
+-- Kostprijsbasis van een uitzendafspraak (25 aug 2026): de kostprijs-
+-- assistent op de klantkaart rekende al met CAO + contractfase + uurloon
+-- uit wat Pronkert rekent (CRM.kostprijsfactor), maar die twee keuzes
+-- gingen verloren zodra het paneel dichtging — alleen de resulterende
+-- verkoopfactor werd bewaard. Zonder kostprijsbasis rekende de marge op de
+-- kandidaatkaart met het kale uurloon als kostprijs, terwijl Pronkert er
+-- vakantiegeld/EJU/pensioen/etc. bovenop rekent — de marge stond daardoor
+-- te hoog. Nu blijft de gekozen CAO + fase bij de afspraak, zodat de
+-- kandidaatkaart de échte kostprijs kan uitrekenen in plaats van gokken.
+alter table crm_afspraken add column if not exists cao text default '';
+alter table crm_afspraken add column if not exists contractfase text default '';
 
 -- ─── 7d. Wat er werkelijk aan Meta betaald is ─────────────────
 -- Meta rapporteert zijn eigen uitgaven. Wat er daadwerkelijk van de rekening

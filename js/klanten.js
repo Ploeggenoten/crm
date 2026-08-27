@@ -1776,9 +1776,9 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
           <p class="meta kl-af-uitleg">CAO, contractfase en bruto uurloon geven de kostprijsfactor van Pronkert; de
             voorgestelde factor is die kostprijs plus de vaste marge van 0,6.</p>
           <div class="f-grid kl-af-vbin">
-            <div class="f-row"><label for="kp_cao">CAO</label><select id="kp_cao">${caoOptiesHtml(k.cao||'')}</select></div>
+            <div class="f-row"><label for="kp_cao">CAO</label><select id="kp_cao">${caoOptiesHtml(a.cao||k.cao||'')}</select></div>
             <div class="f-row"><label for="kp_fase">Contractfase</label>
-              <select id="kp_fase">${CRM.CONTRACTFASE.map(f=>`<option value="${h(f.naam)}"${f.naam==='Fase 1/2'?' selected':''}>${h(f.naam)}</option>`).join('')}</select></div>
+              <select id="kp_fase">${CRM.CONTRACTFASE.map(f=>`<option value="${h(f.naam)}"${f.naam===(a.contractfase||'Fase 1/2')?' selected':''}>${h(f.naam)}</option>`).join('')}</select></div>
             <div class="f-row"><label for="kp_loon">Bruto uurloon</label>
               <input type="number" id="kp_loon" min="0" step="0.05" placeholder="Bijv. 16,50"></div>
             <div class="f-row"><label for="kp_vf">Verkoopfactor <span class="meta">(leeg = kostprijs + 0,6)</span></label>
@@ -2070,6 +2070,14 @@ function afspraakDrawer(k, id, nieuw, soortNieuw){
         a.overname_uren  = num('#af_ovn');
         a.fee_regels     = a.fee_regels
           .map(r => ({functiegroep:String(r.functiegroep || r.functie || '').trim(), pct:r.pct == null || r.pct === '' ? null : Number(r.pct)}));
+        /* Kostprijsbasis van de kostprijs-assistent — alleen zinvol bij
+           uitzenden, alleen dan blijft hij overeind (zie schema.sql 7c).
+           Zonder dit kan de kandidaatkaart nooit de échte Pronkert-kostprijs
+           uitrekenen, alleen het kale uurloon. */
+        if(a.soort === 'uitzenden'){
+          a.cao = v('#kp_cao').value || '';
+          a.contractfase = v('#kp_fase').value || '';
+        } else { a.cao = ''; a.contractfase = ''; }
       }
 
       /* ── Voorbeeldberekening ──────────────────────────────────── */
