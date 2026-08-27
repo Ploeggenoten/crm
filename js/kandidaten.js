@@ -1018,7 +1018,8 @@ const FLEX_VELDEN = [
   /* Wat er werkelijk gefactureerd wordt. Vul je dit in, dan rekent de kaart
      de marge daarmee uit in plaats van met de factor uit de afspraak — dat
      is wat je écht verdient (naam: Tjeerd, 7 aug 2026). */
-  {k:'tarief',       lbl:'Factuurtarief',   t:'number', toon:perUur, hint:'leeg = reken met de factor'},
+  {k:'tarief',       lbl:'Factuurtarief (€/uur)', t:'number', toon:perUur,
+    hint:'een eurobedrag, geen factor — leeg laten = reken automatisch met de afgesproken factor'},
   {k:'uren',         lbl:'Uren per week',   t:'number', toon:v => v == null || v === '' ? '' : v + ' uur'}
 ];
 const SALARIS_VELDEN = [
@@ -3488,20 +3489,21 @@ function flexRegel(c){
      rekent in uren (Tjeerd, 22 aug 2026: "per uur en dan berekenen naar
      maand"). 52/12 = gemiddeld 4,33 weken per maand. */
   if(c.uren) regels.push(`kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand`);
-  /* Wat levert deze plaatsing op tot de klant hem kosteloos mag overnemen?
-     Dat is de horizon waarop je bij uitzenden stuurt (naam: Tjeerd, 7 aug
-     2026). Zonder overnamegrens loopt het door en zeggen we dat ook. */
-  if(overname){
-    const tot = marge * overname;
-    const wkn = c.uren ? Math.round(overname / c.uren) : null;
-    regels.push(`<b class="num">${CRM.euro(Math.round(tot))}</b> tot de overname bij ${overname} uur${
-      wkn ? ` — ongeveer ${wkn} weken` : ''}`);
-  }else if(c.uren){
-    regels.push(`${CRM.euro(Math.round(marge * c.uren * 52))} per jaar — geen overnamegrens afgesproken`);
-  }
+  if(!overname && c.uren) regels.push(`${CRM.euro(Math.round(marge * c.uren * 52))} per jaar — geen overnamegrens afgesproken`);
 
-  return `Klanttarief <b class="num">${uur(tarief)}</b> per uur
-    <span class="meta">${h(bron)}</span>
+  /* Wat levert déze plaatsing op tot de klant hem kosteloos mag overnemen —
+     dat getal, niet de marge per uur, is waar het Tjeerd om gaat ("de marge
+     die we op de kandidaat krijgen", 27 aug 2026). Daarom bovenaan als
+     eigen kop i.p.v. als laatste opsommingspunt tussen de rest. */
+  const overnameHtml = overname ? `<div class="kd-flexmarge">
+      <span class="label">Verwachte marge tot overname</span>
+      <div class="h2 num">${CRM.euro(Math.round(marge * overname))}</div>
+      <span class="meta">bij ${overname} uur${c.uren ? ` — ongeveer ${Math.round(overname / c.uren)} weken` : ''}</span>
+    </div>` : '';
+
+  return `${overnameHtml}
+    <div>Klanttarief <b class="num">${uur(tarief)}</b> per uur
+    <span class="meta">${h(bron)}</span></div>
     <div class="kd-flexuit">${regels.join('<span class="kd-flexpunt">·</span>')}</div>
     ${kostprijsWaarschuwing}`;
 }
