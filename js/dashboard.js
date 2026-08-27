@@ -1584,7 +1584,7 @@ function maandBlok(){
   const nu = new Date(), perMnd = [];
   for(let i=5;i>=0;i--){
     const m2 = new Date(nu.getFullYear(), nu.getMonth()-i, 1).toLocaleDateString('sv-SE').slice(0,7);
-    perMnd.push(cs.filter(c => c.rec===mij && CRM.PLACED.includes(c.fase) && kort(c.geplaatstOp).slice(0,7)===m2).length);
+    perMnd.push(cs.filter(c => c.rec===mij && CRM.teltAlsPlaatsing(c) && kort(c.geplaatstOp).slice(0,7)===m2).length);
   }
   const spark = sparkline(perMnd);
   return `<div class="dash-sec"><div class="label sec-kop">Jouw maand</div>

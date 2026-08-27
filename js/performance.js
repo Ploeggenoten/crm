@@ -1067,9 +1067,12 @@ function zorgAfspraken(klaar){
 }
 
 /* Een plaatsing: er is getekend én de kaart staat op geplaatst of is
-   later gestopt. Exact de definitie van het bord (CRM.plaatsingenMaand). */
+   later gestopt. Exact de definitie van het bord (CRM.plaatsingenMaand) —
+   inclusief de ZZP-uitzondering: een korte klus telt niet mee, zie
+   CRM.zzpTeltAlsPlaatsing (data.js). */
 const isPlaatsing = c => !!kort(c.geplaatstOp) &&
-  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt'));
+  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt')) &&
+  (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c));
 
 /* Waaróm een plaatsing geen fee heeft. Vier van de vijf redenen zijn geen
    fout maar een feit: flex verdient per uur, een vervanger onder garantie

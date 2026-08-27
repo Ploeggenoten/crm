@@ -3125,24 +3125,37 @@ async function faseWissel(id, fase){
           <input type="date" id="fw_start" value="${h(c.start||'')}"></div>` : ''}
       ${vraagStart ? `<div class="f-row"><label for="fw_start">Startdatum</label>
           <input type="date" id="fw_start" value="${h(c.start||'')}"></div>` : ''}
-      ${vraagLoon || vraagStart ? `<div class="f-row"><label for="fw_loon">Bruto maandloon (€)</label>
-          <input type="number" id="fw_loon" min="0" step="50" value="${c.maandloon?h(c.maandloon):''}"></div>` : ''}
       ${vraagStart ? `<div class="f-row"><label for="fw_type">Soort plaatsing</label>
           <select id="fw_type">
             <option value="W&S"${(c.type||'W&S')==='W&S'?' selected':''}>W&amp;S — werving en selectie, fee ineens</option>
             <option value="Flex"${c.type==='Flex'?' selected':''}>Flex — de opbrengst loopt via gewerkte uren</option>
           </select>
-          <div class="hint">Bepaalt of hier een fee bij hoort. Bij Flex rekent het systeem bewust geen fee.</div></div>` : ''}
+          <div class="hint">Bepaalt of hier een fee bij hoort. Bij Flex rekent het systeem bewust geen fee — het maandloon
+            is dan niet van toepassing, dat vul je straks op de kandidaatkaart aan met uurloon en uren.</div></div>` : ''}
+      ${vraagLoon || vraagStart ? `<div class="f-row" id="fw_loonrij" style="${vraagStart && c.type==='Flex' ? 'display:none' : ''}">
+          <label for="fw_loon">Bruto maandloon (€)</label>
+          <input type="number" id="fw_loon" min="0" step="50" value="${c.maandloon?h(c.maandloon):''}"></div>` : ''}
       <div class="f-row"><label for="fw_actie">Volgende actie (optioneel)</label>
         <input type="text" id="fw_actie" value="${h(c.volgendeActie||'')}" placeholder="Bijv. bevestiging sturen"></div>
       <div class="note err" id="fw_err" style="display:none"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="fw_ok">${vraagStart ? 'Plaatsing vastleggen' : vraagKlant ? 'Voorstellen' : 'Opslaan'}</button></div>`, {onOpen(m){
+      const val = id => { const e = m.querySelector('#fw_'+id); return e ? e.value : ''; };
+      /* Flex rekent per uur (uurloon × factor × 1.560 uur), niet per
+         maandloon — dat veld is bij Flex simpelweg niet van toepassing.
+         De echte flex-gegevens (uurloon, uren, tarief) staan op de
+         kandidaatkaart, niet in dit venster (Tjeerd, 26 aug 2026: "ik moet
+         dan naar de kandidatenkaart doorverwezen worden"). */
+      const typeSel = m.querySelector('#fw_type');
+      const loonRij = m.querySelector('#fw_loonrij');
+      if(typeSel) typeSel.onchange = () => {
+        if(loonRij) loonRij.style.display = typeSel.value === 'Flex' ? 'none' : '';
+      };
       m.querySelector('#fw_ok').onclick = async () => {
         const err = m.querySelector('#fw_err');
         const zeg = t => { err.style.display=''; err.textContent = t; };
-        const val = id => { const e = m.querySelector('#fw_'+id); return e ? e.value : ''; };
+        const isFlex = (val('type') || c.type) === 'Flex';
         const extra = {volgende_actie: val('actie').trim() || null};
         if(vraagKlant){
           const sel = m.querySelector('#fw_vac');
@@ -3173,7 +3186,7 @@ async function faseWissel(id, fase){
              je het weet. */
           if(val('type')) extra.type = val('type');
         }
-        if(vraagLoon || vraagStart){
+        if((vraagLoon || vraagStart) && !isFlex){
           if(!val('loon')) return zeg('Vul het bruto maandloon in — nodig voor ' + feeUitleg + '.');
           extra.maandloon = +val('loon');
         }
@@ -3181,6 +3194,22 @@ async function faseWissel(id, fase){
         if(fase === 'Contract getekend' && extra.start && extra.start <= CRM.todayISO()) doel = 'Gestart';
         CRM.modal.close();
         await bewaarFase(c, doel, extra);
+        /* Bij Flex is de plaatsing nu vastgelegd, maar de gegevens waar de
+           marge op rekent (uurloon, uren, tarief) staan nog niet ingevuld —
+           dat kan alleen op de kandidaatkaart. Direct doorsturen scheelt
+           zelf op zoek moeten naar waar dat veld staat. */
+        if(vraagStart && isFlex){
+          CRM.toast(`${c.naam} vastgelegd — vul nu uurloon en uren aan`, 'ok');
+          /* Niet meteen navigeren: CRM.modal.close() hierboven zette al een
+             history.back() in gang (overlayStapEraf, js/core.js) om de
+             geschiedenisstap van het venster op te ruimen. Die is async —
+             navigeer je meteen, dan komt die back() soms ná onze eigen
+             pushState terecht en veert de app terug naar het bord
+             (gezien tijdens testen: CRM.ga('recruitment') vuurde ~80ms
+             later vanzelf via de hashchange-listener). Een korte
+             vertraging laat 'm eerst afronden. */
+          setTimeout(() => CRM.ga('kandidaten', {id:c.id}), 200);
+        }
       };
     }});
 }

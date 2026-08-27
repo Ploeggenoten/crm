@@ -661,14 +661,19 @@ function boardPlaatsingen(mk7){
      terwijl hij bij de stops wél werd uitgesloten. Elke kosteloze vervanging
      verhoogde het cijfer daardoor structureel met 1, en Finance kwam op −3
      waar het bord −4 zei. Dezelfde uitsluiting als hieronder bij stopM. */
+  /* Een korte ZZP-klus (< 6 mnd, geen telt_als_plaatsing) telt hier bewust
+     niet mee — anders vertroebelt hij het gemiddelde waarmee break-even en
+     het target worden berekend (Tjeerd, 25 aug 2026). Zie CRM.zzpTeltAlsPlaatsing. */
   const gross = cs.filter(c => String(c.geplaatst_op||'').slice(0,7) === mk7
-    && !(c.vervangt||''));
+    && !(c.vervangt||'') && (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c)));
   const ws   = gross.filter(c => c.type === 'W&S').length;
   const flex = gross.filter(c => isFlexType(c.type)).length;
-  const onb  = gross.length - ws - flex;
+  const zzp  = gross.filter(c => c.type === 'ZZP').length;
+  const onb  = gross.length - ws - flex - zzp;
   const stopM = cs.filter(c => faseVan(c) === 'Gestopt'
-    && String(c.gestopt_op||'').slice(0,7) === mk7 && c.geplaatst_op && !(c.vervangt||'')).length;
-  return {gross: gross.length, ws, flex, onb, stopM, netto: gross.length - stopM};
+    && String(c.gestopt_op||'').slice(0,7) === mk7 && c.geplaatst_op && !(c.vervangt||'')
+    && (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c))).length;
+  return {gross: gross.length, ws, flex, zzp, onb, stopM, netto: gross.length - stopM};
 }
 
 /* bron: calc.js targetInfo() */

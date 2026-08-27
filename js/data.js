@@ -153,8 +153,20 @@ CRM.binnenGarantie = c => {
    GESTOPTE vervanger blijft uitgezonderd: zijn voorganger is al als stop
    geteld, meetellen zou dezelfde plek twee keer aftrekken (zie de langere
    toelichting bij CRM.plaatsingenMaand hieronder). */
+/* Een korte ZZP-klus is geen plaatsing (Tjeerd, 25 aug 2026): het aantal
+   plaatsingen stuurt break-even/target-berekeningen, en een klus van een
+   paar dagen zou dat gemiddelde omlaag trekken zonder dat er iets van
+   W&S- of Flex-schaal tegenover staat. crm_klussen.telt_als_plaatsing is
+   het bestaande, bewuste onderscheid (alleen waar bij ≥6 maanden, met
+   expliciete bevestiging in js/kandidaten.js) — die was al in de database
+   maar werd door geen enkele teller gelezen. Werkt op zowel de gemapte
+   kandidaat (c.id) als een ruwe rij uit finance.js — daar verschilt alleen
+   de veldnaam van geplaatst_op, niet van id/type. */
+CRM.zzpTeltAlsPlaatsing = c => !!c && (CRM.state.klussen||[])
+  .some(k => String(k.kandidaat_id) === String(c.id) && k.telt_als_plaatsing === true);
 CRM.teltAlsPlaatsing = c => !!c && !!c.geplaatstOp &&
-  (CRM.faseIn(c.fase, CRM.PLACED) || (CRM.faseIs(c.fase, 'Gestopt') && !c.vervangt));
+  (CRM.faseIn(c.fase, CRM.PLACED) || (CRM.faseIs(c.fase, 'Gestopt') && !c.vervangt)) &&
+  (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c));
 
 /* Trekt deze stop van de target af? Alleen binnen de garantietermijn. */
 CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp
