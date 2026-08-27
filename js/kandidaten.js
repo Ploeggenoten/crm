@@ -2948,7 +2948,10 @@ function blokVelden(c, welk){
   if(welk === 'traject') return TRAJECT_VELDEN;
   const toonDatums = CRM.PLACED.includes(c.fase) || ['Afgevallen','Gestopt'].includes(c.fase)
     || !!c.geplaatstOp || !!c.gestoptOp;
-  return CONTRACT_VELDEN.filter(f => !f.alleenBijPlaatsing || toonDatums).concat(SALARIS_VELDEN);
+  /* Zelfde vertakking als contractHtml() hierboven — anders toont de
+     "alles-in-één-keer"-knop bij een Flex-kandidaat de W&S-salarisvelden
+     (ploegentoeslag, EJU...) in plaats van uurloon/tarief/uren. */
+  return CONTRACT_VELDEN.filter(f => !f.alleenBijPlaatsing || toonDatums).concat(isFlex(c) ? FLEX_VELDEN : SALARIS_VELDEN);
 }
 function bindBlokBewerk(mount, c){
   mount.querySelectorAll('[data-blokbewerk]').forEach(b => b.onclick = () => {
