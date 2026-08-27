@@ -22,6 +22,20 @@ alter table candidates add column if not exists vervoer     text default '';  --
 -- Golden candidate: goede kandidaat zonder passende vacature op dit moment.
 -- Geen fase maar een vlag — zo raken we ze nooit meer uit het oog.
 alter table candidates add column if not exists golden      boolean default false;
+-- Bemiddelbaar/beschikbaar_per: hét talentpool-signaal (25 aug 2026),
+-- vervangt de vage "recyclebaar"-vlag die alleen bij fase Afgevallen iets
+-- betekende. Bemiddelbaar = staat open voor een andere klant/vacature,
+-- ongeacht fase — zichtbaar en instelbaar op elke kandidaatkaart, ook een
+-- kandidaat die nog nooit bij een klant is voorgesteld. beschikbaar_per is
+-- de datum vanaf wanneer iemand kan starten; leeg of in het verleden =
+-- nu beschikbaar. Filteren op "beschikbaar" rekent zelf uit wie binnen een
+-- maand beschikbaar is — geen aparte "binnenkort beschikbaar"-status nodig.
+alter table candidates add column if not exists bemiddelbaar boolean default true;
+alter table candidates add column if not exists beschikbaar_per date;
+-- EENMALIG, met de hand, NA het draaien van dit schema — dus bewust geen
+-- onderdeel van dit "altijd veilig herdraaien"-bestand: bestaande
+-- recyclebaar=false-beoordelingen overnemen als startpunt voor bemiddelbaar.
+--   update candidates set bemiddelbaar = false where recyclebaar = false;
 -- Pasfoto van de kandidaat. Bevat het PAD in de map 'crm-docs'
 -- (bv. 'kandidaten/<id>.jpg'), nooit een url — de map is afgeschermd en de
 -- app tekent per keer een tijdelijke link (zie CRM.opslag in js/core.js).

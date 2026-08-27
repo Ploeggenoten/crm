@@ -450,7 +450,7 @@ const geanonimiseerd = c => !!(CRM.kandVerwijder && CRM.kandVerwijder.isGeanonim
 const POOLS = [
   {k:'beide',       lbl:'Voorraad + beschikbaar'},
   {k:'voorraad',    lbl:'Klaar om voor te stellen'},
-  {k:'beschikbaar', lbl:'Beschikbaar gemeld'},
+  {k:'beschikbaar', lbl:'Beschikbaar (nu of binnen een maand)'},
   {k:'alle',        lbl:'Iedereen in het bestand'}
 ];
 function inPool(c){
@@ -955,7 +955,8 @@ function tekenSourcing(mount, acties){
           m.onbekend.length > 3 ? ' + ' + (m.onbekend.length - 3) + ' meer' : ''}</div>` : ''}
       <div class="row tight src2-kand-c">
         ${st.dagen != null ? `<span class="chip ${st.kleur}">${h(st.tekst)}</span>` : ''}
-        ${c.beschikbaar ? `<span class="chip">${h(c.beschikbaar)}</span>` : ''}
+        ${c.bemiddelbaar===false ? `<span class="chip">niet bemiddelen</span>`
+          : CRM.beschikbaarPerLater(c) ? `<span class="chip amber">beschikbaar per ${h(CRM.fmtDate(c.beschikbaarPer))}</span>` : ''}
         ${c.ploegen ? `<span class="chip">${h(c.ploegen)}</span>` : ''}
         ${c.vervoer ? `<span class="chip${c.vervoer==='geen'?' amber':''}">vervoer: ${h(c.vervoer)}</span>` : ''}
         ${c.rijbewijs ? `<span class="chip">${h(c.rijbewijs)}</span>` : ''}
@@ -1374,7 +1375,7 @@ const ZSORT = [{k:'match', l:'Beste match'}, {k:'afstand', l:'Afstand'},
 const Z_EXTRA = ['cert','taal','ploegen','vervoer','salaris','rijbewijs','rec','klant','fase','stil'];
 const Z_STD = {vrij:'', functies:[], plaats:'', straal:25, pool:'alle', ster:0,
                cert:'', taal:'', ploegen:'', vervoer:'', salaris:'', rijbewijs:'',
-               rec:'', klant:'', fase:'', stil:'', sort:'match', meer:false};
+               rec:'', klant:'', fase:'', stil:'', opzeg:'', sort:'match', meer:false};
 let Z = (() => {
   try{
     const uit = Object.assign({}, Z_STD, JSON.parse(localStorage.getItem(ZKEY)||'{}'));
@@ -1487,6 +1488,11 @@ function zoekResultaat(){
     if(Z.vervoer && c.vervoer !== Z.vervoer) return;
     if(Z.salaris && c.maandloon != null && Number(c.maandloon) > Number(Z.salaris)) return;
     if(Z.rijbewijs && !plat(c.rijbewijs).includes(plat(Z.rijbewijs))) return;
+    if(Z.opzeg){
+      const heeft = CRM.heeftOpzegtermijn(c);
+      if(Z.opzeg === 'nee' && heeft !== false) return;
+      if(Z.opzeg === 'ja'  && heeft !== true)  return;
+    }
     if(Z.rec && c.rec !== Z.rec) return;
     if(Z.klant && !plat(c.klant).includes(plat(Z.klant))) return;
     if(Z.fase){
@@ -1608,6 +1614,9 @@ function tekenZoek(mount, acties){
             <div class="f-row"><label>Laatst gesproken</label>
               ${sel2('stil', Z.stil, [{k:'', l:'Maakt niet uit'}, {k:'14', l:'Langer dan 2 weken geleden'},
                 {k:'30', l:'Langer dan een maand geleden'}, {k:'nooit', l:'Nog nooit gesproken'}])}</div>
+            <div class="f-row"><label>Opzegtermijn</label>
+              ${sel2('opzeg', Z.opzeg, [{k:'', l:'Maakt niet uit'}, {k:'nee', l:'Geen opzegtermijn'},
+                {k:'ja', l:'Heeft opzegtermijn'}])}</div>
             <div class="f-row"><label>Recruiter</label>
               ${sel2('rec', Z.rec, [{k:'', l:'Iedereen'}].concat(recs.map(r => ({k:r.naam, l:r.naam + ' (' + r.n + ')'}))))}</div>
             <div class="f-row"><label>Klant</label>
@@ -1716,6 +1725,8 @@ function tekenZoek(mount, acties){
         <span class="spacer"></span>
         ${r.km != null ? `<span class="chip"><span class="num">${r.km}</span> km</span>` : ''}
         ${st.dagen != null ? `<span class="chip ${st.kleur}">${h(st.tekst)}</span>` : ''}
+        ${c.bemiddelbaar===false ? `<span class="chip">niet bemiddelen</span>`
+          : CRM.beschikbaarPerLater(c) ? `<span class="chip amber">per ${h(CRM.fmtDate(c.beschikbaarPer))}</span>` : ''}
       </div>
       <div class="src3-rij-s">${h(c.functie || (c.cv && c.cv.functie) || 'geen functie ingevuld')}
         · ${h(c.woonplaats||'woonplaats onbekend')}${fase ? ' · ' + h(fase) : ''}${

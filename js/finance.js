@@ -1755,11 +1755,11 @@ function adviesEngine(f){
       add('gevaar', 2, 'Klant beëindigt herhaaldelijk', `${topK[0]} · ${topK[1]}×`,
         `${topK[0]} zette meerdere keren het contract stop. Óf de matching past niet bij deze klant, óf er speelt iets bij de klant zelf.`,
         `Plan een gesprek: wat verwacht ${topK[0]} precies? Scherp het profiel aan vóór je de volgende kandidaat voorstelt.`);
-    const rec = cds.filter(c => ['Afgevallen','Gestopt'].includes(faseVan(c)) && c.recyclebaar === true);
+    const rec = cds.filter(c => ['Afgevallen','Gestopt'].includes(faseVan(c)) && c.bemiddelbaar !== false);
     if(rec.length >= 3)
-      add('kans', 2, 'Recyclebare kandidaten wachten', `${rec.length} in de pool`,
+      add('kans', 2, 'Beschikbare kandidaten wachten', `${rec.length} in de pool`,
         `Er staan ${rec.length} kandidaten klaar die je eerder goedkeurde (o.a. offer-afwijzers — volledig gekwalificeerd). Heraanbieden bij een andere klant is sneller én goedkoper dan nieuwe instroom werven.`,
-        `Open Uitval op het bord en loop de recyclebaar-lijst na: wie past bij een openstaande vacature?`);
+        `Open Uitval op het bord en filter op Beschikbaar: wie past bij een openstaande vacature?`);
   }
 
   return items.sort((a,b) => b.urg - a.urg);

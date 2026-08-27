@@ -232,8 +232,8 @@ const statusBestaat = s => CRM.LEAD_STATUS.some(x => x.k === s);
    is afgevallen bij een klant staat hier gewoon weer als verse reactie, en dan
    loopt de recruiter dezelfde intake nog een keer — of, erger, de kaart wordt
    dubbel aangemaakt en dezelfde persoon wordt bij twee klanten voorgesteld.
-   Andersom net zo waardevol: wie destijds op 'recyclebaar' is gezet was gewoon
-   goed, en die wil je juist als eerste terugbellen.
+   Andersom net zo waardevol: wie op bemiddelbaar staat was gewoon goed,
+   en die wil je juist als eerste terugbellen.
 
    Twee sleutels. Het telefoonnummer is de betrouwbare; naam + woonplaats vangt
    het geval waarin iemand een nieuw nummer opgeeft. Alleen naam zou te veel
@@ -294,7 +294,7 @@ function eerderTekst(c){
   if(c.fase === 'Afgevallen' || c.fase === 'Gestopt'){
     const reden = c.afvalCat || c.stopCat || '';
     return `${fase}${c.klant ? ' bij ' + c.klant : ''}${reden ? ' — ' + reden : ''}${
-      c.recyclebaar ? ' · stond op recyclebaar' : ''}`;
+      c.bemiddelbaar !== false ? ' · staat op beschikbaar' : ''}`;
   }
   return `${fase}${c.klant ? ' bij ' + c.klant : ''}${c.functie ? ' · ' + c.functie : ''}`;
 }
@@ -3189,7 +3189,7 @@ async function faseWissel(id, fase){
    ═══════════════════════════════════════════════════════════════ */
 /* Uitvalformulier — zelfde structuur als het bord (openUitvalForm):
    soort/door als keuze, reden per categorie, datums bij een stop,
-   recyclebaar-vinkje. edit=true werkt gegevens achteraf bij. */
+   bemiddelbaar/beschikbaar-per. edit=true werkt gegevens achteraf bij. */
 function uitvalForm(c, doel){
   const edit = c.fase === doel;
   const afgevallen = doel === 'Afgevallen';
@@ -3233,8 +3233,13 @@ function uitvalForm(c, doel){
         </div>`}
       <div class="f-row"><label for="uv_txt">Toelichting (optioneel)</label>
         <input type="text" id="uv_txt" value="${h(c.reden||'')}" placeholder="Korte toelichting — daar leren we van"></div>
-      <label class="check"><input type="checkbox" id="uv_rec" ${(c.recyclebaar==null?(afgevallen&&curType==='offer_afgewezen'):c.recyclebaar)?'checked':''}>
-        Recyclebaar — later heraanbieden bij een andere klant of functie</label>
+      <label class="check"><input type="checkbox" id="uv_bemid" ${c.bemiddelbaar!==false?'checked':''}>
+        Blijft bemiddelbaar — staat open voor een andere klant of vacature</label>
+      <div class="f-row" id="uv_perwrap" style="${c.bemiddelbaar===false?'display:none':''}">
+        <label for="uv_per">Beschikbaar per (optioneel, leeg = nu)</label>
+        <input type="date" id="uv_per" value="${h(c.beschikbaarPer||'')}"></div>
+      <p class="hint" style="margin:2px 0 8px">Niet gekwalificeerd, een mismatch of salaris — dat is geen oordeel over
+        bruikbaarheid voor een andere vacature. Zet dit alleen uit als iemand écht niet meer bemiddeld wil worden.</p>
       <div class="note err" id="uv_err" style="display:none;margin-top:10px"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
@@ -3245,7 +3250,6 @@ function uitvalForm(c, doel){
         if(afgevallen){
           const t = m.querySelector('input[name=uv_type]:checked').value;
           cat.innerHTML = opts(CRM.AFVAL_CATS[t], null);
-          m.querySelector('#uv_rec').checked = c.recyclebaar == null ? t === 'offer_afgewezen' : c.recyclebaar;
         } else {
           const d = m.querySelector('input[name=uv_door]:checked').value;
           cat.innerHTML = opts(CRM.STOP_CATS[d], null);
@@ -3253,8 +3257,11 @@ function uitvalForm(c, doel){
         CRM.$$('.rc-opt', m).forEach(o => o.classList.toggle('sel', o.querySelector('input').checked));
       };
       CRM.$$('.rc-radio input', m).forEach(r => r.onchange = sync);
+      const bemidBox = m.querySelector('#uv_bemid');
+      bemidBox.onchange = () => { m.querySelector('#uv_perwrap').style.display = bemidBox.checked ? '' : 'none'; };
       m.querySelector('#uv_ok').onclick = async () => {
-        const d = {cat:cat.value, txt:m.querySelector('#uv_txt').value.trim(), rec:m.querySelector('#uv_rec').checked};
+        const d = {cat:cat.value, txt:m.querySelector('#uv_txt').value.trim(),
+          bemid:bemidBox.checked, per:m.querySelector('#uv_per').value};
         if(!d.cat){ const e = m.querySelector('#uv_err'); e.style.display=''; e.textContent='Kies een reden.'; return; }
         if(afgevallen) d.type = m.querySelector('input[name=uv_type]:checked').value;
         else {
@@ -3295,7 +3302,9 @@ async function pasUitvalToe(c, doel, d, edit){
     if(d.plaats) patch.geplaatst_op = d.plaats;
     patch.afval_type = ''; patch.afval_categorie = '';
   }
-  patch.reden = d.txt || ''; patch.recyclebaar = !!d.rec;
+  patch.reden = d.txt || '';
+  patch.bemiddelbaar = !!d.bemid;
+  patch.beschikbaar_per = d.bemid ? (d.per || null) : null;
   const ok = await bewaarKand(c.id, patch);
   if(!ok) return;
   await CRM.logActiviteit('kandidaat', c.id, edit ? 'notitie' : 'fase',
@@ -3384,8 +3393,8 @@ function tekenUitval(el){
       <td class="n"><span class="num">${h(CRM.fmtDateShort(uitvalDatum(c))||'—')}</span></td>
       <td>${verv}</td>
       <td class="n" style="white-space:nowrap">
-        <button class="chip btn-like ${c.recyclebaar?'on':''}" data-uvrec="${h(c.id)}" title="Recyclebaar aan/uit">recyclebaar${c.recyclebaar?' ✓':''}</button>
-        ${c.recyclebaar && !herstart ? `<button class="btn sm" data-react="${h(c.id)}">Opnieuw aanbieden</button>` : ''}
+        <button class="chip btn-like ${c.bemiddelbaar!==false?'on':''}" data-uvrec="${h(c.id)}" title="Bemiddelbaar aan/uit">${c.bemiddelbaar!==false?'beschikbaar ✓':'niet bemiddelen'}</button>
+        ${c.bemiddelbaar!==false && !herstart ? `<button class="btn sm" data-react="${h(c.id)}">Opnieuw aanbieden</button>` : ''}
         <button class="btn ghost sm" data-uvedit="${h(c.id)}" title="Soort en reden achteraf bijwerken">Bijwerken</button>
         <button class="btn ghost sm" data-uvkaart="${h(c.id)}" title="Volledige kaart: fase en datums corrigeren">Corrigeren</button>
       </td></tr>`;
@@ -3396,7 +3405,7 @@ function tekenUitval(el){
       ${CRM.ui.kpi('Totaal uitval', afg.length+stp.length, `${nk.length} niet gekwalificeerd · ${oa.length} offer afgewezen`)}
       ${CRM.ui.kpi('Offer-acceptatie', accPct==null?'—':accPct+'%', `${geacc} van ${offers.length} kwamen tot een aanbod`, accPct!=null&&accPct<60?'':'')}
       ${CRM.ui.kpi('Gestopt na plaatsing', stp.length, `≤30 dgn: ${stopDuur('30')} · 31–90: ${stopDuur('90')} · >90: ${stopDuur('+')}`)}
-      ${CRM.ui.kpi('Recyclebare pool', afg.concat(stp).filter(c=>c.recyclebaar).length, 'kandidaten om her aan te bieden')}
+      ${CRM.ui.kpi('Beschikbare pool', afg.concat(stp).filter(c=>c.bemiddelbaar!==false).length, 'kandidaten om her aan te bieden')}
     </div>
     <div class="note info" style="margin-bottom:14px">Top-redenen — niet gekwalificeerd: <b>${topRedenen(nk, c=>c.afvalCat)}</b> ·
       offer afgewezen: <b>${topRedenen(oa, c=>c.afvalCat)}</b> · gestopt: <b>${topRedenen(stp, c=>c.stopCat)}</b>.
@@ -3417,7 +3426,7 @@ function tekenUitval(el){
   CRM.$$('[data-uvtab]', el).forEach(b => b.onclick = () => { S.u.f = b.dataset.uvtab; tekenUitval(el); });
   CRM.$$('[data-uvrec]', el).forEach(b => b.onclick = async () => {
     const c = CRM.kandidaat(b.dataset.uvrec); if(!c) return;
-    await bewaarKand(c.id, {recyclebaar: !c.recyclebaar});
+    await bewaarKand(c.id, {bemiddelbaar: c.bemiddelbaar === false});
     tekenUitval(el);
   });
   CRM.$$('[data-react]', el).forEach(b => b.onclick = () => heractiveren(b.dataset.react));
@@ -3475,7 +3484,7 @@ function heractiveren(id){
           notities:[{op:nu, door:CRM.me(), tekst:`Heraangeboden vanuit ${c.klant||'—'} (${c.fase==='Gestopt'?'gestopt':'afgevallen'}${c.reden?': '+c.reden:''})`}],
           historie:[{fase:'Intake', op:vandaag}],
           intake:c.intake||null, herstartVan:c.id,
-          afvalType:'', afvalCat:'', stopDoor:'', stopCat:'', recyclebaar:null
+          afvalType:'', afvalCat:'', stopDoor:'', stopCat:'', bemiddelbaar:true, beschikbaarPer:''
         };
         const rijNieuw = CRM.candToRow(nieuw);
         CRM.state.cands.unshift(rijNieuw);

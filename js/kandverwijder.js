@@ -463,11 +463,10 @@ function anonPatch(c){
        Performance rekenen er niet mee. */
     talen:'', rijbewijs:'', vervoer:'', ploegen:'', beschikbaar:'',
     ster:0, golden:false,
-    /* Bewust op 'onbekend' en niet op false: "mag niet terugkomen" is
-       een oordeel dat we niet vellen. Het effect is wel dat de kaart uit
-       de recyclebaar-lijst valt, en dat hoort ook — je kunt iemand niet
-       terugbellen van wie je het nummer net hebt gewist. */
-    recyclebaar:null,
+    /* Niet bemiddelbaar: geen oordeel over de persoon, maar een feit — je
+       kunt iemand niet terugbellen van wie het telefoonnummer net gewist
+       is. Zo valt de kaart ook uit de Beschikbaar-pool. */
+    bemiddelbaar:false, beschikbaar_per:null,
     /* Van de intake blijft het commitmentcijfer over. Dat is een getal
        waar de recruitmentcijfers mee werken; de antwoorden eronder zijn
        het verhaal van een persoon en gaan eruit. */

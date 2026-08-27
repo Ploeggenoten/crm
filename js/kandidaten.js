@@ -104,6 +104,69 @@ async function zetGolden(id, aan){
   return true;
 }
 const goldenSter = klasse => `<span class="kd-goldster ${klasse||''}" title="Golden candidate">★</span>`;
+
+/* ─── Bemiddelbaar / beschikbaar per ──────────────────────────────
+   Het talentpool-signaal (25 aug 2026), los van fase: elke kandidaat is
+   bemiddelbaar tenzij iemand dat uitzet, ongeacht of hij ooit is voorgesteld
+   of ergens is afgevallen. "Binnenkort beschikbaar" is geen aparte status
+   maar een afgeleide van beschikbaar_per — zie CRM.isBeschikbaar (data.js).
+   Vervangt recyclebaar volledig: dat veld wordt nergens meer gelezen of
+   geschreven. */
+async function zetBemiddelbaar(id, aan){
+  const r = CRM.state.cands.find(x => String(x.id) === String(id));
+  if(!r) return false;
+  const vorig = r.bemiddelbaar;
+  r.bemiddelbaar = !!aan;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('candidates').update({bemiddelbaar: !!aan}).eq('id', id);
+    if(error){ r.bemiddelbaar = vorig; CRM.fout('Opslaan mislukt', error); return false; }
+  }
+  await CRM.logActiviteit('kandidaat', id, 'systeem',
+    aan ? 'Weer op beschikbaar gezet' : 'Op niet bemiddelen gezet');
+  return true;
+}
+async function zetBeschikbaarPer(id, datum){
+  const r = CRM.state.cands.find(x => String(x.id) === String(id));
+  if(!r) return false;
+  const vorig = r.beschikbaar_per;
+  r.beschikbaar_per = datum || null;
+  if(!CRM.demo){
+    const {error} = await CRM.sb.from('candidates').update({beschikbaar_per: datum || null}).eq('id', id);
+    if(error){ r.beschikbaar_per = vorig; CRM.fout('Opslaan mislukt', error); return false; }
+  }
+  return true;
+}
+function beschikbaarheidChip(c){
+  if(c.bemiddelbaar === false)
+    return `<button type="button" class="chip btn-like" id="c_bemid" style="color:var(--muted)">Niet bemiddelen</button>`;
+  if(CRM.beschikbaarPerLater(c))
+    return `<button type="button" class="chip btn-like amber" id="c_bemid">Beschikbaar per ${h(CRM.fmtDate(c.beschikbaarPer))}</button>`;
+  return `<button type="button" class="chip btn-like green" id="c_bemid">Beschikbaar</button>`;
+}
+function openBeschikbaarheidModal(c){
+  CRM.modal.open(`
+    <div class="modal-head"><h2>Beschikbaarheid · ${h(c.naam||'kandidaat')}</h2>
+      <button class="btn ghost small" data-mclose>✕</button></div>
+    <div class="form-grid">
+      <label class="check"><input type="checkbox" id="bm_aan" ${c.bemiddelbaar!==false?'checked':''}>
+        Bemiddelbaar — staat open voor een andere klant/vacature</label>
+      <div><label>Beschikbaar per (leeg = nu)</label>
+        <input type="date" id="bm_datum" value="${h(c.beschikbaarPer||'')}"></div>
+    </div>
+    <p class="meta">Dit staat los van de fase. Ook een kandidaat die net is afgevallen of nog nooit is voorgesteld
+      kan hier gewoon op beschikbaar staan.</p>
+    <div class="modal-foot"><button class="btn" data-mclose>Annuleren</button>
+      <button class="btn primary" id="bm_ok">Opslaan</button></div>`, {sluitbaar:true});
+  document.getElementById('bm_ok').onclick = async () => {
+    const aan = document.getElementById('bm_aan').checked;
+    const datum = document.getElementById('bm_datum').value;
+    await zetBemiddelbaar(c.id, aan);
+    await zetBeschikbaarPer(c.id, aan ? datum : '');
+    CRM.modal.close();
+    CRM.toast(aan ? (datum ? `Beschikbaar per ${CRM.fmtDate(datum)}` : 'Beschikbaar') : 'Niet bemiddelen', 'ok');
+    CRM.ga('kandidaten', {id:c.id});
+  };
+}
 const faseChip = (fase, extra='') => fase
   ? `<span class="chip ${extra}"><i class="dot" style="background:${CRM.faseKleur(fase)}"></i>${h(CRM.faseNorm(fase))}</span>` : '';
 const telLink = t => 'tel:' + String(t||'').replace(/[^0-9+]/g,'');
@@ -253,7 +316,6 @@ function kansen(c){
           klant:k.klant, gestopt, reden, doorKlant,
           offerAf: !gestopt && k.afvalType === 'offer_afgewezen',
           wanneer: k.gestoptOp || k.since || '',
-          herbruikbaar: k.recyclebaar,
           zelfdeKaart: String(k.id) === String(c.id)
         };
       })
@@ -511,7 +573,7 @@ const STATUS_OPTS = [
   {g:'In een traject',   k:'lopend',      lbl:'Actief lopend'},
   {g:'In een traject',   k:'geplaatst',   lbl:'Geplaatst'},
   {g:'Bewaard voor later', k:'beschikbaar', lbl:'Beschikbaar'},
-  {g:'Bewaard voor later', k:'recyclebaar', lbl:'Uitval, herbruikbaar'},
+  {g:'Bewaard voor later', k:'niet_bemiddelen', lbl:'Niet bemiddelen'},
   {g:'Bewaard voor later', k:'golden',    lbl:'Golden candidates ★'},
   {g:'',                 k:'alle',        lbl:'Alle statussen'}
 ];
@@ -610,7 +672,7 @@ function gefilterd(){
     if(F.status === 'beschikbaar' && !CRM.isBeschikbaar(c))  return false;
     if(F.status === 'geplaatst'   && !CRM.PLACED.includes(c.fase)) return false;
     if(F.status === 'golden'      && !golden.has(String(c.id))) return false;
-    if(F.status === 'recyclebaar' && !(c.fase === 'Afgevallen' && c.recyclebaar !== false)) return false;
+    if(F.status === 'niet_bemiddelen' && c.bemiddelbaar !== false) return false;
     if(F.mijn  && !CRM.isVanMij(c))    return false;
     if(q && ![c.naam,c.functie,c.woonplaats,c.klant,c.email,c.telefoon,c.talen].join(' ').toLowerCase().includes(q)) return false;
     return true;
@@ -825,7 +887,10 @@ function lijst(wrap){
          zonder fase — de ±298 rijen uit het oude ATS — krijgt geen rand: dat
          is iets anders dan een fase die toevallig grijs is. */
       return `<tr${CRM.ui.frand(c.fase ? CRM.faseKleur(c.fase) : '', 'clickable')} data-id="${h(String(c.id))}">
-        <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}<div class="rowsub">${h(c.functie||'—')}${
+        <td><b>${h(c.naam)}</b>${golden.has(String(c.id))?' '+goldenSter():''}${
+          c.bemiddelbaar===false ? ' <span class="chip" style="color:var(--muted)">niet bemiddelen</span>'
+          : CRM.beschikbaarPerLater(c) ? ` <span class="chip amber">per ${h(CRM.fmtDate(c.beschikbaarPer))}</span>` : ''
+          }<div class="rowsub">${h(c.functie||'—')}${
           c.cv && c.cv.werkgever ? ' · '+h(c.cv.werkgever) : ''}${
           c.bron==='Import oud ATS' ? ' <span class="kd-bronimp">Import oud ATS</span>' : ''}</div></td>
         <td><span class="kd-ster num" title="${c.ster?c.ster+' van 5':'nog geen beoordeling'}">${h(CRM.sterren(c.ster))}</span></td>
@@ -1121,6 +1186,8 @@ function kaart(mount, acties, id){
     const ok = await zetGolden(c.id, !isGolden(c.id));
     if(ok) CRM.render();
   };
+  const bemidBtn = mount.querySelector('#c_bemid');
+  if(bemidBtn) bemidBtn.onclick = () => openBeschikbaarheidModal(c);
   /* Twee knoppen, één handeling: de knop in de kop van "CV & ervaring" en de
      knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
      naar het lege blok en niet naar de kopregel. */
@@ -1672,6 +1739,7 @@ function kopHtml(c){
       <div class="row tight" style="margin-top:9px">
         <button type="button" class="chip btn-like kd-goldbtn${gold?' aan':''}" id="c_golden"
           title="${gold?'Klik om de golden-markering weg te halen':'Markeer als golden candidate: goede kandidaat, nu geen passende vacature'}">★ Golden candidate</button>
+        ${beschikbaarheidChip(c)}
         ${faseChip(c.fase)}
         ${c.rec?`<span class="chip">Recruiter ${h(c.rec)}</span>`:''}
         ${c.type?`<span class="chip">${h(c.type)}</span>`:''}
@@ -2597,9 +2665,6 @@ function uitvalHtml(c){
   if(!afgevallen && !gestopt) return '';
   const rij = (lbl, waarde) => waarde
     ? `<div class="kd-veld"><span class="label">${h(lbl)}</span><span>${h(waarde)}</span></div>` : '';
-  /* recyclebaar is bewust drieledig: true / false / null (nooit beoordeeld). */
-  const herbruik = c.recyclebaar == null ? 'nog niet beoordeeld'
-                 : c.recyclebaar ? 'ja — mag opnieuw aangeboden worden' : 'nee';
   const leeg = !c.afvalCat && !c.stopCat && !c.reden && !c.afvalType && !c.stopDoor;
   return `<div class="card">
     <div class="card-h"><div class="h2">${afgevallen ? 'Afgevallen' : 'Gestopt'}</div>
@@ -2614,7 +2679,9 @@ function uitvalHtml(c){
           ? rij('Soort', AFVAL_SOORT[c.afvalType] || c.afvalType) + rij('Reden', c.afvalCat)
           : rij('Gestopt door', STOP_DOOR[c.stopDoor] || c.stopDoor) + rij('Reden', c.stopCat)}
         ${gestopt ? rij('Gestopt op', CRM.fmtDate(c.gestoptOp)) + rij('Was geplaatst op', CRM.fmtDate(c.geplaatstOp)) : ''}
-        ${rij('Herbruikbaar', herbruik)}
+        ${rij('Bemiddelbaar', c.bemiddelbaar===false ? 'nee — niet bemiddelen'
+          : CRM.beschikbaarPerLater(c) ? 'ja, beschikbaar per ' + CRM.fmtDate(c.beschikbaarPer) : 'ja, nu beschikbaar')}
+        <p class="meta" style="margin:2px 0 0">Bovenaan de kaart bij de chips is dit direct te wijzigen — een afwijzing hier betekent niet dat iemand niet bruikbaar is.</p>
         ${/* Wat een stop met de target doet, staat hier zwart op wit. Binnen
              de garantie kost hij ons een vervanging of restitutie en telt hij
              af; erbuiten is de plaatsing afgerond en blijft de fee staan

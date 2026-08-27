@@ -152,13 +152,22 @@
                                      afval_categorie:'Taal', since:d(-20)}),
     basis('rand6','Gestopte Gerard',{fase:'Gestopt', start:P1, geplaatst_op:P1, gestopt_op:P2,
                                      garantie_mnd:3, stop_door:'kandidaat', stop_categorie:'Werk beviel niet',
-                                     since:P2, recyclebaar:true}),
+                                     since:P2, bemiddelbaar:true}),
     basis('rand7','Vervanger Vera', {fase:'Gestopt', vervangt:'rand6', start:P1, geplaatst_op:P1,
                                      gestopt_op:P2, stop_door:'klant', stop_categorie:'Conflict/houding', since:P2}),
     basis('rand8','Spook Sander',   {fase:'Gestopt', gestopt_op:P2, stop_door:'anders',
                                      stop_categorie:'Anders', since:P2}),
     basis('rand9','Weesje Wim',     {fase:'Voorgesteld', vacature_id:'Verwijderde::Vacature',
-                                     klant:'Verwijderde Klant', functie:'Onbekende functie'})
+                                     klant:'Verwijderde Klant', functie:'Onbekende functie'}),
+    /* Talentpool-voorbeelden (25 aug 2026): een ZZP'er die nog geen klus
+       heeft maar wel over een tijdje kan, en iemand die niet meer bemiddeld
+       wil worden — om de nieuwe beschikbaarheid-chips te kunnen testen. */
+    basis('rand10','Binnenkort Bea', {fase:'Afgevallen', functie:'ZZP Lasser', klant:'',
+                                       gestopt_op:d(-5), afval_type:'niet_gekwalificeerd', afval_categorie:'Salaris',
+                                       since:d(-5), bemiddelbaar:true, beschikbaar_per:d(20)}),
+    basis('rand11','Stopte Stijn',   {fase:'Afgevallen', functie:'Operator', klant:'',
+                                       gestopt_op:d(-3), afval_type:'niet_gekwalificeerd', afval_categorie:'Anders',
+                                       since:d(-3), bemiddelbaar:false})
   ];
   CANDS.push(...RAND);
 

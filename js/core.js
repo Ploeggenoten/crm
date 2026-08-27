@@ -535,6 +535,11 @@ CRM.rowToCand = r => ({
   notities:Array.isArray(r.notities)?r.notities:[], historie:Array.isArray(r.historie)?r.historie:[],
   afvalType:r.afval_type||'', afvalCat:r.afval_categorie||'', stopDoor:r.stop_door||'',
   stopCat:r.stop_categorie||'', recyclebaar:r.recyclebaar==null?null:!!r.recyclebaar,
+  /* Bemiddelbaar/beschikbaarPer vervangen recyclebaar als hét talentpool-
+     signaal (25 aug 2026): één duidelijke schakelaar i.p.v. een vage
+     drieledige vlag die alleen bij Afgevallen betekenis had. Default true
+     — een kandidaat is bemiddelbaar tenzij het tegendeel is vastgelegd. */
+  bemiddelbaar:r.bemiddelbaar==null?true:!!r.bemiddelbaar, beschikbaarPer:r.beschikbaar_per||'',
   intake:(r.intake&&typeof r.intake==='object')?r.intake:null,
   vtPct:r.vt_pct==null?null:Number(r.vt_pct), ejuPct:r.eju_pct==null?null:Number(r.eju_pct),
   overigPct:r.overig_pct==null?null:Number(r.overig_pct), herstartVan:r.herstart_van||'',
@@ -574,6 +579,7 @@ const candRijVol = c => ({
   notities:c.notities||[], historie:c.historie||[],
   afval_type:c.afvalType||'', afval_categorie:c.afvalCat||'', stop_door:c.stopDoor||'',
   stop_categorie:c.stopCat||'', recyclebaar:c.recyclebaar==null?null:!!c.recyclebaar,
+  bemiddelbaar:c.bemiddelbaar==null?true:!!c.bemiddelbaar, beschikbaar_per:c.beschikbaarPer||null,
   intake:c.intake||null, vt_pct:c.vtPct==null?null:c.vtPct, eju_pct:c.ejuPct==null?null:c.ejuPct,
   overig_pct:c.overigPct==null?null:c.overigPct, herstart_van:c.herstartVan||'',
   geboortedatum:c.geboortedatum||null, foto:c.foto||'',

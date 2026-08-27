@@ -963,14 +963,39 @@ CRM.binnenRadius = (kandidaat, plaats, km) => {
   const d = CRM.afstandKm(kandidaat?.woonplaats, plaats);
   return d != null && d <= km;
 };
-/* Beschikbare pool = niet in een lopend traject: afgevallen-maar-recyclebaar
-   of expliciet beschikbaar gemarkeerd. Actief lopend = in de pijplijn. */
 /* Actief lopend vereist een ÉCHTE fase: geïmporteerde kandidaten (fase '')
    staan niet in een traject en mogen hier nooit in meetellen. */
 CRM.isActiefLopend = c => !!c.fase &&
   (!CRM.DONE.includes(c.fase) || CRM.PLACED.includes(c.fase) && !c.gestoptOp);
-CRM.isBeschikbaar  = c => ['direct','binnen 2 weken','binnen 1 maand','in overleg'].includes(c.beschikbaar)
-  || (c.fase === 'Afgevallen' && c.recyclebaar === true);
+
+/* Talentpool (25 aug 2026): één helder signaal i.p.v. de oude mix van
+   beschikbaar-tekst + recyclebaar-vlag. Bemiddelbaar staat los van fase —
+   een kandidaat die nog nooit is voorgesteld kan al bemiddelbaar zijn, en
+   iemand die bij een klant afviel blijft dat tenzij iemand het uitzet.
+   "Beschikbaar" in filters/overzichten betekent: bemiddelbaar, én ofwel nu
+   al zover (geen datum, of datum voorbij) ofwel binnen een maand zover
+   (BINNENKORT_DAGEN) — het systeem rekent dit zelf uit, geen losse
+   "binnenkort beschikbaar"-status nodig. */
+CRM.BINNENKORT_DAGEN = 30;
+const addDagenISO = (iso, n) => { const d = new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+CRM.isBeschikbaar = c => c.bemiddelbaar !== false
+  && (!c.beschikbaarPer || c.beschikbaarPer <= addDagenISO(CRM.todayISO(), CRM.BINNENKORT_DAGEN));
+/* Beschikbaar-per in de toekomst, maar buiten de "binnenkort"-horizon:
+   voor een chiptekst als "beschikbaar per 12 nov" i.p.v. gewoon "beschikbaar". */
+CRM.beschikbaarPerLater = c => !!c.beschikbaarPer && c.beschikbaarPer > CRM.todayISO();
+
+/* Opzegtermijn: alleen bruikbaar als filter als we hem eenduidig kunnen
+   lezen uit het bestaande cv.opzegtermijn-veld (vrije tekst uit het oude
+   ATS, meestal "immediately" of "N days"). Onbekend blijft onbekend — we
+   raden niet of iemand een opzegtermijn heeft. */
+CRM.heeftOpzegtermijn = c => {
+  const s = String((c.cv||{}).opzegtermijn || '').trim().toLowerCase();
+  if(!s) return null;
+  if(/^(immediately|per\s*direct|0|0\s*dagen?|0\s*days?)$/i.test(s)) return false;
+  const m = s.match(/^(\d+)\s*(dagen?|days?)$/i);
+  if(m) return Number(m[1]) > 0;
+  return true;   // andere ingevulde tekst = aanname dat er iets loopt
+};
 
 /* Kandidaat-volledigheid: tegen vervuiling in het systeem. */
 CRM.VELDEN_VERPLICHT = [
