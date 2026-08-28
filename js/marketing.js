@@ -462,15 +462,27 @@
   const isGeplaatst = c => CRM.faseIn(c.fase, CRM.PLACED)
     || (CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp);
 
-  /* De recruitmentpijplijn is op 31 jul 2026 uitgebreid: 'Intake gepland' is
-   vervallen en er kwamen vier tussenstappen bij. Zonder die stappen telde
-   Marketing structureel te weinig gekwalificeerde leads per campagne — een
-   lead die op 'CV binnen' stond was in deze telling onzichtbaar. */
-const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevraagd',
-                        'CV binnen','Videocall gepland','Videocall gehad','Doorgeschoten'];
-  const AFGEVALLEN_TEL = ['Geen interesse','Niet geschikt'];
-  const NIET_BEREIKT   = 'Gebeld — geen gehoor';
-  const STATUS_NAMEN   = CRM.LEAD_STATUS.map(s => s.k);
+  /* Statusmodel versmald op 27 aug 2026 (Tjeerd): de AM houdt nog maar vijf
+     statussen bij (CRM.LEAD_STATUS) en de WhatsApp-bot kreeg een eigen,
+     informatief veld bot_status. Gevolg voor deze meting:
+       · GEKWALIFICEERD is nu het oordeel van de bot (bot_status), niet meer
+         een middenmoot van AM-statussen — de AM-status zegt alleen nog waar
+         het werk ligt, de bot zegt wat de advertentie opleverde. En dát is
+         precies wat dit scherm meet.
+       · 'Doorgeschoten' is geen status meer: doorgeschoten = kandidaat_id
+         gevuld (of een kandidaat die met lead_id terugwijst).
+       · AFGEVALLEN is alleen nog 'Niet geschikt' — 'Geen interesse' is
+         daarin opgegaan.
+     Oude statuswaarden kunnen in bestaande data staan; CRM.leadNorm vertaalt
+     ze, dus elke AM-status loopt hier eerst door die vertaling. */
+  const GEKWALIFICEERD = ['Gekwalificeerd','Twijfelgeval','Potentieel andere vacature']; // bot_status!
+  const AFGEVALLEN_TEL = ['Niet geschikt'];
+  const NIET_BEREIKT   = 'Geen gehoor';
+  /* Beoordeeld = de AM heeft de lead gesproken en een oordeel geveld: alles
+     voorbij 'Nieuw' en 'Geen gehoor'. Nodig als noemer voor de vraag
+     "valt hij af zodra we hem spreken?". */
+  const BEOORDEELD     = ['Potentieel','Intake ingepland','Niet geschikt'];
+  const STATUS_NAMEN   = CRM.LEAD_STATUS.map(s => s.k ?? s);
 
   /* Maandsleutel uit een datum of tijdstempel. binnen_op is een timestamptz
      (UTC); we rekenen in lokale tijd, zodat een lead van 1 juli 00:30 in juli
@@ -543,7 +555,13 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       const vac     = l.vacature_id ? vacById.get(String(l.vacature_id)) : null;
       const klant   = String(vac?.klant   || l.klant   || '').trim();
       const functie = String(vac?.functie || l.functie || '').trim();
-      const status  = String(l.status||'').trim();
+      /* Ruwe status apart houden: leadNorm vertaalt oude waarden (zoals
+         'Doorgeschoten' of 'CV binnen') naar het model van 27 aug 2026, maar
+         voor het gat "doorgeschoten zonder kandidaat" hieronder is juist de
+         ruwe, historische waarde het bewijs. */
+      const ruw     = String(l.status||'').trim();
+      const status  = ruw ? CRM.leadNorm(ruw) : '';
+      const botStatus = String(l.bot_status||'').trim();
       const kandId  = String(l.kandidaat_id||'').trim();
       /* Twee wegen naar dezelfde kandidaat: de lead wijst vooruit
          (kandidaat_id) of de kandidaat wijst terug (lead_id). Eén van de
@@ -554,12 +572,17 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       const r = {
         lead:l, id:String(l.id), naam:String(l.naam||''),
         dk:dagVan(l.binnen_op), mk:maandVan(l.binnen_op),
-        klant, functie, status, cand,
+        klant, functie, status, botStatus, cand,
         kkey:kKey(klant), fkey:fKey(functie), viaVacature:!!vac,
         nieuw:       status === 'Nieuw',
         nietBereikt: status === NIET_BEREIKT,
         afgeteld:    AFGEVALLEN_TEL.includes(status),
-        gekwal:      GEKWALIFICEERD.includes(status),
+        beoordeeld:  BEOORDEELD.includes(status),
+        /* Sinds 27 aug 2026: het kwalificatiesignaal komt van de bot, los
+           van de AM-status. Een bot-gekwalificeerde lead kan dus tegelijk
+           op 'Nieuw' staan (nog niet opgepakt) of op 'Niet geschikt'
+           (AM oordeelde anders) — beide sporen tellen apart. */
+        gekwal:      GEKWALIFICEERD.includes(botStatus),
         door:        !!(kandId || cand),
         voorgesteld: !!(cand && bereikteVoorstel(cand)),
         geplaatst:   !!(cand && isGeplaatst(cand)),
@@ -579,7 +602,11 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       if(!klant)                      gaten.zonderKlant.push(r);
       if(!vac)                        gaten.zonderVacature.push(r);
       if(kandId && !candById.get(kandId)) gaten.kandidaatWeg.push(r);
-      if(status === 'Doorgeschoten' && !cand) gaten.doorZonderKandidaat.push(r);
+      /* 'Doorgeschoten' bestaat als status niet meer, maar oude data kan er
+         nog op staan. Zo'n lead zónder gekoppelde kandidaat is een gebroken
+         keten — bewust op de rúwe waarde gecheckt, want leadNorm poetst die
+         status juist weg. */
+      if(ruw === 'Doorgeschoten' && !cand) gaten.doorZonderKandidaat.push(r);
     }
 
     /* Kandidaten die uit Meta kwamen maar aan geen enkele lead hangen: daar
@@ -734,23 +761,28 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
     return M._idx;
   }
 
-  /* De trechter over een groep leads. Bewust twee soorten stappen: wat er
-     mét de lead gebeurde (opgepakt, bereikt, gekwalificeerd) en wat er dáárna
-     met de kandidaat gebeurde (voorgesteld, geplaatst). */
+  /* De trechter over een groep leads. Drie sporen sinds 27 aug 2026: wat de
+     AM met de lead deed (opgepakt, bereikt, beoordeeld), wat de bót ervan
+     vond (gekwal — uit bot_status, los van de AM-status) en wat er dáárna
+     met de kandidaat gebeurde (voorgesteld, geplaatst). gekwal overlapt dus
+     met de AM-tellers en telt niet op tot `binnen`. */
   function trechter(rijen){
-    const t = {binnen:rijen.length, nieuw:0, nietBereikt:0, afgeteld:0, gekwal:0,
-               door:0, voorgesteld:0, geplaatst:0, gestopt:0, loopt:0, anders:0};
+    const t = {binnen:rijen.length, nieuw:0, nietBereikt:0, afgeteld:0, beoordeeld:0,
+               gekwal:0, door:0, voorgesteld:0, geplaatst:0, gestopt:0, loopt:0, anders:0};
     for(const r of rijen){
       if(r.nieuw)       t.nieuw++;
       if(r.nietBereikt) t.nietBereikt++;
       if(r.afgeteld)    t.afgeteld++;
+      if(r.beoordeeld)  t.beoordeeld++;
       if(r.gekwal)      t.gekwal++;
       if(r.door)        t.door++;
       if(r.voorgesteld) t.voorgesteld++;
       if(r.geplaatst)   t.geplaatst++;
       if(r.gestopt)     t.gestopt++;
       if(r.loopt)       t.loopt++;
-      if(!r.nieuw && !r.nietBereikt && !r.afgeteld && !r.gekwal) t.anders++;
+      /* Buiten elk AM-hokje: status leeg of onbekend. Bot-kwalificatie telt
+         hier niet mee — dat is het andere spoor. */
+      if(!r.nieuw && !r.nietBereikt && !r.beoordeeld) t.anders++;
     }
     t.uitgewerkt = t.binnen > 0 && t.loopt === 0;
     return t;
@@ -1904,10 +1936,10 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         ${regel('Cohort', 'De maand waarin de lead binnenkwam (veld binnen_op, lokale tijd). Niet de maand van de plaatsing.')}
         ${regel('Binnengekomen', 'Alle leads in crm_leads met bron Meta en een binnenkomstdatum in die maand.')}
         ${regel('Nog niet opgepakt', 'Status "Nieuw" — er is nog niemand mee bezig geweest. Dit is werk dat blijft liggen.')}
-        ${regel('Niet bereikt', 'Status "Gebeld — geen gehoor". Wel gebeld, geen contact. Iets anders dan blijven liggen: dit vraagt om een tweede poging of een appje.')}
-        ${regel('Afgevallen aan de telefoon', 'Status "Geen interesse" of "Niet geschikt" — beoordeeld en afgevallen.')}
-        ${regel('Gekwalificeerd', 'Status "Potentieel", "Potentieel — andere vacature", "CV opgevraagd", "CV binnen", "Videocall gepland", "Videocall gehad" of "Doorgeschoten" — de hele middenmoot van de leadstatussen, zoals die sinds 31 jul 2026 heet.')}
-        ${regel('Advertentie of opvolging', 'Twee kanten van dezelfde uitval. "Blijft liggen bij ons" = status Nieuw of niet bereikt, afgezet tegen alle binnengekomen leads. "Valt af zodra we ze spreken" = geen interesse of niet geschikt, afgezet tegen alleen de leads die beoordeeld zijn. Die tweede noemer is bewust smaller: een cohort waarin niemand gebeld is zou anders lijken alsof de advertentie goed was.')}
+        ${regel('Niet bereikt', 'Status "Geen gehoor". Wel gebeld, geen contact. Iets anders dan blijven liggen: dit vraagt om een tweede poging of een appje.')}
+        ${regel('Afgevallen aan de telefoon', 'Status "Niet geschikt" — door de AM beoordeeld en afgevallen.')}
+        ${regel('Gekwalificeerd', 'Botstatus "Gekwalificeerd", "Twijfelgeval" of "Potentieel andere vacature" — sinds 27 aug 2026 het oordeel van de WhatsApp-bot, los van de AM-status. Dit meet wat de advertentie opleverde; wat de AM er vervolgens mee doet staat in de andere stappen.')}
+        ${regel('Advertentie of opvolging', 'Twee kanten van dezelfde uitval. "Blijft liggen bij ons" = status Nieuw of niet bereikt, afgezet tegen alle binnengekomen leads. "Valt af zodra we ze spreken" = niet geschikt, afgezet tegen alleen de leads die de AM beoordeelde (Potentieel, Intake ingepland of Niet geschikt). Die tweede noemer is bewust smaller: een cohort waarin niemand gebeld is zou anders lijken alsof de advertentie goed was.')}
         ${regel('Doorgeschoten naar kandidaat', 'De lead heeft een kandidaat_id, óf er staat een kandidaat met deze lead_id. Eén van beide is genoeg.')}
         ${regel('Voorgesteld', 'Die kandidaat staat nu op Voorgesteld of verder, of stond daar ooit volgens de historie.')}
         ${regel('Geplaatst', 'Die kandidaat heeft getekend (Contract getekend of Gestart) of is daarna gestopt. Een latere stop maakt de plaatsing niet ongedaan.')}
@@ -2004,14 +2036,15 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
      advertentie of aan de opvolging?" Dat is een andere vraag dan waar de
      trechter het smalst is, en hij is te beantwoorden met wat er al staat.
 
-     Twee kanten, uit de leadstatus:
+     Twee kanten, uit de leadstatus (sinds 27 aug 2026 de vijf van het
+     nieuwe model):
      · OPVOLGING — de lead is nooit beoordeeld. Status 'Nieuw' (er is niemand
-       mee bezig geweest) of 'Gebeld — geen gehoor'. Wat de advertentie
-       opleverde weten we van deze mensen simpelweg niet.
-     · ADVERTENTIE — de lead is wél gesproken en viel af op 'Geen interesse'
-       of 'Niet geschikt'. Dan trok de advertentie de verkeerde mensen aan.
+       mee bezig geweest) of 'Geen gehoor'. Wat de advertentie opleverde
+       weten we van deze mensen simpelweg niet.
+     · ADVERTENTIE — de lead is wél gesproken en viel af op 'Niet geschikt'.
+       Dan trok de advertentie de verkeerde mensen aan.
 
-     'Gebeld — geen gehoor' zit bewust aan de opvolgingskant, maar met een
+     'Geen gehoor' zit bewust aan de opvolgingskant, maar met een
      kanttekening op het scherm: iemand die niet opneemt kan ook een
      laag-intentie lead uit de advertentie zijn. We doen niet alsof die
      scheiding scherper is dan hij is.
@@ -2021,7 +2054,11 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
      zou een cohort waarin niemand gebeld is er automatisch uitzien alsof de
      advertentie goed was. */
   function kwaliteitHtml(t, cLeads){
-    const beoordeeld = t.gekwal + t.afgeteld;
+    /* Beoordeeld komt sinds 27 aug 2026 uit het AM-spoor (Potentieel,
+       Intake ingepland of Niet geschikt), niet meer uit gekwal + afgeteld:
+       gekwal is nu het bot-oordeel en overlapt met alle AM-statussen, dus
+       optellen zou dubbel tellen. */
+    const beoordeeld = t.beoordeeld;
     const blijftLiggen = t.nieuw + t.nietBereikt;
     /* Zonder één beoordeelde lead valt er over de advertentie niets te
        zeggen. Dan tonen we alleen de opvolgingskant, en zeggen dat erbij. */
@@ -2060,7 +2097,7 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
          van <span class="num">${fmtN(t.binnen)}</span> binnengekomen`)}
       ${kant('Valt af zodra we ze spreken', advPct == null ? '—' : pctV(t.afgeteld, beoordeeld), advPct || 0,
         beoordeeld
-          ? `<span class="num">${fmtN(t.afgeteld)}</span> geen interesse of niet geschikt, van
+          ? `<span class="num">${fmtN(t.afgeteld)}</span> niet geschikt, van
              <span class="num">${fmtN(beoordeeld)}</span> beoordeelde leads`
           : 'nog geen enkele lead beoordeeld')}
       <p class="sub" style="margin:12px 0 0;max-width:74ch">${slot}</p>
@@ -2088,8 +2125,8 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
       {k:'binnen',   lbl:'Binnengekomen',               n:t.binnen,      basis:t.binnen,      basisLbl:'',               rijen:cLeads,               uitleg:'alle Meta-leads van dit cohort'},
       {k:'nieuw',    lbl:'Nog niet opgepakt',           n:t.nieuw,       basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nieuw),      uitleg:'status Nieuw — hier ligt werk', waarsch:true},
       {k:'onbereikt',lbl:'Niet bereikt',                n:t.nietBereikt, basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.nietBereikt),uitleg:'gebeld, geen gehoor'},
-      {k:'afgeteld', lbl:'Afgevallen aan de telefoon',  n:t.afgeteld,    basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.afgeteld),   uitleg:'geen interesse of niet geschikt'},
-      {k:'gekwal',   lbl:'Gekwalificeerd',              n:t.gekwal,      basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.gekwal),     uitleg:'potentieel, cv of videocall, of doorgeschoten', goed:true},
+      {k:'afgeteld', lbl:'Afgevallen aan de telefoon',  n:t.afgeteld,    basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.afgeteld),   uitleg:'door de AM op niet geschikt gezet'},
+      {k:'gekwal',   lbl:'Gekwalificeerd',              n:t.gekwal,      basis:t.binnen,      basisLbl:'binnengekomen',  rijen:L(r => r.gekwal),     uitleg:'door de bot: gekwalificeerd, twijfelgeval of andere vacature', goed:true},
       {k:'door',     lbl:'Doorgeschoten naar kandidaat',n:t.door,        basis:t.gekwal,      basisLbl:'gekwalificeerd', rijen:L(r => r.door),       uitleg:'staat als kandidaat op het bord'},
       {k:'voorg',    lbl:'Voorgesteld',                 n:t.voorgesteld, basis:t.door,        basisLbl:'doorgeschoten',  rijen:L(r => r.voorgesteld),uitleg:'bij een klant voorgesteld'},
       {k:'plaats',   lbl:'Geplaatst',                   n:t.geplaatst,   basis:t.voorgesteld, basisLbl:'voorgesteld',    rijen:L(r => r.geplaatst),  uitleg:'contract getekend', goed:true}
@@ -2323,7 +2360,7 @@ const GEKWALIFICEERD = ['Potentieel','Potentieel — andere vacature','CV opgevr
         'Het kandidaat_id staat gevuld, maar die kandidaat staat niet (meer) op het bord. Ze tellen als doorgeschoten, maar hun voorstel en plaatsing kunnen we niet volgen.', 'gat:kandweg', zKandWeg);
     if(zDoor.length)
       P(`${fmtN(zDoor.length)} leads staan op "Doorgeschoten" zonder kandidaat`,
-        'De status zegt doorgeschoten, maar er hangt geen kandidaat aan. Hier breekt de keten meteen na de kwalificatie.', 'gat:doorleeg', zDoor);
+        'De (oude, sinds 27 aug 2026 vervallen) status zegt doorgeschoten, maar er hangt geen kandidaat aan. Hier breekt de keten meteen na de kwalificatie.', 'gat:doorleeg', zDoor);
     if(D.losseKand.length)
       P(`${fmtN(D.losseKand.length)} kandidaten met bron Meta hangen aan geen enkele lead`,
         `Waarvan ${fmtN(D.lossePlaatsingen.length)} geplaatst. Die plaatsingen zijn wél van Meta gekomen, maar we kunnen ze aan geen maand en aan geen campagne toerekenen — `

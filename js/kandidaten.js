@@ -563,7 +563,7 @@ function overzicht(mount, acties){
    kandidaatkaart kwamen (3 aug 2026) was er nog nergens een lijst waar die
    mensen in stonden: Recruitment leest de leadtabel, Klanttrajecten begint
    bij Voorgesteld, en hier kon je er niet op filteren. Zet je iemand op
-   'Videocall gepland', dan was hij daarna nergens meer terug te vinden —
+   'Intake ingepland', dan was hij daarna nergens meer terug te vinden —
    precies wat Tjeerd meldde met Goncalo. */
 const INSTROOM_OPTS = (CRM.INSTROOM || []).map(p => ({g:'In de instroom', k:'in:'+p.k, lbl:p.k}));
 const STATUS_OPTS = [
@@ -3833,7 +3833,7 @@ CRM.registerModule('kandidaten', {
       kandidaat wordt vastgelegd. `CRM.klaarOmVoorTeStellen` leunt daarom op
       de intake als bewijs dat er een videocall is geweest, en het paneel
       bovenaan dit scherm legt dat met zoveel woorden uit. Beter zou zijn:
-      bij het doorschieten van een lead met status 'Videocall gehad' een
+      bij het doorschieten van een lead met status 'Intake ingepland' een
       datum meenemen naar de kandidaat (bv. `intake.videocallOp`). Dan is
       het geteld in plaats van beredeneerd, en kan die uitleg weg.
 

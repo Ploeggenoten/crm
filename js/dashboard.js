@@ -688,11 +688,15 @@ function opvolgingRijen(){
      Een sollicitant zonder eigenaar hoort wél bij iedereen — die ligt anders
      bij niemand, en dat is erger dan dubbel bellen. */
   const vanMij = e => !e || e === mij;
+  /* Vergelijkingen via CRM.leadIn/leadIs: sinds de vijf statussen (Tjeerd,
+     27 aug 2026) kunnen rijen nog op een oude naam staan, en de alias-laag
+     in js/data.js vertaalt die. Een lead met kandidaat_id is overgedragen
+     aan de kandidaatkaart en hoort niet meer in de belwerklijst. */
   const leads = (CRM.state.leads||[])
-    .filter(l => CRM.LEAD_OPEN.includes(l.status))
+    .filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !l.kandidaat_id)
     .filter(l => vanMij(l.eigenaar))
     .filter(l => (kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
-              || (l.status === 'Nieuw' && (CRM.dagenGeleden(l.binnen_op)||0) >= 2));
+              || (CRM.leadIs(l.status, 'Nieuw') && (CRM.dagenGeleden(l.binnen_op)||0) >= 2));
   if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,
     titel:`Bel je ${leads.length} nieuwe sollicitant${leads.length===1?'':'en'}`,
     sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') });
@@ -1700,7 +1704,7 @@ function looptRegel(){
   const cs = CRM.kandidaten(), wk = weekBereik();
   const kansen  = (CRM.state.kansen||[]).filter(k => (k.status||'open')==='open').length;
   const traject = (CRM.state.clients||[]).filter(k => CRM.SALES_ACTIEF.includes(k.fase)).length;
-  const openLeads = (CRM.state.leads||[]).filter(l => CRM.LEAD_OPEN.includes(l.status)).length;
+  const openLeads = (CRM.state.leads||[]).filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !l.kandidaat_id).length;
   /* Twee pijplijnen, dus twee tellingen. De sollicitanten staan in de
      recruitmentpijplijn (crm_leads); wie op een klanttraject loopt is een
      kandidaat mét bordpositie. Die twee stonden in één zin onder de kop

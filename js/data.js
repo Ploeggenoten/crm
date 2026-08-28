@@ -42,8 +42,21 @@ CRM.DONE   = ['Contract getekend','Gestart','Afgevallen','Gestopt'];
    vergelijking en ELKE weergave van een fase via deze helpers. Zo valt
    een oude rij nergens uit beeld en staan er geen losse
    `|| fase === 'Voorselectie'`-controles door de code.
-   Nieuwe fase-hernoemingen: alleen hier een regel bijzetten.        */
-CRM.FASE_ALIAS = {'Voorselectie':'Intake'};
+   Nieuwe fase-hernoemingen: alleen hier een regel bijzetten.
+
+   Tjeerd, 27 aug 2026: de instroom gaat van acht naar vijf haltes — zie de
+   toelichting bij CRM.LEAD_STATUS hieronder. De vervallen instroomfases
+   krijgen hier dezelfde vertaling als de leadstatussen in CRM.LEAD_ALIAS,
+   zodat een bestaande kandidaat op 'CV binnen' gewoon als 'Potentieel' in
+   beeld blijft.                                                       */
+CRM.FASE_ALIAS = {
+  'Voorselectie':'Intake',
+  'Gebeld — geen gehoor':'Geen gehoor',
+  'CV opgevraagd':'Potentieel',
+  'CV binnen':'Potentieel',
+  'Videocall gepland':'Intake ingepland',
+  'Videocall gehad':'Intake ingepland'
+};
 CRM.faseNorm = f => { const s = String(f==null?'':f); return CRM.FASE_ALIAS[s] || s; };
 /* Twee fases gelijk? (allebei genormaliseerd) */
 CRM.faseIs = (a, b) => CRM.faseNorm(a) === CRM.faseNorm(b);
@@ -70,16 +83,18 @@ CRM.faseIn = (f, lijst) => { const x = CRM.faseNorm(f); return (lijst||[]).some(
    kandidaat over hetzelfde ding hetzelfde woord gebruiken. Ze staan bewust
    NIET in CRM.PHASES: faseIdx blijft -1 en dus komt niemand met een
    instroomstatus op het bord Klanttrajecten. Dat bord begint bij Voorgesteld
-   en dat blijft zo. */
+   en dat blijft zo.
+
+   Tjeerd, 27 aug 2026: vijf haltes, in lijn met de vijf AM-statussen.
+   'Intake' blijft de laatste halte — daar staat de kandidaatkaart op na het
+   aanmaken, klaar om voorgesteld te worden. De oude tussenstappen (cv,
+   videocall) staan in CRM.FASE_ALIAS. */
 CRM.INSTROOM   = [
-  {k:'Nieuw',                c:'#5b8bbf'},
-  {k:'Gebeld — geen gehoor', c:'#9aa3b2'},
-  {k:'Potentieel',           c:'#d9a441'},
-  {k:'CV opgevraagd',        c:'#c78a3f'},
-  {k:'CV binnen',            c:'#b08948'},
-  {k:'Videocall gepland',    c:'#4178b0'},
-  {k:'Videocall gehad',      c:'#3d9968'},
-  {k:'Intake',               c:'#9aa3b2'}
+  {k:'Nieuw',            c:'#5b8bbf'},
+  {k:'Geen gehoor',      c:'#9aa3b2'},
+  {k:'Potentieel',       c:'#d9a441'},
+  {k:'Intake ingepland', c:'#4178b0'},
+  {k:'Intake',           c:'#9aa3b2'}
 ];
 /* VOOR_BORD is wat er ná de instroom komt maar vóór het bord: de laatste
    halte. Blijft bestaan omdat het bord en de kandidatenlijst hem gebruiken. */
@@ -99,7 +114,7 @@ CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=
 /* Klaar om voor te stellen: de intake is gehad en er hangt nog geen klant
    aan. Let op de tweede tak: een vastgelegde intake telt óók als de fase
    leeg is (de import uit het oude ATS), maar NIET als de kaart nog ergens in
-   de instroom staat. Anders staat iemand op 'Videocall gepland' toch als
+   de instroom staat. Anders staat iemand op 'Intake ingepland' toch als
    klaar in de lijst, en dat is precies wat Tjeerd niet wil. */
 CRM.klaarOmVoorTeStellen = c =>
   !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
@@ -205,35 +220,78 @@ CRM.salesKleur = f => (CRM.SALES_FASES.find(p=>p.k===f)||{}).c || '#8a927c';
 /* ─── Kandidaat-leads (vóór de pijplijn) ────────────────────────
    Statussen die een AM aan een binnengekomen lead geeft.        */
 /* De recruitmentpijplijn, in de volgorde waarin het werk gebeurt.
-   'CV opgevraagd', 'CV binnen' en de twee videocall-stappen zijn er op
-   31 juli 2026 bij gekomen: dat werk gebeurde altijd al, maar had geen
-   status, dus je kon niet zien waar iemand bleef hangen.
-   'Intake gepland' is vervallen — de videocall ís de intake.
-   In productie stond crm_leads op nul rijen, dus hier hoefde niets
-   gemigreerd te worden.                                              */
+
+   Tjeerd, 27 aug 2026: vijf statussen, botspoor apart, alleen de AM-status
+   is leidend. De elf statussen van 31 juli maakten elke werklijst en elk
+   bord onrustig; de tussenstappen (cv opvragen, cv binnen, twee
+   videocall-haltes) waren administratie, geen beslissingen. Wat de AM
+   werkelijk beslist is: nog niet gesproken / niet bereikt / kans / afspraak
+   staat / valt af. Dat zijn deze vijf. Wat de WhatsApp-bot vindt staat in
+   een eigen veld (crm_leads.bot_status, zie CRM.BOT_STATUS hieronder) en
+   verandert de AM-status nooit.                                       */
 CRM.LEAD_STATUS = [
-  {k:'Nieuw',                c:'#5b8bbf', ico:'✨'},
-  {k:'Gebeld — geen gehoor', c:'#9aa3b2', ico:'📵'},
-  {k:'Potentieel',           c:'#d9a441', ico:'⭐'},
-  {k:'CV opgevraagd',        c:'#c78a3f', ico:'📄'},
-  {k:'CV binnen',            c:'#b08948', ico:'📥'},
-  {k:'Videocall gepland',    c:'#4178b0', ico:'📅'},
-  {k:'Videocall gehad',      c:'#3d9968', ico:'🎥'},
-  {k:'Doorgeschoten',        c:'#2f8f5b', ico:'→'},
-  /* Eindstations, geen doorstroom. */
-  {k:'Geen interesse',       c:'#8a8f7a', ico:'✕'},
-  {k:'Niet geschikt',        c:'#a08a7a', ico:'⊘'},
-  {k:'Potentieel — andere vacature', c:'#9575b8', ico:'🔀'}
+  {k:'Nieuw',            c:'#5b8bbf', ico:'✨'},
+  {k:'Geen gehoor',      c:'#9aa3b2', ico:'📵'},
+  {k:'Potentieel',       c:'#d9a441', ico:'⭐'},
+  {k:'Intake ingepland', c:'#4178b0', ico:'📅'},
+  /* Eindstation, geen doorstroom. */
+  {k:'Niet geschikt',    c:'#a08a7a', ico:'⊘'}
 ];
-/* Nog werk aan te doen. 'Potentieel — andere vacature' hoort hier bewust
-   níét bij: die persoon is goed maar wacht op iets wat er nu niet is, en
-   moet niet elke dag als openstaand werk op je scherm staan. */
-CRM.LEAD_OPEN   = ['Nieuw','Gebeld — geen gehoor','Potentieel','CV opgevraagd',
-                   'CV binnen','Videocall gepland','Videocall gehad'];
-/* Waar een lead uiteindelijk terechtkomt: verder of afgevallen. */
-CRM.LEAD_EIND   = ['Doorgeschoten','Geen interesse','Niet geschikt','Potentieel — andere vacature'];
-CRM.leadKleur   = s => (CRM.LEAD_STATUS.find(x=>x.k===s)||{}).c || '#8a927c';
-CRM.leadIco     = s => (CRM.LEAD_STATUS.find(x=>x.k===s)||{}).ico || '•';
+/* Nog werk aan te doen: de eerste vier. */
+CRM.LEAD_OPEN   = ['Nieuw','Geen gehoor','Potentieel','Intake ingepland'];
+/* Waar een lead uiteindelijk terechtkomt als er géén kandidaat van komt.
+   Doorstromen bestaat niet meer als status: een lead die kandidaat wordt
+   krijgt een kandidaat_id en verdwijnt daarmee uit de werklijst. */
+CRM.LEAD_EIND   = ['Niet geschikt'];
+
+/* ─── Status-normalisatie (oude waarden blijven werken) ──────────
+   Zelfde constructie als CRM.FASE_ALIAS/faseNorm hierboven: in productie
+   staan rijen op de oude elf statussen, en die migratie draait pas later.
+   Daarom loopt ELKE vergelijking en ELKE weergave van een leadstatus via
+   deze helpers — geen losse `|| status === 'CV binnen'`-controles.
+
+   'Doorgeschoten' vertaalt naar 'Intake ingepland', maar zulke rijen
+   hebben een kandidaat_id en verdwijnen daardoor uit de werklijst en van
+   het bord (filter in js/recruitment.js, leadsGefilterd). Ze blijven wél
+   zichtbaar voor de dubbeldetectie en de metingen — die kijken naar
+   leads() zelf.
+   'Potentieel — andere vacature' gaat terug naar 'Nieuw': die persoon is
+   goed maar er was toen niets — dat is opnieuw te beoordelen werk.    */
+CRM.LEAD_ALIAS = {
+  'Gebeld — geen gehoor':'Geen gehoor',
+  'CV opgevraagd':'Potentieel',
+  'CV binnen':'Potentieel',
+  'Videocall gepland':'Intake ingepland',
+  'Videocall gehad':'Intake ingepland',
+  'Doorgeschoten':'Intake ingepland',
+  'Geen interesse':'Niet geschikt',
+  'Potentieel — andere vacature':'Nieuw'
+};
+CRM.leadNorm = s => { const x = String(s==null?'':s); return CRM.LEAD_ALIAS[x] || x; };
+/* Twee statussen gelijk? (allebei genormaliseerd) */
+CRM.leadIs = (a, b) => CRM.leadNorm(a) === CRM.leadNorm(b);
+/* Zit deze status in de lijst? (vervanger van `lijst.includes(l.status)`) */
+CRM.leadIn = (s, lijst) => { const x = CRM.leadNorm(s); return (lijst||[]).some(d => CRM.leadNorm(d) === x); };
+
+CRM.leadKleur   = s => (CRM.LEAD_STATUS.find(x=>x.k===CRM.leadNorm(s))||{}).c || '#8a927c';
+CRM.leadIco     = s => (CRM.LEAD_STATUS.find(x=>x.k===CRM.leadNorm(s))||{}).ico || '•';
+
+/* ─── Botstatus: het eigen spoor van de WhatsApp-bot ─────────────
+   Tjeerd, 27 aug 2026: de bot krijgt een eigen statusspoor
+   (crm_leads.bot_status), los van de AM-status. Regels:
+   · De bot schrijft alléén bot_status; hij verandert NOOIT de AM-status.
+   · Alleen de AM-status is leidend voor werklijst, bord en wachtkamers.
+   · Leeg bot_status = onbekend / lead kwam niet via de bot binnen.
+   `klas` is de chipklasse uit base.css (green/amber/purple; leeg = grijs). */
+CRM.BOT_STATUS = [
+  {k:'Gekwalificeerd',             klas:'green'},
+  {k:'Twijfelgeval',               klas:'amber'},
+  {k:'Potentieel andere vacature', klas:'purple'},
+  {k:'Niet gekwalificeerd',        klas:''},
+  {k:'Onvolledig',                 klas:''},
+  {k:'Dubbel',                     klas:'purple'}
+];
+CRM.botKlas = s => (CRM.BOT_STATUS.find(x=>x.k===String(s||''))||{}).klas || '';
 CRM.LEAD_BRONNEN = ['Meta','Indeed','WhatsApp','Website','Referral','Handmatig','Anders'];
 
 /* ─── Activiteitsoorten ─────────────────────────────────────── */

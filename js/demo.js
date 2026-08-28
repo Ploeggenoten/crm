@@ -182,12 +182,23 @@
   CANDS.filter(c => c.fase === 'O&O sessie').forEach((c, i) => { c.oo_id = i === 0 ? 'oo2' : 'oo1'; });
 
   const LEADS = Array.from({length:38}, (_,i) => {
+    /* Statusmodel versmald op 27 aug 2026 (Tjeerd): de AM houdt nog maar
+       vijf statussen bij (zie CRM.LEAD_STATUS); de oude tussenstappen
+       (CV opgevraagd, Videocall gepland, enz.) zijn opgegaan in 'Potentieel'
+       en 'Intake ingepland'. De verdeling hieronder vult bewust élke kolom
+       van het bord, met 'Nieuw' als grootste stapel — zo ziet de demo eruit
+       zoals een doordeweekse ochtend. */
     const v = VACS[i % VACS.length];
-    /* 'Intake gepland' bestaat niet meer sinds de recruitmentpijplijn is
-       uitgesplitst — de videocall ís de intake. Zie CRM.LEAD_STATUS. */
-    const st = ['Nieuw','Nieuw','Nieuw','Gebeld — geen gehoor','Potentieel','CV opgevraagd',
-                'Geen interesse','Videocall gepland','CV binnen','Videocall gehad',
-                'Potentieel — andere vacature','Niet geschikt'][i%12];
+    const st = ['Nieuw','Nieuw','Nieuw','Geen gehoor','Potentieel','Potentieel',
+                'Niet geschikt','Intake ingepland','Potentieel','Intake ingepland',
+                'Nieuw','Niet geschikt'][i%12];
+    /* Botstatus is een lós, informatief spoor naast de AM-status: het
+       oordeel van de WhatsApp-bot. Alleen Meta-leads (i%3===0) krijgen er
+       een, want alleen die lopen door de bot — en lang niet allemaal, zodat
+       ook de lege stand zichtbaar blijft. Minstens één 'Twijfelgeval', zodat
+       het botfilter in recruitment iets te tonen heeft. */
+    const botSt = {0:'Gekwalificeerd', 6:'Twijfelgeval', 12:'Gekwalificeerd',
+                   18:'Potentieel andere vacature', 24:'Twijfelgeval', 30:'Niet gekwalificeerd'};
     return {
       /* Zelfde valkuil als bij de kandidaten: i en i+25 leverden dezelfde
          volledige naam op, waardoor "Marek Nowak" twee keer in dezelfde
@@ -195,6 +206,7 @@
       id:'lead'+i, naam:VN[(i*5)%VN.length]+' '+AN[(i*7 + Math.floor(i/VN.length)) % AN.length], telefoon:'06 8765 43'+(10+i%80),
       email:'', woonplaats:rnd(PL,i*3), bron:rnd(['Meta','Indeed','WhatsApp'],i), campagne:'Productie NL – juli',
       vacature_id:v.id, klant:v.klant, functie:v.functie, status:st,
+      bot_status: botSt[i] || '',
       prioriteit:['Hoog','Midden','Laag'][i%3],
       kwalificatie:['Heeft ervaring + eigen vervoer','Geen ervaring, wel gemotiveerd','Woont dichtbij, kan direct starten'][i%3],
       score: 40 + (i*7)%60,
@@ -214,15 +226,23 @@
   /* ── WhatsApp-botleads ─────────────────────────────────────────
      De bot schrijft straks rechtstreeks in crm_leads. Deze zes kaarten zijn
      de uitkomsten die dat kan opleveren, zodat elke schermtoestand vóór de
-     livegang te zien is in plaats van pas bij de eerste echte lead:
+     livegang te zien is in plaats van pas bij de eerste echte lead.
+
+     Sinds 27 aug 2026 (Tjeerd) zet de bot zijn oordeel in het aparte veld
+     `bot_status` — informatief, de AM-status blijft leidend. Ook een lead
+     die de bot afwees staat dus gewoon op 'Nieuw': de AM beslist. De zes
+     dekken samen elke waarde van CRM.BOT_STATUS behalve 'Twijfelgeval'
+     (die zit in de gewone Meta-leads hierboven):
        - gekwalificeerd (bot1/bot2) → antwoorden, score, cv_url gevuld
-       - herbruikbaar (bot3)        → goed persoon, verkeerde vacature
-       - afgevallen (bot4)          → reden staat in de kwalificatie
-       - vangnet (bot5)             → reageerde nooit op WhatsApp; alleen de
-         ruwe Meta-gegevens, dus géén antwoorden en géén notitie — precies zo
-         moet hij tóch als openstaand werk bij een AM in beeld staan
-       - dubbel (bot6)              → zelfde nummer als een bestaande lead,
-         zodat de paarse chip "2× in de lijst" aangaat (recruitment.js)
+       - herbruikbaar (bot3)        → 'Potentieel andere vacature': goed
+         persoon, verkeerde vacature — status blijft 'Nieuw'
+       - bot-afgewezen (bot4)       → 'Niet gekwalificeerd', reden staat in
+         de kwalificatie; status óók 'Nieuw', want de AM velt het oordeel
+       - vangnet (bot5)             → 'Onvolledig': reageerde nooit op
+         WhatsApp; alleen de ruwe Meta-gegevens, dus géén antwoorden en géén
+         notitie — precies zo moet hij tóch als openstaand werk in beeld staan
+       - dubbel (bot6)              → 'Dubbel': zelfde nummer als een
+         bestaande lead, zodat de paarse chip "2× in de lijst" aangaat
      `antwoorden` is een object met de letterlijke WhatsApp-vragen als sleutel:
      zo levert de bot het aan en zo toont de leadkaart het. `cv_url` is een
      link (SharePoint), geen geparsed cv — de bot parseert niets. `form_id`
@@ -233,7 +253,7 @@
       woonplaats:'Gouda', bron:'Meta', campagne:'Operators Zoetermeer – aug',
       form_id:'meta-form-8842', vacature_id:'Good Life Foods::Operator',
       klant:'Good Life Foods', functie:'Operator',
-      status:'Nieuw', prioriteit:'Hoog', score:85,
+      status:'Nieuw', bot_status:'Gekwalificeerd', prioriteit:'Hoog', score:85,
       kwalificatie:'Qualified — auto, direct beschikbaar',
       agent_notitie:'WhatsApp-agent: 4 jaar ervaring als operator in de voedingsmiddelenindustrie, 3-ploegen is geen bezwaar. Wil teruggebeld worden, het liefst vanavond na 19:00.',
       antwoorden:{'Woonplaats':'Gouda','Vervoer':'auto','Ploegen':'3-ploegen is prima','Beschikbaar':'per direct','Taal':'NL'},
@@ -249,7 +269,7 @@
       woonplaats:'Leiden', bron:'Meta', campagne:'Magazijn Rijnsburg – aug',
       form_id:'meta-form-8851', vacature_id:'Whisk Food::Magazijnmedewerker',
       klant:'Whisk Food', functie:'Magazijnmedewerker',
-      status:'Nieuw', prioriteit:'Hoog', score:72,
+      status:'Nieuw', bot_status:'Gekwalificeerd', prioriteit:'Hoog', score:72,
       kwalificatie:'Qualified — ov (Leiden–Rijnsburg is te doen), beschikbaar per 1 september',
       agent_notitie:'WhatsApp-agent: 2 jaar magazijnervaring bij een groothandel, heeft nog een opzegtermijn van twee weken. Reist met ov; de busverbinding Leiden–Rijnsburg maakt dat haalbaar.',
       antwoorden:{'Woonplaats':'Leiden','Vervoer':'ov','Ploegen':'liever dagdienst','Beschikbaar':'per 1 september','Taal':'NL'},
@@ -261,7 +281,9 @@
       woonplaats:'Waddinxveen', bron:'Meta', campagne:'Procesoperators – aug',
       form_id:'meta-form-8863', vacature_id:'Burg Siroop::Procesoperator',
       klant:'Burg Siroop', functie:'Procesoperator',
-      status:'Potentieel — andere vacature', prioriteit:'Midden', score:64,
+      /* De bot herkende een herbruikbaar profiel, maar dat is zíjn oordeel:
+         de AM-status blijft 'Nieuw' tot iemand hem oppakt. */
+      status:'Nieuw', bot_status:'Potentieel andere vacature', prioriteit:'Midden', score:64,
       kwalificatie:'Goed profiel, maar Waddinxveen–Zaandam is te ver — bewaren voor productiewerk rond Gouda/Bodegraven',
       agent_notitie:'WhatsApp-agent: procesoperator met VAPRO A, maar wil maximaal een halfuur reizen en Zaandam valt daarbuiten. Nadrukkelijk wél interesse in werk dichter bij huis.',
       antwoorden:{'Woonplaats':'Waddinxveen','Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'in overleg','Taal':'NL',
@@ -274,8 +296,11 @@
       woonplaats:'Zoetermeer', bron:'Meta', campagne:'Heftruck Bodegraven – aug',
       form_id:'meta-form-8842', vacature_id:'Starcuisine::Heftruckchauffeur',
       klant:'Starcuisine', functie:'Heftruckchauffeur',
-      status:'Niet geschikt', prioriteit:'Laag', score:31,
-      kwalificatie:'Afgewezen — geen heftruckcertificaat en wil niet in ploegen; beide zijn harde eisen van de klant',
+      /* Door de bot afgewezen, maar níét op 'Niet geschikt': dat eindstation
+         is aan de AM. Zo is te zien dat een bot-afwijzing gewoon als
+         openstaand werk op 'Nieuw' blijft staan. */
+      status:'Nieuw', bot_status:'Niet gekwalificeerd', prioriteit:'Laag', score:31,
+      kwalificatie:'Bot-advies: afwijzen — geen heftruckcertificaat en wil niet in ploegen; beide zijn harde eisen van de klant',
       agent_notitie:'WhatsApp-agent: geen certificaat en niet bereid dat te halen, zoekt uitsluitend dagdienst. Netjes afgesloten met een bedankje.',
       antwoorden:{'Woonplaats':'Zoetermeer','Vervoer':'auto','Certificaat':'nee','Ploegen':'alleen dagdienst','Beschikbaar':'per direct','Taal':'NL'},
       cv_url:'',
@@ -291,7 +316,7 @@
       woonplaats:'', bron:'Meta', campagne:'Operators Zoetermeer – aug',
       form_id:'meta-form-8842', vacature_id:'Good Life Foods::Operator',
       klant:'Good Life Foods', functie:'Operator',
-      status:'Nieuw', prioriteit:'', score:null,
+      status:'Nieuw', bot_status:'Onvolledig', prioriteit:'', score:null,
       kwalificatie:'', agent_notitie:'', antwoorden:null, cv_url:'',
       eigenaar:'Tjeerd',
       binnen_op:new Date(Date.now() - 20*3600000).toISOString(),
@@ -306,7 +331,7 @@
     woonplaats:LEADS[2].woonplaats, bron:'Meta', campagne:'Inpak Bodegraven – aug',
     form_id:'meta-form-8877', vacature_id:'Van Vliet Zoetwaren::Inpakmedewerker',
     klant:'Van Vliet Zoetwaren', functie:'Inpakmedewerker',
-    status:'Nieuw', prioriteit:'Midden', score:58,
+    status:'Nieuw', bot_status:'Dubbel', prioriteit:'Midden', score:58,
     kwalificatie:'Qualified — reageerde eerder deze maand ook al op een andere campagne',
     agent_notitie:'WhatsApp-agent: solliciteerde deze maand op twee campagnes; dat is een sterk vertreksignaal. Antwoorden komen overeen met de eerdere aanmelding.',
     antwoorden:{'Woonplaats':LEADS[2].woonplaats,'Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'per direct','Taal':'NL'},
