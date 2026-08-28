@@ -2156,6 +2156,29 @@ function doorschietForm(lead, opts){
         const x = vacById(vacSel.value);
         if(x && !m.querySelector('#ds_functie').value.trim()) m.querySelector('#ds_functie').value = x.functie;
       };
+      /* ─── Bot-cv ophalen ─────────────────────────────────────────
+         De bot levert een cv als link (cv_url) in de gedeelde map. Zodra
+         de kaart bestaat willen we dat bestand ook inhoudelijk hebben:
+         geparsed, zodat talen, certificaten, werkverleden en adres meteen
+         op de kaart staan (Tjeerd, 28 aug 2026). SharePoint-links lopen
+         via de M365-koppeling (shares-API); andere links rechtstreeks.
+         Lukt het niet, dan blijft de klikbare link gewoon staan — de
+         kaart is dan niet slechter dan voorheen, alleen niet automatisch
+         verrijkt. */
+      async function botCvBestand(l){
+        const url = String((l && l.cv_url) || '').trim();
+        if(!url) return null;
+        let blob = null;
+        if(CRM.outlook && CRM.outlook.haalGedeeldBestand && /sharepoint\.com|1drv\.ms|onedrive/i.test(url)){
+          try{ blob = await CRM.outlook.haalGedeeldBestand(url); }catch(e){ blob = null; }
+        }
+        if(!blob){
+          try{ const r = await fetch(url); if(r.ok) blob = await r.blob(); }catch(e){}
+        }
+        if(!blob || !blob.size) return null;
+        const naam = decodeURIComponent(url.split('?')[0].split('/').pop() || '') || 'cv.pdf';
+        return new File([blob], naam, {type: blob.type || 'application/pdf'});
+      }
       m.querySelector('#ds_ok').onclick = async () => {
         const g = id => m.querySelector('#ds_'+id).value.trim();
         const err = m.querySelector('#ds_err');
@@ -2201,12 +2224,33 @@ function doorschietForm(lead, opts){
         CRM.modal.close(); CRM.drawer.close();
         tekenKop(); tekenTabs(); tekenBody(); CRM.navBadges();
         klaar(true);
+        /* Leverde de bot een cv-link, dan halen we dat bestand meteen op en
+           gaat het door de bestaande cv-inlezer: de nieuwe kaart wordt
+           direct verrijkt. Het controlevenster blijft ertussen — dezelfde
+           regel als bij elk cv: de AM ziet wat het cv zegt en kiest wat er
+           op de kaart komt. Alleen buiten de belronde automatisch openen;
+           in de ronde gaat de ronde voor en staat de actie in de toast. */
+        const botCv = !lead._kand && !lead.cv && !!String(lead.cv_url||'').trim() && !!CRM.cvParse;
+        const cvInlezen = async () => {
+          CRM.toast('Bot-cv ophalen…','ok');
+          const f = await botCvBestand(lead);
+          if(!f){
+            CRM.toast('Het bot-cv kon niet automatisch opgehaald worden — open de cv-link op de kaart en lees hem daar in','err');
+            if(!opts.rond) CRM.ga('kandidaten', {id:cand.id});
+            return;
+          }
+          CRM.cvParse.open({kandidaat: CRM.kandidaat(cand.id) || cand, bestand: f,
+            onKlaar: () => { if(opts.rond) CRM.render(); else CRM.ga('kandidaten', {id:cand.id}); }});
+        };
         /* Binnen een belronde blijft de ronde voorgaan: een toast met een link
-           naar de intake, en door naar de volgende. Het formulier openen zou de
-           ronde onderbreken voor werk dat ook straks nog kan. */
+           naar de vervolgactie, en door naar de volgende. Een venster openen
+           zou de ronde onderbreken voor werk dat ook straks nog kan. */
         if(opts.rond)
-          return toastLink(`${cand.naam} staat klaar om voor te stellen`, 'Intake invullen →', () => intakeForm(cand.id));
+          return toastLink(`${cand.naam} staat klaar om voor te stellen`,
+                           botCv ? 'Bot-cv inlezen →' : 'Intake invullen →',
+                           botCv ? cvInlezen : () => intakeForm(cand.id));
         CRM.toast(`${cand.naam} staat klaar om voor te stellen`, 'ok');
+        if(botCv) return cvInlezen();
         /* De intake is wat een kandidaat verkoopbaar maakt. Invullen terwijl
            het gesprek nog vers is levert een beter verhaal op dan een week
            later. Wie dat niet wil, gaat naar de volledige kaart. */

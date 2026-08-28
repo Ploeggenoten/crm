@@ -595,6 +595,27 @@ CRM.outlook = {
      Zoeken in OneDrive én SharePoint. Dit is ZOEKEN, geen kopiëren:
      er wordt niets gedownload en niets in het CRM opgeslagen — we
      tonen alleen waar het bestand staat en linken erheen. */
+  /* Een gedeeld bestand (SharePoint/OneDrive-deellink) binnenhalen als
+     blob, via de shares-API — de officiële vertaling van een deellink
+     naar het bestand zelf. Nodig voor het bot-cv: dat komt als link uit
+     de gedeelde map binnen, en om het te kunnen parsen moet het bestand
+     zelf hierheen. Het token van de ingelogde gebruiker bepaalt wat er
+     te halen valt; een link buiten diens bereik geeft gewoon null terug
+     en de aanroeper valt dan terug op de klikbare link. */
+  async haalGedeeldBestand(url){
+    const u = String(url||'').trim();
+    if(!u || !CRM.outlook.beschikbaar() || !_account) return null;
+    const t = await token(false);
+    if(!t) return null;
+    /* Base64url zoals Graph hem eist: '=' eraf, '/'→'_', '+'→'-'. */
+    const enc = 'u!' + btoa(unescape(encodeURIComponent(u)))
+      .replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+    const r = await fetch('https://graph.microsoft.com/v1.0/shares/' + enc + '/driveItem/content',
+                          {headers:{Authorization:'Bearer ' + t}});
+    if(!r.ok) return null;
+    return await r.blob();
+  },
+
   async zoekBestanden(term, aantal = 10){
     const q = String(term||'').trim();
     if(!CRM.outlook.beschikbaar() || !_account || !q) return null;
