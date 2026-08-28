@@ -240,7 +240,11 @@
       cv_url:'https://ploeggenoten.sharepoint.com/sites/recruitment/cv/dennis-van-der-laan.pdf',
       eigenaar:'Tjerk',
       binnen_op:new Date(Date.now() - 2*3600000).toISOString(),
-      opvolgen_op:null, kandidaat_id:'', notities:[] },
+      /* De bot sprak een concreet belmoment af: vanavond 19:00. Daarmee is
+         de belafspraak-chip en de voorrang in de lijst te zien. */
+      opvolgen_op:d(0),
+      terugbel_om:(() => { const x = new Date(); x.setHours(19,0,0,0); return x.toISOString(); })(),
+      kandidaat_id:'', notities:[] },
     { id:'bot2', naam:'Kimberly Verhoeven', telefoon:'06 2456 7812', email:'',
       woonplaats:'Leiden', bron:'Meta', campagne:'Magazijn Rijnsburg – aug',
       form_id:'meta-form-8851', vacature_id:'Whisk Food::Magazijnmedewerker',
@@ -260,7 +264,8 @@
       status:'Potentieel — andere vacature', prioriteit:'Midden', score:64,
       kwalificatie:'Goed profiel, maar Waddinxveen–Zaandam is te ver — bewaren voor productiewerk rond Gouda/Bodegraven',
       agent_notitie:'WhatsApp-agent: procesoperator met VAPRO A, maar wil maximaal een halfuur reizen en Zaandam valt daarbuiten. Nadrukkelijk wél interesse in werk dichter bij huis.',
-      antwoorden:{'Woonplaats':'Waddinxveen','Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'in overleg','Taal':'NL'},
+      antwoorden:{'Woonplaats':'Waddinxveen','Vervoer':'auto','Ploegen':'2-ploegen','Beschikbaar':'in overleg','Taal':'NL',
+        'Past mogelijk bij':'Procesoperator of productiewerk in 2-ploegen rond Gouda/Bodegraven/Waddinxveen (max 30 min reizen)'},
       cv_url:'',
       eigenaar:'Tjeerd',
       binnen_op:new Date(Date.now() - 26*3600000).toISOString(),

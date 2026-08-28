@@ -548,8 +548,31 @@ function leadsGefilterd(negeerStatus){
       if(!hooi.includes(q) && (!telNorm(q) || telNorm(l.telefoon).indexOf(telNorm(q)) !== 0)) return false;
     }
     return true;
-  }).sort((a,b) => prioRang(a) - prioRang(b)
+  }).sort((a,b) => belRang(a) - belRang(b)
+                || belMoment(a).localeCompare(belMoment(b))
+                || prioRang(a) - prioRang(b)
                 || String(b.binnen_op||'').localeCompare(String(a.binnen_op||'')));
+}
+/* Belafspraken gaan vóór alles: een kandidaat die met de bot "vandaag om
+   19:00" afsprak en niet gebeld wordt, is een gebroken belofte — erger dan
+   een gekwalificeerde lead die een uur later gepakt wordt. Alleen afspraken
+   van vandaag of eerder tellen (een afspraak voor morgen is nog geen werk),
+   en alleen op openstaand werk. Onderling op tijd: 9:00 vóór 19:00; de
+   terugbel_om-tijd van de bot als die er is, anders de kale opvolgdatum. */
+const belRang   = l => (CRM.LEAD_OPEN.includes(l.status) && l.opvolgen_op
+                        && String(l.opvolgen_op).slice(0,10) <= CRM.todayISO()) ? 0 : 1;
+const belMoment = l => belRang(l) === 0 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
+/* De chip die dat zichtbaar maakt: alleen als er nú iets te bellen valt —
+   geen afspraak, geen chip, en de lijst blijft kaal. */
+function belChipHtml(l){
+  if(belRang(l) !== 0) return '';
+  const t = l.terugbel_om ? new Date(l.terugbel_om) : null;
+  const vandaag = String(l.opvolgen_op).slice(0,10) === CRM.todayISO();
+  const lbl = t && vandaag && !isNaN(t) ? 'bel om ' + t.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
+            : vandaag ? 'bel vandaag'
+            : 'belafspraak ' + (CRM.fmtDate(l.opvolgen_op) || '');
+  return `<span class="chip amber num" title="Met de kandidaat afgesproken belmoment${
+    t && !isNaN(t) ? ': ' + t.toLocaleString('nl-NL', {dateStyle:'short', timeStyle:'short'}) : ''}">${h(lbl)}</span>`;
 }
 /* Eerst prioriteit, dan binnenkomst. De WhatsApp-agent geeft leads een
    prioriteit mee; wie op Hoog binnenkomt is al gekwalificeerd en hoort
@@ -956,6 +979,8 @@ function rijHtml(l){
            Op 'Nieuw' zegt de gekleurde ouderdom achteraan het al; die twee
            naast elkaar zou hetzelfde twee keer zeggen. */
         st && !nieuw ? `<div style="margin-top:5px"><span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span></div>` : ''}
+      ${/* De belafspraak van de bot: staat hier omdat hij bíj het werk hoort. */
+        belChipHtml(l) ? `<div style="margin-top:5px">${belChipHtml(l)}</div>` : ''}
     </td>
     <td>${l.eigenaar ? `<span class="chip">${h(l.eigenaar)}</span>` : '<span class="meta">—</span>'}</td>
     <td class="n">
@@ -1621,6 +1646,7 @@ function wegwerkModus(status){
                  <button class="btn ghost sm" id="ww_koppel" style="margin-left:8px">Koppelen</button>`}</span></div>
           ${l.kwalificatie ? `<div class="rc-kv"><span class="label">Kwalificatie</span><span>${h(l.kwalificatie)}</span></div>` : ''}
           ${l.agent_notitie ? `<div class="rc-kv"><span class="label">Agent</span><span>${h(l.agent_notitie)}</span></div>` : ''}
+          ${belChipHtml(l) ? `<div class="rc-kv"><span class="label">Belafspraak</span><span>${belChipHtml(l)}</span></div>` : ''}
           ${l.cv_url ? `<div class="rc-kv"><span class="label">CV</span><span><a href="${h(l.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : ''}
           ${bel || contact ? `<div class="rc-kv"><span class="label">Eerder</span><span>${
             bel ? bel + '× gebeld' : ''}${bel && contact ? ' · ' : ''}${
@@ -1901,6 +1927,8 @@ function openLead(id){
           <div class="rc-kv"><span class="label">Woonplaats</span><span>${h(l.woonplaats||'—')}</span></div>
           <div class="rc-kv"><span class="label">Eigenaar</span><span>${h(l.eigenaar||'—')}</span></div>
           <div class="rc-kv"><span class="label">Binnen</span><span class="num">${h(CRM.fmtDate(l.binnen_op))} · ${h(uurGeleden(l.binnen_op))} geleden</span></div>
+          ${l.terugbel_om ? `<div class="rc-kv"><span class="label">Terugbellen</span><span class="num">${
+            h(new Date(l.terugbel_om).toLocaleString('nl-NL', {dateStyle:'short', timeStyle:'short'}))} — met de kandidaat afgesproken</span></div>` : ''}
         </div></div>
         <div class="card"><div class="card-h"><div class="h2">Reageerde op</div><div class="spacer"></div>
           <button class="btn ghost sm" id="rc_koppelbtn">${v?'Andere vacature':'Koppelen'}</button></div><div class="card-b">
