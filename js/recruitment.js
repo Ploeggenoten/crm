@@ -212,6 +212,31 @@ const botChipHtml = l => {
   return `<span class="chip ${CRM.botKlas(s)}" title="Oordeel van de WhatsApp-bot — verandert de AM-status niet">${h(s)}</span>`;
 };
 
+/* ─── Botfase (crm_leads.bot_fase + tijdstempels) ─────────────────
+   Waar zit het gesprek van de bot? Welke template ging er als laatste
+   uit, en — belangrijker — reageert de kandidaat eigenlijk? (Tjeerd,
+   28 aug 2026: "is er al reactie, is de tweede follow-up gestuurd, hoe
+   lang geen reactie?"). Eén korte regel, alleen als er iets te melden
+   is: leads zonder bot houden een lege regel en de lijst blijft kaal.
+   "Geen reactie sinds X" rekenen we hier uit; de bot levert alleen de
+   twee tijdstempels. */
+const BOT_FASE_LBL = {
+  welkom:'welkom gestuurd', '48u':'follow-up 48u', '1week':'follow-up 1 week',
+  '4weken':'follow-up 4 weken', '3maanden':'follow-up 3 mnd',
+  '6maanden':'follow-up 6 mnd', gestopt:'follow-ups gestopt'
+};
+function botFaseTekst(l){
+  const delen = [];
+  const fase = String((l && l.bot_fase) || '').trim();
+  if(fase) delen.push(BOT_FASE_LBL[fase] || 'bot: ' + fase);
+  /* uurGeleden geeft '8 uur' binnen een dag en daarbuiten de CRM.geleden-vorm
+     ('gisteren', '3 dagen geleden') — die laatste heeft 'geleden' al in zich. */
+  const tijd = iso => { const t = uurGeleden(iso); return !t ? '' : /geleden|vandaag|gisteren/.test(t) ? t : t + ' geleden'; };
+  if(l && l.bot_reactie_op) delen.push('reactie ' + (tijd(l.bot_reactie_op) || '?'));
+  else if(l && l.bot_bericht_op) delen.push('nog geen reactie (' + (uurGeleden(l.bot_bericht_op) || '?') + ')');
+  return delen.join(' · ');
+}
+
 /* ─── Vacaturekoppeling ───────────────────────────────────────────
    Hierop leunt de hele marketingmeting: leads per plaatsing, per klant
    én per vacature. Een lead zonder vacature is een gat in dat cijfer.
@@ -1021,6 +1046,7 @@ function rijHtml(l){
         botChipHtml(l) ? `<div style="margin-bottom:4px">${botChipHtml(l)}</div>` : ''}
       ${l.score != null ? `<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent — prioriteit ${h(l.prioriteit||'onbekend')}">${h(l.score)}</span>` : ''}
       <div class="rowsub trunc" style="max-width:150px">${h(l.kwalificatie||'')}</div>
+      ${botFaseTekst(l) ? `<div class="rowsub trunc" style="max-width:150px" title="Gespreksfase van de bot">${h(botFaseTekst(l))}</div>` : ''}
     </td>
     <td>
       <div class="rc-stwrap" style="--sc:${CRM.leadKleur(l.status)}">
@@ -1678,6 +1704,7 @@ function wegwerkModus(status){
           ${l.agent_notitie ? `<div class="rc-kv"><span class="label">Agent</span><span>${h(l.agent_notitie)}</span></div>` : ''}
           ${belChipHtml(l) ? `<div class="rc-kv"><span class="label">Belafspraak</span><span>${belChipHtml(l)}</span></div>` : ''}
           ${l.cv_url ? `<div class="rc-kv"><span class="label">CV</span><span><a href="${h(l.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : ''}
+          ${botFaseTekst(l) ? `<div class="rc-kv"><span class="label">Botfase</span><span>${h(botFaseTekst(l))}</span></div>` : ''}
           ${bel || contact ? `<div class="rc-kv"><span class="label">Eerder</span><span>${
             bel ? bel + '× gebeld' : ''}${bel && contact ? ' · ' : ''}${
             contact ? 'laatste contact ' + h(CRM.geleden(contact) || CRM.fmtDate(contact)) : ''}</span></div>` : ''}
@@ -1975,6 +2002,7 @@ function openLead(id){
 
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">WhatsApp-agent</div></div>
         <div class="card-b">
+          ${botFaseTekst(l) ? `<div class="rc-kv"><span class="label">Botfase</span><span>${h(botFaseTekst(l))}</span></div>` : ''}
           ${l.agent_notitie?`<p class="sub" style="margin:0 0 12px">${h(l.agent_notitie)}</p>`:''}
           ${qaHtml(l.antwoorden) || '<p class="meta" style="margin:0">Geen vragen en antwoorden vastgelegd.</p>'}
         </div></div>

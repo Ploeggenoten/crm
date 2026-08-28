@@ -264,6 +264,9 @@
          de belafspraak-chip en de voorrang in de lijst te zien. */
       opvolgen_op:d(0),
       terugbel_om:(() => { const x = new Date(); x.setHours(19,0,0,0); return x.toISOString(); })(),
+      /* Gespreksfase van de bot: welkom gestuurd, kandidaat reageerde. */
+      bot_fase:'welkom', bot_bericht_op:new Date(Date.now()-2*3600000).toISOString(),
+      bot_reactie_op:new Date(Date.now()-1.2*3600000).toISOString(),
       kandidaat_id:'', notities:[] },
     { id:'bot2', naam:'Kimberly Verhoeven', telefoon:'06 2456 7812', email:'',
       woonplaats:'Leiden', bron:'Meta', campagne:'Magazijn Rijnsburg – aug',
@@ -318,6 +321,10 @@
       klant:'Good Life Foods', functie:'Operator',
       status:'Nieuw', bot_status:'Onvolledig', prioriteit:'', score:null,
       kwalificatie:'', agent_notitie:'', antwoorden:null, cv_url:'',
+      /* Tweede follow-up is de deur uit, nog altijd stil: precies wat de
+         AM wil zien vóór hij koud gaat bellen. */
+      bot_fase:'48u', bot_bericht_op:new Date(Date.now()-8*3600000).toISOString(),
+      bot_reactie_op:null,
       eigenaar:'Tjeerd',
       binnen_op:new Date(Date.now() - 20*3600000).toISOString(),
       opvolgen_op:null, kandidaat_id:'', notities:[] }
