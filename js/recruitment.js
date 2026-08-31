@@ -1095,10 +1095,11 @@ function tekenBulkbalk(){
       <button class="btn sm" data-b="status">Status wijzigen…</button>
       <button class="btn ghost sm" data-b="vac">Vacature koppelen…</button>
       <button class="btn ghost sm" data-b="eig">Eigenaar toewijzen…</button>
+      <button class="btn ghost sm" data-b="app">WhatsApp: nieuwe vacature…</button>
       <div class="spacer"></div>
       <button class="btn sub sm" data-b="wis">Selectie wissen</button>
     </div>`;
-  const doe = {status:bulkStatus, vac:bulkVacature, eig:bulkEigenaar,
+  const doe = {status:bulkStatus, vac:bulkVacature, eig:bulkEigenaar, app:bulkReactivatie,
                wis:() => { wisSelectie(); tekenWerk(); }};
   CRM.$$('[data-b]', el).forEach(b => b.onclick = () => doe[b.dataset.b]());
 }
@@ -1129,6 +1130,56 @@ function bulkStatus(){
         for(const l of rijen){ if(await pasStatusToe(l, b.dataset.s)) n++; }
         naBulk(`${n} sollicitant${n===1?'':'en'} op ${b.dataset.s} gezet`);
       });
+    }});
+}
+
+/* ─── Reactivatie: nieuwe_vacature-template via de bot ────────────
+   De geselecteerde leads krijgen via Smits n8n de goedgekeurde
+   WhatsApp-template met een vacaturetekst (Tjeerd, 28 aug 2026 —
+   gericht heractiveren in plaats van iedereen spammen). Alleen
+   botleads kunnen dit: de bot kent alleen zijn eigen lead_id's; de
+   rest wordt eerlijk benoemd en overgeslagen. Er gaan ÉCHTE
+   WhatsApp-berichten uit, dus een expliciete bevestiging met het
+   aantal, en een logregel per lead. De aanroep loopt via de database
+   (RPC webhook_naar_bot): geen sleutels of URL's in de frontend, en
+   alleen ingelogde teamleden kunnen hem doen. */
+function bulkReactivatie(){
+  const rijen = selectie(); if(!rijen.length) return;
+  const bot  = rijen.filter(l => String(l.id).startsWith('l:') || String(l.bot_status||'').trim());
+  const rest = rijen.length - bot.length;
+  if(!bot.length) return CRM.toast('Geen van de geselecteerde sollicitanten kwam via de bot binnen — de bot kan alleen zijn eigen leads appen','err');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe vacature appen</div>
+      <p class="sub" style="margin:6px 0 0">De bot stuurt de goedgekeurde WhatsApp-template naar
+      ${bot.length} sollicitant${bot.length===1?'':'en'}${rest ? ` — ${rest} geselecteerde${rest===1?'':'n'} zonder botkoppeling ${rest===1?'wordt':'worden'} overgeslagen` : ''}.</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="ra_txt">Vacaturetekst (komt letterlijk in het bericht)</label>
+        <textarea id="ra_txt" rows="3" placeholder="Bijv. Productiemedewerker, regio Gouda, dagdienst"></textarea>
+        <span class="hint">Geen klantnaam noemen — voor bedrijfsdetails verwijst de bot naar de AM.</span></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Annuleren</button><span class="spacer"></span>
+      <button class="btn" id="ra_ok">Versturen naar ${bot.length}</button>
+    </div>`, {onOpen(m){
+      const ok = m.querySelector('#ra_ok');
+      ok.onclick = async () => {
+        const tekst = m.querySelector('#ra_txt').value.trim();
+        if(!tekst) return CRM.toast('Vul de vacaturetekst in','err');
+        ok.disabled = true; ok.textContent = 'Bezig…';
+        if(!CRM.demo){
+          const {error} = await CRM.sb.rpc('webhook_naar_bot',
+            {actie:'reactivatie', payload:{lead_ids: bot.map(l => String(l.id)), vacancy_text: tekst}});
+          if(error){
+            CRM.fout('Versturen mislukt', error);
+            ok.disabled = false; ok.textContent = 'Versturen naar ' + bot.length;
+            return;
+          }
+          for(const l of bot)
+            await CRM.logActiviteit('lead', l.id, 'whatsapp', `nieuwe_vacature-template gestuurd: "${tekst}"`);
+        }
+        CRM.modal.close();
+        naBulk(`Template onderweg naar ${bot.length} sollicitant${bot.length===1?'':'en'}`);
+      };
     }});
 }
 
