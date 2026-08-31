@@ -105,6 +105,10 @@
       rec: rnd(RECS,i), telefoon:'06 1234 56'+(10+i%80),
       email:(rnd(VN,i)+'.'+rnd(AN,i*3+1)).toLowerCase().replace(/[^a-z.]/g,'')+'@gmail.com',
       woonplaats: rnd(PL,i*2), vacature_id:v.id,
+      /* Een deel kwam ooit via de WhatsApp-bot binnen (lead_id op de kaart):
+         daarmee is in Sourcing te zien dat de nieuwe-vacaturetemplate alleen
+         naar botmensen gaat en de rest eerlijk wordt overgeslagen. */
+      lead_id: i%4===1 ? 'l:demo-cand-'+i : '',
       volgende_actie: i%5===0 ? 'Bellen over meeloopdag':'', actie_datum: i%5===0? d(i%4-1):'',
       no_shows: i%13===0?1:0,
       notities: i%4===0 ? [{op:d(-3)+'T10:00',door:'Tjeerd',tekst:'Belde terug, enthousiast over de functie.'}]:[],

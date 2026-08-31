@@ -1635,6 +1635,12 @@ function tekenZoek(mount, acties){
       <div class="row src3-reskop">
         <span class="label" id="z_tel"></span>
         <span class="spacer"></span>
+        ${/* De filters zíjn hier de selectie (zo werkt Sourcing): wie
+             beschikbaar + straal + functie heeft ingesteld, kan de hele
+             uitkomst in één keer de nieuwe-vacaturetemplate laten appen.
+             Alleen mensen die ooit via de bot binnenkwamen (lead_id op de
+             kaart) gaan mee — het venster benoemt wie er afvalt. */
+          CRM.reactivatieModal ? `<button class="btn ghost sm" id="z_app">WhatsApp: nieuwe vacature…</button>` : ''}
         <div class="seg" id="z_sort">${ZSORT.map(o =>
           `<button data-s="${o.k}" class="${Z.sort===o.k?'on':''}">${h(o.l)}</button>`).join('')}</div>
       </div>
@@ -1874,6 +1880,15 @@ function tekenZoek(mount, acties){
     tekenZoek(mount, acties);
   };
 
+  const appKnop = $('#z_app');
+  if(appKnop) appKnop.onclick = () => {
+    const u = zoekResultaat();
+    if(!u.rijen.length) return CRM.toast('Niemand in de huidige selectie — pas de filters aan','err');
+    CRM.reactivatieModal(u.rijen.map(r => ({
+      leadId: String(r.c.leadId||''), naam: r.c.naam || '',
+      logEntiteit: 'kandidaat', logRef: String(r.c.id)
+    })));
+  };
   $('#z_sort').querySelectorAll('button').forEach(b => b.onclick = () => {
     zetZ('sort', b.dataset.s);
     $('#z_sort').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));

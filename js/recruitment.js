@@ -1145,13 +1145,27 @@ function bulkStatus(){
    alleen ingelogde teamleden kunnen hem doen. */
 function bulkReactivatie(){
   const rijen = selectie(); if(!rijen.length) return;
-  const bot  = rijen.filter(l => String(l.id).startsWith('l:') || String(l.bot_status||'').trim());
-  const rest = rijen.length - bot.length;
-  if(!bot.length) return CRM.toast('Geen van de geselecteerde sollicitanten kwam via de bot binnen — de bot kan alleen zijn eigen leads appen','err');
+  CRM.reactivatieModal(rijen.map(l => ({
+    leadId: String(l.id).startsWith('l:') ? String(l.id) : '',
+    naam: leadNaam(l), logEntiteit: 'lead', logRef: String(l.id)
+  })), () => naBulk('Template onderweg'));
+}
+
+/* Gedeeld met Sourcing (js/source.js): daar wordt dezelfde template naar
+   kandidaten mét kaart gestuurd — mensen die ooit via de bot binnenkwamen
+   dragen hun lead_id op de kaart (Tjeerd, 28 aug 2026: "kunnen we de bot
+   ook doen met kandidaten waarbij we de kandidatenkaart aanmaken?").
+   `personen` = [{leadId, naam, logEntiteit, logRef}]; wie geen leadId in
+   botvorm ('l:…') heeft kan niet — de bot kent alleen zijn eigen leads,
+   en alleen díe mensen hebben het WhatsApp-kanaal zelf geopend. */
+CRM.reactivatieModal = function(personen, naAfloop){
+  const bot  = personen.filter(p => String(p.leadId||'').startsWith('l:'));
+  const rest = personen.length - bot.length;
+  if(!bot.length) return CRM.toast('Niemand in deze selectie kwam via de bot binnen — de bot kan alleen appen met mensen die zelf ooit via WhatsApp reageerden','err');
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Nieuwe vacature appen</div>
       <p class="sub" style="margin:6px 0 0">De bot stuurt de goedgekeurde WhatsApp-template naar
-      ${bot.length} sollicitant${bot.length===1?'':'en'}${rest ? ` — ${rest} geselecteerde${rest===1?'':'n'} zonder botkoppeling ${rest===1?'wordt':'worden'} overgeslagen` : ''}.</p></div>
+      ${bot.length} ${bot.length===1?'persoon':'personen'}${rest ? ` — ${rest} zonder botkoppeling ${rest===1?'wordt':'worden'} overgeslagen (nooit via WhatsApp gereageerd)` : ''}.</p></div>
     <div class="modal-b">
       <div class="f-row"><label for="ra_txt">Vacaturetekst (komt letterlijk in het bericht)</label>
         <textarea id="ra_txt" rows="3" placeholder="Bijv. Productiemedewerker, regio Gouda, dagdienst"></textarea>
@@ -1168,20 +1182,21 @@ function bulkReactivatie(){
         ok.disabled = true; ok.textContent = 'Bezig…';
         if(!CRM.demo){
           const {error} = await CRM.sb.rpc('webhook_naar_bot',
-            {actie:'reactivatie', payload:{lead_ids: bot.map(l => String(l.id)), vacancy_text: tekst}});
+            {actie:'reactivatie', payload:{lead_ids: bot.map(p => p.leadId), vacancy_text: tekst}});
           if(error){
             CRM.fout('Versturen mislukt', error);
             ok.disabled = false; ok.textContent = 'Versturen naar ' + bot.length;
             return;
           }
-          for(const l of bot)
-            await CRM.logActiviteit('lead', l.id, 'whatsapp', `nieuwe_vacature-template gestuurd: "${tekst}"`);
+          for(const p of bot)
+            await CRM.logActiviteit(p.logEntiteit, p.logRef, 'whatsapp', `nieuwe_vacature-template gestuurd: "${tekst}"`);
         }
         CRM.modal.close();
-        naBulk(`Template onderweg naar ${bot.length} sollicitant${bot.length===1?'':'en'}`);
+        CRM.toast(`Template onderweg naar ${bot.length} ${bot.length===1?'persoon':'personen'}`,'ok');
+        if(naAfloop) naAfloop();
       };
     }});
-}
+};
 
 function bulkVacature(){
   const rijen = selectie(); if(!rijen.length) return;
