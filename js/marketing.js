@@ -1913,6 +1913,7 @@
       ${maandTabelHtml(D)}
       ${cohortKopHtml(D, cLeads, cUit)}
       ${trechterHtml(cLeads)}
+      ${botConversieHtml(cLeads)}
       ${groepTabelHtml(D, cLeads, cUit, 'klant')}
       ${groepTabelHtml(D, cLeads, cUit, 'vac')}
       ${gatenHtml(D, cLeads, cUit)}`;
@@ -2158,6 +2159,64 @@
       </div>
       <div class="card-f"><span class="meta">Klik een aantal om de onderliggende leads te zien. De balk toont het aandeel van alle binnengekomen leads;
         het percentage ernaast is het aandeel van de vorige stap.</span></div>
+    </div>`;
+  }
+
+  /* ── Bot-conversie per campagne ──────────────────────────────────
+     De laag bóven kosten-per-gekwalificeerd (Tjeerd, 28 aug 2026: "heel
+     belangrijk"): welke campagne levert mensen die ook écht reageren op
+     WhatsApp? Twee campagnes met dezelfde kosten per lead kunnen daar
+     compleet verschillen — en een campagne vol zwijgers is duur, hoe
+     goedkoop de leads ook lijken. Reactie = de bot registreerde ooit een
+     antwoord (bot_reactie_op); kwalificatie = het botoordeel; de score is
+     het gemiddelde over de leads die er een kregen. Elke telling is
+     doorklikbaar naar de onderliggende leads, net als in de trechter. */
+  function botConversieHtml(cLeads){
+    /* Alleen tonen zodra er botdata IS — vóór de livegang van de bot zou
+       hier een tabel vol nullen staan die alleen maar vragen oproept. */
+    const metBot = cLeads.filter(r => r.lead.bot_status || r.lead.bot_reactie_op || r.lead.bot_bericht_op);
+    if(!metBot.length) return '';
+    const per = new Map();
+    for(const r of cLeads){
+      const naam = String(r.lead.campagne||'').trim() || '— zonder campagnenaam —';
+      if(!per.has(naam)) per.set(naam, {naam, rijen:[], reactie:[], gekwal:[], door:[], scores:[]});
+      const g = per.get(naam);
+      g.rijen.push(r);
+      if(r.lead.bot_reactie_op) g.reactie.push(r);
+      if(r.gekwal)              g.gekwal.push(r);
+      if(r.door)                g.door.push(r);
+      if(r.lead.score != null)  g.scores.push(Number(r.lead.score));
+    }
+    const groepen = [...per.values()].sort((a,b) => b.rijen.length - a.rijen.length);
+    const tel = (sleutel, lijst, titel) => lijst.length
+      ? `<button class="btn sub sm num" data-drill="${h(drill(sleutel, lijst))}" data-drilltitel="${h(titel)}">${fmtN(lijst.length)}</button>`
+      : `<span class="num meta">0</span>`;
+    const rij = g => {
+      const gem = g.scores.length ? Math.round(g.scores.reduce((s,x)=>s+x,0) / g.scores.length) : null;
+      return `<tr>
+        <td>${h(g.naam)}</td>
+        <td class="n">${tel('botc:b:'+g.naam, g.rijen, g.naam + ' — binnengekomen')}</td>
+        <td class="n">${tel('botc:r:'+g.naam, g.reactie, g.naam + ' — reageerde op WhatsApp')}
+          <span class="meta">${pctV(g.reactie.length, g.rijen.length)}</span></td>
+        <td class="n">${tel('botc:k:'+g.naam, g.gekwal, g.naam + ' — gekwalificeerd')}
+          <span class="meta">${pctV(g.gekwal.length, g.rijen.length)}</span></td>
+        <td class="n">${gem != null ? `<span class="chip ${gem>=70?'green':gem>=45?'amber':''} num">${gem}</span>` : '<span class="meta">—</span>'}</td>
+        <td class="n">${tel('botc:d:'+g.naam, g.door, g.naam + ' — kandidaat geworden')}</td>
+      </tr>`;
+    };
+    return `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Bot-conversie per campagne</div>
+        <span class="meta">reageert er ook iemand op WhatsApp?</span></div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl">
+          <thead><tr><th>Campagne</th><th class="n">Binnen</th><th class="n">Reactie</th>
+            <th class="n">Gekwalificeerd</th><th class="n">Gem. score</th><th class="n">Kandidaat</th></tr></thead>
+          <tbody>${groepen.map(rij).join('')}</tbody>
+        </table>
+      </div>
+      <div class="card-f"><span class="meta">Reactie en kwalificatie als aandeel van de binnengekomen leads van
+        die campagne, binnen dit cohort. Een campagne met goedkope leads maar een laag reactiepercentage is in
+        werkelijkheid de duurste — verschuif budget naar waar gereageerd én gekwalificeerd wordt.</span></div>
     </div>`;
   }
 
