@@ -330,7 +330,13 @@
 .swo-teken-v{display:flex;gap:2mm;align-items:baseline;margin-bottom:2.5mm;color:var(--swo-grijs)}
 .swo-teken-v b{color:var(--swo-ink);font-weight:400}
 .swo-teken-v i{flex:1;border-bottom:1px solid var(--swo-grijs);font-style:normal;min-height:1em}
-.swo-teken-s{border-bottom:1px solid var(--swo-ink);height:9mm;margin-bottom:1.5mm}
+.swo-teken-s{border-bottom:1px solid var(--swo-ink);height:9mm;margin-bottom:1.5mm;position:relative}
+/* Steekt bewust boven het handtekeningvakje uit, net als een echte
+   handtekening die over de lijn heen krabbelt. */
+.swo-handtekening{
+  position:absolute;left:0;bottom:-1mm;height:15mm;max-width:80%;
+  object-fit:contain;object-position:left bottom;pointer-events:none;
+}
 .swo-teken-c{font-size:9pt;color:var(--swo-grijs)}
 
 /* ─── Omslag ──────────────────────────────────────────────────────
@@ -394,6 +400,9 @@ body:has(.swog.swo-print){overflow:visible!important;background:#fff}
 .swog.swo-print .swog-bladen{display:block;gap:0}
 .swog.swo-print .swo-vel{
   border:0;break-after:page;page-break-after:always;
+  /* Dwingt het vel als één stuk: zonder dit reserveert Safari bij
+     Afdrukken soms een extra, lege pagina zodra het vel net niet past. */
+  break-inside:avoid;page-break-inside:avoid;
   -webkit-print-color-adjust:exact;print-color-adjust:exact;
 }
 .swog.swo-print .swo-vel:last-child{break-after:auto;page-break-after:auto}

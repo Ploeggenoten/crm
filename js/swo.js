@@ -253,7 +253,7 @@ Binnen deze factor voert Ploeggenoten onder andere de volgende diensten uit:
 De geselecteerde kandidaat treedt rechtstreeks in dienst van Opdrachtgever. Ploeggenoten is uitsluitend belast met werving en selectie, is geen werkgever van de kandidaat en stelt geen arbeidskrachten ter beschikking in de zin van de Wet allocatie arbeidskrachten door intermediairs (Waadi).`},
 
 {k:'2-beeldmateriaal', groep:'Overeenkomst', kop:'artikel', titel:'Beeldmateriaal en toestemming', tekst:
-`Opname van videocontent op locatie en het gebruik van naam, logo of herkenbaar beeldmateriaal van Opdrachtgever in campagnes vinden uitsluitend plaats na voorafgaande schriftelijke toestemming van Opdrachtgever. Campagnes kunnen desgewenst anoniem of generiek worden uitgevoerd, zonder vermelding van Opdrachtgever. Deze bepaling geldt onverminderd het bepaalde in artikel {art:2-vertrouwelijkheid} (Vertrouwelijkheid).`},
+`Opname van videocontent op locatie en het gebruik van naam, logo of herkenbaar beeldmateriaal van Opdrachtgever in campagnes vinden uitsluitend plaats na voorafgaande schriftelijke toestemming van Opdrachtgever. Campagnes kunnen desgewenst anoniem of generiek worden uitgevoerd, zonder vermelding van Opdrachtgever. Deze bepaling geldt onverminderd het bepaalde in artikel {art:2-vertrouwelijkheid}.`},
 
 {k:'2-aard', groep:'Overeenkomst', kop:'artikel', titel:'Aard van de overeenkomst', tekst:
 `Deze Overeenkomst is een overeenkomst van opdracht in de zin van artikel 7:400 BW e.v. Partijen verklaren uitdrukkelijk dat noch deze Overeenkomst, noch de relatie die ontstaat ten gevolge van het verrichten van de werkzaamheden door Opdrachtnemer in het kader van deze Overeenkomst of de opdracht, een arbeidsovereenkomst inhoudt in de zin van artikel 7:610 BW e.v., noch beoogt in te houden.`},
@@ -333,9 +333,11 @@ function normaliseer(raw){
   Object.assign(v.og, raw.og || {});
   Object.assign(v.pg, raw.pg || {});
   Object.assign(v.voorwaarden, raw.voorwaarden || {});
-  if(Array.isArray(raw.tarieven) && raw.tarieven.length)
+  /* Geen .length-eis: een bewust leeggemaakte tabel (alle rijen
+     verwijderd) moet ook echt leeg blijven na herladen. */
+  if(Array.isArray(raw.tarieven))
     v.tarieven = raw.tarieven.map(r => ({functie:t(r.functie), pct:t(r.pct)}));
-  if(Array.isArray(raw.tarievenUitzenden) && raw.tarievenUitzenden.length)
+  if(Array.isArray(raw.tarievenUitzenden))
     v.tarievenUitzenden = raw.tarievenUitzenden.map(r => ({functie:t(r.functie), factor:t(r.factor)}));
   if(raw.tekenaars){
     if(Array.isArray(raw.tekenaars.pg) && raw.tekenaars.pg.length) v.tekenaars.pg = raw.tekenaars.pg.map(r => ({naam:t(r.naam), functie:t(r.functie)}));
@@ -468,14 +470,22 @@ function blokTarievenUitzenden(v){
     </tbody></table>`;
 }
 
-function tekenBlok(lijst){
+/* metVandaag: Ploeggenoten tekent op het moment dat dit document wordt
+   gemaakt, dus die datum staat er meteen bij. De opdrachtgever tekent
+   later fysiek — dat vakje blijft leeg. Tjeerd's eigen handtekening
+   verschijnt alleen bij zijn naam, niet bij een andere ondertekenaar
+   die eventueel namens Ploeggenoten wordt toegevoegd. */
+function tekenBlok(lijst, metVandaag){
   const rijen = (lijst && lijst.length ? lijst : [{naam:'', functie:''}]);
-  return rijen.map(p => `<div class="swo-teken">
+  return rijen.map(p => {
+    const isTjeerd = metVandaag && t(p.naam).toLowerCase() === 'tjeerd van elk';
+    return `<div class="swo-teken">
       <div class="swo-teken-v">Naam:&nbsp;<i>${t(p.naam) ? h(t(p.naam)) : ''}</i></div>
       <div class="swo-teken-v">Functie:&nbsp;<i>${t(p.functie) ? h(t(p.functie)) : ''}</i></div>
-      <div class="swo-teken-s"></div>
-      <div class="swo-teken-c">Handtekening &nbsp;·&nbsp; Datum</div>
-    </div>`).join('');
+      <div class="swo-teken-s">${isTjeerd ? `<img class="swo-handtekening" src="assets/handtekening-tjeerd.png" alt="Handtekening ${h(t(p.naam))}">` : ''}</div>
+      <div class="swo-teken-c">Handtekening &nbsp;·&nbsp; Datum${metVandaag ? ':&nbsp;' + h(datumNL(CRM.todayISO())) : ''}</div>
+    </div>`;
+  }).join('');
 }
 
 function blokOndertekening(v){
@@ -483,12 +493,12 @@ function blokOndertekening(v){
     <div>
       <div class="swo-teken-l">Opdrachtnemer</div>
       <div class="swo-teken-n">${t(v.pg.naam) ? h(t(v.pg.naam)) : LEEG}</div>
-      ${tekenBlok(v.tekenaars.pg)}
+      ${tekenBlok(v.tekenaars.pg, true)}
     </div>
     <div>
       <div class="swo-teken-l">Opdrachtgever</div>
       <div class="swo-teken-n">${t(v.og.naam) ? h(t(v.og.naam)) : LEEG}</div>
-      ${tekenBlok(v.tekenaars.og)}
+      ${tekenBlok(v.tekenaars.og, false)}
     </div>
   </div>`;
 }
@@ -825,7 +835,12 @@ function open(opts){
       <div class="swo-inhoud" id="swo_meetin">${atomen.map(a => `<div class="swo-atoom">${a.html}</div>`).join('')}</div>
       ${voetHtml(v, 1)}</article>`;
     const inhoud = meetEl.querySelector('#swo_meetin');
-    const H = Math.max(80, inhoud.clientHeight - 6);          /* 6px marge tegen afronding */
+    /* Ruime marge (was 6px): Safari rendert tekst bij het afdrukken net
+       iets hoger dan op het scherm gemeten. Bij een marge van 6px paste
+       de laatste regel soms net niet meer op het vel — Safari's printer
+       laat overflow:hidden dan niet stil verdwijnen, maar reserveert er
+       een extra, vrijwel lege pagina voor (Chrome doet dat niet). */
+    const H = Math.max(80, inhoud.clientHeight - 45);
     const kids = Array.from(inhoud.children);
     const hoogtes = kids.map(el => el.getBoundingClientRect().height);
 
