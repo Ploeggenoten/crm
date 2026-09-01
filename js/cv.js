@@ -64,6 +64,11 @@ function bewaarOpts(o){
 /* ─── Kleine tekst-helpers ────────────────────────────────────── */
 const t = v => String(v == null ? '' : v).trim();
 const lijst = v => Array.isArray(v) ? v.map(x => t(x)).filter(Boolean) : (t(v) ? [t(v)] : []);
+/* cv.certificaten staat sinds de geldigheidsdatums op de kandidatenkaart
+   (kandidaten.js, ervLijst) als objecten {naam, geldigTot} i.p.v. losse
+   tekst — anders leverde lijst() hier "[object Object]" op. */
+const certNamen = v => lijst((Array.isArray(v) ? v : []).map(
+  x => (x && typeof x === 'object') ? (x.naam || x.certificaat || x.titel || '') : x));
 /* "NL, EN" is één veld met meerdere waarden — splits op komma's. */
 const splits = v => Array.isArray(v) ? v.map(x => t(x)).filter(Boolean)
                                      : t(v).split(/\s*[,;/]\s*/).map(x => t(x)).filter(Boolean);
@@ -232,7 +237,7 @@ function extraRegels(c, ctx, o, welke){
   const cv = c.cv || {};
   const r = [];
   const zet = (lbl, w) => { if(t(w)) r.push({lbl, w:t(w)}); };
-  if(welke.cert)  zet('Certificaten', lijst(cv.certificaten).join(', '));
+  if(welke.cert)  zet('Certificaten', certNamen(cv.certificaten).join(', '));
   if(welke.talen) zet('Talen', (lijst(cv.talen).length ? lijst(cv.talen) : splits(c.talen)).join(', '));
   if(welke.voorw){
     zet('Rijbewijs', c.rijbewijs);
@@ -254,7 +259,7 @@ function beschikbaar(c, ctx){
     werk:   werkRijen(cv.werkgevers).length > 0,
     skills: lijst(cv.skills).length > 0,
     opl:    oplRijen(cv.opleidingen).length > 0,
-    cert:   lijst(cv.certificaten).length > 0,
+    cert:   certNamen(cv.certificaten).length > 0,
     talen:  (lijst(cv.talen).length + splits(c.talen).length) > 0,
     voorw:  extraRegels(c, ctx, {salaris:false}, {voorw:true}).length > 0
   };

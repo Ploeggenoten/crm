@@ -1964,7 +1964,8 @@ function cvHtml(lead){
     ${cv.functie ? `<div class="rc-kv"><span class="label">Functie</span><span>${h(cv.functie)}</span></div>` : ''}
     ${cv.ervaringJaren ? `<div class="rc-kv"><span class="label">Ervaring</span><span class="num">${h(cv.ervaringJaren)} jaar</span></div>` : ''}
     ${lijst('Talen', cv.talen)}
-    ${lijst('Certificaten', cv.certificaten || cv.skills)}
+    ${lijst('Certificaten', (cv.certificaten || cv.skills || []).map(
+      x => (x && typeof x === 'object') ? (x.naam || x.certificaat || x.titel || '') : x))}
     ${(cv.werk && cv.werk.length) ? `<div class="rc-kv"><span class="label">Werkverleden</span>
         <div>${cv.werk.map(w=>`<div class="sub">${h(w)}</div>`).join('')}</div></div>` : ''}
     ${opl.length ? `<div class="rc-kv"><span class="label">Opleiding</span>

@@ -487,7 +487,7 @@ function certMatch(c, zoek){
   const z = String(zoek||'').trim().toLowerCase(); if(!z) return true;
   const cv = c.cv || {};
   const bak = [c.rijbewijs, ...(cv.skills||[]), ...(cv.certificaten||[])]
-    .map(x => String(x||'').toLowerCase()).join(' | ');
+    .map(x => String((x && typeof x === 'object') ? (x.naam || '') : (x || '')).toLowerCase()).join(' | ');
   return bak.includes(z);
 }
 function functieMatch(c, zoek){
