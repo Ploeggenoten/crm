@@ -422,14 +422,14 @@ async function syncContacten(knop, statusEl){
 }
 
 /* ─── Export / import (bord-compatibel JSON) ──────────────────── */
-function exportJson(){
+function bordData(){
   const st = CRM.state;
   const targets = {}; let dflt = 8;
   st.targets.forEach(t => {
     if(DEFAULT_KEYS.includes(t.maand)) dflt = t.aantal;
     else targets[t.maand] = t.aantal;
   });
-  const data = {
+  return {
     app:'ploeggenoten-crm', geexporteerd_op:new Date().toISOString(),
     /* Bord-compatibel blok: het oude pijplijnbord kan dit bestand importeren. */
     cands: st.cands.map(CRM.rowToCand),
@@ -441,13 +441,72 @@ function exportJson(){
     crm: {leads:st.leads, activiteiten:st.activiteiten, taken:st.taken,
           documenten:st.documenten, kansen:st.kansen, contacten:st.contacten}
   };
+}
+
+function bewaarBestand(data, naam){
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'ploeggenoten-crm-' + CRM.todayISO() + '.json';
+  a.download = naam;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+
+function exportJson(){
+  bewaarBestand(bordData(), 'ploeggenoten-crm-' + CRM.todayISO() + '.json');
   CRM.toast('Export gedownload','ok');
+}
+
+/* ─── Volledige export ─────────────────────────────────────────
+   De gewone export is bord-compatibel en bevat daarom alléén wat het
+   oude bord kent. Voor de maandanalyse (en voor een echte back-up) is
+   dat te weinig: de cijfers waar op gestuurd wordt — fees, termijnen,
+   flexmarge, kosten, banksaldo, advertentie-uitgaven — staan in de
+   fin_*- en mkt_*-tabellen en misten volledig.
+
+   Vandaar deze tweede knop. Hij haalt de tabellen rechtstreeks op en
+   zet ze onder `db`. De RLS bepaalt wat er terugkomt: een teamlid dat
+   hierop drukt krijgt de fin_*-tabellen leeg terug, precies zoals het
+   hoort — de grens ligt in de database, niet in deze knop. Tabellen
+   die (nog) niet bestaan worden overgeslagen in plaats van de hele
+   export te laten klappen.                                        */
+const EXTRA_TABELLEN = [
+  /* recruitment/sales-kant die niet in het bordblok past */
+  'vacatures','crm_trajecten','crm_sollicitaties','crm_klussen','crm_afspraken',
+  'crm_leadradar','crm_stukken','crm_meldingen','crm_verwijderingen','lead_formulieren',
+  /* marketing */
+  'mkt_kanalen','mkt_posts','mkt_taken','mkt_meta_betaald','mkt_meta_stats',
+  'mkt_campagne_klant','mkt_ad_besluiten',
+  /* finance — alleen leesbaar voor wie de RLS toelaat */
+  'fin_settings','fin_placements','fin_installments','fin_tarieven',
+  'fin_flex_plaatsingen','fin_flex_regels','fin_flex_weken','fin_flex_afspraken',
+  'fin_costs_budget','fin_costs_actual','fin_bank_saldo','fin_bank_tx',
+  'fin_loans','fin_loan_payments','fin_yuki_open','fin_dismissed_candidates'
+];
+
+async function exportAlles(knop){
+  if(CRM.demo){ CRM.toast('Demo-modus — geen echte export','err'); return; }
+  const oud = knop ? knop.textContent : '';
+  if(knop){ knop.disabled = true; }
+  const data = bordData();
+  data.volledig = true;
+  data.db = {}; const leeg = [], mislukt = [];
+  let i = 0;
+  for(const tabel of EXTRA_TABELLEN){
+    i++;
+    if(knop) knop.textContent = `Ophalen… ${i}/${EXTRA_TABELLEN.length}`;
+    const {data:rijen, error} = await CRM.sb.from(tabel).select('*');
+    if(error){ mislukt.push(tabel); continue; }
+    data.db[tabel] = rijen || [];
+    if(!rijen || !rijen.length) leeg.push(tabel);
+  }
+  if(knop){ knop.disabled = false; knop.textContent = oud; }
+  bewaarBestand(data, 'ploeggenoten-crm-volledig-' + CRM.todayISO() + '.json');
+  const n = Object.values(data.db).reduce((s,r) => s + r.length, 0);
+  CRM.toast(`Volledige export: ${n} rijen uit ${Object.keys(data.db).length} tabellen`
+    + (mislukt.length ? ` · geen toegang tot ${mislukt.length}` : ''), 'ok');
+  if(mislukt.length) console.warn('Export — geen toegang tot:', mislukt.join(', '));
+  if(leeg.length)    console.info('Export — leeg:', leeg.join(', '));
 }
 
 async function importJson(file, statusEl){
@@ -530,9 +589,13 @@ function sectieData(){
         Import vervangt alleen de bord-data.</p>
       <div class="row">
         <button class="btn" id="in_export">Export JSON downloaden</button>
+        <button class="btn ghost" id="in_export_alles">Volledige export (incl. finance &amp; marketing)</button>
         <label class="btn ghost" style="cursor:pointer">Import JSON…
           <input type="file" id="in_import" accept=".json,application/json" style="display:none"></label>
       </div>
+      <p class="sub" style="margin:10px 0 0">De volledige export haalt er ook de fee- en factuurtermijnen,
+        flexmarge, kosten, banksaldo en advertentiecijfers bij. Bedragen komen alleen mee voor wie ze
+        volgens de database mag zien; een teamlid krijgt die tabellen leeg terug.</p>
       <div id="in_impstatus" style="margin-top:12px"></div>
     </div></div>`;
 }
@@ -773,6 +836,8 @@ CRM.registerModule('instellingen', {
        over de hele pagina. */
     const exp = mount.querySelector('#in_export');
     if(exp) exp.onclick = exportJson;
+    const expA = mount.querySelector('#in_export_alles');
+    if(expA) expA.onclick = () => exportAlles(expA);
     const imp = mount.querySelector('#in_import');
     if(imp) imp.onchange = e => {
       const f = e.target.files && e.target.files[0];
