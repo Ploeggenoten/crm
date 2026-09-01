@@ -176,11 +176,20 @@ const kandAlsRij = c => ({
 const leads = () => {
   const uit = CRM.state.leads || [];
   if(!CRM.isInstroom) return uit;                 // data.js nog niet geladen
-  /* ZZP'ers met een lopende of geplande klus horen hier niet tussen: dat is
-     ingepland werk, geen instroom (zie CRM.zzpIngepland in js/data.js). Zodra
-     hun laatste klus voorbij is verschijnen ze hier vanzelf weer. */
+  /* Twee groepen kandidaten horen hier níét tussen (Tjeerd, 1 sep 2026 —
+     "de recruitmenttab is voor werk dat wacht"):
+     · wie op 'Klaar om voor te stellen' staat — geïntaked, kaart compleet,
+       wacht op een klant. Dat is voorraad, geen werk; de teller in de kop
+       ("x klaar om voor te stellen →") blijft de ingang, en in Sourcing
+       vind je ze op beschikbaar/afstand. Voorbeeld dat dit besliste:
+       Ed Stok, beschikbare ZZP'er mét intake, stond hier als rij.
+     · ZZP'ers met een lopende of geplande klus — ingepland werk (zie
+       CRM.zzpIngepland). Loopt de laatste klus af, dan keren ze vanzelf
+       terug in de voorraad. */
   return uit.concat(CRM.kandidaten()
-    .filter(c => CRM.isInstroom(c.fase) && !(CRM.zzpIngepland && CRM.zzpIngepland(c)))
+    .filter(c => CRM.isInstroom(c.fase)
+              && !CRM.faseIs(c.fase, 'Klaar om voor te stellen')
+              && !(CRM.zzpIngepland && CRM.zzpIngepland(c)))
     .map(kandAlsRij));
 };
 const leadById = id => leads().find(l => String(l.id) === String(id));
