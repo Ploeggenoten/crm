@@ -50,7 +50,13 @@ CRM.DONE   = ['Contract getekend','Gestart','Afgevallen','Gestopt'];
    zodat een bestaande kandidaat op 'CV binnen' gewoon als 'Potentieel' in
    beeld blijft.                                                       */
 CRM.FASE_ALIAS = {
-  'Voorselectie':'Intake',
+  /* 1 sep 2026, Tjeerd: 'Intake' → 'Klaar om voor te stellen'. Het woord
+     'Intake' las als iets wat nog moest gebeuren, terwijl de fase juist
+     betekent: intake gehad, kaart compleet, wacht op een passende vacature.
+     Bij het opschonen van de wachtkamer zocht Tjeerd deze fase en herkende
+     hem niet — een naam die uitgelegd moet worden is de verkeerde naam. */
+  'Voorselectie':'Klaar om voor te stellen',
+  'Intake':'Klaar om voor te stellen',
   'Gebeld — geen gehoor':'Geen gehoor',
   'CV opgevraagd':'Potentieel',
   'CV binnen':'Potentieel',
@@ -86,19 +92,19 @@ CRM.faseIn = (f, lijst) => { const x = CRM.faseNorm(f); return (lijst||[]).some(
    en dat blijft zo.
 
    Tjeerd, 27 aug 2026: vijf haltes, in lijn met de vijf AM-statussen.
-   'Intake' blijft de laatste halte — daar staat de kandidaatkaart op na het
-   aanmaken, klaar om voorgesteld te worden. De oude tussenstappen (cv,
+   'Klaar om voor te stellen' (tot 1 sep 2026 'Intake') is de laatste halte —
+   daar staat de kandidaatkaart op na het aanmaken. De oude tussenstappen (cv,
    videocall) staan in CRM.FASE_ALIAS. */
 CRM.INSTROOM   = [
   {k:'Nieuw',            c:'#5b8bbf'},
   {k:'Geen gehoor',      c:'#9aa3b2'},
   {k:'Potentieel',       c:'#d9a441'},
   {k:'Intake ingepland', c:'#4178b0'},
-  {k:'Intake',           c:'#9aa3b2'}
+  {k:'Klaar om voor te stellen', c:'#9aa3b2'}
 ];
 /* VOOR_BORD is wat er ná de instroom komt maar vóór het bord: de laatste
    halte. Blijft bestaan omdat het bord en de kandidatenlijst hem gebruiken. */
-CRM.VOOR_BORD  = [{k:'Intake', c:'#9aa3b2'}];
+CRM.VOOR_BORD  = [{k:'Klaar om voor te stellen', c:'#9aa3b2'}];
 CRM.ALLE_FASES = CRM.INSTROOM.concat(CRM.PHASES);
 /* Zit deze kandidaat nog vóór de klant? */
 CRM.isInstroom = f => CRM.INSTROOM.some(p => p.k === CRM.faseNorm(f));
@@ -118,7 +124,7 @@ CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=
    klaar in de lijst, en dat is precies wat Tjeerd niet wil. */
 CRM.klaarOmVoorTeStellen = c =>
   !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
-      && (CRM.faseIs(c.fase, 'Intake') || (!!c.intake && !CRM.isInstroom(c.fase)));
+      && (CRM.faseIs(c.fase, 'Klaar om voor te stellen') || (!!c.intake && !CRM.isInstroom(c.fase)));
 
 /* ─── Twee gedeelde vragen over een plaatsing ────────────────────
    `teltAlsStop` stond vier keer los in de code (hier twee keer, dashboard,

@@ -2289,14 +2289,14 @@ function doorschietForm(lead, opts){
         const cand = {
           id: CRM.uid(), naam:g('naam'), telefoon:g('telefoon'), email:g('email'),
           woonplaats:g('woonplaats'), functie:g('functie'), klant:(x && x.klant) || lead.klant || '',
-          type:'W&S', bron:g('bron'), fase:'Intake', datum:g('datum'), tijd:'',
+          type:'W&S', bron:g('bron'), fase:'Klaar om voor te stellen', datum:g('datum'), tijd:'',
           since:vandaag, rec:g('rec') || CRM.me(), vacatureId:vacSel.value, leadId:lead.id,
           cv:lead.cv || null, note:lead.kwalificatie || '',
           /* De videocall ís de intake, dus de kaart begint met één vaststaand
              feit: wanneer dat gesprek was. De rest van de vragenlijst vult de
              recruiter hierna in (intakeForm laat dit veld staan). */
           intake:{videocallOp:g('datum'), op:vandaag, door:g('rec') || CRM.me()},
-          historie:[{fase:'Intake', op:vandaag}],
+          historie:[{fase:'Klaar om voor te stellen', op:vandaag}],
           notities:(Array.isArray(lead.notities)?lead.notities:[]).concat(
             lead.agent_notitie ? [{op:lead.binnen_op||new Date().toISOString(), door:'WhatsApp-agent', tekst:lead.agent_notitie}] : [])
         };
@@ -3725,14 +3725,14 @@ function heractiveren(id){
         const vandaag = CRM.todayISO(), nu = new Date().toISOString();
         const nieuw = {
           id:CRM.uid(), naam:c.naam, klant:v.klant, functie:v.functie, type:v.type||'',
-          fase:'Intake', datum:'', tijd:'', start:'', since:vandaag, bron:c.bron||'',
+          fase:'Klaar om voor te stellen', datum:'', tijd:'', start:'', since:vandaag, bron:c.bron||'',
           geplaatstOp:'', gestoptOp:'', garantieMnd:0,
           maandloon:c.maandloon, toeslagPct:c.toeslagPct, vtPct:c.vtPct, ejuPct:c.ejuPct, overigPct:c.overigPct,
           reden:'', rec:c.rec || CRM.me(), note:'', ooId:null, vervangt:'', volgendeActie:'', actieDatum:null, noShows:0,
           telefoon:c.telefoon, email:c.email, woonplaats:c.woonplaats, vacatureId:v.id, cv:c.cv||null,
           ster:c.ster, beschikbaar:c.beschikbaar, ploegen:c.ploegen, talen:c.talen, rijbewijs:c.rijbewijs, vervoer:c.vervoer,
           notities:[{op:nu, door:CRM.me(), tekst:`Heraangeboden vanuit ${c.klant||'—'} (${c.fase==='Gestopt'?'gestopt':'afgevallen'}${c.reden?': '+c.reden:''})`}],
-          historie:[{fase:'Intake', op:vandaag}],
+          historie:[{fase:'Klaar om voor te stellen', op:vandaag}],
           intake:c.intake||null, herstartVan:c.id,
           afvalType:'', afvalCat:'', stopDoor:'', stopCat:'', bemiddelbaar:true, beschikbaarPer:''
         };
@@ -3799,9 +3799,9 @@ function nieuweKandidaatModal(prefill){
         const cand = {
           id:CRM.uid(), naam:g('naam'), telefoon:g('tel'), woonplaats:g('plaats'),
           functie:v.functie, klant:v.klant, type:prefill.type || v.type || 'W&S',
-          bron:g('bron'), fase:'Intake', datum:g('datum'), tijd:g('tijd')||'',
+          bron:g('bron'), fase:'Klaar om voor te stellen', datum:g('datum'), tijd:g('tijd')||'',
           since:vandaag, rec:g('rec') || CRM.me(), vacatureId:v.id,
-          vervangt:prefill.vervangt || '', historie:[{fase:'Intake', op:vandaag}],
+          vervangt:prefill.vervangt || '', historie:[{fase:'Klaar om voor te stellen', op:vandaag}],
           notities: prefill.vervangt ? [{op:new Date().toISOString(), door:CRM.me(),
             tekst:`Aangemaakt als vervanger voor ${prefill.vervangtNaam||prefill.vervangt}`}] : []
         };

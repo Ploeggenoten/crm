@@ -79,7 +79,7 @@
   const VN = ['Marek','Ionut','Kevin','Alphonse','Michal','Sven','Alain','Rico','Lorenzo','Anna','Soufiane','Henri','Adam','Piotr','Daniel','Youssef','Bogdan','Elias','Tomasz','Karol','Nadia','Fatima','Ahmed','Radu','Viktor'];
   const AN = ['Nowak','Popescu','de Vries','Mbeki','Ostrowski','van Katwijk','Jansen','Silva','Costa','Jarosz','El Amrani','Dupont','Kowalski','Zielinski','Bakker','Haddad','Ionescu','Petrov','Wozniak','Nowicki','Ben Ali','Said','Hassan','Munteanu','Ivanov'];
   const PL = ['Rotterdam','Den Haag','Gouda','Alphen a/d Rijn','Zoetermeer','Leiden','Bodegraven','Waddinxveen','Delft','Katwijk','Schiedam','Vlaardingen'];
-  const FASEN = ['Intake','Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag','In de wacht','Offer','Contract ondertekenen','Contract getekend','Gestart','Afgevallen','Gestopt'];
+  const FASEN = ['Klaar om voor te stellen','Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag','In de wacht','Offer','Contract ondertekenen','Contract getekend','Gestart','Afgevallen','Gestopt'];
   const RECS = ['Tjeerd','Tjerk','Rajesh'];
   const rnd = (a,i) => a[i % a.length];
 

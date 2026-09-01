@@ -716,12 +716,12 @@ const FASE_KANSEN_DEFAULT = {
   'In de wacht': .50, 'Offer': .65, 'Contract ondertekenen': .75
 };
 const FASE_LEAD_WKN = {
-  'Voorgesteld':8, 'Intake':8, 'O&O sessie':6,
+  'Voorgesteld':8, 'Klaar om voor te stellen':8, 'O&O sessie':6,
   'Eerste gesprek':6, 'Tweede gesprek':5, 'Meeloopdag':4,
   'In de wacht':8, 'Offer':3, 'Contract ondertekenen':2
 };
 /* Funnelvolgorde; 'Intake' staat waar de finance-app 'Voorselectie' heeft. */
-const FUNNEL = ['Intake','Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek',
+const FUNNEL = ['Klaar om voor te stellen','Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek',
   'Meeloopdag','In de wacht','Offer','Contract ondertekenen','Contract getekend','Gestart'];
 const PLAATSING_IDX = FUNNEL.indexOf('Contract getekend');
 
