@@ -46,7 +46,9 @@ const VOORWAARDEN = {
   opzegtermijn:'één maand',
   exclusiviteit:'drie (3) weken',
   proeftijd:'twee (2) maanden',
+  proeftijdUitzenden:'twee (2) maanden',
   betaaltermijn:'30 dagen',
+  overnameUren:'1.560',
   plaats:'Alphen aan den Rijn'
 };
 
@@ -57,7 +59,22 @@ const TARIEVEN = [
   {functie:'Managers (QFS, Safety, Productie, Plant)', pct:'23%'}
 ];
 
-const DOCTITEL = 'Samenwerkingsovereenkomst W&S';
+const TARIEVEN_UITZENDEN = [
+  {functie:'Productiemedewerker', factor:'2,3'},
+  {functie:'Magazijnmedewerker',  factor:'2,3'},
+  {functie:'Operator',            factor:'2,35'},
+  {functie:'Teamleider',          factor:'2,4'},
+  {functie:'Productiemanager',    factor:'2,4'}
+];
+
+/* vorm: 'ws' | 'uitzenden' | 'beide' — bepaalt titel en welke
+   onderdelen van de DELEN-lijst meedoen (zie vormPast()). */
+function doctitelStandaard(vorm){
+  if(vorm === 'uitzenden') return 'Samenwerkingsovereenkomst Uitzenden/Detachering';
+  if(vorm === 'beide') return 'Samenwerkingsovereenkomst';
+  return 'Samenwerkingsovereenkomst W&S';
+}
+const DOCTITEL = doctitelStandaard('ws');
 
 /* ═══════════════════════════════════════════════════════════════
    2. DE TEMPLATE
@@ -73,11 +90,16 @@ const DOCTITEL = 'Samenwerkingsovereenkomst W&S';
 
 const DELEN = [
 /* ─── Partijen ────────────────────────────────────────────────── */
-{k:'partijen', groep:'Partijen', kop:'sectie', titel:'Partijen bij deze overeenkomst', tekst:
-`Deze samenwerkingsovereenkomst voor werving & selectie wordt aangegaan tussen onderstaande partijen.
+{k:'partijen', groep:'Partijen', kop:'sectie', titel:'Partijen bij deze overeenkomst', tekst: v => {
+  const soort = v.vorm === 'uitzenden' ? 'uitzenden en detachering'
+    : v.vorm === 'beide' ? 'werving & selectie en uitzenden/detachering' : 'werving & selectie';
+  const label = v.vorm === 'uitzenden' ? 'Uitzenden & Detachering'
+    : v.vorm === 'beide' ? 'Werving, Selectie & Uitzenden' : 'Werving & Selectie';
+  return `Deze samenwerkingsovereenkomst voor ${soort} wordt aangegaan tussen onderstaande partijen.
 {partijen}
 {ingangsdatum-regel}
-! Werving & Selectie | Wij leveren geen **cv's**, maar *duurzame* plaatsingen.`},
+! ${label} | Wij leveren geen **cv's**, maar *duurzame* plaatsingen.`;
+}},
 
 /* ─── Hoofdstuk 1: onze manier van samenwerken ────────────────── */
 {k:'h1-opener', groep:'Hoofdstuk 1', kop:'hoofdstuk', hoofdstuk:'Hoofdstuk 1', nieuwePagina:true,
@@ -132,7 +154,7 @@ Wie het werk, het tempo en de ploeg vooraf heeft gezien, weet precies waar de ba
 {k:'2-duur', groep:'Overeenkomst', kop:'artikel', titel:'Duur van de overeenkomst', tekst:
 `Deze overeenkomst gaat in op {ingangsdatum}. De overeenkomst wordt aangegaan voor {looptijd} en kan door beide partijen schriftelijk worden opgezegd met een opzegtermijn van {opzegtermijn}, tenzij anders overeengekomen.`},
 
-{k:'2-tarieven', groep:'Overeenkomst', kop:'artikel', titel:'Tarieven en diensten', tekst:
+{k:'2-tarieven', groep:'Overeenkomst', kop:'artikel', vorm:'ws', titel:'Tarieven en diensten', tekst:
 `De Werving & Selectie-fee wordt berekend over het bruto jaarsalaris van de geplaatste kandidaat. De grondslag bestaat uit:
 - twaalf (12) maal het overeengekomen bruto maandsalaris;
 - vakantiegeld (8%);
@@ -153,13 +175,40 @@ Het doel is het realiseren van duurzame plaatsingen met de juiste combinatie van
 Kandidaten die aantoonbaar via campagnes of content van Ploeggenoten zijn binnengekomen, worden gedurende deze periode uitsluitend via Ploeggenoten behandeld.
 Rechtstreekse werving of inzet van andere bureaus blijft toegestaan voor kandidaten die niet afkomstig zijn uit campagnes van Ploeggenoten.`},
 
-{k:'2-vervanging', groep:'Overeenkomst', kop:'artikel', titel:'Vervangingsregeling', tekst:
+{k:'2-vervanging', groep:'Overeenkomst', kop:'artikel', vorm:'ws', titel:'Vervangingsregeling', tekst:
 `Indien een door Ploeggenoten geplaatste kandidaat binnen de overeengekomen proeftijd van {proeftijd} uit dienst treedt, ongeacht of dit op initiatief van Opdrachtgever of de kandidaat gebeurt, heeft Opdrachtgever recht op éénmalige kosteloze vervanging voor dezelfde functie.
 De vervangingsregeling geldt uitsluitend voor de betreffende plaatsing en vacature en geeft geen recht op restitutie, creditering of verrekening van reeds gefactureerde bedragen.`},
 
-{k:'2-facturatie', groep:'Overeenkomst', kop:'artikel', titel:'Facturatie en betaling', tekst:
+{k:'2-vervanging-uitzenden', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Vervangingsregeling', tekst:
+`Indien een door Ploeggenoten ter beschikking gestelde medewerker binnen de overeengekomen proeftijd van {proeftijd-uitzenden} niet langer werkzaam is bij Opdrachtgever, ongeacht of dit op initiatief van Opdrachtgever of de medewerker gebeurt, heeft Opdrachtgever recht op éénmalige kosteloze vervanging voor dezelfde functie.
+De vervangingsregeling geldt uitsluitend voor de betreffende plaatsing en geeft geen recht op restitutie, creditering of verrekening van reeds gefactureerde bedragen.`},
+
+{k:'2-facturatie', groep:'Overeenkomst', kop:'artikel', vorm:'ws', titel:'Facturatie en betaling', tekst:
 `Voor facturatie van Werving & Selectie hanteert Ploeggenoten een betaaltermijn van {betaaltermijn} na factuurdatum.
 De facturatie vindt plaats wanneer de kandidaat het contract heeft getekend.`},
+
+{k:'2-facturatie-uitzenden', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Facturatie en betaling', tekst:
+`Facturatie vindt wekelijks plaats op basis van goedgekeurde uren via Pronkert. Betaaltermijn: 14 dagen na factuurdatum.`},
+
+{k:'2-arbeidsvoorwaarden', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Arbeidsvoorwaarden en gelijkwaardige beloning', tekst:
+`Ploeggenoten handelt conform alle geldende wet- en regelgeving, waaronder het principe van gelijkwaardige beloning zoals bedoeld in de Wet Toezicht Terbeschikkingstelling van Arbeid (WTTA). Opdrachtgever verstrekt tijdig alle gegevens die noodzakelijk zijn voor correcte inschaling en beloning.
+De verloning en personeelsadministratie worden uitgevoerd via het gecertificeerde backofficebureau Pronkert, dat werkt conform de ABU-voorwaarden.`},
+
+{k:'2-terbeschikkingstelling', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Terbeschikkingstelling van medewerkers', tekst:
+`Voor iedere plaatsing worden de afspraken vastgelegd in deze overeenkomst en eventuele bijlagen of inleenbevestigingen. Ploeggenoten zet zich maximaal in om tijdig en zorgvuldig geschikte kandidaten te leveren. De algemene voorwaarden van Ploeggenoten zijn van toepassing.
+De medewerkers verrichten hun werkzaamheden onder leiding en toezicht van Opdrachtgever.`},
+
+{k:'2-veiligheid-werkplek', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Veiligheid en werkplek', tekst:
+`Opdrachtgever draagt zorg voor een veilige werkplek, naleving van de Arbowet en duidelijke veiligheidsinstructies. Benodigde persoonlijke beschermingsmiddelen (PBM's) worden door Opdrachtgever verstrekt, tenzij anders overeengekomen.`},
+
+{k:'2-overname-medewerkers', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Overname van medewerkers', tekst:
+`Kosteloze overname is mogelijk na {overname-uren} gewerkte uren. Bij eerdere overname geldt een vergoeding van 30% van het bruto resterende factuurbedrag. Dit geldt ook bij indiensttreding via derden binnen 12 maanden na de laatste inleenopdracht.`},
+
+{k:'2-retainer', groep:'Overeenkomst', kop:'artikel', vorm:'alle', titel:'Retainer fee managementfuncties', tekst:
+`Voor management-, sleutel- of specialistische functies werkt Ploeggenoten met een retainer fee van €1.500,- exclusief btw ter dekking van campagne-, search- en recruitmentwerkzaamheden.
+De retainer fee wordt bij succesvolle plaatsing volledig verrekend met de overeengekomen recruitment fee.
+De retainer fee is verschuldigd voorafgaand aan de opstart van de werkzaamheden en wordt niet gerestitueerd, ongeacht de uitkomst van de opdracht.
+Deze regeling is uitsluitend van toepassing indien partijen dit vooraf schriftelijk zijn overeengekomen.`},
 
 {k:'2-veiligheid', groep:'Overeenkomst', kop:'artikel', titel:'Veiligheid bij bezoeken op locatie', tekst:
 `Bij bezoeken, rondleidingen en Ontdek & Ontmoet-sessies op locatie draagt Opdrachtgever zorg voor:
@@ -187,7 +236,19 @@ Beide partijen behandelen alle in het kader van deze Overeenkomst verkregen info
 **{art:2-vertrouwelijkheid}.5** Opdrachtnemer zal de verplichtingen uit dit artikel eveneens schriftelijk opleggen aan de Medewerkers. Een overtreding van deze verplichting door een Medewerker wordt beschouwd als een overtreding van Opdrachtnemer zelf.
 **{art:2-vertrouwelijkheid}.6** Opdrachtgever heeft te allen tijde het recht Opdrachtnemer te verzoeken alle aan Opdrachtnemer door haar dan wel namens haar verstrekte informatie en/of kopieën daarvan te vernietigen dan wel te retourneren.`},
 
-{k:'2-voordracht', groep:'Overeenkomst', kop:'artikel', titel:'Werving, selectie en voordracht', tekst:
+{k:'2-tarieven-uitzenden', groep:'Overeenkomst', kop:'artikel', vorm:'uitzenden', titel:'Tarieven, factor en diensten', tekst:
+`De tarieven worden uitgedrukt in een omrekenfactor op het brutoloon en zijn exclusief btw.
+{tarieven-uitzenden}
+Binnen deze factor voert Ploeggenoten onder andere de volgende diensten uit:
+- volledige wervingsstrategie op no cure, no pay-basis;
+- actieve en gerichte online werving via Meta, LinkedIn en jobboards;
+- professionele foto- en videocontent op locatie;
+- Ontdek & Ontmoet sessies;
+- begeleiding tijdens onboarding;
+- periodieke evaluaties met kandidaat en opdrachtgever;
+- vroegtijdige signalering van knelpunten of onvrede.`},
+
+{k:'2-voordracht', groep:'Overeenkomst', kop:'artikel', vorm:'ws', titel:'Werving, selectie en voordracht', tekst:
 `Voor iedere opdracht worden de afspraken vastgelegd in deze overeenkomst en eventuele bijlagen of opdrachtbevestigingen. Ploeggenoten zet zich maximaal in om tijdig en zorgvuldig geschikte kandidaten voor te dragen. De algemene voorwaarden van Ploeggenoten zijn van toepassing.
 De geselecteerde kandidaat treedt rechtstreeks in dienst van Opdrachtgever. Ploeggenoten is uitsluitend belast met werving en selectie, is geen werkgever van de kandidaat en stelt geen arbeidskrachten ter beschikking in de zin van de Wet allocatie arbeidskrachten door intermediairs (Waadi).`},
 
@@ -222,11 +283,13 @@ DELEN.forEach(d => { DEEL[d.k] = d; });
 function leegModel(){
   return {
     omslag:true,
+    vorm:'ws',                            /* 'ws' | 'uitzenden' | 'beide' */
     doctitel:DOCTITEL,
     og:{naam:'', adres:'', pcplaats:'', kvk:'', contact:'', email:'', telefoon:''},
     pg:Object.assign({}, PG),
     voorwaarden:Object.assign({}, VOORWAARDEN, {ingangsdatum:CRM.todayISO()}),
     tarieven:TARIEVEN.map(r => Object.assign({}, r)),
+    tarievenUitzenden:TARIEVEN_UITZENDEN.map(r => Object.assign({}, r)),
     tekenaars:{
       pg:[{naam:'Tjeerd van Elk', functie:'Eigenaar'}],
       og:[{naam:'', functie:''}]
@@ -235,6 +298,13 @@ function leegModel(){
        in staat volgt automatisch de template. */
     delen:{}
   };
+}
+
+/* Standaard-uitzettingen voor een GLASHELDER NIEUW stuk (niet voor het
+   herladen van een bestaand stuk — anders zou een expliciet weer
+   aangezet artikel na herladen alsnog uit staan, zie normaliseer()). */
+function nieuwStukDelen(){
+  return {'2-vervanging-uitzenden':{aan:false}, '2-retainer':{aan:false}};
 }
 
 /* Model uit een klant vullen. Alles blijft overschrijfbaar. */
@@ -258,12 +328,15 @@ function normaliseer(raw){
   const v = leegModel();
   if(!raw || typeof raw !== 'object') return v;
   if(raw.omslag != null) v.omslag = !!raw.omslag;
+  if(['ws','uitzenden','beide'].includes(raw.vorm)) v.vorm = raw.vorm;
   if(raw.doctitel) v.doctitel = String(raw.doctitel);
   Object.assign(v.og, raw.og || {});
   Object.assign(v.pg, raw.pg || {});
   Object.assign(v.voorwaarden, raw.voorwaarden || {});
   if(Array.isArray(raw.tarieven) && raw.tarieven.length)
     v.tarieven = raw.tarieven.map(r => ({functie:t(r.functie), pct:t(r.pct)}));
+  if(Array.isArray(raw.tarievenUitzenden) && raw.tarievenUitzenden.length)
+    v.tarievenUitzenden = raw.tarievenUitzenden.map(r => ({functie:t(r.functie), factor:t(r.factor)}));
   if(raw.tekenaars){
     if(Array.isArray(raw.tekenaars.pg) && raw.tekenaars.pg.length) v.tekenaars.pg = raw.tekenaars.pg.map(r => ({naam:t(r.naam), functie:t(r.functie)}));
     if(Array.isArray(raw.tekenaars.og) && raw.tekenaars.og.length) v.tekenaars.og = raw.tekenaars.og.map(r => ({naam:t(r.naam), functie:t(r.functie)}));
@@ -274,13 +347,22 @@ function normaliseer(raw){
   return v;
 }
 
-const deelAan   = (v,k) => !(v.delen[k] && v.delen[k].aan === false);
-const deelTekst = (v,k) => (v.delen[k] && v.delen[k].tekst != null) ? v.delen[k].tekst : DEEL[k].tekst;
-const deelAfwijkend = (v,k) => !!(v.delen[k] && v.delen[k].tekst != null && v.delen[k].tekst !== DEEL[k].tekst);
+/* Een deel telt mee als het bij de gekozen vorm hoort: 'alle' (of geen
+   vorm-tag) altijd, 'ws'/'uitzenden' alleen bij die vorm of bij 'beide'. */
+function vormPast(v, k){
+  const vv = DEEL[k].vorm || 'alle';
+  return vv === 'alle' || v.vorm === vv || v.vorm === 'beide';
+}
+/* Standaardtekst kan afhangen van de vorm (bv. de partijen-alinea die
+   nooit "werving & selectie" mag noemen in een zuiver Uitzenden-stuk). */
+const standaardTekst = (v,k) => typeof DEEL[k].tekst === 'function' ? DEEL[k].tekst(v) : DEEL[k].tekst;
+const deelAan   = (v,k) => vormPast(v,k) && !(v.delen[k] && v.delen[k].aan === false);
+const deelTekst = (v,k) => (v.delen[k] && v.delen[k].tekst != null) ? v.delen[k].tekst : standaardTekst(v,k);
+const deelAfwijkend = (v,k) => !!(v.delen[k] && v.delen[k].tekst != null && v.delen[k].tekst !== standaardTekst(v,k));
 
 function zetDeel(v, k, patch){
   const cur = Object.assign({}, v.delen[k] || {}, patch);
-  if(cur.tekst === DEEL[k].tekst) delete cur.tekst;
+  if(cur.tekst === standaardTekst(v,k)) delete cur.tekst;
   if(cur.aan !== false) delete cur.aan;
   if(Object.keys(cur).length) v.delen[k] = cur; else delete v.delen[k];
 }
@@ -315,7 +397,9 @@ function waarde(v, sleutel){
     case 'opzegtermijn':  return t(w.opzegtermijn);
     case 'exclusiviteit': return t(w.exclusiviteit);
     case 'proeftijd':     return t(w.proeftijd);
+    case 'proeftijd-uitzenden': return t(w.proeftijdUitzenden);
     case 'betaaltermijn': return t(w.betaaltermijn);
+    case 'overname-uren': return t(w.overnameUren);
     case 'plaats':        return t(w.plaats);
     case 'opdrachtgever': return t(v.og.naam);
     case 'opdrachtnemer': return t(v.pg.naam);
@@ -364,13 +448,23 @@ function blokPartijen(v){
   </div>`;
 }
 
-function blokTarieven(v){
+function blokTarievenWS(v){
   const rijen = (v.tarieven || []).filter(r => t(r.functie) || t(r.pct));
   if(!rijen.length) return '';
   return `<table class="swo-tabel"><thead><tr>
       <th>Functiegroep</th><th>W&amp;S-fee</th>
     </tr></thead><tbody>
       ${rijen.map(r => `<tr><td>${t(r.functie) ? h(t(r.functie)) : LEEG}</td><td>${t(r.pct) ? h(t(r.pct)) : LEEG}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+function blokTarievenUitzenden(v){
+  const rijen = (v.tarievenUitzenden || []).filter(r => t(r.functie) || t(r.factor));
+  if(!rijen.length) return '';
+  return `<table class="swo-tabel"><thead><tr>
+      <th>Functiegroep</th><th>Factor</th>
+    </tr></thead><tbody>
+      ${rijen.map(r => `<tr><td>${t(r.functie) ? h(t(r.functie)) : LEEG}</td><td>${t(r.factor) ? h(t(r.factor)) : LEEG}</td></tr>`).join('')}
     </tbody></table>`;
 }
 
@@ -490,7 +584,8 @@ function parse(tekst, ctx){
     if(/^#!\s/.test(s)){  at.push({html:`<div class="swo-label">${h(t(s.slice(3)))}</div>`, samen:true}); i++; continue; }
     /* Blokken uit de velden */
     if(s === '{partijen}'){        at.push({html:blokPartijen(ctx.v)}); i++; continue; }
-    if(s === '{tarieven}'){        at.push({html:blokTarieven(ctx.v)}); i++; continue; }
+    if(s === '{tarieven}'){        at.push({html:blokTarievenWS(ctx.v)}); i++; continue; }
+    if(s === '{tarieven-uitzenden}'){ at.push({html:blokTarievenUitzenden(ctx.v)}); i++; continue; }
     if(s === '{ondertekening}'){   at.push({html:blokOndertekening(ctx.v)}); i++; continue; }
     if(s === '{ingangsdatum-regel}'){
       const d = datumNL(ctx.v.voorwaarden.ingangsdatum);
@@ -713,6 +808,7 @@ function open(opts){
 
   /* ─── Toestand ──────────────────────────────────────────────── */
   let v = vulUitKlant(leegModel(), opts.klant);
+  if(!opts.stukId) Object.assign(v.delen, nieuwStukDelen());
   let stuk = {
     id:CRM.uid(), soort:'swo', klant:t(opts.klant), kandidaat_id:'',
     titel:'', velden:null, versie:0, status:'concept', door:CRM.me(),
@@ -746,8 +842,9 @@ function open(opts){
     bladenEl.innerHTML = (v.omslag ? omslagHtml(v) : '') + vellen.join('');
     meetEl.innerHTML = '';
 
-    const uit = DELEN.filter(d => !deelAan(v, d.k)).length;
-    const afw = DELEN.filter(d => deelAfwijkend(v, d.k)).length;
+    const zichtbaarStand = DELEN.filter(d => vormPast(v, d.k));
+    const uit = zichtbaarStand.filter(d => !deelAan(v, d.k)).length;
+    const afw = zichtbaarStand.filter(d => deelAfwijkend(v, d.k)).length;
     standEl.textContent = totaal + ' pagina' + (totaal === 1 ? '' : "'s")
       + (uit ? ' · ' + uit + ' onderdeel' + (uit === 1 ? '' : 'en') + ' uit' : '')
       + (afw ? ' · ' + afw + ' aangepast t.o.v. de standaard' : ' · volledig standaard');
@@ -768,7 +865,18 @@ function open(opts){
 
   function zijHtml(){
     const w = v.voorwaarden;
+    const metWS = v.vorm === 'ws' || v.vorm === 'beide';
+    const metUitzenden = v.vorm === 'uitzenden' || v.vorm === 'beide';
     return `
+    <div class="swog-blok">
+      <div class="label" style="margin-bottom:6px">Soort overeenkomst</div>
+      <div class="seg" id="swo_vorm" style="width:100%">
+        <button type="button" data-vorm="ws" class="${v.vorm === 'ws' ? 'on' : ''}" style="flex:1">W&amp;S</button>
+        <button type="button" data-vorm="uitzenden" class="${v.vorm === 'uitzenden' ? 'on' : ''}" style="flex:1">Uitzenden</button>
+        <button type="button" data-vorm="beide" class="${v.vorm === 'beide' ? 'on' : ''}" style="flex:1">Beide</button>
+      </div>
+    </div>
+
     <div class="swog-blok">
       <label class="swog-schuif">
         <input type="checkbox" id="swo_omslag" ${v.omslag ? 'checked' : ''}>
@@ -802,13 +910,18 @@ function open(opts){
       ${veld('swo_w_looptijd','Looptijd', w.looptijd)}
       ${veld('swo_w_opzeg','Opzegtermijn', w.opzegtermijn)}
       ${veld('swo_w_excl','Exclusiviteitsperiode bij campagnes', w.exclusiviteit)}
-      ${veld('swo_w_proef','Vervangingsregeling / proeftijd', w.proeftijd)}
-      ${veld('swo_w_betaal','Betaaltermijn', w.betaaltermijn)}
+      ${metWS ? veld('swo_w_proef','Proeftijd vervangingsregeling (W&S)', w.proeftijd) : ''}
+      ${metUitzenden ? veld('swo_w_proefuz','Proeftijd vervangingsregeling (Uitzenden)', w.proeftijdUitzenden) : ''}
+      ${metWS ? veld('swo_w_betaal','Betaaltermijn (W&S)', w.betaaltermijn) : ''}
+      ${metUitzenden ? veld('swo_w_overname','Uren-drempel kosteloze overname (Uitzenden)', w.overnameUren) : ''}
       ${veld('swo_w_plaats','Plaats van ondertekening', w.plaats)}
     </div></details>
 
-    <details class="swog-blok" open><summary>Fee per functiegroep <span class="swog-tel">${v.tarieven.length} rij${v.tarieven.length === 1 ? '' : 'en'}</span></summary>
-      <div class="swog-inh" id="swo_tar"></div></details>
+    ${metWS ? `<details class="swog-blok" open><summary>Fee per functiegroep (W&amp;S) <span class="swog-tel">${v.tarieven.length} rij${v.tarieven.length === 1 ? '' : 'en'}</span></summary>
+      <div class="swog-inh" id="swo_tar"></div></details>` : ''}
+
+    ${metUitzenden ? `<details class="swog-blok" open><summary>Factor per functiegroep (Uitzenden) <span class="swog-tel">${v.tarievenUitzenden.length} rij${v.tarievenUitzenden.length === 1 ? '' : 'en'}</span></summary>
+      <div class="swog-inh" id="swo_taruz"></div></details>` : ''}
 
     <details class="swog-blok"><summary>Ondertekenaars</summary><div class="swog-inh" id="swo_tek"></div></details>
 
@@ -819,28 +932,34 @@ function open(opts){
       <div class="swog-inh" id="swo_eerder"><span class="meta">Laden…</span></div></details>`;
   }
 
-  /* Tarieven */
-  function tekenTarieven(){
-    const el = zijEl.querySelector('#swo_tar'); if(!el) return;
-    el.innerHTML = v.tarieven.map((r, i) => `<div class="swog-rij">
+  /* Tarieven (W&S: fee-percentage; Uitzenden: omrekenfactor) */
+  function tekenTarievenRij(elId, lijst, veldnaam, placeholder, label){
+    const el = zijEl.querySelector(elId); if(!el) return;
+    el.innerHTML = lijst.map((r, i) => `<div class="swog-rij">
         <input data-tar="functie" data-i="${i}" value="${h(r.functie)}" placeholder="Functiegroep" aria-label="Functiegroep">
-        <input class="kort" data-tar="pct" data-i="${i}" value="${h(r.pct)}" placeholder="23%" aria-label="Fee">
+        <input class="kort" data-tar="${veldnaam}" data-i="${i}" value="${h(r[veldnaam])}" placeholder="${h(placeholder)}" aria-label="${h(label)}">
         <button class="swog-weg" data-tarweg="${i}" title="Rij verwijderen" aria-label="Rij verwijderen">✕</button>
       </div>`).join('')
-      + `<button class="btn ghost sm swog-erbij" id="swo_tar_erbij">+ Functiegroep</button>`;
+      + `<button class="btn ghost sm swog-erbij" id="${elId.slice(1)}_erbij">+ Functiegroep</button>`;
     el.querySelectorAll('input[data-tar]').forEach(inp => inp.oninput = () => {
-      v.tarieven[+inp.dataset.i][inp.dataset.tar] = inp.value; tekenTraag();
+      lijst[+inp.dataset.i][inp.dataset.tar] = inp.value; tekenTraag();
     });
     el.querySelectorAll('[data-tarweg]').forEach(b => b.onclick = () => {
-      v.tarieven.splice(+b.dataset.tarweg, 1); tekenTarieven(); teken();
+      lijst.splice(+b.dataset.tarweg, 1);
+      tekenTarievenRij(elId, lijst, veldnaam, placeholder, label); teken();
     });
-    el.querySelector('#swo_tar_erbij').onclick = () => {
-      v.tarieven.push({functie:'', pct:'23%'}); tekenTarieven(); teken();
+    const erbij = el.querySelector('#' + elId.slice(1) + '_erbij');
+    if(erbij) erbij.onclick = () => {
+      lijst.push({functie:'', [veldnaam]:''});
+      tekenTarievenRij(elId, lijst, veldnaam, placeholder, label); teken();
       const rijen = el.querySelectorAll('input[data-tar="functie"]');
       if(rijen.length) rijen[rijen.length - 1].focus();
     };
   }
-
+  function tekenTarieven(){
+    if(v.vorm === 'ws' || v.vorm === 'beide') tekenTarievenRij('#swo_tar', v.tarieven, 'pct', '23%', 'Fee');
+    if(v.vorm === 'uitzenden' || v.vorm === 'beide') tekenTarievenRij('#swo_taruz', v.tarievenUitzenden, 'factor', '2,3', 'Factor');
+  }
   /* Ondertekenaars */
   function tekenTekenaars(){
     const el = zijEl.querySelector('#swo_tek'); if(!el) return;
@@ -872,7 +991,8 @@ function open(opts){
     const el = zijEl.querySelector('#swo_art'); if(!el) return;
     const nrs = nummers(v);
     let groep = '';
-    el.innerHTML = DELEN.map(d => {
+    const zichtbaar = DELEN.filter(d => vormPast(v, d.k));
+    el.innerHTML = zichtbaar.map(d => {
       const aan = deelAan(v, d.k), afw = deelAfwijkend(v, d.k);
       const kopregel = d.groep !== groep ? (groep = d.groep,
         `<div class="label" style="margin:12px 0 2px">${h(d.groep)}</div>`) : '';
@@ -899,10 +1019,10 @@ function open(opts){
       </div>`;
     }).join('');
 
-    const uit = DELEN.filter(d => !deelAan(v, d.k)).length;
-    const afw = DELEN.filter(d => deelAfwijkend(v, d.k)).length;
+    const uit = zichtbaar.filter(d => !deelAan(v, d.k)).length;
+    const afw = zichtbaar.filter(d => deelAfwijkend(v, d.k)).length;
     const tel = zijEl.querySelector('#swo_arttel');
-    if(tel) tel.textContent = (DELEN.length - uit) + ' van ' + DELEN.length + (afw ? ' · ' + afw + ' aangepast' : '');
+    if(tel) tel.textContent = (zichtbaar.length - uit) + ' van ' + zichtbaar.length + (afw ? ' · ' + afw + ' aangepast' : '');
 
     el.querySelectorAll('[data-aan]').forEach(inp => inp.onchange = () => {
       zetDeel(v, inp.dataset.aan, {aan:inp.checked}); tekenArtikelen(); teken();
@@ -914,7 +1034,7 @@ function open(opts){
       if(ta) ta.focus();
     });
     el.querySelectorAll('[data-std]').forEach(b => b.onclick = () => {
-      zetDeel(v, b.dataset.std, {tekst:DEEL[b.dataset.std].tekst});
+      zetDeel(v, b.dataset.std, {tekst:standaardTekst(v, b.dataset.std)});
       tekenArtikelen(); teken();
       CRM.toast('Standaardtekst teruggezet', 'ok');
     });
@@ -925,9 +1045,9 @@ function open(opts){
       /* Alleen de chip/knop bijwerken zou de cursor uit het veld halen —
          dus de lijst pas opnieuw tekenen als de bewerker dichtgaat. */
       const tl = zijEl.querySelector('#swo_arttel');
-      const a2 = DELEN.filter(d => deelAfwijkend(v, d.k)).length;
-      const u2 = DELEN.filter(d => !deelAan(v, d.k)).length;
-      if(tl) tl.textContent = (DELEN.length - u2) + ' van ' + DELEN.length + (a2 ? ' · ' + a2 + ' aangepast' : '');
+      const a2 = zichtbaar.filter(d => deelAfwijkend(v, d.k)).length;
+      const u2 = zichtbaar.filter(d => !deelAan(v, d.k)).length;
+      if(tl) tl.textContent = (zichtbaar.length - u2) + ' van ' + zichtbaar.length + (a2 ? ' · ' + a2 + ' aangepast' : '');
     }, 250);
   }
 
@@ -965,6 +1085,15 @@ function open(opts){
     const om = zijEl.querySelector('#swo_omslag');
     if(om) om.onchange = () => { v.omslag = om.checked; teken(); };
 
+    zijEl.querySelectorAll('[data-vorm]').forEach(b => b.onclick = () => {
+      if(v.vorm === b.dataset.vorm) return;
+      const oudeDoctitel = doctitelStandaard(v.vorm);
+      v.vorm = b.dataset.vorm;
+      if(!t(v.doctitel) || v.doctitel === oudeDoctitel) v.doctitel = doctitelStandaard(v.vorm);
+      openArt = null;
+      zijEl.innerHTML = zijHtml(); bindZij(); teken();
+    });
+
     koppel('swo_og_naam',    x => v.og.naam = x);
     koppel('swo_og_adres',   x => v.og.adres = x);
     koppel('swo_og_pc',      x => v.og.pcplaats = x);
@@ -983,7 +1112,9 @@ function open(opts){
     koppel('swo_w_opzeg',    x => v.voorwaarden.opzegtermijn = x);
     koppel('swo_w_excl',     x => v.voorwaarden.exclusiviteit = x);
     koppel('swo_w_proef',    x => v.voorwaarden.proeftijd = x);
+    koppel('swo_w_proefuz',  x => v.voorwaarden.proeftijdUitzenden = x);
     koppel('swo_w_betaal',   x => v.voorwaarden.betaaltermijn = x);
+    koppel('swo_w_overname', x => v.voorwaarden.overnameUren = x);
     koppel('swo_w_plaats',   x => v.voorwaarden.plaats = x);
 
     tekenTarieven(); tekenTekenaars(); tekenArtikelen(); tekenEerder();
@@ -994,7 +1125,7 @@ function open(opts){
     const knop = wrap.querySelector('#swo_bewaar');
     knop.disabled = true;
     stuk.klant  = t(v.og.naam) || stuk.klant;
-    stuk.titel  = 'Samenwerkingsovereenkomst W&S' + (stuk.klant ? ' — ' + stuk.klant : '');
+    stuk.titel  = (t(v.doctitel) || doctitelStandaard(v.vorm)) + (stuk.klant ? ' — ' + stuk.klant : '');
     stuk.velden = v;
     stuk.versie = (stuk.versie || 0) + 1;
     stuk.door   = CRM.me();
