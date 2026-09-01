@@ -176,7 +176,12 @@ const kandAlsRij = c => ({
 const leads = () => {
   const uit = CRM.state.leads || [];
   if(!CRM.isInstroom) return uit;                 // data.js nog niet geladen
-  return uit.concat(CRM.kandidaten().filter(c => CRM.isInstroom(c.fase)).map(kandAlsRij));
+  /* ZZP'ers met een lopende of geplande klus horen hier niet tussen: dat is
+     ingepland werk, geen instroom (zie CRM.zzpIngepland in js/data.js). Zodra
+     hun laatste klus voorbij is verschijnen ze hier vanzelf weer. */
+  return uit.concat(CRM.kandidaten()
+    .filter(c => CRM.isInstroom(c.fase) && !(CRM.zzpIngepland && CRM.zzpIngepland(c)))
+    .map(kandAlsRij));
 };
 const leadById = id => leads().find(l => String(l.id) === String(id));
 const vacById  = id => (CRM.state.vacs||[]).find(v => String(v.id) === String(id));

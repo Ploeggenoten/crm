@@ -122,8 +122,18 @@ CRM.faseIdx   = f => { const x = CRM.faseNorm(f); return CRM.PHASES.findIndex(p=
    leeg is (de import uit het oude ATS), maar NIET als de kaart nog ergens in
    de instroom staat. Anders staat iemand op 'Intake ingepland' toch als
    klaar in de lijst, en dat is precies wat Tjeerd niet wil. */
+/* Een ZZP'er met een lopende of nog komende klus is ingepland werk, geen
+   instroom (Tjeerd, 1 sep 2026: "die staan nu allemaal bij recruitment en
+   moeten daar weg"). Zijn fase blijft gewoon 'Klaar om voor te stellen' —
+   dat ís zijn permanente staat tussen klussen — maar zolang er een klus
+   loopt of gepland staat hoort hij niet in de werklijst en niet in de
+   voorstelbare voorraad. Loopt de laatste klus af, dan valt hij vanzelf
+   terug in beide, zonder dat iemand een fase hoeft om te zetten. */
+CRM.zzpIngepland = c => !!c && c.type === 'ZZP' && (CRM.state.klussen||[])
+  .some(k => String(k.kandidaat_id) === String(c.id) && String(k.eind||'') >= CRM.todayISO());
+
 CRM.klaarOmVoorTeStellen = c =>
-  !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1
+  !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1 && !CRM.zzpIngepland(c)
       && (CRM.faseIs(c.fase, 'Klaar om voor te stellen') || (!!c.intake && !CRM.isInstroom(c.fase)));
 
 /* ─── Twee gedeelde vragen over een plaatsing ────────────────────
