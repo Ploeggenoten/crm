@@ -564,6 +564,66 @@ function sectieSysteem(){
     </div></div>`;
 }
 
+/* ─── Botformulieren → vacature ──────────────────────────────────
+   Eén Meta-leadformulier = één vacature. De koppeltabel lead_formulieren
+   (in onze eigen database) bepaalt aan welke vacature een botlead
+   automatisch hangt, en wint altijd van de vacancy_id die de bot
+   meelevert. Dit scherm bestaat zodat dat koppelen zonder SQL Editor of
+   n8n kan (Tjeerd, 1 sep 2026 — Smit stelde een rechtstreekse koppeling
+   met zíjn database voor; dit is de variant waarbij niets van buiten in
+   ons CRM hoeft). Elk formulier dat ooit in een lead voorbijkwam staat
+   hier vanzelf klaar, met de campagnenaam als geheugensteun. */
+function sectieFormulieren(){
+  return `<div class="card"><div class="card-h"><div class="h2">Botformulieren → vacature</div></div>
+    <div class="card-b">
+      <p class="sub" style="margin:0 0 10px">Eén Meta-formulier werft voor één vacature. Koppel ze hier, dan hangt
+        elke botlead van dat formulier automatisch aan de juiste vacature — en klopt de meting per campagne.</p>
+      <div id="in_forms">${CRM.ui.laden('Formulieren laden…')}</div>
+    </div></div>`;
+}
+async function vulFormulieren(mount){
+  const el = mount.querySelector('#in_forms');
+  if(!el) return;
+  if(CRM.demo){ el.innerHTML = `<p class="meta">In demo-modus wordt de database niet benaderd — hier staan straks de Meta-formulieren van de bot.</p>`; return; }
+  const {data, error} = await CRM.sb.from('lead_formulieren').select('*');
+  if(error){ el.innerHTML = `<div class="note err">De koppeltabel is niet leesbaar — is lead-inbox-setup.sql gedraaid? (${h(error.message)})</div>`; return; }
+  const rijen = new Map((data||[]).map(r => [String(r.form_id), r]));
+  /* Formulieren die al in echte leads voorbijkwamen maar nog geen rij
+     hebben, alvast klaarzetten — zo hoeft niemand form_id's over te typen. */
+  const gezien = new Map();
+  for(const l of (CRM.state.leads||[])){
+    const f = String(l.form_id||'').trim();
+    if(!f) continue;
+    if(!gezien.has(f)) gezien.set(f, {campagne:String(l.campagne||''), n:0});
+    gezien.get(f).n++;
+  }
+  for(const [f, info] of gezien)
+    if(!rijen.has(f)) rijen.set(f, {form_id:f, vacature_id:'', omschrijving:info.campagne, _nieuw:true});
+  if(!rijen.size){ el.innerHTML = `<p class="meta">Nog geen formulieren gezien — zodra er botleads binnenkomen staan ze hier klaar om te koppelen.</p>`; return; }
+  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open');
+  const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}</option>`;
+  el.innerHTML = `<div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th></tr></thead>
+    <tbody>${[...rijen.values()].map(r => `<tr>
+      <td class="num">${h(String(r.form_id))}</td>
+      <td>${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
+        ? ` <span class="meta">· <span class="num">${gezien.get(String(r.form_id)).n}</span> lead${gezien.get(String(r.form_id)).n===1?'':'s'}</span>` : ''}</td>
+      <td><select data-form="${h(String(r.form_id))}">
+        <option value="">— nog niet gekoppeld —</option>
+        ${vacs.map(v => optie(v, r.vacature_id)).join('')}
+      </select></td>
+    </tr>`).join('')}</tbody></table></div>`;
+  CRM.$$('[data-form]', el).forEach(sel => sel.onchange = async () => {
+    const r = rijen.get(String(sel.dataset.form)) || {omschrijving:''};
+    const {error:e2} = await CRM.sb.from('lead_formulieren').upsert(
+      {form_id:String(sel.dataset.form), vacature_id:sel.value, omschrijving:r.omschrijving||''});
+    if(e2) return CRM.fout('Koppeling opslaan mislukt', e2);
+    CRM.toast(sel.value
+      ? 'Gekoppeld — nieuwe leads van dit formulier hangen nu automatisch aan die vacature'
+      : 'Koppeling weggehaald', 'ok');
+  });
+}
+
 /* ─── Module ──────────────────────────────────────────────────── */
 /* Dit scherm stond op adminOnly, en daardoor kon niemand behalve Tjeerd erbij.
    Dat werkte zolang hij de enige gebruiker was, maar het blokkeert het team:
@@ -593,11 +653,12 @@ CRM.registerModule('instellingen', {
     mount.innerHTML = `<div class="in-wrap">${
       baas ? sectieTargets() + sectieTeam() : ''
     }${eigen}${
-      baas ? sectieData() + sectieSysteem() : ''
+      baas ? sectieFormulieren() + sectieData() + sectieSysteem() : ''
     }${leeg ? `<div class="card"><div class="card-b">${CRM.ui.leeg(
       'Hier valt voor jou nog niets in te stellen',
       'De Microsoft-koppeling — je eigen agenda, mail en Teams-links in het CRM — is nog niet ingericht voor deze omgeving. Vraag Tjeerd om dat aan te zetten; daarna kun je hier je eigen account verbinden.'
     )}</div></div>` : ''}</div>`;
+    if(baas) vulFormulieren(mount);
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
