@@ -92,6 +92,10 @@
 #rc_status{min-width:186px}
 #rc_bron{min-width:124px}
 #rc_vac{min-width:172px}
+/* Smal genoeg dat de balk met vijf selects op een laptop één regel blijft,
+   maar breed genoeg dat "— zonder eigenaar — (73)" er als gekozen waarde
+   volledig in staat — een half afgekapt filter lees je als een ander filter. */
+#rc_eigfil{min-width:118px;max-width:182px}
 .rc-fil .chip.btn-like{padding:5px 12px}
 
 /* ─── Meerdere sollicitanten tegelijk ────────────────────────────
@@ -360,7 +364,7 @@ table.rc-qa tr:last-child td{border-bottom:none}
   /* Op 375px passen er twee filters naast elkaar zodra hun eigen minimumbreedte
      losgelaten wordt; anders krijgt elke select een eigen regel en is de balk
      net zo hoog als de banden die we net hebben weggehaald. */
-  .rc-fil select,#rc_status,#rc_bron,#rc_vac{max-width:none;min-width:0;flex:1 1 44%}
+  .rc-fil select,#rc_status,#rc_bron,#rc_vac,#rc_eigfil{max-width:none;min-width:0;flex:1 1 44%}
   .rc-wwnaam{font-size:20px}
   .rc-wwkeuze button{flex:1 1 46%;justify-content:center}
   /* De bulkbalk moet op 375px leesbaar blijven: knoppen onder elkaar in

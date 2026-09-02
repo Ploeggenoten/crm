@@ -31,7 +31,12 @@ const h = CRM.h;
 /* ─── Modulestatus (blijft bewaard tussen renders) ─────────────── */
 const S = {
   tab:'leads',
-  l:{q:'', status:'', bot:'', bron:'', vac:'', mijn:false, zvac:false, stil:false},
+  /* `eig` is het eigenaarfilter: '' = iedereen, een genormaliseerde naam
+     (CRM.naamNorm, dus Bryan→Rajesh), of EIG_GEEN voor leads zonder eigenaar.
+     De oude losse vlag `mijn` is hierin opgegaan — één bron van waarheid, de
+     "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
+     (zie vulEigSelect voor het waarom). */
+  l:{q:'', status:'', bot:'', bron:'', vac:'', eig:'', zvac:false, stil:false},
   u:{f:'alles'},
   /* Aangevinkte sollicitanten in de lijst. Leeg zodra er een filter verandert:
      een selectie die deels buiten beeld staat en tóch meedoet met "zet alles op
@@ -376,9 +381,27 @@ function toastLink(tekst, label, fn){
   t.appendChild(a);
 }
 
-/* Belpogingen leiden we af uit de activiteiten — geen extra kolom nodig. */
+/* Belpogingen leiden we af uit de activiteiten — geen extra kolom nodig.
+   Tjeerd, 2 sep 2026: geïndexeerd, net als de dubbeldetectie (bouwDubbel).
+   Dit werd per rij en per bordkaart aangeroepen en liep dan telkens de héle
+   activiteitenlijst door: 200 rijen × duizenden activiteiten per hertekening,
+   en dat bij elke toetsaanslag in het zoekveld. Sinds de migratie van ±440
+   botleads (elk met eigen logregels) is dat de duurste lus van dit scherm.
+   De index is lui: hij wordt pas gebouwd bij de eerste vraag en gewist zodra
+   er iets kan zijn bijgekomen (tekenWerk, en de schrijfpaden hieronder). */
+let BEL_AANTAL = null;
+const wisBelIndex = () => { BEL_AANTAL = null; };
 function belPogingen(leadId){
-  return CRM.activiteitenVoor('lead', leadId).filter(a => a.soort === 'bel').length;
+  if(!BEL_AANTAL){
+    BEL_AANTAL = new Map();
+    (CRM.state.activiteiten || []).forEach(a => {
+      if(a.entiteit === 'lead' && a.soort === 'bel'){
+        const k = String(a.ref);
+        BEL_AANTAL.set(k, (BEL_AANTAL.get(k) || 0) + 1);
+      }
+    });
+  }
+  return BEL_AANTAL.get(String(leadId)) || 0;
 }
 /* Wanneer was er voor het laatst écht contact? Welke activiteitsoorten als
    contact tellen komt uit js/opvolging.js (CRM.opvolging.CONTACT) — het
@@ -599,9 +622,10 @@ function tekenBody(){
 /* ═══════════════════════════════════════════════════════════════
    TAB A — DE RECRUITMENTPIJPLIJN (crm_leads)
    ═══════════════════════════════════════════════════════════════ */
-/* negeerStatus/negeerBot: elke dropdown toont tellers met alle ándere
-   filters toegepast, dus de basis voor zijn tellers negeert alleen zichzelf. */
-function leadsGefilterd(negeerStatus, negeerBot){
+/* negeerStatus/negeerBot/negeerEig: elke dropdown toont tellers met alle
+   ándere filters toegepast, dus de basis voor zijn tellers negeert alleen
+   zichzelf. */
+function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
   const f = S.l, q = norm(f.q);
   return leads().filter(l => {
     /* Zodra een lead een kandidaat_id heeft, is hij overgedragen: de
@@ -618,7 +642,14 @@ function leadsGefilterd(negeerStatus, negeerBot){
     if(f.vac && String(l.vacature_id) !== f.vac) return false;
     if(f.zvac && isGekoppeld(l)) return false;
     if(f.stil && !stilstand(l)) return false;
-    if(f.mijn && l.eigenaar !== CRM.me()) return false;
+    /* Eigenaar genormaliseerd vergelijken (CRM.naamNorm): in de gemigreerde
+       botleads staat de eigenaar zoals de bron hem aanleverde ("bryan",
+       "TJERK", een e-mailadres) en een exacte vergelijking met CRM.me() liet
+       die rijen stilletjes uit "Van mij" vallen. */
+    if(!negeerEig && f.eig){
+      const e = CRM.naamNorm(l.eigenaar);
+      if(f.eig === EIG_GEEN ? !!e : e !== f.eig) return false;
+    }
     if(q){
       const hooi = [l.naam, l.telefoon, l.email, l.woonplaats, l.klant, l.functie, l.kwalificatie].map(norm).join(' ');
       if(!hooi.includes(q) && (!telNorm(q) || telNorm(l.telefoon).indexOf(telNorm(q)) !== 0)) return false;
@@ -661,7 +692,10 @@ function belChipHtml(l){
    gewoon nieuwste-eerst — de sortering is stabiel, dus voor hen verandert
    er niets. De belronde en de kolom 'Nieuw' op het bord sorteren daarna
    bewust opnieuw op oudste-eerst: daar is de volgorde "wie wacht het
-   langst", en die afweging blijft daar gelden. */
+   langst", en die afweging blijft daar gelden. Sinds 2 sep 2026 met één
+   uitzondering in de belronde: een belafspraak van vandaag of eerder gaat
+   ook dáár voorop — een afgesproken tijdstip weegt zwaarder dan wachttijd
+   (zie wegwerkModus). */
 const PRIO_RANG = {Hoog:0, Midden:1, Laag:2};
 const prioRang = l => (CRM.leadIn(l.status, CRM.LEAD_OPEN) && PRIO_RANG[l.prioriteit] != null)
   ? PRIO_RANG[l.prioriteit] : 3;
@@ -670,9 +704,13 @@ const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').loc
 
 /* Terug naar "toon alles". Deze knop stond al in de lege staat van de
    doen-regel, maar de functie bestond niet — één klik gaf een fout in de
-   console en er gebeurde niets. */
+   console en er gebeurde niets.
+   Ook het eigenaarfilter gaat leeg — óók bij een AM die standaard op
+   "Van mij" begint. De knop belooft "toon alles", en dat moet hij dan ook
+   doen; de standaard komt bij de volgende sessie vanzelf terug
+   (zetEigStandaard loopt één keer per sessie). Tjeerd, 2 sep 2026. */
 function wisFilters(){
-  S.l = {q:'', status:'', bot:'', bron:'', vac:'', mijn:false, zvac:false, stil:false};
+  S.l = {q:'', status:'', bot:'', bron:'', vac:'', eig:'', zvac:false, stil:false};
   wisSelectie();
 }
 
@@ -686,6 +724,7 @@ function wisFilters(){
    opgegaan. De filterbalk wordt één keer gebouwd en daarna alleen bijgewerkt;
    opnieuw tekenen bij elke toetsaanslag zou de cursor uit het zoekveld halen. */
 function tekenLeads(el){
+  zetEigStandaard();
   const bronnen = Array.from(new Set(leads().map(l => l.bron).filter(Boolean))).sort();
   const vacs = (CRM.state.vacs||[]).slice().sort((a,b) => vacLabel(a).localeCompare(vacLabel(b)));
   const w = weergave();
@@ -706,10 +745,12 @@ function tekenLeads(el){
           <option value="">Alle vacatures</option>
           ${vacs.map(v=>`<option value="${h(v.id)}" ${S.l.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}
         </select>
+        ${''/* rc_eigfil, niet rc_eig: die id is al van het eigenaarveld in de lade */}
+        <select id="rc_eigfil"></select>
         <button class="chip btn-like" id="rc_zvac" type="button"
           title="Alleen lopende sollicitanten die niet aan een vacature hangen">Zonder vacature</button>
         <button class="chip btn-like" id="rc_mijn" type="button"
-          title="Alleen sollicitanten waar jij eigenaar van bent">Van mij</button>
+          title="Alleen sollicitanten waar jij eigenaar van bent — sneltoets die de eigenaarkeuze hiernaast op jezelf zet">Van mij</button>
         <div class="rc-filr">
           <span class="meta" id="rc_telling"></span>
           <div class="seg" id="rc_weer">
@@ -729,8 +770,17 @@ function tekenLeads(el){
   el.querySelector('#rc_bot').onchange    = e => { S.l.bot = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_vac').onchange    = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_eigfil').onchange = e => { S.l.eig  = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_zvac').onclick = () => { S.l.zvac = !S.l.zvac; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_mijn').onclick = () => { S.l.mijn = !S.l.mijn; wisSelectie(); tekenWerk(); };
+  /* "Van mij" is een sneltoets op het eigenaarfilter, geen eigen filter:
+     aanklikken zet de dropdown op jezelf, nóg een keer klikken (of een andere
+     eigenaar kiezen) haalt hem er weer af. Eén stand, dus geen dubbelzinnige
+     combinaties zoals "Van mij" aan én de dropdown op Tjerk. */
+  el.querySelector('#rc_mijn').onclick = () => {
+    const mij = CRM.naamNorm(CRM.me()); if(!mij) return;
+    S.l.eig = S.l.eig === mij ? '' : mij;
+    wisSelectie(); tekenWerk();
+  };
   CRM.$$('#rc_weer button', el).forEach(b => b.onclick = () => {
     if(weergave() === b.dataset.w) return;
     zetWeergave(b.dataset.w);
@@ -776,11 +826,70 @@ function vulBotSelect(basis){
   sel.title = 'Wat de WhatsApp-bot van de lead vond — los van de AM-status';
 }
 
+/* ─── Eigenaarfilter ──────────────────────────────────────────────
+   Tjeerd, 2 sep 2026: sinds de migratie van ±440 botleads is "van wie is
+   dit" een dagelijkse vraag — Tjerk en Rajesh werken ieder hun eigen stapel
+   weg, en de leads zónder eigenaar zijn precies de rijen die anders niemand
+   oppakt. Zelfde opzet als vulStatusSelect: tellers met alle andere filters
+   toegepast. De "Van mij"-knop ernaast blijft bestaan als sneltoets die deze
+   dropdown op jezelf zet — één gedeelde stand (S.l.eig), dus de twee kunnen
+   elkaar niet tegenspreken.
+   Namen genormaliseerd via CRM.naamNorm (Bryan→Rajesh, TJERK→Tjerk); de
+   vaste volgorde is CRM.PLAATSERS, onbekende namen uit de data komen daar
+   alfabetisch achteraan zodat níéts onfilterbaar is. */
+const EIG_GEEN = '__geen';
+function vulEigSelect(basis){
+  const sel = document.getElementById('rc_eigfil'); if(!sel) return;
+  const telling = new Map(); let zonder = 0;
+  basis.forEach(l => {
+    const n = CRM.naamNorm(l.eigenaar);
+    if(!n){ zonder++; return; }
+    telling.set(n, (telling.get(n) || 0) + 1);
+  });
+  const extra = Array.from(new Set(leads().map(l => CRM.naamNorm(l.eigenaar))))
+    .filter(n => n && !CRM.PLAATSERS.includes(n)).sort((a,b) => a.localeCompare(b));
+  const namen = CRM.PLAATSERS.concat(extra);
+  /* Een gekozen waarde die (net) niet meer in de lijst staat blijft zichtbaar
+     in plaats van stiekem op "Alle eigenaren" te lijken — zelfde afweging als
+     statusOptieExtra. */
+  const vreemd = S.l.eig && S.l.eig !== EIG_GEEN && !namen.includes(S.l.eig)
+    ? `<option value="${h(S.l.eig)}" selected>${h(S.l.eig)} (${telling.get(S.l.eig) || 0})</option>` : '';
+  sel.innerHTML =
+    `<option value="" ${S.l.eig===''?'selected':''}>Alle eigenaren (${basis.length})</option>` + vreemd +
+    namen.map(n => `<option value="${h(n)}" ${S.l.eig===n?'selected':''}>${h(n)} (${telling.get(n) || 0})</option>`).join('') +
+    `<option value="${EIG_GEEN}" ${S.l.eig===EIG_GEEN?'selected':''}>— zonder eigenaar — (${zonder})</option>`;
+  sel.title = 'Wie de sollicitant oppakt — "Van mij" ernaast is de sneltoets die dit op jezelf zet';
+}
+
+/* ─── "Van mij" standaard AAN voor wie belt ───────────────────────
+   Besluit Tjeerd, 2 sep 2026: een AM of recruiter opent dit scherm om zíjn
+   stapel weg te werken, niet om 440 rijen van het hele team te zien. Daarom
+   start de lijst voor een profiel met functie 'am' of 'recruiter' op de
+   eigen leads; de eigenaar (Tjeerd, herkend aan canSeeMoney) start op alles
+   — die stuurt, en sturen begint bij het geheel. Uitzetten blijft één klik
+   ("Van mij" of de dropdown) en houdt de rest van de sessie stand: dit loopt
+   maar één keer, en S overleeft elke hertekening.
+   De functie staat in het profiel (productie: CRM.profile.functie); in de
+   demo mist dat veld op CRM.profile en zoeken we het profiel op naam op. */
+let eigStandaardGezet = false;
+function zetEigStandaard(){
+  if(eigStandaardGezet || !CRM.state._loaded) return;
+  eigStandaardGezet = true;
+  if(CRM.canSeeMoney()) return;
+  const mij = CRM.naamNorm(CRM.me()); if(!mij) return;
+  const prof = (CRM.state.profiles || []).find(p => CRM.naamNorm(p.naam) === mij);
+  const functie = (CRM.profile && CRM.profile.functie) || (prof && prof.functie) || '';
+  if(['am','recruiter'].includes(functie)) S.l.eig = mij;
+}
+
 /* De twee vinkjes zijn knopfilters geworden: even duidelijk, half zo breed,
    en ze laten zich van buitenaf aanzetten (de melding "niet gekoppeld"
-   hieronder doet dat). Stand komt altijd uit S.l, nooit uit het element zelf. */
+   hieronder doet dat). Stand komt altijd uit S.l, nooit uit het element zelf.
+   "Van mij" brandt zodra het eigenaarfilter op jezelf staat — óók als dat
+   via de dropdown gebeurde, want het is dezelfde stand. */
 function zetFilterstand(){
-  [['rc_zvac', S.l.zvac], ['rc_mijn', S.l.mijn]].forEach(([id, aan]) => {
+  const mijAan = !!S.l.eig && S.l.eig === CRM.naamNorm(CRM.me());
+  [['rc_zvac', S.l.zvac], ['rc_mijn', mijAan]].forEach(([id, aan]) => {
     const b = document.getElementById(id); if(!b) return;
     b.classList.toggle('on', !!aan);
     b.setAttribute('aria-pressed', aan ? 'true' : 'false');
@@ -920,12 +1029,14 @@ function tekenDoenregel(basis){
    Heette tekenLijst toen er alleen een lijst was. */
 function tekenWerk(){
   bouwDubbel();
+  wisBelIndex();   // er kan sinds de vorige hertekening gelogd zijn
   /* Eén keer uitrekenen: de doen-regel én de tellers in de statusdropdown
      rekenen op dezelfde basis — alles behalve het statusfilter zelf. */
   const basis = leadsGefilterd(true);
   tekenDoenregel(basis);
   vulStatusSelect(basis);
   vulBotSelect(leadsGefilterd(false, true));
+  vulEigSelect(leadsGefilterd(false, false, true));
   zetFilterstand();
   /* De meldingen staan boven het werkvlak en niet eronder: ze gelden voor bord
      én lijst, en een lijst van tweehonderd regels duwt een voetnoot buiten beeld. */
@@ -1592,7 +1703,11 @@ function koppelVacature(lead, naAfloop){
    en zichzelf doorschuift: bellen, uitkomst kiezen, volgende.
    Elke uitkomst is één toets (of één klik) en slaat meteen op — er is
    geen "opslaan"-knop, want die vergeet je bij de dertigste.
-   Oudste eerst, want die liggen er het langst.
+   Belafspraken van vandaag of eerder gaan voorop (dat is een belofte met
+   een tijdstip — zie belRang), daarbinnen en daarna oudste eerst, want
+   die liggen er het langst. Tjeerd, 2 sep 2026: met stapels van 65 Nieuw
+   en 157 Geen gehoor mag een afgesproken belmoment niet pas na twee uur
+   doorwerken aan de beurt komen.
    ═══════════════════════════════════════════════════════════════ */
 /* Sommige uitkomsten zijn geen statuswissel maar wél werk: nóg een keer
    gebeld, een herinnering voor het cv, een afspraak die is verzet. Die gingen
@@ -1650,6 +1765,9 @@ async function noteerPoging(lead, sleutel, notitie){
   if(!ok) return false;
   await CRM.logActiviteit('lead', lead.id, w.soort, w.tekst(poging));
   if(notitie) await CRM.logActiviteit('lead', lead.id, 'notitie', notitie);
+  /* De teller-index weet nog niets van deze poging; wissen, anders toont de
+     volgende kaart van dezelfde persoon in de ronde een oude stand. */
+  wisBelIndex();
   return true;
 }
 
@@ -1658,8 +1776,12 @@ function wegwerkModus(status){
   status = CRM.LEAD_OPEN.includes(status) ? status : 'Nieuw';
   /* Een momentopname van de stapel. Bewust niet meelopen met de filters
      terwijl je bezig bent: als de lijst onder je handen verspringt raak je
-     kwijt waar je was. */
-  const stapel = oudsteEerst(leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status)));
+     kwijt waar je was. Volgorde: belafspraken eerst (op tijdstip), daarna
+     oudste eerst — zie de toelichting in de kop van dit blok. */
+  const stapel = leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status))
+    .sort((a,b) => belRang(a) - belRang(b)
+                || belMoment(a).localeCompare(belMoment(b))
+                || String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
   if(!stapel.length) return CRM.toast(`Er staat niets op ${status}`,'ok');
   const keuzes = WW_KEUZES[status] || WW_KEUZES['Nieuw'];
   let i = 0, gedaan = 0, over = 0;
@@ -1864,6 +1986,7 @@ async function pasStatusToe(lead, nieuw, notitie){
   await CRM.logActiviteit('lead', lead.id, geenGehoor ? 'bel' : 'systeem',
     geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${CRM.leadNorm(oud) || 'geen status'} → ${nieuw}`);
   if(notitie) await CRM.logActiviteit('lead', lead.id, 'notitie', notitie);
+  if(geenGehoor) wisBelIndex();   // zie noteerPoging
   return true;
 }
 

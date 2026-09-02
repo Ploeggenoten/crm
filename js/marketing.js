@@ -544,6 +544,8 @@
     const gaten = {zonderDatum:[], zonderStatus:[], vreemdeStatus:[], zonderKlant:[],
                    zonderVacature:[], kandidaatWeg:[], doorZonderKandidaat:[]};
     const leads = [];
+    /* Dubbele aanmeldingen (botstatus 'Dubbel') apart houden — zie hieronder. */
+    const dubbels = [];
     const gekoppeld = new Set();
     const klantNaam = new Map();                 // kkey → nette schrijfwijze
     const onthou = n => { const k = kKey(n); if(k.length >= 4 && !klantNaam.has(k)) klantNaam.set(k, String(n).trim()); };
@@ -594,6 +596,15 @@
          halve uitkomst als eindstand tonen. */
       r.loopt = r.cand ? (!r.cand.fase || !CRM.faseIn(r.cand.fase, CRM.DONE))
                        : !r.afgeteld;
+      /* Dubbele aanmelding: de bot herkende hetzelfde nummer als een
+         bestaande lead (botstatus 'Dubbel'). Die persoon telt al mee via
+         zijn eerste aanmelding — hem nóg eens meetellen drukt € per lead
+         kunstmatig omlaag, vertekent de bot-percentages, en zou een
+         plaatsing dubbel tellen zodra beide aanmeldingen aan dezelfde
+         kandidaat hangen. Sinds de migratie van de echte botleads staat
+         hier een serieus aantal van, dus: buiten élke telling op dit
+         scherm, maar zichtbaar in het gatenblok (Tjeerd, 2 sep 2026). */
+      if(r.botStatus === 'Dubbel'){ dubbels.push(r); continue; }
       leads.push(r);
 
       if(!r.mk)                       gaten.zonderDatum.push(r);
@@ -746,7 +757,7 @@
       return {...c, bedrag};
     }).sort((a,b) => b.bedrag - a.bedrag);
 
-    return {leads, uitRijen, maanden, gaten, losseKand, lossePlaatsingen,
+    return {leads, dubbels, uitRijen, maanden, gaten, losseKand, lossePlaatsingen,
             campagnes, klantNaam, uitZonderDatum, aantalKand:cands.length,
             /* campagnenaam → {kkey, klant, hoe}. Eén koppeling voor het hele
                scherm: Rendement rekent ermee, Prestatie filtert ermee. */
@@ -1907,6 +1918,9 @@
     const inCohort = new Set(mks);
     const cLeads = D.leads.filter(r => inCohort.has(r.mk));
     const cUit   = D.uitRijen.filter(r => inCohort.has(r.mk));
+    /* Dubbele aanmeldingen van ditzelfde cohort — alleen voor het gatenblok,
+       ze tellen in geen enkele tabel mee. */
+    const cDub   = D.dubbels.filter(r => inCohort.has(r.mk));
 
     return `
       ${uitlegHtml()}
@@ -1916,7 +1930,7 @@
       ${botConversieHtml(cLeads)}
       ${groepTabelHtml(D, cLeads, cUit, 'klant')}
       ${groepTabelHtml(D, cLeads, cUit, 'vac')}
-      ${gatenHtml(D, cLeads, cUit)}`;
+      ${gatenHtml(D, cLeads, cUit, cDub)}`;
   }
 
   /* De meetdefinities horen op het scherm te staan, niet in iemands hoofd.
@@ -1935,7 +1949,7 @@
         eerder binnenkwamen.</p>
       ${M.uitleg ? `<div class="mkt-defs">
         ${regel('Cohort', 'De maand waarin de lead binnenkwam (veld binnen_op, lokale tijd). Niet de maand van de plaatsing.')}
-        ${regel('Binnengekomen', 'Alle leads in crm_leads met bron Meta en een binnenkomstdatum in die maand.')}
+        ${regel('Binnengekomen', 'Alle leads in crm_leads met bron Meta en een binnenkomstdatum in die maand. Dubbele aanmeldingen (botstatus "Dubbel") tellen niet mee: die persoon zit al in de telling via zijn eerste aanmelding. Hoeveel dat er zijn staat in het blok "Wat we niet konden meten" onderaan.')}
         ${regel('Nog niet opgepakt', 'Status "Nieuw" — er is nog niemand mee bezig geweest. Dit is werk dat blijft liggen.')}
         ${regel('Niet bereikt', 'Status "Geen gehoor". Wel gebeld, geen contact. Iets anders dan blijven liggen: dit vraagt om een tweede poging of een appje.')}
         ${regel('Afgevallen aan de telefoon', 'Status "Niet geschikt" — door de AM beoordeeld en afgevallen.')}
@@ -2187,7 +2201,32 @@
       if(r.door)                g.door.push(r);
       if(r.lead.score != null)  g.scores.push(Number(r.lead.score));
     }
-    const groepen = [...per.values()].sort((a,b) => b.rijen.length - a.rijen.length);
+    /* Sinds de migratie van de echte botleads (2 sep 2026) staan hier zo'n
+       twintig campagnes; alles uitschrijven maakt de tabel een muur. De
+       grootste twaalf vertellen het verhaal, de rest gaat samen in één
+       doorklikbare regel. En de groep zonder campagnenaam hoort onderaan,
+       hoe groot hij ook is: dat is een invoergat, geen campagne — bovenaan
+       zou hij lezen als de best lopende campagne (Tjeerd, 2 sep 2026). */
+    const LEEG = '— zonder campagnenaam —';
+    const MAX  = 12;
+    const opGrootte = [...per.values()].sort((a,b) => b.rijen.length - a.rijen.length);
+    const metNaam = opGrootte.filter(g => g.naam !== LEEG);
+    const leegG   = opGrootte.find(g => g.naam === LEEG);
+    const groepen = metNaam.slice(0, MAX);
+    const rest    = metNaam.slice(MAX);
+    /* Eén overloper bundelen is gekker dan hem gewoon tonen. */
+    if(rest.length === 1) groepen.push(rest[0]);
+    else if(rest.length){
+      const bundel = {naam:`— nog ${rest.length} kleinere campagnes —`,
+                      rijen:[], reactie:[], gekwal:[], door:[], scores:[]};
+      for(const g of rest){
+        bundel.rijen.push(...g.rijen);     bundel.reactie.push(...g.reactie);
+        bundel.gekwal.push(...g.gekwal);   bundel.door.push(...g.door);
+        bundel.scores.push(...g.scores);
+      }
+      groepen.push(bundel);
+    }
+    if(leegG) groepen.push(leegG);
     const tel = (sleutel, lijst, titel) => lijst.length
       ? `<button class="btn sub sm num" data-drill="${h(drill(sleutel, lijst))}" data-drilltitel="${h(titel)}">${fmtN(lijst.length)}</button>`
       : `<span class="num meta">0</span>`;
@@ -2215,8 +2254,9 @@
         </table>
       </div>
       <div class="card-f"><span class="meta">Reactie en kwalificatie als aandeel van de binnengekomen leads van
-        die campagne, binnen dit cohort. Een campagne met goedkope leads maar een laag reactiepercentage is in
-        werkelijkheid de duurste — verschuif budget naar waar gereageerd én gekwalificeerd wordt.</span></div>
+        die campagne, binnen dit cohort — grootste campagnes eerst, dubbele aanmeldingen tellen niet mee. Een
+        campagne met goedkope leads maar een laag reactiepercentage is in werkelijkheid de duurste — verschuif
+        budget naar waar gereageerd én gekwalificeerd wordt.</span></div>
     </div>`;
   }
 
@@ -2368,7 +2408,7 @@
 
   /* Wat we niet konden meten, en waarom. Rustig blok, geen alarm — maar wel
      zichtbaar, want een net getal op halve data stuurt verkeerd. */
-  function gatenHtml(D, cLeads, cUit){
+  function gatenHtml(D, cLeads, cUit, cDub){
     const g = D.gaten;
     const periode = M.cohort === 'alles' ? 'alle maanden' : maandLabel(M.cohort);
     /* Alles in dit blok gaat over hetzelfde cohort als de tabellen erboven —
@@ -2377,7 +2417,10 @@
     const bedragNiet = somBedrag(cUit.filter(r => !r.kkey));
     const totaalUit  = somBedrag(cUit);
     const formulieren = cUit.reduce((s,r) => s + r.formulieren, 0);
-    const verschil = formulieren - cLeads.length;
+    /* Dubbele aanmeldingen tellen bij Meta wél als formulier en staan wél in
+       het CRM — voor de vraag "mist er iets?" horen ze dus bij de CRM-kant,
+       ook al tellen ze in de tabellen hierboven niet mee. */
+    const verschil = formulieren - cLeads.length - (cDub||[]).length;
     const items = [];
     const P = (titel, tekst, sleutel, rijen) => items.push({titel, tekst, sleutel, rijen});
 
@@ -2395,8 +2438,12 @@
     const bij = lijst => lijst.filter(r => inCohort.has(r.id));
     if(verschil > 0)
       P(`${fmtN(verschil)} Meta-formulieren die niet in het CRM staan`,
-        `Meta telt zelf ${fmtN(formulieren)} ingevulde formulieren in dit cohort, in het CRM staan ${fmtN(cLeads.length)} leads met bron Meta. `
+        `Meta telt zelf ${fmtN(formulieren)} ingevulde formulieren in dit cohort, in het CRM staan ${fmtN(cLeads.length + (cDub||[]).length)} leads met bron Meta (dubbele aanmeldingen meegeteld). `
         + 'Alles op dit scherm rekent met de leads die daadwerkelijk in het CRM staan — het echte rendement is dus hooguit beter dan hier staat.');
+    if((cDub||[]).length)
+      P(`${fmtN(cDub.length)} dubbele aanmelding${cDub.length===1?'':'en'} buiten de telling gehouden`,
+        'De bot herkende hetzelfde telefoonnummer als een bestaande lead (botstatus "Dubbel"). Die persoon telt één keer mee, via zijn eerste aanmelding — '
+        + 'anders leek dezelfde persoon twee leads en kon één plaatsing dubbel tellen. Ze staan dus in geen enkele tabel of trechterstap hierboven.', 'gat:dubbel', cDub);
     if(g.zonderDatum.length)
       P(`${fmtN(g.zonderDatum.length)} leads zonder binnenkomstdatum`,
         'Zonder datum hoort een lead bij geen enkele maand en telt nergens mee.', 'gat:datum', g.zonderDatum);

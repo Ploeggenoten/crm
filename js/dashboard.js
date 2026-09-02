@@ -679,30 +679,68 @@ function opvolgingRijen(){
   const uit = { nu:[], komt:[] };
   const mij = CRM.me(), nu = VANDAAG();
 
-  /* Werk dat uit de pijplijn zelf komt: nieuwe sollicitanten die nog niet
-     gebeld zijn en kandidaat-acties die over datum staan. Stond eerst als
-     "ruimte:"-blok in de dagbaan. */
-  /* VAN MIJ, niet van iedereen. Dit stond ongefilterd, dus Tjeerd, Tjerk en
-     Rajesh kregen 's ochtends alle drie exact dezelfde vijf namen te zien en
-     belden ze alle drie. Wie het eerst belde wist niet dat hij de tweede was.
-     Een sollicitant zonder eigenaar hoort wél bij iedereen — die ligt anders
-     bij niemand, en dat is erger dan dubbel bellen. */
-  const vanMij = e => !e || e === mij;
+  /* Werk dat uit de pijplijn zelf komt: belafspraken, nieuwe sollicitanten
+     die nog niet gebeld zijn en kandidaat-acties die over datum staan. Stond
+     eerst als "ruimte:"-blok in de dagbaan. */
   /* Vergelijkingen via CRM.leadIn/leadIs: sinds de vijf statussen (Tjeerd,
      27 aug 2026) kunnen rijen nog op een oude naam staan, en de alias-laag
      in js/data.js vertaalt die. Een lead met kandidaat_id is overgedragen
      aan de kandidaatkaart en hoort niet meer in de belwerklijst. */
-  const leads = (CRM.state.leads||[])
-    .filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !l.kandidaat_id)
-    .filter(l => vanMij(l.eigenaar))
-    .filter(l => (kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
-              || (CRM.leadIs(l.status, 'Nieuw') && (CRM.dagenGeleden(l.binnen_op)||0) >= 2));
+  const openLead  = l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !l.kandidaat_id;
+  const belLeads  = (CRM.state.leads||[]).filter(openLead);
+  const eigenaarLoos = l => !String(l.eigenaar||'').trim();
+
+  /* Sinds de botmigratie was dit één regel "Bel je N nieuwe sollicitanten"
+     die belafspraken en oude Nieuw-leads op één hoop gooide, en waarin de
+     leads zonder eigenaar bij álle AM's meetelden. Bij honderden botleads
+     werd dat een getal waar niemand aan begint, en de helft was niet eens
+     "nieuw". Nu twee aparte regels (Tjeerd, 2 sep 2026):
+       1. Belafspraken — met de kandidaat afgesproken momenten (opvolgen_op
+          vandaag of eerder). Die van jou, plus die zonder eigenaar: een
+          belofte aan een kandidaat die bij niemand ligt breek je anders
+          stilzwijgend, en dat is erger dan een dubbele beller.
+       2. Nieuwe sollicitanten — jouw eigen Nieuw-leads die er twee dagen of
+          langer liggen én geen gepland belmoment hebben. Zonder eigenaar
+          telt hier niet meer mee: dat is verdeel-werk voor de eigenaar
+          (zie de regel verderop), geen belwerk voor alle drie tegelijk. */
+  const afspraken = belLeads
+    .filter(l => eigenaarLoos(l) || l.eigenaar === mij)
+    .filter(l => kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
+    .sort((a,b) => String(a.terugbel_om||a.opvolgen_op||'')
+      .localeCompare(String(b.terugbel_om||b.opvolgen_op||'')));
+  if(afspraken.length) uit.nu.push({ sleutel:'belafspraken', mod:'recruitment', vink:true,
+    urgent: afspraken.some(l => kort(l.opvolgen_op) === nu),
+    titel:`Bel je ${afspraken.length} ${afspraken.length===1?'belafspraak':'belafspraken'}`,
+    sub: afspraken.slice(0,3).map(l=>l.naam).join(', ') + (afspraken.length>3?' …':'') });
+
+  const leads = belLeads
+    .filter(l => l.eigenaar === mij)
+    .filter(l => CRM.leadIs(l.status, 'Nieuw') && (CRM.dagenGeleden(l.binnen_op)||0) >= 2
+              && !kort(l.opvolgen_op));
   if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,
     titel:`Bel je ${leads.length} nieuwe sollicitant${leads.length===1?'':'en'}`,
     sub: leads.slice(0,3).map(l=>l.naam).join(', ') + (leads.length>3?' …':'') });
 
+  /* Verdeel-werk, alleen voor de eigenaar (dezelfde poort als Finance):
+     sinds de botmigratie staan er sollicitanten zonder eigenaar in
+     crm_leads, en die staan hierboven bewust bij niemand op de bellijst.
+     Dan moet er wél iemand zien dat ze er liggen — anders liggen ze bij
+     niemand. Eén kale regel, geen vinkje: je bent er pas vanaf als je ze
+     in Recruitment hebt toegewezen. (Tjeerd, 2 sep 2026) */
+  try{
+    if(CRM.canSeeMoney()){
+      const zonder = belLeads.filter(eigenaarLoos).length;
+      if(zonder) uit.nu.push({ sleutel:'verdeel', mod:'recruitment',
+        titel:`Verdeel ${zonder} sollicitant${zonder===1?'':'en'} zonder eigenaar`,
+        sub:'Ze staan bij niemand op de bellijst — wijs ze in Recruitment toe.' });
+    }
+  }catch(e){ /* geen profiel geladen: dan ook geen verdeelregel */ }
+
+  /* VAN MIJ, niet van iedereen: ongefilterd kregen Tjeerd, Tjerk en Rajesh
+     's ochtends dezelfde namen te zien en belden ze alle drie. Een kandidaat
+     zonder recruiter hoort wél bij iedereen — die ligt anders bij niemand. */
   const acties = CRM.kandidaten()
-    .filter(c => vanMij(c.rec))
+    .filter(c => !c.rec || c.rec === mij)
     .filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
     .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)));
   if(acties.length) uit.nu.push({ sleutel:'acties', mod:'kandidaten', urgent:true,
