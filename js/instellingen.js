@@ -639,11 +639,11 @@ function sectieSysteem(){
 function sectieFormulieren(){
   return `<div class="card"><div class="card-h"><div class="h2">Botformulieren → vacature</div></div>
     <div class="card-b">
-      <p class="sub" style="margin:0 0 10px">Eén Meta-formulier werft voor één vacature. Dit is dé routeringstabel
-        van de WhatsApp-bot (het n8n-formulier is vervallen): koppel het formulier aan de vacature en de bot haalt
-        werktijden, ploegen, salaris, eisen en de AM van de vacaturekaart. Bot uit = seniorrol: de lead komt wel
-        binnen, maar er start geen WhatsApp-gesprek. Alles wat de bot vertelt komt van de vacaturekaart — houd die
-        dus compleet (werktijden, ploegendienst, salaris, eisen).</p>
+      <p class="sub" style="margin:0 0 10px">Dé routeringstabel van de WhatsApp-bot (het n8n-formulier is
+        vervallen). Koppel het Meta-formulier aan de vacature; daaronder verschijnen alle botgegevens,
+        vooringevuld vanaf de vacaturekaart als suggestie — controleer ze en corrigeer waar nodig, dat schrijft
+        direct terug naar de kaart. "Klaar voor de bot" groen = de bot heeft alles. Bot uit = seniorrol: de lead
+        komt wel binnen, maar er start geen WhatsApp-gesprek.</p>
       <div id="in_forms">${CRM.ui.laden('Formulieren laden…')}</div>
     </div></div>`;
 }
@@ -668,6 +668,53 @@ async function vulFormulieren(mount){
   if(!rijen.size){ el.innerHTML = `<p class="meta">Nog geen formulieren gezien — zodra er botleads binnenkomen staan ze hier klaar om te koppelen.</p>`; return; }
   const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open');
   const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}</option>`;
+  /* ── Eén werkplek voor Bryan (Tjeerd, 2 sep 2026): onder elk gekoppeld
+     formulier staan meteen álle botgegevens, vooringevuld vanaf de
+     vacaturekaart als suggestie — Bryan geeft hier zijn laatste check en
+     corrigeert waar nodig. Elke correctie schrijft terug naar de KAART
+     (niet naar een eigen tabel), dus site, matching en bot blijven
+     dezelfde waarheid delen. */
+  const alleVacs = CRM.state.vacs || [];
+  const vacBij = id => alleVacs.find(v => String(v.id) === String(id));
+  const PLOEG = ['','Geen','2-ploegen','3-ploegen','4-ploegen','5-ploegen','Wisselend','Alleen nachtdienst'];
+  const AMS   = ['','Tjeerd','Tjerk','Rajesh'];
+  const kolom = (lbl, veld, vacId, html) => `<label style="display:flex;flex-direction:column;gap:2px">
+    <span class="label">${h(lbl)}</span>${html}</label>`;
+  const mistVan = v => {
+    const uit = [];
+    if(!String(v.locatie||'').trim())       uit.push('adres');
+    if(!String(v.werktijden||'').trim())    uit.push('werktijden');
+    if(!String(v.ploegendienst||'').trim()) uit.push('ploegen');
+    if(v.sal_min == null && v.sal_max == null) uit.push('salaris');
+    if(!String(v.eisen||'').trim())         uit.push('eisen');
+    if(!String(v.eigenaar||'').trim())      uit.push('AM');
+    return uit;
+  };
+  const botGegevensRij = r => {
+    const v = vacBij(r.vacature_id);
+    if(!v) return '';
+    return `<tr><td></td><td colspan="3" style="padding-top:0">
+      <div class="row tight" style="flex-wrap:wrap;gap:8px 14px;align-items:flex-end;padding:2px 0 10px">
+        ${kolom('Adres werklocatie','locatie',v.id,`<input data-vv="locatie" data-vac="${h(String(v.id))}" value="${h(v.locatie||'')}" placeholder="Straat 1, 1234 AB Plaats" style="width:220px">`)}
+        ${kolom('Werktijden','werktijden',v.id,`<input data-vv="werktijden" data-vac="${h(String(v.id))}" value="${h(v.werktijden||'')}" placeholder="06:00-14:00 / 14:00-22:00" style="width:170px">`)}
+        ${kolom('Ploegen','ploegendienst',v.id,`<select data-vv="ploegendienst" data-vac="${h(String(v.id))}">${PLOEG.map(p=>`<option value="${h(p)}" ${String(v.ploegendienst||'')===p?'selected':''}>${h(p||'—')}</option>`).join('')}</select>`)}
+        ${kolom('Salaris van','sal_min',v.id,`<input type="number" data-vv="sal_min" data-vac="${h(String(v.id))}" value="${v.sal_min==null?'':h(String(v.sal_min))}" style="width:78px">`)}
+        ${kolom('tot','sal_max',v.id,`<input type="number" data-vv="sal_max" data-vac="${h(String(v.id))}" value="${v.sal_max==null?'':h(String(v.sal_max))}" style="width:78px">`)}
+        ${kolom('AM','eigenaar',v.id,`<select data-vv="eigenaar" data-vac="${h(String(v.id))}">${AMS.map(a=>`<option value="${h(a)}" ${String(v.eigenaar||'')===a?'selected':''}>${h(a||'—')}</option>`).join('')}</select>`)}
+        <label style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:240px">
+          <span class="label">Eisen — één per regel, de bot toetst hierop</span>
+          <textarea data-vv="eisen" data-vac="${h(String(v.id))}" rows="2" placeholder="Rijbewijs B&#10;Nederlands">${h(v.eisen||'')}</textarea></label>
+      </div>
+    </td></tr>`;
+  };
+  const statusChip = r => {
+    if(!r.vacature_id) return `<span class="chip amber">koppel eerst</span>`;
+    const v = vacBij(r.vacature_id);
+    if(!v) return `<span class="chip amber">vacature weg</span>`;
+    const mist = mistVan(v);
+    return mist.length ? `<span class="chip amber" title="Nog invullen: ${h(mist.join(', '))}">${mist.length} ontbreekt</span>`
+                       : `<span class="chip green">klaar voor de bot</span>`;
+  };
   el.innerHTML = `<div class="tblwrap"><table class="tbl">
     <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th><th>Bot</th></tr></thead>
     <tbody>${[...rijen.values()].map(r => `<tr>
@@ -677,10 +724,21 @@ async function vulFormulieren(mount){
       <td><select data-form="${h(String(r.form_id))}">
         <option value="">— nog niet gekoppeld —</option>
         ${vacs.map(v => optie(v, r.vacature_id)).join('')}
-      </select></td>
+      </select> ${statusChip(r)}</td>
       <td><label class="check" title="Uit = seniorrol: de lead komt wel binnen en wordt gerouteerd, maar de bot start geen WhatsApp-gesprek">
         <input type="checkbox" data-botform="${h(String(r.form_id))}" ${r.bot_enabled === false ? '' : 'checked'}> aan</label></td>
-    </tr>`).join('')}</tbody></table></div>`;
+    </tr>${botGegevensRij(r)}`).join('')}</tbody></table></div>`;
+  /* Correcties van Bryan gaan rechtstreeks naar de vacaturekaart. */
+  CRM.$$('[data-vv]', el).forEach(inp => inp.onchange = async () => {
+    const veld = inp.dataset.vv, vacId = inp.dataset.vac;
+    const waarde = (veld === 'sal_min' || veld === 'sal_max')
+      ? (inp.value === '' ? null : +inp.value) : inp.value;
+    const {error:e3} = await CRM.sb.from('vacatures').update({[veld]: waarde}).eq('id', vacId);
+    if(e3) return CRM.fout('Opslaan op de vacaturekaart mislukt', e3);
+    const rij = alleVacs.find(v => String(v.id) === String(vacId));
+    if(rij) rij[veld] = waarde;
+    CRM.toast('Vacaturekaart bijgewerkt — de bot gebruikt dit bij zijn volgende gesprek', 'ok');
+  });
   const bewaar = async (formId, patch) => {
     const r = rijen.get(String(formId)) || {omschrijving:''};
     /* PostgREST-upsert werkt alleen de meegegeven kolommen bij, dus de
@@ -692,10 +750,12 @@ async function vulFormulieren(mount){
     return true;
   };
   CRM.$$('[data-form]', el).forEach(sel => sel.onchange = async () => {
-    if(await bewaar(sel.dataset.form, {vacature_id: sel.value}))
+    if(await bewaar(sel.dataset.form, {vacature_id: sel.value})){
       CRM.toast(sel.value
         ? 'Gekoppeld — nieuwe leads van dit formulier hangen nu automatisch aan die vacature'
         : 'Koppeling weggehaald', 'ok');
+      vulFormulieren(mount);   // de botgegevens-regel eronder verschijnt/verdwijnt mee
+    }
   });
   CRM.$$('[data-botform]', el).forEach(vink => vink.onchange = async () => {
     if(await bewaar(vink.dataset.botform, {bot_enabled: vink.checked}))
