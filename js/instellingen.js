@@ -639,8 +639,11 @@ function sectieSysteem(){
 function sectieFormulieren(){
   return `<div class="card"><div class="card-h"><div class="h2">Botformulieren → vacature</div></div>
     <div class="card-b">
-      <p class="sub" style="margin:0 0 10px">Eén Meta-formulier werft voor één vacature. Koppel ze hier, dan hangt
-        elke botlead van dat formulier automatisch aan de juiste vacature — en klopt de meting per campagne.</p>
+      <p class="sub" style="margin:0 0 10px">Eén Meta-formulier werft voor één vacature. Dit is dé routeringstabel
+        van de WhatsApp-bot (het n8n-formulier is vervallen): koppel het formulier aan de vacature en de bot haalt
+        werktijden, ploegen, salaris, eisen en de AM van de vacaturekaart. Bot uit = seniorrol: de lead komt wel
+        binnen, maar er start geen WhatsApp-gesprek. Alles wat de bot vertelt komt van de vacaturekaart — houd die
+        dus compleet (werktijden, ploegendienst, salaris, eisen).</p>
       <div id="in_forms">${CRM.ui.laden('Formulieren laden…')}</div>
     </div></div>`;
 }
@@ -666,7 +669,7 @@ async function vulFormulieren(mount){
   const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open');
   const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}</option>`;
   el.innerHTML = `<div class="tblwrap"><table class="tbl">
-    <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th></tr></thead>
+    <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th><th>Bot</th></tr></thead>
     <tbody>${[...rijen.values()].map(r => `<tr>
       <td class="num">${h(String(r.form_id))}</td>
       <td>${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
@@ -675,15 +678,29 @@ async function vulFormulieren(mount){
         <option value="">— nog niet gekoppeld —</option>
         ${vacs.map(v => optie(v, r.vacature_id)).join('')}
       </select></td>
+      <td><label class="check" title="Uit = seniorrol: de lead komt wel binnen en wordt gerouteerd, maar de bot start geen WhatsApp-gesprek">
+        <input type="checkbox" data-botform="${h(String(r.form_id))}" ${r.bot_enabled === false ? '' : 'checked'}> aan</label></td>
     </tr>`).join('')}</tbody></table></div>`;
-  CRM.$$('[data-form]', el).forEach(sel => sel.onchange = async () => {
-    const r = rijen.get(String(sel.dataset.form)) || {omschrijving:''};
+  const bewaar = async (formId, patch) => {
+    const r = rijen.get(String(formId)) || {omschrijving:''};
+    /* PostgREST-upsert werkt alleen de meegegeven kolommen bij, dus de
+       vacaturekeuze en de botschakelaar zitten elkaar hier niet in de weg. */
     const {error:e2} = await CRM.sb.from('lead_formulieren').upsert(
-      {form_id:String(sel.dataset.form), vacature_id:sel.value, omschrijving:r.omschrijving||''});
-    if(e2) return CRM.fout('Koppeling opslaan mislukt', e2);
-    CRM.toast(sel.value
-      ? 'Gekoppeld — nieuwe leads van dit formulier hangen nu automatisch aan die vacature'
-      : 'Koppeling weggehaald', 'ok');
+      Object.assign({form_id:String(formId), omschrijving:r.omschrijving||''}, patch));
+    if(e2){ CRM.fout('Opslaan mislukt', e2); return false; }
+    Object.assign(r, patch); rijen.set(String(formId), r);
+    return true;
+  };
+  CRM.$$('[data-form]', el).forEach(sel => sel.onchange = async () => {
+    if(await bewaar(sel.dataset.form, {vacature_id: sel.value}))
+      CRM.toast(sel.value
+        ? 'Gekoppeld — nieuwe leads van dit formulier hangen nu automatisch aan die vacature'
+        : 'Koppeling weggehaald', 'ok');
+  });
+  CRM.$$('[data-botform]', el).forEach(vink => vink.onchange = async () => {
+    if(await bewaar(vink.dataset.botform, {bot_enabled: vink.checked}))
+      CRM.toast(vink.checked ? 'Bot aan voor dit formulier' : 'Bot uit — leads komen binnen zonder WhatsApp-gesprek', 'ok');
+    else vink.checked = !vink.checked;
   });
 }
 
@@ -712,16 +729,21 @@ CRM.registerModule('instellingen', {
        vier andere secties. Voor een teamlid is dit het hele scherm, en dan
        sta je naar een lege pagina te kijken zonder te weten of er iets stuk
        is. Liever uitleggen wat er aan de hand is. */
-    const leeg = !baas && !eigen.trim();
+    /* Sinds de formulierenrouting voor iedereen zichtbaar is, is het scherm
+       nooit meer leeg — de uitlegkaart voor dat geval is daarmee vervallen. */
+    const leeg = false;
+    /* De formulierenrouting staat NIET achter de eigenaar-poort: het
+       invullen en koppelen is juist het werk van de marketeer (Tjeerd,
+       2 sep 2026: "dit wordt Bryan zijn taak"). Er staat geen geldinfo in. */
     mount.innerHTML = `<div class="in-wrap">${
       baas ? sectieTargets() + sectieTeam() : ''
-    }${eigen}${
-      baas ? sectieFormulieren() + sectieData() + sectieSysteem() : ''
+    }${eigen}${sectieFormulieren()}${
+      baas ? sectieData() + sectieSysteem() : ''
     }${leeg ? `<div class="card"><div class="card-b">${CRM.ui.leeg(
       'Hier valt voor jou nog niets in te stellen',
       'De Microsoft-koppeling — je eigen agenda, mail en Teams-links in het CRM — is nog niet ingericht voor deze omgeving. Vraag Tjeerd om dat aan te zetten; daarna kun je hier je eigen account verbinden.'
     )}</div></div>` : ''}</div>`;
-    if(baas) vulFormulieren(mount);
+    vulFormulieren(mount);
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);
