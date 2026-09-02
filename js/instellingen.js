@@ -693,8 +693,14 @@ async function vulFormulieren(mount){
   const botGegevensRij = r => {
     const v = vacBij(r.vacature_id);
     if(!v) return '';
-    return `<tr><td></td><td colspan="3" style="padding-top:0">
-      <div class="row tight" style="flex-wrap:wrap;gap:8px 14px;align-items:flex-end;padding:2px 0 10px">
+    /* Ingeklapt tot je erop klikt (Tjeerd, 2 sep 2026: "heel onoverzichtelijk"
+       toen elke regel al zijn invulvelden open had staan) — de chip in de
+       hoofdrij zegt al of er iets mist; openklappen is alleen voor bewerken. */
+    const mist = mistVan(v);
+    return `<tr><td></td><td colspan="3" style="padding-top:0;padding-bottom:2px">
+      <details>
+      <summary class="meta" style="cursor:pointer;padding:2px 0">botgegevens ${mist.length ? `— vul nog in: ${h(mist.join(', '))}` : '(compleet — klik om te bewerken)'}</summary>
+      <div class="row tight" style="flex-wrap:wrap;gap:8px 14px;align-items:flex-end;padding:6px 0 10px">
         ${kolom('Adres werklocatie','locatie',v.id,`<input data-vv="locatie" data-vac="${h(String(v.id))}" value="${h(v.locatie||'')}" placeholder="Straat 1, 1234 AB Plaats" style="width:220px">`)}
         ${kolom('Werktijden','werktijden',v.id,`<input data-vv="werktijden" data-vac="${h(String(v.id))}" value="${h(v.werktijden||'')}" placeholder="06:00-14:00 / 14:00-22:00" style="width:170px">`)}
         ${kolom('Ploegen','ploegendienst',v.id,`<select data-vv="ploegendienst" data-vac="${h(String(v.id))}">${PLOEG.map(p=>`<option value="${h(p)}" ${String(v.ploegendienst||'')===p?'selected':''}>${h(p||'—')}</option>`).join('')}</select>`)}
@@ -705,6 +711,7 @@ async function vulFormulieren(mount){
           <span class="label">Eisen — één per regel, de bot toetst hierop</span>
           <textarea data-vv="eisen" data-vac="${h(String(v.id))}" rows="2" placeholder="Rijbewijs B&#10;Nederlands">${h(v.eisen||'')}</textarea></label>
       </div>
+      </details>
     </td></tr>`;
   };
   const statusChip = r => {
@@ -715,9 +722,19 @@ async function vulFormulieren(mount){
     return mist.length ? `<span class="chip amber" title="Nog invullen: ${h(mist.join(', '))}">${mist.length} ontbreekt</span>`
                        : `<span class="chip green">klaar voor de bot</span>`;
   };
+  /* Werkvolgorde bovenaan: eerst formulieren zonder koppeling, dan met
+     ontbrekende botgegevens, dan de complete — zo is het scherm een
+     to-dolijst in plaats van een archief. */
+  const rang = r => {
+    if(!r.vacature_id) return 0;
+    const v = vacBij(r.vacature_id);
+    return !v ? 0 : (mistVan(v).length ? 1 : 2);
+  };
+  const volgorde = [...rijen.values()].sort((a, b) =>
+    rang(a) - rang(b) || String(a.omschrijving||'').localeCompare(String(b.omschrijving||'')));
   el.innerHTML = `<div class="tblwrap"><table class="tbl">
     <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th><th>Bot</th></tr></thead>
-    <tbody>${[...rijen.values()].map(r => `<tr>
+    <tbody>${volgorde.map(r => `<tr>
       <td class="num">${h(String(r.form_id))}</td>
       <td>${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
         ? ` <span class="meta">· <span class="num">${gezien.get(String(r.form_id)).n}</span> lead${gezien.get(String(r.form_id)).n===1?'':'s'}</span>` : ''}</td>
@@ -727,7 +744,27 @@ async function vulFormulieren(mount){
       </select> ${statusChip(r)}</td>
       <td><label class="check" title="Uit = seniorrol: de lead komt wel binnen en wordt gerouteerd, maar de bot start geen WhatsApp-gesprek">
         <input type="checkbox" data-botform="${h(String(r.form_id))}" ${r.bot_enabled === false ? '' : 'checked'}> aan</label></td>
-    </tr>${botGegevensRij(r)}`).join('')}</tbody></table></div>`;
+    </tr>${botGegevensRij(r)}`).join('')}</tbody></table></div>
+  <div class="row tight" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap;gap:8px 12px">
+    <label style="display:flex;flex-direction:column;gap:2px"><span class="label">Form-ID uit Meta</span>
+      <input id="in_nieuwform" placeholder="bijv. 2003193383627556" style="width:180px"></label>
+    <label style="display:flex;flex-direction:column;gap:2px"><span class="label">Omschrijving</span>
+      <input id="in_nieuwoms" placeholder="bijv. Operator - Goodlife sept" style="width:210px"></label>
+    <button class="btn sm" id="in_formtoevoeg">+ Formulier toevoegen</button>
+    <span class="meta" style="max-width:340px">Nieuwe campagne? Plak hier het form-ID uit Meta en koppel de vacature —
+      dan staat de routering klaar vóór de eerste lead. (Vergeet je dit, dan verschijnt het formulier ook vanzelf
+      zodra de eerste lead binnenkomt.)</span>
+  </div>`;
+  const voegToe = mount.querySelector('#in_formtoevoeg');
+  if(voegToe) voegToe.onclick = async () => {
+    const fid = mount.querySelector('#in_nieuwform').value.trim();
+    const oms = mount.querySelector('#in_nieuwoms').value.trim();
+    if(!/^\d{8,}$/.test(fid)) return CRM.toast('Dat lijkt geen Meta form-ID — verwacht een lang nummer, bijv. 2003193383627556', 'err');
+    const {error:e4} = await CRM.sb.from('lead_formulieren').upsert({form_id:fid, omschrijving:oms, bot_enabled:true});
+    if(e4) return CRM.fout('Toevoegen mislukt', e4);
+    CRM.toast('Formulier toegevoegd — kies nu de vacature in de lijst', 'ok');
+    vulFormulieren(mount);
+  };
   /* Correcties van Bryan gaan rechtstreeks naar de vacaturekaart. */
   CRM.$$('[data-vv]', el).forEach(inp => inp.onchange = async () => {
     const veld = inp.dataset.vv, vacId = inp.dataset.vac;
