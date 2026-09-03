@@ -316,3 +316,19 @@
 .pl-zzprij:last-child{border-bottom:none}
 button.pl-zzprij:hover{background:var(--card-2)}
 .pl-zzprij b{font-weight:600;flex:0 1 auto;min-width:0}
+
+/* ── Starters-overzicht mét namen (3 sep 2026, Tjeerd) ── */
+.pl-starters{padding:12px 16px;display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.pl-startersrij{display:flex;align-items:flex-start;gap:14px}
+.pl-startersrij>.label{padding-top:9px;min-width:118px}
+.pl-startersk{display:flex;flex-wrap:wrap;gap:8px}
+.pl-starter{display:flex;align-items:center;gap:10px;border:1px solid var(--line-2);
+  background:var(--card);border-radius:10px;padding:7px 12px;cursor:pointer;
+  font:inherit;text-align:left;transition:border-color .15s}
+.pl-starter:hover{border-color:var(--olive-l)}
+.pl-starter.werkt{border-color:var(--green-line);background:var(--green-bg)}
+.pl-sdag{font-weight:700;font-size:12px;color:var(--olive);text-transform:uppercase;
+  letter-spacing:.03em;min-width:38px}
+.pl-swie{display:flex;flex-direction:column;line-height:1.25}
+.pl-swie b{font-size:13px}
+.pl-swie em{font-style:normal;font-size:11.5px;color:var(--muted)}

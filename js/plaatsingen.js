@@ -683,6 +683,43 @@ function ploegvlakHtml(){
   </div>`;
 }
 
+/* ─── Starters-overzicht, mét namen (Tjeerd, 3 sep 2026) ──────────
+   "Bij Plaatsingen moeten we heel duidelijk een overzicht zien van de
+   starters." De ploegcijfers en de kalender geven aantallen en blokjes;
+   dit blok geeft de gezíchten: wie start deze week en volgende week, op
+   welke dag, bij welke klant — klikbaar naar de kandidaatkaart. Verbergt
+   zichzelf als er in beide weken niemand start. */
+function startersHtml(){
+  const nu = vandaag(), ma = maandagVan(nu);
+  const maVolgend = plusDagen(ma, 7);
+  const lopend = allePlaatsingen().filter(c => !c.gestoptOp);
+  const inWeek = (van) => lopend
+    .filter(c => { const d = dag(c.start); return d >= van && d <= plusDagen(van, 6); })
+    .sort((a,b) => dag(a.start).localeCompare(dag(b.start)));
+  const week1 = inWeek(ma), week2 = inWeek(maVolgend);
+  if(!week1.length && !week2.length) return '';
+  const DAG = ['zo','ma','di','wo','do','vr','za'];
+  const kaart = c => {
+    const d = parse(dag(c.start));
+    const al = dag(c.start) <= nu;
+    return `<button type="button" class="pl-starter${al ? ' werkt' : ''}" data-kand="${h(String(c.id))}"
+      title="${h(c.naam)} · ${h(c.functie||'—')} bij ${h(c.klant||'—')} — open de kandidaatkaart">
+      <span class="pl-sdag num">${d ? DAG[d.getDay()] + ' ' + d.getDate() : '?'}</span>
+      <span class="pl-swie"><b>${h(c.naam)}</b><em>${h(c.functie||'—')} · ${h(c.klant||'—')}</em></span>
+      ${al ? '<span class="chip green">gestart</span>' : ''}
+    </button>`;
+  };
+  const rij = (titel, mensen) => mensen.length ? `
+    <div class="pl-startersrij">
+      <span class="label">${h(titel)}</span>
+      <div class="pl-startersk">${mensen.map(kaart).join('')}</div>
+    </div>` : '';
+  return `<div class="card pl-starters">
+    ${rij('Deze week starten', week1)}
+    ${rij('Volgende week', week2)}
+  </div>`;
+}
+
 /* ─── De startkalender ───────────────────────────────────────────
    Veertien weekcellen: één terug, dertien vooruit. Eén blokje per persoon
    die die week begint — groen als hij al werkt, blauw als hij nog komt —
@@ -958,7 +995,7 @@ function teken(){
   /* Ploegvlak en kalender bewegen niet met het filter mee, maar hertekenen
      wél elke ronde: de aan-stand van de chips en de blokjes veranderen. */
   const acts = M.mount.querySelector('#pl_acts');
-  if(acts) acts.innerHTML = ploegvlakHtml() + startkalenderHtml();
+  if(acts) acts.innerHTML = ploegvlakHtml() + startersHtml() + startkalenderHtml();
 
   /* In de tabel horen de mensen zonder datum gewoon in de lijst thuis — daar
      is een kolom voor, en apart zetten zou ze uit je sortering en je fee-som
@@ -1164,6 +1201,10 @@ function bind(){
      één lijst en één waarheid, en zie je na het klikken meteen waaróm je die
      mensen ziet (de selectieregel onder het eerste cijfer zegt het). */
   acts.onclick = e => {
+    /* Een starter aanklikken opent de kandidaatkaart — daar staan de
+       checklist en de nazorgmomenten. */
+    const st = e.target.closest('[data-kand]');
+    if(st){ CRM.ga('kandidaten', {id: st.dataset.kand}); return; }
     /* Een week in de startkalender aanklikken = de periodefilter op die week
        zetten. Dezelfde week nog eens = weer terug naar alles. */
     const wk = e.target.closest('[data-week]');
