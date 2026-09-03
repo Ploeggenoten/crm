@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Concept · Recruitment-overzicht</title>
+<link rel="stylesheet" href="css/base.css?v=20260810h4">
+<style>
+/* Conceptpagina (3 sep 2026) — statische mock met demodata, staat LOS van de app.
+   Na akkoord van Tjeerd wordt dit 1-op-1 in js/recruitment.js gebouwd; daarna kan
+   dit bestand weg. */
+body{margin:0;background:var(--paper);color:var(--txt);font-family:var(--body,system-ui);padding:26px 3vw 80px}
+.cw{max-width:1240px;margin:0 auto}
+h1{font-size:24px;margin:0 0 4px}
+.blok{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:18px 0}
+.blok h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:10px}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:999px;padding:3px 10px}
+.tag.nu{background:var(--well-2);color:var(--txt-2)}
+.tag.straks{background:var(--olive);color:#fff}
+.mocknote{font-size:12px;color:var(--muted);font-style:italic}
+/* nagebouwde banden */
+.m-tabs{display:flex;gap:16px;border-bottom:1px solid var(--line);padding:0 2px;margin-bottom:10px}
+.m-tab{padding:7px 2px;font-weight:600;font-size:13px;color:var(--txt-2)}
+.m-tab.on{color:var(--olive);border-bottom:2px solid var(--olive)}
+.m-doen{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.m-doenr{display:flex;align-items:center;gap:10px;padding:9px 14px;font-size:13px;flex-wrap:wrap}
+.m-doenr + .m-doenr{border-top:1px solid var(--line)}
+.m-doenr.bel{background:var(--amber-bg);}
+.m-doenr .spacer{flex:1}
+.m-fil{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.m-sel{border:1px solid var(--line-2);background:var(--card);border-radius:9px;padding:6px 26px 6px 10px;font-size:12.5px;color:var(--txt);position:relative}
+.m-sel:after{content:"▾";position:absolute;right:9px;color:var(--muted)}
+.m-zoek{border:1px solid var(--line-2);background:var(--card);border-radius:9px;padding:6px 12px;font-size:12.5px;color:var(--muted);min-width:200px}
+.m-actief{display:flex;gap:6px;align-items:center;margin:0 0 12px}
+.m-actief .chip{background:var(--olive);border-color:var(--olive);color:#fff}
+.m-actief .chip b{font-weight:700;margin-left:6px;opacity:.8}
+/* tabel */
+table.m{width:100%;border-collapse:collapse;font-size:13px}
+table.m th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2);padding:8px 10px;border-bottom:1px solid var(--line-2);background:var(--well)}
+table.m td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.frand-rood td:first-child{box-shadow:inset 3px 0 0 #c0392b}
+tr.frand-amber td:first-child{box-shadow:inset 3px 0 0 #d4a017}
+.naam{font-weight:600}
+.rowsub{font-size:11.5px;color:var(--muted);margin-top:1px}
+.waaromnu{margin-top:5px}
+.statussel{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-2);border-radius:9px;padding:5px 10px;font-size:12.5px;background:var(--card);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.wa{font-size:10px;font-weight:700;color:var(--whatsapp);border:1px solid var(--whatsapp);border-radius:5px;padding:1px 4px;margin-left:5px}
+.tel{font-variant-numeric:tabular-nums;font-weight:600}
+/* NU-paneel: bewust drukker */
+.nu-band{border:1px dashed var(--line-2);border-radius:9px;padding:6px 12px;font-size:12px;color:var(--txt-2);margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.nu-warn{background:var(--amber-bg);border:1px solid var(--amber-line);color:#b03d1c;border-radius:9px;padding:8px 12px;font-size:12.5px;margin-bottom:6px}
+.nu-agent div{margin-bottom:3px}
+.weg li{margin:3px 0}
+.twee{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:980px){.twee{grid-template-columns:1fr}}
+ol.motor{columns:2;gap:34px;font-size:13px;padding-left:20px}
+ol.motor li{margin:0 0 7px;break-inside:avoid}
+@media(max-width:900px){ol.motor{columns:1}}
+.kop-akkoord{background:var(--well);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="cw">
+
+<h1>Concept · Recruitment-overzicht</h1>
+<p class="sub" style="margin:0 0 4px">Uitkomst van vijf optimalisatie-analyses + beraad, 3 september 2026. <b>Dit is een statische schets met verzonnen namen — er staat niets hiervan live.</b> Kader: één oogopslag, geen poespas, rust wint van rijkdom.</p>
+<p class="meta">Netto-effect: kolommen 10 → 7 · chips per rij max 7 → max 3 · banden boven de lijst 6 → 5 · <b>±14 in plaats van ±8 rijen in beeld</b>.</p>
+
+<!-- ═══════════ STRAKS ═══════════ -->
+<div class="blok">
+  <h2><span class="tag straks">Straks</span> Zo ziet het scherm eruit na de verbouwing</h2>
+
+  <div class="m-tabs"><span class="m-tab on">Recruitmentpijplijn <span class="num">430</span></span><span class="m-tab">Uitval <span class="num">103</span></span></div>
+
+  <div class="m-doen">
+    <div class="m-doenr bel">☎ <b class="num">3</b>&nbsp;belafspraken vandaag · eerste <b class="num">09:30</b> · <span class="num">1</span> verlopen
+      <span class="spacer"></span><span class="btn sm" style="pointer-events:none">Bel af →</span></div>
+    <div class="m-doenr"><b class="num" style="font-size:17px">126</b>&nbsp;op Nieuw — 8 liggen er 3 dagen of langer
+      <span class="spacer"></span><span class="meta">14 blijven liggen · 4 klaar om voor te stellen → · 6 videocalls deze week</span>
+      <span class="btn sm dark" style="pointer-events:none">Wegwerken →</span></div>
+  </div>
+
+  <div class="m-fil">
+    <span class="m-zoek">🔍 Zoek op naam, telefoon of plaats</span>
+    <span class="m-sel">Alle statussen (178)</span>
+    <span class="m-sel">Alle botstatussen (178)</span>
+    <span class="m-sel">Alle bronnen</span>
+    <span class="m-sel"><b>Smurfit</b></span>
+    <span class="m-sel">Alle vacatures</span>
+    <span class="m-sel">Alle eigenaren (178)</span>
+    <span class="chip" style="background:var(--olive);border-color:var(--olive);color:#fff">Van mij</span>
+    <span class="spacer" style="flex:1"></span>
+    <span class="meta"><span class="num">178</span> van <span class="num">430</span></span>
+    <span class="chip">Lijst</span><span class="chip" style="opacity:.5">Bord</span>
+  </div>
+  <div class="m-actief">
+    <span class="chip">klant: Smurfit <b>×</b></span>
+    <span class="chip">Van mij <b>×</b></span>
+    <span class="chip btn-like" style="background:var(--card);color:var(--txt)">Alles wissen</span>
+    <span class="mocknote">← deze rij verdwijnt vanzelf als er geen filters actief zijn — "ik zie niets" kan niet meer</span>
+  </div>
+
+  <table class="m">
+    <thead><tr><th></th><th>Sollicitant</th><th>Contact</th><th>Reageerde op</th><th>Agent</th><th>Status</th><th>Binnen</th></tr></thead>
+    <tbody>
+      <tr class="frand-rood">
+        <td>☐</td>
+        <td><div class="naam">Jeroen van Dijk</div><div class="rowsub">Woerden · WhatsApp · cv</div>
+            <div class="waaromnu"><span class="chip red num">belafspraak di 1 sep — verlopen</span></div></td>
+        <td><span class="tel">06 41 22 87 90</span><span class="wa">wa</span><div class="rowsub">2× gebeld</div></td>
+        <td>Heftruckchauffeur<div class="rowsub">Smurfit</div></td>
+        <td><span class="chip amber num">Potentieel · 61</span></td>
+        <td><span class="statussel"><span class="dot" style="background:#9aa3b2"></span>Geen gehoor ▾</span></td>
+        <td class="num">28 aug</td>
+      </tr>
+      <tr class="frand-amber">
+        <td>☐</td>
+        <td><div class="naam">Samira el Amrani</div><div class="rowsub">Alphen a/d Rijn · WhatsApp</div>
+            <div class="waaromnu"><span class="chip amber num">bel om 15:30</span></div></td>
+        <td><span class="tel">06 28 44 19 03</span><span class="wa">wa</span><div class="rowsub">1× gebeld</div></td>
+        <td>Orderpicker<div class="rowsub">Heineken</div></td>
+        <td><span class="chip green num">Gekwalificeerd · 78</span></td>
+        <td><span class="statussel"><span class="dot" style="background:#d9a441"></span>Potentieel ▾</span></td>
+        <td class="num">1 sep</td>
+      </tr>
+      <tr>
+        <td>☐</td>
+        <td><div class="naam">Kevin Bakker</div><div class="rowsub">Bodegraven · Indeed · cv</div></td>
+        <td><span class="tel">06 53 90 71 26</span><span class="wa">wa</span></td>
+        <td>Productiemedewerker<div class="rowsub">Zeeman</div></td>
+        <td><span class="chip green num">Gekwalificeerd · 85</span></td>
+        <td><span class="statussel"><span class="dot" style="background:#5b8bbf"></span>Nieuw ▾</span></td>
+        <td class="num">vandaag</td>
+      </tr>
+      <tr>
+        <td>☐</td>
+        <td><div class="naam">Petra de Groot</div><div class="rowsub">Nieuwkoop · formulier</div></td>
+        <td><span class="tel">06 19 55 38 42</span><span class="wa">wa</span><div class="rowsub">3× gebeld</div></td>
+        <td>Inpakker<div class="rowsub">Van der Windt</div></td>
+        <td><span class="chip num">54</span></td>
+        <td><span class="statussel"><span class="dot" style="background:#9aa3b2"></span>Geen gehoor ▾</span></td>
+        <td class="num">25 aug</td>
+      </tr>
+      <tr class="frand-amber">
+        <td>☐</td>
+        <td><div class="naam">Mohammed Yilmaz</div><div class="rowsub">Gouda · WhatsApp</div>
+            <div class="waaromnu"><span class="chip amber num">3 dagen stil</span></div></td>
+        <td><span class="tel">06 84 30 66 15</span><span class="wa">wa</span></td>
+        <td><span class="meta">— geen vacature —</span></td>
+        <td><span class="chip amber num">Potentieel · 66</span></td>
+        <td><span class="statussel"><span class="dot" style="background:#5b8bbf"></span>Nieuw ▾</span></td>
+        <td class="num">31 aug</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="meta" style="margin:8px 2px 0">De rij beantwoordt precies één vraag: <b>waarom staat deze hier (chip onder de naam)</b> — de sortering is belafspraak → vers goud van vandaag → de rest. Rij 3 heeft géén chip nodig: Kevin staat hoog dóór de sortering, niet door drukte. Eigenaar-kolom verschijnt alleen als je naar "iedereen" schakelt. Alles wat uit de rij ging (kwalificatietekst, botfase, campagne) staat volledig in de lade en de belronde.</p>
+</div>
+
+<!-- ═══════════ NU ═══════════ -->
+<div class="blok">
+  <h2><span class="tag nu">Nu</span> Ter vergelijking — het huidige scherm, compact nagetekend</h2>
+  <div class="nu-band">doen-regel (1 regel — belafspraken ontbreken erin)</div>
+  <div class="nu-band">filterbalk: zoek · status · bot · bron · klant · vacature · eigenaar · <b>Zonder vacature</b> · Van mij · telling · Lijst|Bord — <i>11 elementen, actieve filters onzichtbaar</i></div>
+  <div class="nu-warn">⚠ 100 lopende sollicitanten zijn niet aan een vacature gekoppeld. Zonder koppeling tellen ze niet mee… <u>Toon ze</u></div>
+  <table class="m">
+    <thead><tr><th></th><th></th><th>Sollicitant</th><th>Contact</th><th>Bron</th><th>Reageerde op</th><th>Agent</th><th>Status</th><th>Eigenaar</th><th>Binnen</th></tr></thead>
+    <tbody>
+      <tr class="frand-amber">
+        <td>☐</td><td><span class="dot" style="background:#d4522a" title="prioriteit"></span></td>
+        <td><div class="naam">Jeroen van Dijk</div><div class="rowsub">Woerden · cv</div></td>
+        <td><span class="tel">06 41 22 87 90</span><span class="wa">wa</span><div class="rowsub">2× gebeld</div></td>
+        <td><span class="chip">Meta</span><div class="rowsub">Heftruckchauffeur - Smurfit…</div></td>
+        <td>Heftruckchauffeur · Smurfit<div><span class="chip btn-like" style="margin-top:3px">Koppel vacature</span></div></td>
+        <td class="nu-agent"><div><span class="chip amber">Potentieel andere vacature</span></div><div><span class="chip amber num">61</span></div>
+          <div class="rowsub">Kandidaat heeft geen eigen verv…</div><div class="rowsub">follow-up 48u · nog geen reactie</div></td>
+        <td><div><span class="statussel"><span class="dot" style="background:#9aa3b2"></span>Geen gehoor ▾</span></div>
+          <div style="margin-top:4px"><span class="chip red num">5 dagen stil</span></div>
+          <div style="margin-top:4px"><span class="chip amber num">belafspraak 1 sep 2026</span></div></td>
+        <td><span class="chip">Tjerk</span></td>
+        <td class="num" style="color:#c0392b">6 dagen geleden</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="meta" style="margin:6px 2px 0">…zo'n rij is 4 regels hoog en draagt tot 7 chips en 11 kleursignalen; onder de tabel volgt nog een strook met 24 naamchips "Klaar om voor te stellen".</p>
+</div>
+
+<!-- ═══════════ WEGGEHAALD ═══════════ -->
+<div class="twee">
+<div class="blok">
+  <h2>Weggehaald (en waar het heen ging)</h2>
+  <ul class="weg" style="font-size:13px;margin:0;padding-left:20px">
+    <li>⚠-waarschuwingsbalk vacaturekoppeling → optie "— zonder vacature — (N)" in de vacature-dropdown</li>
+    <li>Knop "Zonder vacature" op de balk → zelfde dropdown-optie</li>
+    <li>"Koppel vacature"-knop per rij → alleen nog in de zonder-vacature-weergave</li>
+    <li>Strook "Klaar om voor te stellen" onder de tabel → stond al klikbaar in de doen-regel</li>
+    <li>Prio-stip-kolom → zit in de tooltip van de agent-chip (en in de sortering)</li>
+    <li>Bron-chipkolom → platte tekst in de naamregel</li>
+    <li>Campagneregel → lade</li>
+    <li>Kwalificatietekst in de rij → lade + belronde-kop</li>
+    <li>Botfase-regel ("follow-up 48u…") → lade</li>
+    <li>Losse score-chip → samengevoegd met botstatus tot één chip</li>
+    <li>Bel-/stilstandchips in de Status-kolom → één "waarom-nu"-chip bij de naam</li>
+    <li>Gekleurde ouderdom in "Binnen" → neutrale datum</li>
+    <li>Statuskleur op de linkerstreep → streep alleen nog amber/rood bij urgentie</li>
+    <li>Eigenaar-chipkolom in de Van-mij-stand → alleen zichtbaar bij "iedereen", als initialen</li>
+  </ul>
+</div>
+<div class="blok">
+  <h2>Onder de motorkap (niet zichtbaar, wél onderdeel van dit akkoord)</h2>
+  <ol class="motor">
+    <li><b>Afspraak-wissen:</b> een afgehandelde belpoging wist de verlopen belafspraak — de stapel van 28 lost op en komt nooit terug</li>
+    <li><b>Belafspraken-ronde</b> via "Bel af →"</li>
+    <li>Undo-toets in de wegwerkronde</li>
+    <li>Melding bij verse Gekwalificeerd/Hoog-lead ("Nu bellen")</li>
+    <li>Dashboard-doorkliks geven het juiste filter mee</li>
+    <li>Telling eerlijk: "178 van 430" (overgedragen leads niet meer meegeteld)</li>
+    <li>Eén sorteervolgorde in lijst én ronde: belafspraak → vers goud → oudste</li>
+    <li>"Blijft liggen"-filter altijd uitzetbaar</li>
+    <li>Talentpool-toets (5) in de wegwerkronde</li>
+    <li>Belafspraak-snelzetter in de ronde (datum/tijd i.p.v. vrije tekst)</li>
+    <li>Intake plannen sneller: Enter, autofocus, snelkeuzes ("morgen 10:00")</li>
+    <li>Verlopen intake krijgt geen belafspraak-chip meer</li>
+    <li>Bord-knop "werk af" ook zonder hover zichtbaar</li>
+    <li>Tellers (N) in bron-/klant-/vacature-opties</li>
+    <li>Scrollpositie blijft staan bij live-updates; geen hertekening midden in de belronde</li>
+    <li>Lade-herordening: kwalificatie boven de Q&amp;A, terugbelafspraak als chip in de kop</li>
+  </ol>
+</div>
+</div>
+
+<div class="kop-akkoord">
+  <b>Bewust afgevallen of uitgesteld:</b> achterstand-teller boven de lijst (stuurinfo → hoort bij Cijfers) · "Meer filters"-opvouw (raakt spiergeheugen) · split-knop op Wegwerken · klant→vacature-cascade · suggested_roles tonen (eerst bij Smit verifiëren) · mobiel lijst-herontwerp (bord + ronde zijn daar de route) · "Binnen"-klok voor herstelde leads (eerst bespreken wat "Binnen" moet betekenen).<br><br>
+  <b>Akkoord?</b> Dan bouw ik het in deze volgorde: eerst de motorkap-fixes 1+6+8, dan de zichtbare verbouwing als één schone (terugdraaibare) wijziging, daarna de rest — en na een paar dagen echt gebruik vragen we Tjerk en Rajesh wat er nog knelt. Gedeeltelijk akkoord kan ook: noem de nummers/punten die anders moeten.
+</div>
+
+</div>
+</body>
+</html>
