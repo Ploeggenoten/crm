@@ -363,10 +363,6 @@
         A('red','Geld op, geen enkele lead',
           `${CRM.euro(s7.spend)} in zeven dagen zonder één lead.`, ['stop','negeer']); continue;
       }
-      if(s7.cpl && acc.cpl && s7.cpl > 2.5*acc.cpl){
-        A('red','Kosten per lead uit de bocht',
-          `${CRM.euro(s7.cpl,2)} per lead tegen ${CRM.euro(acc.cpl,2)} gemiddeld (${maal(s7.cpl, acc.cpl)}× zo duur).`, ['stop','negeer']); continue;
-      }
       if(s7.cpc && s30.cpc && s7.cpc > 1.5*s30.cpc){
         A('amber','CPC loopt op — de creative slijt',
           `CPC ${CRM.euro(s7.cpc,2)} tegen ${CRM.euro(s30.cpc,2)} eigen 30-daags gemiddelde. Zet er een verse variant naast.`, ['stop','negeer']); continue;
@@ -379,11 +375,108 @@
         A('amber','Bereik zakt bij gelijk budget',
           `${fmtN(s7.bereik)} bereik tegen ${fmtN(sVor.bereik)} vorige week — het publiek raakt verzadigd.`, ['stop','negeer']); continue;
       }
-      if(s7.cpl && acc.cpl && s7.cpl < 0.6*acc.cpl && s7.leads >= 3){
-        A('green','Winnaar — overweeg op te schalen',
-          `${CRM.euro(s7.cpl,2)} per lead, ver onder het gemiddelde van ${CRM.euro(acc.cpl,2)}.`, ['opschalen','negeer']);
+    }
+
+    /* ── Campagneniveau: sturen op CPQL, niet op rauwe leads (3 sep 2026).
+       Een lead kost geld, maar alleen een bot-gekwalificeerde lead is
+       materiaal — dus de prijs-signalen ("uit de bocht" en "winnaar")
+       rekenen sindsdien per gekwalificeerde lead. Dat kan alleen op
+       campagneniveau: het CRM weet per lead de campagne, niet de
+       advertentie. De leverings-signalen (CPC, CTR, bereik) blijven
+       hierboven op advertentieniveau staan. */
+    const D = index();
+    const dag7 = CRM.todayISO(); const d7grens = vanaf(7), d30grens = vanaf(30);
+    const perCampK = new Map();
+    for(const r of D.leads){
+      const naam = String(r.lead.campagne||'').trim();
+      if(!naam || !r.dk) continue;
+      if(!perCampK.has(naam)) perCampK.set(naam, {l7:0, g7:0, l30:0, g30:0});
+      const c = perCampK.get(naam);
+      if(r.dk >= d30grens){ c.l30++; if(r.gekwal) c.g30++; }
+      if(r.dk >= d7grens){  c.l7++;  if(r.gekwal) c.g7++; }
+    }
+    const spendCamp = (naam, vanafDag) => M.meta
+      .filter(r => campNaam(r) === naam && (r.datum||'') >= vanafDag)
+      .reduce((x,r) => x + N(r.uitgegeven), 0);
+    /* Eigen norm (geen branchecijfers): account-CPQL over 30 dagen. */
+    let accG30 = 0, accS30 = 0;
+    for(const [naam, c] of perCampK){ accG30 += c.g30; }
+    accS30 = M.meta.filter(r => (r.datum||'') >= d30grens).reduce((x,r) => x + N(r.uitgegeven), 0);
+    const accCpql = accG30 >= 5 && accS30 > 0 ? accS30 / accG30 : null;
+
+    /* Zelfde besluit-mechaniek als de advertentieregels: 'negeer' dempt
+       veertien dagen, een 'stop' waar nog geld doorheen gaat wordt door de
+       stop-check hierboven níet gezien (die loopt per advertentie), dus die
+       blijft hier gewoon als advies staan tot de campagne echt uit is. */
+    const campGedempt = naam => {
+      const b = openBesluit('(hele campagne)', naam);
+      if(!b || !['negeer','opschalen'].includes(b.besluit)) return false;
+      const dagen = CRM.dagenGeleden(b.created_at);
+      return dagen != null && dagen < 14;
+    };
+    const AC = (kleur, titel, uitleg, cijfers, campagne, keuzes) => {
+      if(campGedempt(campagne)) return;
+      uit.push({kleur, titel, uitleg, cijfers, campagne, advertentie:'(hele campagne)', keuzes});
+    };
+    for(const [naam, c] of perCampK){
+      const s7c = spendCamp(naam, d7grens);
+      /* S2: er komt volume binnen maar de bot keurt álles af — dat is geen
+         pechweek, dat is de verkeerde doelgroep of het verkeerde formulier. */
+      if(c.l30 >= 10 && c.g30 === 0){
+        AC('red','Veel leads, nul gekwalificeerd',
+          `${c.l30} leads in dertig dagen en de bot kwalificeerde er geen één${s7c ? ` — terwijl er deze week ${CRM.euro(s7c)} doorheen ging` : ''}. Kijk naar de doelgroep of het formulier, of zet de campagne stil.`,
+          `30 dagen: ${c.l30} leads · 0 gekwalificeerd`, naam, ['stop','negeer']);
+        continue;
+      }
+      if(s7c < 20) continue;
+      const cpql7 = c.g7 > 0 ? s7c / c.g7 : null;
+      if(accCpql && cpql7 && cpql7 > 2.5*accCpql && c.l7 >= 5){
+        AC('red','Prijs per gekwalificeerde lead uit de bocht',
+          `${CRM.euro(cpql7,2)} per gekwalificeerde lead tegen ${CRM.euro(accCpql,2)} als eigen accountgemiddelde (${maal(cpql7, accCpql)}× zo duur).`,
+          `7 dagen: ${CRM.euro(s7c)} · ${c.l7} leads · ${c.g7} gekwalificeerd`, naam, ['stop','negeer']);
+        continue;
+      }
+      if(accCpql && cpql7 && cpql7 < 0.6*accCpql && c.g7 >= 3){
+        AC('green','Winnaar — overweeg op te schalen',
+          `${CRM.euro(cpql7,2)} per gekwalificeerde lead, ver onder het eigen gemiddelde van ${CRM.euro(accCpql,2)}.`,
+          `7 dagen: ${CRM.euro(s7c)} · ${c.g7} gekwalificeerd`, naam, ['opschalen','negeer']);
       }
     }
+
+    /* S1: de vacature is dicht maar de campagne loopt door — elke euro
+       daarna werft voor een plek die er niet meer is. De vacature van een
+       campagne = waar haar leads naartoe gerouteerd worden. */
+    const vacVanCamp = new Map();
+    for(const r of D.leads){
+      const naam = String(r.lead.campagne||'').trim();
+      const vid = String(r.lead.vacature_id||'').trim();
+      if(!naam || !vid) continue;
+      if(!vacVanCamp.has(naam)) vacVanCamp.set(naam, new Map());
+      const m2 = vacVanCamp.get(naam);
+      m2.set(vid, (m2.get(vid)||0) + 1);
+    }
+    for(const [naam, telling] of vacVanCamp){
+      const vid = [...telling].sort((a,b) => b[1]-a[1])[0][0];
+      const v = (CRM.state.vacs||[]).find(x => String(x.id) === vid);
+      if(!v || !['Vervuld','Gesloten'].includes(String(v.status||''))) continue;
+      const s2c = spendCamp(naam, vanaf(2));
+      if(s2c > 1){
+        AC('red','Vacature dicht, campagne loopt door',
+          `De leads van deze campagne gaan naar ${v.functie || 'een vacature'} bij ${v.klant || '?'} — en die staat op ${v.status}. Toch ging er de afgelopen twee dagen nog ${CRM.euro(s2c,2)} doorheen. Zet de campagne uit of koppel het formulier om.`,
+          '', naam, ['stop','negeer']);
+      }
+    }
+
+    /* Stille verklikker: de meta-sync zelf. Nieuwste dagregel ouder dan 48
+       uur = elk cijfer hierboven is oud nieuws. Amber, zonder keuzes — hier
+       valt in Ads Manager niets aan te doen. */
+    const nieuwste = M.meta.reduce((x,r) => (r.datum||'') > x ? r.datum : x, '');
+    if(nieuwste && CRM.dagenGeleden(nieuwste) >= 2){
+      uit.push({kleur:'amber', titel:'De cijfers staan stil',
+        uitleg:`De laatste dagregel van de Meta-koppeling is van ${CRM.fmtDate(nieuwste)} — ouder dan 48 uur. Alles op dit tabblad rekent tot die dag; check de meta-sync.`,
+        cijfers:'', campagne:'', advertentie:'', keuzes:[]});
+    }
+
     const orde = {red:0, amber:1, green:2};
     return uit.sort((a,b) => orde[a.kleur] - orde[b.kleur]);
   }
@@ -1579,7 +1672,15 @@
     if(!M.meta.length && M.metaFout) return foutBlok('De Meta-cijfers', M.metaFout);
     M.drill = new Map();
     const D = index();
-    if(!D.maanden.length) return `${M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : ''}
+    /* Dit tabblad is op 3 sep 2026 opgevolgd door het hoofdstuk Trechter op
+       Performance (zelfde motor, mét rendement per campagne). Eén versie
+       lang staat hier een verwijzing; daarna vervalt de tab (akkoord
+       Tjeerd, D1). */
+    const verwijs = `<div class="note" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span>Dit overzicht is verhuisd: het hoofdstuk <b>Trechter</b> op Performance toont dezelfde cohorten,
+      mét de kosten per stap en het rendement per campagne. Dit tabblad verdwijnt binnenkort.</span>
+      <button class="btn sm" onclick="CRM.ga('performance')">→ Performance</button></div>`;
+    if(!D.maanden.length) return `${verwijs}${M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : ''}
       <div class="card"><div class="card-b">${CRM.ui.leeg('Nog niets te meten',
         'Er zijn geen Meta-uitgaven en geen leads met bron Meta. Zodra de dagelijkse synchronisatie draait of de eerste Meta-lead binnenkomt, staat hier per maand wat het geld heeft opgeleverd.',
         `<a class="btn" href="${BORD}" target="_blank" rel="noopener">Marketingbord openen ↗</a>`)}</div></div>`;
@@ -1597,6 +1698,7 @@
     const cDub   = D.dubbels.filter(r => inCohort.has(r.mk));
 
     return `
+      ${verwijs}
       ${uitlegHtml()}
       ${maandTabelHtml(D)}
       ${cohortKopHtml(D, cLeads, cUit)}

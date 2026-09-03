@@ -3257,6 +3257,34 @@ function metaKaart(f, md, an){
         ? `Over ${an.beideN} maand${an.beideN === 1 ? '' : 'en'} loopt het ${pct0(Math.abs(an.totAfwijking))} uit elkaar. Dat is klein genoeg om aan btw en het moment van afschrijven toe te schrijven: de cijfers van Meta zijn bruikbaar.`
         : `Over ${an.beideN} maand${an.beideN === 1 ? '' : 'en'} is er ${pct0(Math.abs(an.totAfwijking))} ${an.totVerschil > 0 ? 'méér van de rekening gegaan dan Meta rapporteert' : 'minder van de rekening gegaan dan Meta rapporteert'}. Kijk of dat aan btw of aan het afschrijfmoment ligt voordat je op deze cijfers stuurt.`);
 
+  /* Netto-ROAS op bankwerkelijkheid (3 sep 2026, Performance-conceptplan A3):
+     wat ging er écht van de rekening, en wat tekenden de Meta-plaatsingen in
+     diezelfde maanden aan fees. Bewust één regel en bewust hiér — het
+     cohortrendement (fee tegenover de spend van de instroommaand) staat op
+     Performance; dit is de kasstroomkant, alleen voor de eigenaar. */
+  const nettoRegel = (() => {
+    if(!CRM.canSeeMoney() || an.totBetaald == null || !an.beideN) return '';
+    const mks = new Set(an.maanden.filter(m => m.betaald != null && m.gerapporteerd != null).map(m => m.mk));
+    let feeSom = 0, nPl = 0, zonderFee = 0;
+    for(const c of CRM.kandidaten()){
+      if(String(c.bron||'') !== 'Meta' || !CRM.teltAlsPlaatsing(c)) continue;
+      const mk = String(c.geplaatstOp||'').slice(0,7);
+      if(!mks.has(mk)) continue;
+      nPl++;
+      const f = CRM.fee.bereken(c, CRM.fee.voorKlant(c.klant, c.geplaatstOp || null));
+      if(f && f.fee != null) feeSom += f.fee; else zonderFee++;
+    }
+    if(!nPl) return `<p class="sub" style="margin:10px 0 0">Netto over deze maanden: ${H(eur2(an.totBetaald))} naar Meta
+      en nog geen Meta-plaatsing getekend — netto-ROAS: nog geen. Dat hoeft geen slecht nieuws te zijn: de leads
+      van deze maanden kunnen nog lopen (het cohortrendement staat op Performance).</p>`;
+    const netto = feeSom - an.totBetaald;
+    return `<p class="sub" style="margin:10px 0 0"><b>Netto over dezelfde maanden:</b> ${H(eur2(an.totBetaald))} van de
+      rekening naar Meta, tegenover ${H(eur2(feeSom))} aan fees uit ${nPl} Meta-plaatsing${nPl===1?'':'en'} die in die
+      maanden tekende${nPl===1?'':'n'}${zonderFee ? ` (${zonderFee} zonder fee apart gehouden, telt niet als €0)` : ''} —
+      netto ${netto >= 0 ? '+' : '−'}${H(eur2(Math.abs(netto)))}. Let op: dit vergelijkt kasmaanden, geen cohorten —
+      wie in juli tekende kwam vaak eerder binnen. Het eerlijke cohortrendement per campagne staat op Performance.</p>`;
+  })();
+
   return kaart('Betaald aan Meta', `
     ${metaFoutNote(md)}
     <div class="grid c3" style="margin-bottom:16px">
@@ -3269,6 +3297,7 @@ function metaKaart(f, md, an){
 
     ${metaTermenRegel(an)}
     <p class="sub" style="margin:10px 0 0">${H(conclusie)}</p>
+    ${nettoRegel}
 
     ${an.twijfelN ? `<div class="note warn" style="margin-top:12px">
       <b>${H(String(an.twijfelN))} van de meegetelde transacties ${an.twijfelN === 1 ? 'is' : 'zijn'} twijfelachtig.</b><br>
