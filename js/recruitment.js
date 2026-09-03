@@ -36,7 +36,7 @@ const S = {
      De oude losse vlag `mijn` is hierin opgegaan — één bron van waarheid, de
      "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
      (zie vulEigSelect voor het waarom). */
-  l:{q:'', status:'', bot:'', bron:'', vac:'', eig:'', zvac:false, stil:false},
+  l:{q:'', status:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false},
   u:{f:'alles'},
   /* Aangevinkte sollicitanten in de lijst. Leeg zodra er een filter verandert:
      een selectie die deels buiten beeld staat en tóch meedoet met "zet alles op
@@ -640,6 +640,13 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
     if(!negeerBot && f.bot && String(l.bot_status||'').trim() !== f.bot) return false;
     if(f.bron && l.bron !== f.bron) return false;
     if(f.vac && String(l.vacature_id) !== f.vac) return false;
+    /* Klantfilter (Tjeerd, 3 sep 2026): AM's willen per klant kunnen werken,
+       niet alleen per vacature. Een lead hoort bij een klant via zijn
+       vacature, en anders via het losse klantveld dat de bron meegaf. */
+    if(f.klant){
+      const kv = norm((vacVan(l)||{}).klant || l.klant || '');
+      if(kv !== f.klant) return false;
+    }
     if(f.zvac && isGekoppeld(l)) return false;
     if(f.stil && !stilstand(l)) return false;
     /* Eigenaar genormaliseerd vergelijken (CRM.naamNorm): in de gemigreerde
@@ -710,7 +717,7 @@ const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').loc
    doen; de standaard komt bij de volgende sessie vanzelf terug
    (zetEigStandaard loopt één keer per sessie). Tjeerd, 2 sep 2026. */
 function wisFilters(){
-  S.l = {q:'', status:'', bot:'', bron:'', vac:'', eig:'', zvac:false, stil:false};
+  S.l = {q:'', status:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false};
   wisSelectie();
 }
 
@@ -727,6 +734,13 @@ function tekenLeads(el){
   zetEigStandaard();
   const bronnen = Array.from(new Set(leads().map(l => l.bron).filter(Boolean))).sort();
   const vacs = (CRM.state.vacs||[]).slice().sort((a,b) => vacLabel(a).localeCompare(vacLabel(b)));
+  /* Klanten uit twee bronnen: de vacaturekaarten én het losse klantveld op
+     leads zonder (geldige) vacature — genormaliseerd ontdubbeld zodat
+     "Smurfit" en "SMURFIT" één keer in de lijst staan. */
+  const klanten = Array.from(new Map(
+    [...vacs.map(v => v.klant), ...leads().map(l => (vacVan(l)||{}).klant || l.klant)]
+      .filter(Boolean).map(k => [norm(k), String(k).trim()])
+  ).entries()).sort((a,b) => a[1].localeCompare(b[1]));
   const w = weergave();
   el.innerHTML = `
     <div class="rc-pad">
@@ -740,6 +754,10 @@ function tekenLeads(el){
         <select id="rc_bron">
           <option value="">Alle bronnen</option>
           ${bronnen.map(b=>`<option value="${h(b)}" ${S.l.bron===b?'selected':''}>${h(b)}</option>`).join('')}
+        </select>
+        <select id="rc_klant">
+          <option value="">Alle klanten</option>
+          ${klanten.map(([w,lbl])=>`<option value="${h(w)}" ${S.l.klant===w?'selected':''}>${h(lbl)}</option>`).join('')}
         </select>
         <select id="rc_vac">
           <option value="">Alle vacatures</option>
@@ -769,6 +787,7 @@ function tekenLeads(el){
   el.querySelector('#rc_status').onchange = e => { S.l.status = e.target.value; S.l.stil = false; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bot').onchange    = e => { S.l.bot = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_klant').onchange  = e => { S.l.klant = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_vac').onchange    = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_eigfil').onchange = e => { S.l.eig  = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_zvac').onclick = () => { S.l.zvac = !S.l.zvac; wisSelectie(); tekenWerk(); };
