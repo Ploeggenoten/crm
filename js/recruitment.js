@@ -2405,6 +2405,8 @@ function doorschietForm(lead, opts){
           <input type="text" id="ds_rec" value="${h(lead.eigenaar || CRM.me())}"></div>
       </div>
       ${opts.rond ? '' : `<label class="check"><input type="checkbox" id="ds_intake" checked> Intakeformulier meteen openen</label>`}
+      <label class="check" title="Voor kandidaten die interessant zijn maar waar nu geen tijd is voor een volledige intake: de kaart komt dan op fase Potentieel en blijft in de recruitmentpijplijn staan — hij wordt dus níét als 'klaar om voor te stellen' aangeboden.">
+        <input type="checkbox" id="ds_later"> Nog geen volledige intake gehad — zet de kaart op <b>Potentieel</b> (intake volgt later)</label>
       <div class="note err" id="ds_err" style="display:none"></div>
     </div>
     <div class="modal-f">
@@ -2459,10 +2461,15 @@ function doorschietForm(lead, opts){
         }
         const x = vacById(vacSel.value);
         const vandaag = CRM.todayISO();
+        /* 'Potentieel' voor wie interessant is maar nog geen volledige intake
+           had (Tjeerd, 3 sep 2026) — blijft in de pijplijn, komt niet in de
+           klaar-om-voor-te-stellen-voorraad. */
+        const laterVink = m.querySelector('#ds_later');
+        const fase = laterVink && laterVink.checked ? 'Potentieel' : 'Klaar om voor te stellen';
         const cand = {
           id: CRM.uid(), naam:g('naam'), telefoon:g('telefoon'), email:g('email'),
           woonplaats:g('woonplaats'), functie:g('functie'), klant:(x && x.klant) || lead.klant || '',
-          type:'W&S', bron:g('bron'), fase:'Klaar om voor te stellen', datum:g('datum'), tijd:'',
+          type:'W&S', bron:g('bron'), fase:fase, datum:g('datum'), tijd:'',
           since:vandaag, rec:g('rec') || CRM.me(), vacatureId:vacSel.value, leadId:lead.id,
           cv:lead.cv || null, note:lead.kwalificatie || '',
           /* De videocall ís de intake, dus de kaart begint met één vaststaand
@@ -2486,7 +2493,8 @@ function doorschietForm(lead, opts){
         await CRM.logActiviteit('lead', lead.id, 'systeem', `Kandidaat aangemaakt — intake (videocall) ${CRM.fmtDate(cand.datum)}`);
         await CRM.logActiviteit('kandidaat', cand.id, 'gesprek', `Intake (videocall) gehad op ${CRM.fmtDate(cand.datum)} — kandidaat aangemaakt vanuit sollicitant (${cand.bron})`);
         const intakeVak = m.querySelector('#ds_intake');
-        const nuIntake = intakeVak ? intakeVak.checked : false;
+        /* Bij 'intake volgt later' heeft het intakeformulier nu geen zin. */
+        const nuIntake = fase === 'Potentieel' ? false : (intakeVak ? intakeVak.checked : false);
         CRM.modal._onClose = null;
         CRM.modal.close(); CRM.drawer.close();
         tekenKop(); tekenTabs(); tekenBody(); CRM.navBadges();
