@@ -1162,7 +1162,19 @@ function tekenLeadTabel(wrap, rijen){
   CRM.$$('tr.clickable', wrap).forEach(tr => tr.onclick = () => openLead(tr.dataset.id));
   CRM.$$('select.rc-stsel', wrap).forEach(sel => {
     sel.onclick = e => e.stopPropagation();
-    sel.onchange = e => { e.stopPropagation(); zetStatus(leadById(sel.dataset.id), sel.value); };
+    sel.onchange = e => {
+      e.stopPropagation();
+      const l = leadById(sel.dataset.id);
+      /* '→ Talentpool' is geen status maar een handeling (Tjeerd, 3 sep
+         2026: "moet gewoon een status zijn die je kan zien en klikken"):
+         opent Kandidaat maken met het talentpool-vinkje al aan; de
+         AM-status blijft wat hij was. */
+      if(sel.value === '__talentpool'){
+        sel.value = CRM.leadNorm(l && l.status) || 'Nieuw';
+        return doorschietForm(l, {talentpool:true});
+      }
+      zetStatus(l, sel.value);
+    };
   });
   CRM.$$('a.rc-tel', wrap).forEach(a => a.onclick = e => e.stopPropagation());
   bindLeadActies(wrap);
@@ -1213,6 +1225,7 @@ function rijHtml(l){
         <select class="rc-stsel" data-id="${h(l.id)}">
           ${statusOptieExtra(l.status)}
           ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${CRM.leadIs(l.status, s.k)?'selected':''}>${h(s.k)}</option>`).join('')}
+          <option value="__talentpool">→ Talentpool (kaart bewaren)</option>
         </select>
       </div>
       ${/* Stilstand hoort bij de status, niet bij de binnenkomst — daarom hier
@@ -2270,6 +2283,7 @@ function openLead(id){
       <select id="rc_dst" style="width:auto;min-width:210px">
         ${statusOptieExtra(l.status)}
         ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${CRM.leadIs(l.status, s.k)?'selected':''}>${h(s.k)}</option>`).join('')}
+        <option value="__talentpool">→ Talentpool (kaart bewaren)</option>
       </select>
       <button class="btn ghost danger" id="rc_del" title="Sollicitant verwijderen">Verwijderen…</button>
       <div class="spacer"></div>
@@ -2284,7 +2298,13 @@ function openLead(id){
          wordt ondertekend en kort geldig is (js/cvparse.js). */
       if(CRM.cvParse) CRM.cvParse.bindBestand(dr);
       dr.querySelector('#rc_koppelbtn').onclick = () => koppelVacature(l);
-      dr.querySelector('#rc_dst').onchange  = e => zetStatus(l, e.target.value);
+      dr.querySelector('#rc_dst').onchange  = e => {
+        if(e.target.value === '__talentpool'){
+          e.target.value = CRM.leadNorm(l.status) || 'Nieuw';
+          return doorschietForm(l, {talentpool:true});
+        }
+        zetStatus(l, e.target.value);
+      };
       const door = dr.querySelector('#rc_door');  if(door) door.onclick = () => doorschietForm(l);
       const nk   = dr.querySelector('#rc_naarkand');
       if(nk) nk.onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:l.kandidaat_id}); };
@@ -2406,7 +2426,7 @@ function doorschietForm(lead, opts){
       </div>
       ${opts.rond ? '' : `<label class="check"><input type="checkbox" id="ds_intake" checked> Intakeformulier meteen openen</label>`}
       <label class="check" title="Voor kandidaten die interessant zijn maar waar nu geen tijd of vacature voor is: de kaart gaat de Talentpool in — uit het dagelijkse werk, maar mét sterren terug te vinden via Sourcing zodra er een aanvraag komt.">
-        <input type="checkbox" id="ds_later"> Nog geen volledige intake — bewaar in de <b>Talentpool</b> (intake volgt bij een aanvraag)</label>
+        <input type="checkbox" id="ds_later" ${opts.talentpool?'checked':''}> Nog geen volledige intake — bewaar in de <b>Talentpool</b> (intake volgt bij een aanvraag)</label>
       <div class="note err" id="ds_err" style="display:none"></div>
     </div>
     <div class="modal-f">
@@ -2454,7 +2474,10 @@ function doorschietForm(lead, opts){
         const ontbreekt = [];
         ['naam','telefoon','woonplaats','functie'].forEach(k => { if(!g(k)) ontbreekt.push(k); });
         if(!g('bron')) ontbreekt.push('bron');
-        if(!vacSel.value) ontbreekt.push('vacature');
+        /* Talentpool = juist níét voor één specifieke vacature (Tjeerd,
+           3 sep 2026) — dan is de vacature optioneel. */
+        const laterAan = !!(m.querySelector('#ds_later')||{}).checked;
+        if(!vacSel.value && !laterAan) ontbreekt.push('vacature');
         if(ontbreekt.length){
           err.style.display = ''; err.textContent = 'Nog invullen: ' + ontbreekt.join(', ') + '.';
           return;
