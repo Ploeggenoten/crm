@@ -2047,9 +2047,15 @@ function wegwerkModus(status){
     if(!e) return CRM.toast('Niets om terug te draaien', 'ok');
     if(e.type === 'over'){ over = Math.max(0, over - 1); i = Math.max(0, i - 1); teken(); return; }
     if(e.type === 'door'){ log.push(e); return CRM.toast('Kandidaat of talentpool maken draai je terug op de kandidaatkaart, niet hier', 'err'); }
+    const nuStatus = CRM.leadNorm(e.l.status) || '';   // vóór het terugzetten
     const ok = await bewaarLead(e.l, e.oud);
     if(!ok){ log.push(e); return; }
-    await CRM.logActiviteit('lead', e.l.id, 'systeem', 'Laatste actie teruggedraaid (wegwerkronde)');
+    /* Ook de terugdraai krijgt van/naar mee — anders leest de meting de
+       heenweg wel en de terugweg niet, en blijft de lead 'doorgekomen'. */
+    await CRM.logActiviteit('lead', e.l.id, 'systeem', 'Laatste actie teruggedraaid (wegwerkronde)',
+      e.oud.status !== undefined && !CRM.leadIs(nuStatus, e.oud.status)
+        ? {van: nuStatus, naar: CRM.leadNorm(e.oud.status) || '', teruggedraaid: true}
+        : {teruggedraaid: true});
     gedaan = Math.max(0, gedaan - 1);
     i = Math.max(0, i - 1);
     wisBelIndex();
@@ -2279,8 +2285,12 @@ async function pasStatusToe(lead, nieuw, notitie){
   }
   const ok = await bewaarLead(lead, patch);
   if(!ok) return false;
+  /* extra:{van,naar} (Performance-conceptplan A5): de meting leest de
+     statusovergang machinaal uit het jsonb-veld; de tekstregel blijft
+     voor mensen. */
   await CRM.logActiviteit('lead', lead.id, geenGehoor ? 'bel' : 'systeem',
-    geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${CRM.leadNorm(oud) || 'geen status'} → ${nieuw}`);
+    geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${CRM.leadNorm(oud) || 'geen status'} → ${nieuw}`,
+    {van: CRM.leadNorm(oud) || '', naar: CRM.leadNorm(nieuw)});
   if(notitie) await CRM.logActiviteit('lead', lead.id, 'notitie', notitie);
   if(geenGehoor) wisBelIndex();   // zie noteerPoging
   return true;
@@ -2346,7 +2356,8 @@ function videocallPlannen(l, naAfloop){
       CRM.modal._onClose = null;        // het vervolg regelen we hieronder zelf
       CRM.modal.close();
       await bewaarLead(l, {opvolgen_op:datum});
-      await CRM.logActiviteit('lead', l.id, 'systeem', `Intake (videocall) gepland op ${CRM.fmtDate(datum)} ${tijd}`);
+      await CRM.logActiviteit('lead', l.id, 'systeem', `Intake (videocall) gepland op ${CRM.fmtDate(datum)} ${tijd}`,
+        {intake_gepland_op: datum, tijd: tijd});
       if(agenda){
         try{
           const r = await CRM.outlook.maakAfspraak({
@@ -2783,8 +2794,10 @@ function doorschietForm(lead, opts){
         /* Het kandidaat_id ís de overdracht: daarop verdwijnt de rij uit de
            werklijst en het bord. De status blijft op 'Intake ingepland' —
            'Doorgeschoten' bestaat niet meer als status (Tjeerd, 27 aug 2026). */
+        const statusVoor = CRM.leadNorm(lead.status) || '';   // vóór de schrijfactie: bewaarLead muteert de rij
         await bewaarLead(lead, {status:'Intake ingepland', kandidaat_id:cand.id, laatst_actie:new Date().toISOString()});
-        await CRM.logActiviteit('lead', lead.id, 'systeem', `Kandidaat aangemaakt — intake (videocall) ${CRM.fmtDate(cand.datum)}`);
+        await CRM.logActiviteit('lead', lead.id, 'systeem', `Kandidaat aangemaakt — intake (videocall) ${CRM.fmtDate(cand.datum)}`,
+          {van: statusVoor, naar: 'Intake ingepland', kandidaat_id: cand.id, fase: fase});
         await CRM.logActiviteit('kandidaat', cand.id, 'gesprek', `Intake (videocall) gehad op ${CRM.fmtDate(cand.datum)} — kandidaat aangemaakt vanuit sollicitant (${cand.bron})`);
         const intakeVak = m.querySelector('#ds_intake');
         /* Bij 'intake volgt later' heeft het intakeformulier nu geen zin. */

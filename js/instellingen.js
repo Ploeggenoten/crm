@@ -922,6 +922,13 @@ async function vulFormulieren(mount){
           if(e6){ CRM.fout('Bestaande leads meekoppelen mislukte deels', e6); break; }
           mee += brok.length;
           brok.forEach(id => { const l = (CRM.state.leads||[]).find(x => x.id === id); if(l) l.vacature_id = sel.value; });
+          /* Logregel per lead (Performance-conceptplan A5): zonder deze regel
+             lijkt een retro-gekoppelde lead in de meting nooit gekoppeld. */
+          for(const id of brok){
+            await CRM.logActiviteit('lead', id, 'systeem',
+              'Achteraf aan vacature gekoppeld via Instellingen · Botformulieren',
+              {retro_koppeling:true, vacature_id: sel.value, form_id: String(sel.dataset.form)});
+          }
         }
       }
       CRM.toast(sel.value
