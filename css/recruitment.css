@@ -418,3 +418,10 @@ table.rc-qa tr:last-child td{border-bottom:none}
    plaats van buiten beeld. */
 .ig-samenvat{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px}
 .ig-samenvat .hint{font-size:11.5px;color:var(--muted)}
+
+/* ── Herontwerp 3 sep 2026: belafspraken-regel + actieve-filters-rij ── */
+.rc-doenbel{background:var(--amber-bg);border-color:var(--amber-line);margin-bottom:8px}
+.rc-actief{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-4px 0 12px}
+.rc-fchip{background:var(--olive);border-color:var(--olive);color:#fff;cursor:pointer}
+.rc-fchip:hover{filter:brightness(1.12)}
+.rc-fchip b{margin-left:4px;opacity:.75}

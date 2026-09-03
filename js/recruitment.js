@@ -226,9 +226,17 @@ const scoreKlas = s => s >= 70 ? 'green' : s >= 45 ? 'amber' : '';
    (Agent-kolom, leadkaart, belronde), zodat de AM ziet wat de bot vond
    zonder dat het zijn werklijst stuurt. Leeg veld = geen chip. */
 const botChipHtml = l => {
+  /* Eén chip voor het hele botoordeel (herontwerp 3 sep 2026): label =
+     bot_status, getal = score, kleur = het oordeel. Voorheen stonden stip,
+     statuschip en scorechip als drie weergaven van hetzelfde naast elkaar;
+     rij, lade en belronde gebruiken nu allemaal deze ene. */
   const s = String((l && l.bot_status) || '').trim();
-  if(!s) return '';
-  return `<span class="chip ${CRM.botKlas(s)}" title="Oordeel van de WhatsApp-bot — verandert de AM-status niet">${h(s)}</span>`;
+  const sc = (l && l.score != null) ? l.score : null;
+  if(!s && sc == null) return '';
+  const tip = `Oordeel van de WhatsApp-bot · score ${sc != null ? sc : '—'} · prioriteit ${(l && l.prioriteit) || 'onbekend'} — verandert de AM-status niet`;
+  if(!s) return `<span class="chip num" title="${h(tip)}">${h(sc)}</span>`;
+  return `<span class="chip ${CRM.botKlas(s)}" title="${h(tip)}">${h(s)}${
+    sc != null ? ` · <span class="num">${h(sc)}</span>` : ''}</span>`;
 };
 
 /* ─── Botfase (crm_leads.bot_fase + tijdstempels) ─────────────────
@@ -368,7 +376,11 @@ function eerderTekst(c){
 /* Een lead zonder naam komt voor: een formulier dat alleen een nummer
    doorgeeft, of een import met een lege kolom. Zonder deze terugval staat er
    een lege regel waar je niet op kunt klikken. */
-const leadNaam = l => String((l && l.naam) || '').trim() || 'Naam onbekend';
+/* Terugval naar het telefoonnummer (herontwerp 3 sep 2026): tien rijen
+   "Naam onbekend" uit de botmigratie zijn ononderscheidbaar, en het nummer
+   is toch al de sleutel waarop we ontdubbelen. */
+const leadNaam = l => String((l && l.naam) || '').trim()
+  || String((l && l.telefoon) || '').trim() || 'Naam onbekend';
 
 /* Toast met doorklik-link (de core-toast kan alleen tekst). */
 function toastLink(tekst, label, fn){
@@ -664,6 +676,7 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
     return true;
   }).sort((a,b) => belRang(a) - belRang(b)
                 || belMoment(a).localeCompare(belMoment(b))
+                || (versGoud(b)?1:0) - (versGoud(a)?1:0)
                 || prioRang(a) - prioRang(b)
                 || String(b.binnen_op||'').localeCompare(String(a.binnen_op||'')));
 }
@@ -686,6 +699,9 @@ const belMoment = l => belRang(l) <= 1 ? String(l.terugbel_om || l.opvolgen_op |
 /* De chip die dat zichtbaar maakt: alleen als er nú iets te bellen valt —
    geen afspraak, geen chip, en de lijst blijft kaal. */
 function belChipHtml(l){
+  /* Verlopen intake ≠ belafspraak (motorkap-punt 12): bij Intake ingepland
+     zegt de stilstandtekst het al; een belchip erbij is dubbel alarm. */
+  if(CRM.leadIs(l.status, 'Intake ingepland')) return '';
   const rang = belRang(l);
   if(rang === 2) return '';
   const t = l.terugbel_om ? new Date(l.terugbel_om) : null;
@@ -700,10 +716,35 @@ function belChipHtml(l){
   }
   const lbl = t && vandaag && !isNaN(t) ? 'bel om ' + t.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
             : vandaag ? 'bel vandaag'
-            : 'belafspraak ' + (CRM.fmtDate(l.opvolgen_op) || '');
-  return `<span class="chip amber num" title="Met de kandidaat afgesproken belmoment${
+            : 'belafspraak ' + (CRM.fmtDate(l.opvolgen_op) || '') + ' — verlopen';
+  return `<span class="chip ${vandaag ? 'amber' : 'red'} num" title="Met de kandidaat afgesproken belmoment${
     t && !isNaN(t) ? ': ' + t.toLocaleString('nl-NL', {dateStyle:'short', timeStyle:'short'}) : ''}">${h(lbl)}</span>`;
 }
+
+/* ─── Het ene "waarom-nu"-signaal per rij (herontwerp 3 sep 2026) ──
+   Vaste plek onder de naam, maximaal één gekleurde chip, voorrangsregel
+   belafspraak > stilstand > ouderdom-op-Nieuw. Dit is het antwoord op
+   "waarom staat deze hier" — alle andere chips die hetzelfde probeerden
+   te zeggen (in de Status-kolom, in Binnen) zijn hierin opgegaan. */
+function waaromNuChip(l){
+  const bel = belChipHtml(l);
+  if(bel) return bel;
+  const st = stilstand(l);
+  if(st && !CRM.leadIs(l.status, 'Nieuw'))
+    return `<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`;
+  if(CRM.leadIs(l.status, 'Nieuw')){
+    const dg = leadDagen(l), k = ouderdomKlas(dg);
+    if(k) return `<span class="chip ${k} num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">ligt er ${dg} dagen</span>`;
+  }
+  return '';
+}
+
+/* Vers goud (B1, herontwerp 3 sep 2026): een Hoog/Gekwalificeerd-lead van
+   vandaag — de belkans piekt in de eerste uren, dus die groep staat in
+   lijst én belronde direct na de belafspraken. */
+const versGoud = l => CRM.leadIn(l.status, CRM.LEAD_OPEN)
+  && String(l.binnen_op||'').slice(0,10) === CRM.todayISO()
+  && (l.prioriteit === 'Hoog' || String(l.bot_status||'').trim() === 'Gekwalificeerd');
 /* Eerst prioriteit, dan binnenkomst. De WhatsApp-agent geeft leads een
    prioriteit mee; wie op Hoog binnenkomt is al gekwalificeerd en hoort
    bovenaan de lijst — ook (juist) achter het filter "Van mij", waar de AM
@@ -777,12 +818,15 @@ function tekenLeads(el){
         </select>
         <select id="rc_vac">
           <option value="">Alle vacatures</option>
+          ${''/* "Zonder vacature" is een stand van hetzelfde filter, geen
+               eigen knop meer (herontwerp 3 sep 2026) — zelfde patroon als
+               "— zonder eigenaar —" bij het eigenaarfilter. */}
+          <option value="__zonder" ${S.l.zvac?'selected':''}>— zonder vacature — (${
+            leads().filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !(l.kandidaat_id && !l._kand) && !isGekoppeld(l)).length})</option>
           ${vacs.map(v=>`<option value="${h(v.id)}" ${S.l.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}
         </select>
         ${''/* rc_eigfil, niet rc_eig: die id is al van het eigenaarveld in de lade */}
         <select id="rc_eigfil"></select>
-        <button class="chip btn-like" id="rc_zvac" type="button"
-          title="Alleen lopende sollicitanten die niet aan een vacature hangen">Zonder vacature</button>
         <button class="chip btn-like" id="rc_mijn" type="button"
           title="Alleen sollicitanten waar jij eigenaar van bent — sneltoets die de eigenaarkeuze hiernaast op jezelf zet">Van mij</button>
         <div class="rc-filr">
@@ -793,6 +837,7 @@ function tekenLeads(el){
           </div>
         </div>
       </div>
+      <div id="rc_actief"></div>
       <div id="rc_waarsch"></div>
       <div id="rc_lijst"></div>
     </div>`;
@@ -804,9 +849,12 @@ function tekenLeads(el){
   el.querySelector('#rc_bot').onchange    = e => { S.l.bot = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_klant').onchange  = e => { S.l.klant = e.target.value; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_vac').onchange    = e => { S.l.vac  = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_vac').onchange    = e => {
+    if(e.target.value === '__zonder'){ S.l.vac = ''; S.l.zvac = true; }
+    else { S.l.zvac = false; S.l.vac = e.target.value; }
+    wisSelectie(); tekenWerk();
+  };
   el.querySelector('#rc_eigfil').onchange = e => { S.l.eig  = e.target.value; wisSelectie(); tekenWerk(); };
-  el.querySelector('#rc_zvac').onclick = () => { S.l.zvac = !S.l.zvac; wisSelectie(); tekenWerk(); };
   /* "Van mij" is een sneltoets op het eigenaarfilter, geen eigen filter:
      aanklikken zet de dropdown op jezelf, nóg een keer klikken (of een andere
      eigenaar kiezen) haalt hem er weer af. Eén stand, dus geen dubbelzinnige
@@ -924,7 +972,7 @@ function zetEigStandaard(){
    via de dropdown gebeurde, want het is dezelfde stand. */
 function zetFilterstand(){
   const mijAan = !!S.l.eig && S.l.eig === CRM.naamNorm(CRM.me());
-  [['rc_zvac', S.l.zvac], ['rc_mijn', mijAan]].forEach(([id, aan]) => {
+  [['rc_mijn', mijAan]].forEach(([id, aan]) => {
     const b = document.getElementById(id); if(!b) return;
     b.classList.toggle('on', !!aan);
     b.setAttribute('aria-pressed', aan ? 'true' : 'false');
@@ -1027,12 +1075,35 @@ function tekenDoenregel(basis){
             : 'Deze stap wacht nergens op.'}</span>`;
   }
 
-  el.innerHTML = `
+  /* Belafspraken-regel (herontwerp 3 sep 2026, drie agents onafhankelijk):
+     werkstroom nr. 1 van de dag krijgt de eerste regel — alleen zichtbaar
+     als er iets te bellen valt. Intakes tellen niet mee: dat zijn geen
+     belafspraken. "Bel af →" start de belafsprakenronde. */
+  const belStapel = basis.filter(l => belRang(l) === 0 && !CRM.leadIs(l.status, 'Intake ingepland'));
+  const belVerlopen = belStapel.filter(l => String(l.opvolgen_op).slice(0,10) < CRM.todayISO()).length;
+  const belVandaag = belStapel.length - belVerlopen;
+  const eersteT = belStapel
+    .filter(l => l.terugbel_om && String(l.opvolgen_op).slice(0,10) === CRM.todayISO())
+    .map(l => new Date(l.terugbel_om)).filter(d => !isNaN(d)).sort((a,b) => a - b)[0];
+  const belregel = belStapel.length ? `
+    <div class="rc-doen rc-doenbel">
+      <span class="rc-doenzin">☎ <b class="num">${belVandaag || belStapel.length}</b>
+        ${belVandaag ? `belafspra${belVandaag===1?'ak':'ken'} vandaag` : `verlopen belafspra${belStapel.length===1?'ak':'ken'}`}${
+        eersteT ? ` · eerste <b class="num">${eersteT.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</b>` : ''}${
+        belVandaag && belVerlopen ? ` · <span class="num">${belVerlopen}</span> verlopen` : ''}</span>
+      <div class="spacer"></div>
+      <button class="btn sm" id="rc_belaf">Bel af →</button>
+    </div>` : '';
+
+  el.innerHTML = `${belregel}
     <div class="rc-doen${streep ? ' let' : ''}">
       ${links}
       <div class="spacer"></div>
       <div class="rc-doenrest">
-        ${stilTot ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
+        ${/* Valkuil dicht (motorkap-punt 8): de knop blijft ook staan als het
+             filter aanstaat terwijl er 0 blijven liggen — anders is er geen
+             uitknop meer en lijkt het scherm onverklaarbaar leeg. */''}
+        ${stilTot || S.l.stil ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
             aria-label="${stilTot} ${stilTot===1?'blijft':'blijven'} liggen — toon alleen die"
             title="${h(stilUitleg)}"><b class="num">${stilTot}</b> ${
               S.l.stil ? (stilTot===1?'blijft':'blijven') + ' liggen — toon weer alles'
@@ -1049,6 +1120,8 @@ function tekenDoenregel(basis){
 
   const wa = el.querySelector('#rc_werkaf');
   if(wa) wa.onclick = () => wegwerkModus(status);
+  const ba = el.querySelector('#rc_belaf');
+  if(ba) ba.onclick = () => wegwerkModus('__bel');
   const wis = el.querySelector('#rc_filterweg');
   if(wis) wis.onclick = () => { wisFilters(); alles(); };
   const stil = el.querySelector('#rc_stil');
@@ -1076,15 +1149,20 @@ function tekenWerk(){
   /* De meldingen staan boven het werkvlak en niet eronder: ze gelden voor bord
      én lijst, en een lijst van tweehonderd regels duwt een voetnoot buiten beeld. */
   const w = document.getElementById('rc_waarsch');
-  if(w){ w.innerHTML = waarschuwingenHtml(); koppelStrook(w); }
+  if(w) w.innerHTML = waarschuwingenHtml();
+  tekenActieveFilters();
   const wrap = document.getElementById('rc_lijst'); if(!wrap) return;
   const rijen = weergave() === 'bord' ? leadsGefilterd(true) : leadsGefilterd();
   const telling = document.getElementById('rc_telling');
   /* Kort gehouden zodat de telling en de weergaveschakelaar op dezelfde regel
      als de filters passen; het hele woord staat in de tooltip. */
+  /* Eerlijke noemer (motorkap-punt 6): overgedragen leads (kandidaat_id
+     gezet) kunnen nooit in beeld komen en tellen dus niet mee — anders
+     belooft de telling een totaal dat "Toon alles" nooit waarmaakt. */
+  const totaalToonbaar = leads().filter(l => !(l.kandidaat_id && !l._kand)).length;
   if(telling){
-    telling.textContent = rijen.length + ' van ' + leads().length;
-    telling.title = rijen.length + ' van ' + leads().length + ' sollicitanten in beeld';
+    telling.textContent = rijen.length + ' van ' + totaalToonbaar;
+    telling.title = rijen.length + ' van ' + totaalToonbaar + ' sollicitanten in beeld';
   }
 
   if(!rijen.length){
@@ -1092,11 +1170,19 @@ function tekenWerk(){
        verbergen alles" — anders stuurt de lege staat je naar filters die
        je helemaal niet hebt aanstaan. */
     wrap.className = '';
+    /* De lege staat benoemt de wérkelijk actieve filters en heeft een
+       uitknop (herontwerp 3 sep 2026) — de oude tekst somde filters op
+       die allang niet meer bestonden. */
+    const fs = actieveFilters();
     wrap.innerHTML = leads().length
       ? CRM.ui.leeg('Geen sollicitanten met deze filters',
-          'Er staan er wel ' + leads().length + ' in het systeem. Verruim je zoekterm, bron, vacature of status.')
+          (fs.length ? 'Actief: ' + fs.map(f => f.lbl).join(' · ') + '. ' : '')
+            + 'Er staan er wel ' + totaalToonbaar + ' in het systeem.',
+          '<button class="btn" id="rc_leegwis">Toon alles</button>')
       : CRM.ui.leeg('Nog geen sollicitanten binnen',
           'Reacties via Meta, Indeed of het formulier komen hier binnen. Je kunt er ook zelf een toevoegen met + Sollicitant, of een lijst importeren.');
+    const lw = wrap.querySelector('#rc_leegwis');
+    if(lw) lw.onclick = () => { wisFilters(); alles(); };
     return;
   }
   if(weergave() === 'bord') tekenLeadBord(wrap, rijen);
@@ -1120,17 +1206,16 @@ function tekenLeadTabel(wrap, rijen){
         <thead><tr>
           <th style="width:30px"><input type="checkbox" id="rc_alle" ${alleAan?'checked':''}
             title="Alles in beeld selecteren"></th>
-          <th style="width:24px"></th><th>Sollicitant</th><th>Contact</th><th>Bron</th>
-          <th>Reageerde op</th><th>Agent</th><th style="width:236px">Status</th><th>Eigenaar</th><th class="n">Binnen</th>
+          <th>Sollicitant</th><th>Contact</th>
+          <th>Reageerde op</th><th>Agent</th><th style="width:236px">Status</th>${
+            S.l.eig ? '' : '<th>Eigenaar</th>'}<th class="n">Binnen</th>
         </tr></thead>
         <tbody>${toon.map(rijHtml).join('')}</tbody>
       </table>
     </div>
-    ${rijen.length > 200 ? `<p class="meta" style="margin:10px 2px">Eerste 200 van ${rijen.length} getoond — verfijn je filter.</p>` : ''}
-    ${klaarRegelHtml()}`;
+    ${rijen.length > 200 ? `<p class="meta" style="margin:10px 2px">Eerste 200 van ${rijen.length} getoond — verfijn je filter.</p>` : ''}`;
 
   tekenBulkbalk();
-  bindKlaar(wrap);
   /* De vinkjes zitten in de rij, dus een klik erop mag de kaart niet openen.
      Shift maakt er een reeks van — wie dertig regels van dezelfde campagne
      wil koppelen, klikt de eerste en shift-klikt de laatste. */
@@ -1181,45 +1266,45 @@ function tekenLeadTabel(wrap, rijen){
 }
 
 function rijHtml(l){
+  /* Herontwerp 3 sep 2026 (conceptplan, akkoord Tjeerd): 7 kolommen, één
+     botchip, één waarom-nu-chip onder de naam; bron als tekst in de rowsub;
+     campagne/kwalificatie/botfase naar de lade en de belronde; eigenaar
+     alleen in de iedereen-stand; "Binnen" neutraal. De rij beantwoordt
+     precies één vraag: waarom staat deze hier. */
   const v = vacVan(l);
   const bel = belPogingen(l.id);
   const wa = waLink(l.telefoon);
-  const dg = leadDagen(l);
-  const nieuw = CRM.leadIs(l.status, 'Nieuw');
   const st = stilstand(l);
   const ken = bekend(l);
   const dub = ken.leads.length + 1;
-  /* De streep links is de gedeelde kleurtaal (base.css, .frand): normaal de
-     statuskleur, zodat je zonder lezen ziet waar iemand in de
-     recruitmentpijplijn staat. Blijft de lead liggen, dan wint dat signaal —
-     amber bij beginnende stilstand, rood als het dubbel zo lang duurt als
-     zou moeten. Precies dezelfde volgorde als op elk ander scherm. */
-  const randKleur = st ? (st.klas === 'red' ? '' : 'var(--amber)') : CRM.leadKleur(l.status);
-  return `<tr${CRM.ui.frand(randKleur, 'clickable' + (st ? ' rc-telang' : ''), !!st && st.klas === 'red')} data-id="${h(l.id)}">
+  const intake = CRM.leadIs(l.status, 'Intake ingepland');
+  const rang = belRang(l);
+  const verlopenBel = rang === 0 && !intake
+    && String(l.opvolgen_op).slice(0,10) < CRM.todayISO();
+  /* De streep is alleen nog het urgentie-radar: rood bij een verlopen
+     afspraak of harde stilstand, amber bij een afspraak vandaag of
+     beginnende stilstand, anders niets. De statuskleur staat al als dot
+     in de select — bewuste afwijking van de app-brede frand-conventie. */
+  const rood = verlopenBel || (!!st && st.klas === 'red');
+  const amber = !rood && ((rang === 0 && !intake) || !!st);
+  const waarom = waaromNuChip(l);
+  return `<tr${CRM.ui.frand(amber ? 'var(--amber)' : '', 'clickable' + (st ? ' rc-telang' : ''), rood)} data-id="${h(l.id)}">
     <td><input type="checkbox" class="rc-vink" data-id="${h(l.id)}" ${S.sel.has(String(l.id))?'checked':''}
       aria-label="Selecteer ${h(leadNaam(l))}"></td>
-    <td><span class="rc-prio" title="Prioriteit ${h(l.prioriteit||'onbekend')}" style="background:${prioKleur(l.prioriteit)}"></span></td>
     <td>
       <div class="rc-naam">${h(leadNaam(l))}</div>
-      <div class="rowsub">${h(l.woonplaats||'—')}${(l.cv||l.cv_url)?' · cv':''}${
-        dub > 1 ? ` · <span class="rc-dub" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">${dub}× in de lijst</span>` : ''}${
+      <div class="rowsub">${h(l.woonplaats||'—')}${l.bron?' · '+h(l.bron):''}${(l.cv||l.cv_url)?' · cv':''}${
+        dub > 1 ? ` <span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">×${dub}</span>` : ''}${
         ken.kands.length ? ` · <span class="rc-dub" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>` : ''}</div>
+      ${waarom ? `<div style="margin-top:5px">${waarom}</div>` : ''}
     </td>
     <td>
       ${l.telefoon ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>
         ${wa?`<a class="rc-tel rc-wa" href="${h(wa)}" target="_blank" rel="noopener" title="WhatsApp">wa</a>`:''}` : '<span class="meta">geen nummer</span>'}
       ${bel ? `<div class="rowsub">${bel}× gebeld</div>` : ''}
     </td>
-    <td><span class="chip">${h(l.bron||'—')}</span>${l.campagne?`<div class="rowsub trunc" style="max-width:118px">${h(l.campagne)}</div>`:''}</td>
     <td>${vacCelHtml(l, v)}</td>
-    <td>
-      ${/* Het botspoor boven de score: eerst het oordeel, dan het getal.
-           De bot verandert de AM-status nooit — dit is alleen weergave. */
-        botChipHtml(l) ? `<div style="margin-bottom:4px">${botChipHtml(l)}</div>` : ''}
-      ${l.score != null ? `<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent — prioriteit ${h(l.prioriteit||'onbekend')}">${h(l.score)}</span>` : ''}
-      <div class="rowsub trunc" style="max-width:150px">${h(l.kwalificatie||'')}</div>
-      ${botFaseTekst(l) ? `<div class="rowsub trunc" style="max-width:150px" title="Gespreksfase van de bot">${h(botFaseTekst(l))}</div>` : ''}
-    </td>
+    <td>${botChipHtml(l)}</td>
     <td>
       <div class="rc-stwrap" style="--sc:${CRM.leadKleur(l.status)}">
         <select class="rc-stsel" data-id="${h(l.id)}">
@@ -1228,19 +1313,12 @@ function rijHtml(l){
           <option value="__talentpool">→ Talentpool (kaart bewaren)</option>
         </select>
       </div>
-      ${/* Stilstand hoort bij de status, niet bij de binnenkomst — daarom hier
-           en niet in de laatste kolom. Die valt op een normaal scherm buiten
-           beeld, en dan is het signaal er wel maar zie je het nooit.
-           Op 'Nieuw' zegt de gekleurde ouderdom achteraan het al; die twee
-           naast elkaar zou hetzelfde twee keer zeggen. */
-        st && !nieuw ? `<div style="margin-top:5px"><span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span></div>` : ''}
-      ${/* De belafspraak van de bot: staat hier omdat hij bíj het werk hoort. */
-        belChipHtml(l) ? `<div style="margin-top:5px">${belChipHtml(l)}</div>` : ''}
     </td>
-    <td>${l.eigenaar ? `<span class="chip">${h(l.eigenaar)}</span>` : '<span class="meta">—</span>'}</td>
+    ${S.l.eig ? '' : `<td>${l.eigenaar
+      ? `<span class="num" title="${h(l.eigenaar)}">${h(CRM.initialen(l.eigenaar))}</span>`
+      : '<span class="meta">—</span>'}</td>`}
     <td class="n">
-      <span class="num ${nieuw && ouderdomKlas(dg) ? 'rc-oud-'+ouderdomKlas(dg) : ''}"
-        title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op) || '—')}</span></td>
+      <span class="num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${h(uurGeleden(l.binnen_op) || '—')}</span></td>
   </tr>`;
 }
 
@@ -1423,8 +1501,13 @@ function vacCelHtml(l, v){
   if(vacWeg(l)) return `<div><span class="chip amber">vacature bestaat niet meer</span></div>
     ${losFunctie(l) ? `<div class="rowsub">was: ${h(losFunctie(l))}</div>` : ''}
     <button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Opnieuw koppelen</button>`;
-  return `${losFunctie(l) ? `<div class="rowsub">${h(losFunctie(l))}${l.klant?' · '+h(l.klant):''}</div>` : ''}
-    <button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Koppel vacature</button>`;
+  /* De koppelknop alleen in de zonder-vacature-weergave (herontwerp 3 sep
+     2026): honderden knoppen in de gewone belwerklijst waren bijwerk-ruis;
+     de retro-koppeling in Instellingen doet het bulk-werk toch al. */
+  const knop = S.l.zvac ? `<div><button class="btn ghost sm rc-koppel" data-koppel="${h(l.id)}">Koppel vacature</button></div>` : '';
+  return `${losFunctie(l)
+    ? `<div class="rowsub">${h(losFunctie(l))}${l.klant?' · '+h(l.klant):''}</div>`
+    : `<span class="meta">— geen vacature —</span>`}${knop}`;
 }
 
 /* Hier stonden vier snelknoppen (geen gehoor / potentieel / geen interesse /
@@ -1445,41 +1528,54 @@ function bindLeadActies(wrap){
   });
 }
 
-/* Melding onder de lijst/het bord: hoeveel lopende leads missen een vacature.
-   Zonder die koppeling weet Tjeerd niet hoeveel leads een advertentie oplevert,
-   en dat is precies het cijfer waar de marketing op stuurt. */
-function koppelStrook(wrap){
-  const el = wrap.querySelector('#rc_zondervac'); if(!el) return;
-  el.querySelector('button').onclick = () => {
-    /* De stand van het knopfilter komt uit S.l; zetFilterstand() in tekenWerk
-       zet de knop 'aan'. Hier hoeft dus alleen de waarde te veranderen. */
-    S.l.zvac = true; S.l.status = '';
-    tekenWerk();
+/* ─── Actieve filters, onmisbaar zichtbaar (herontwerp 3 sep 2026) ──
+   Een chips-rij met kruisjes onder de filterbalk: elk actief filter is
+   één klik om weg te halen, en de rij verdwijnt vanzelf als er niets
+   actief is. Dit maakt "ik zie niets en snap niet waarom" structureel
+   onmogelijk zonder de balk zelf drukker te maken. */
+function actieveFilters(){
+  const f = S.l, uit = [];
+  const optieTekst = (id, val) => {
+    const s = document.getElementById(id);
+    const o = s && Array.from(s.options).find(x => x.value === String(val));
+    return o ? o.textContent.replace(/\s*\(\d+\)\s*$/,'').trim() : String(val);
   };
+  if(f.q)      uit.push({lbl:'zoek: ' + f.q,                 wis(){ S.l.q = ''; const i = document.getElementById('rc_q'); if(i) i.value = ''; }});
+  if(f.status) uit.push({lbl:'status: ' + f.status,          wis(){ S.l.status = ''; }});
+  if(f.bot)    uit.push({lbl:'bot: ' + f.bot,                wis(){ S.l.bot = ''; }});
+  if(f.bron)   uit.push({lbl:'bron: ' + f.bron,              wis(){ S.l.bron = ''; }});
+  if(f.klant)  uit.push({lbl:'klant: ' + optieTekst('rc_klant', f.klant), wis(){ S.l.klant = ''; const s = document.getElementById('rc_klant'); if(s) s.value = ''; }});
+  if(f.vac)    uit.push({lbl:'vacature: ' + optieTekst('rc_vac', f.vac),  wis(){ S.l.vac = ''; const s = document.getElementById('rc_vac'); if(s) s.value = ''; }});
+  if(f.zvac)   uit.push({lbl:'zonder vacature',              wis(){ S.l.zvac = false; const s = document.getElementById('rc_vac'); if(s) s.value = ''; }});
+  if(f.eig)    uit.push({lbl:f.eig === CRM.naamNorm(CRM.me()) ? 'Van mij' : 'eigenaar: ' + optieTekst('rc_eigfil', f.eig), wis(){ S.l.eig = ''; }});
+  if(f.stil)   uit.push({lbl:'blijft liggen',                wis(){ S.l.stil = false; }});
+  return uit;
+}
+function tekenActieveFilters(){
+  const el = document.getElementById('rc_actief'); if(!el) return;
+  const fs = actieveFilters();
+  if(!fs.length){ el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="rc-actief">${fs.map((f, i) =>
+      `<button class="chip rc-fchip" data-fi="${i}" title="Filter weghalen">${h(f.lbl)} <b>×</b></button>`).join('')}${
+    fs.length > 1 ? `<button class="chip btn-like" id="rc_fwis">Alles wissen</button>` : ''}</div>`;
+  CRM.$$('.rc-fchip', el).forEach(b => b.onclick = () => {
+    const f = fs[+b.dataset.fi]; if(f){ f.wis(); wisSelectie(); tekenWerk(); }
+  });
+  const wis = el.querySelector('#rc_fwis');
+  if(wis) wis.onclick = () => { wisFilters(); alles(); };
 }
 
 function waarschuwingenHtml(){
-  /* Al aan het bijwerken? Dan niet ook nog eens de melding erbij die zegt dat
-     je moet gaan bijwerken. */
-  if(S.l.zvac) return '';
-  const open = leads().filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !(l.kandidaat_id && !l._kand));
-  const zonder = open.filter(l => !isGekoppeld(l));
-  const weg    = zonder.filter(vacWeg).length;
-  /* Statussen die ook ná de alias-vertaling niet bestaan (import met eigen
-     statuskolom). Zulke leads vallen uit elke kolom en elk statusfilter;
-     niet melden zou betekenen dat ze stilletjes verdwijnen. */
+  /* De dagelijkse "niet gekoppeld"-balk is weg (herontwerp 3 sep 2026):
+     de telling staat nu in de vacature-dropdown als "— zonder vacature —
+     (N)", en dat is meteen de weergave waarin je ze bijwerkt. Alleen de
+     échte fout blijft hier staan: statussen die niet bestaan. */
   const vreemd = leads().filter(l => !statusBestaat(l.status));
-  let uit = '';
-  if(zonder.length) uit += `<div class="note warn" id="rc_zondervac" style="margin-bottom:14px">
-    <b>${zonder.length} lopende ${zonder.length===1?'sollicitant is':'sollicitanten zijn'} niet aan een vacature gekoppeld</b>${
-      weg ? ` — waarvan ${weg} aan een vacature die niet meer bestaat` : ''}.
-    Zonder koppeling tellen ze niet mee bij leads per vacature en per klant, en dat is de meting waar de advertenties op worden bijgestuurd.
-    <button class="btn ghost sm" style="margin-left:8px">Toon ze</button></div>`;
-  if(vreemd.length) uit += `<div class="note warn" style="margin-bottom:14px">
+  if(!vreemd.length) return '';
+  return `<div class="note warn" style="margin-bottom:14px">
     ${vreemd.length} ${vreemd.length===1?'sollicitant staat':'sollicitanten staan'} op een status die niet meer bestaat
     (${h(Array.from(new Set(vreemd.map(l => l.status || '(leeg)'))).join(', '))}).
     ${vreemd.length===1?'Die valt':'Die vallen'} buiten de kolommen — kies in de lijst een geldige status.</div>`;
-  return uit;
 }
 
 /* ─── De afsluiting: klaar om voor te stellen ─────────────────────
@@ -1807,6 +1903,13 @@ async function noteerPoging(lead, sleutel, notitie){
   const w = WW_BLIJF[sleutel]; if(!w) return false;
   const poging = (w.soort === 'bel' ? belPogingen(lead.id) + 1 : 0);
   const patch = {laatst_actie:new Date().toISOString()};
+  /* Zelfde afspraak-wissen als in pasStatusToe: ook een genoteerde belpoging
+     zónder statuswissel handelt de belafspraak van vandaag/verlopen af. */
+  if(w.soort === 'bel' && lead.opvolgen_op
+     && String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO()
+     && !CRM.leadIs(lead.status, 'Intake ingepland')){
+    patch.opvolgen_op = null; patch.terugbel_om = null;
+  }
   if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
     .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
   const ok = await bewaarLead(lead, patch);
@@ -1820,18 +1923,31 @@ async function noteerPoging(lead, sleutel, notitie){
 }
 
 function wegwerkModus(status){
-  status = CRM.leadNorm(status);
-  status = CRM.LEAD_OPEN.includes(status) ? status : 'Nieuw';
+  /* '__bel' = de belafsprakenronde (herontwerp 3 sep 2026): alle leads met
+     een afspraak van vandaag of eerder, over de statussen heen, puur op
+     tijdstip. De keuzeknoppen volgen dan per kaart de échte status. */
+  const belronde = status === '__bel';
+  if(!belronde){
+    status = CRM.leadNorm(status);
+    status = CRM.LEAD_OPEN.includes(status) ? status : 'Nieuw';
+  }
   /* Een momentopname van de stapel. Bewust niet meelopen met de filters
      terwijl je bezig bent: als de lijst onder je handen verspringt raak je
-     kwijt waar je was. Volgorde: belafspraken eerst (op tijdstip), daarna
-     oudste eerst — zie de toelichting in de kop van dit blok. */
-  const stapel = leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status))
+     kwijt waar je was. Volgorde: belafspraken eerst (op tijdstip), dan
+     vers goud van vandaag, daarna oudste eerst (B1: één volgorde met de
+     lijst; de staart blijft hier oudste-eerst — wie het langst wacht). */
+  const stapel = (belronde
+      ? leadsGefilterd(true).filter(l => belRang(l) === 0 && !CRM.leadIs(l.status, 'Intake ingepland'))
+      : leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status)))
     .sort((a,b) => belRang(a) - belRang(b)
                 || belMoment(a).localeCompare(belMoment(b))
+                || (versGoud(b)?1:0) - (versGoud(a)?1:0)
                 || String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
-  if(!stapel.length) return CRM.toast(`Er staat niets op ${status}`,'ok');
+  if(!stapel.length) return CRM.toast(belronde ? 'Geen belafspraken voor vandaag' : `Er staat niets op ${status}`,'ok');
   const keuzes = WW_KEUZES[status] || WW_KEUZES['Nieuw'];
+  const keuzesNu = () => belronde
+    ? (WW_KEUZES[CRM.leadNorm((stapel[i]||{}).status)] || WW_KEUZES['Nieuw'])
+    : keuzes;
   let i = 0, gedaan = 0, over = 0;
   let aan = true;
 
@@ -1844,7 +1960,7 @@ function wegwerkModus(status){
       if(e.key === 'Enter' || e.key === 'Escape'){ e.preventDefault(); el.blur(); }
       return;
     }
-    const k = keuzes.find(x => x.t === e.key);
+    const k = keuzesNu().find(x => x.t === e.key);
     if(k){ e.preventDefault(); return kies(k); }
     if(e.key === 'ArrowRight' || e.key === 's'){ e.preventDefault(); return volgende(true); }
     if(e.key === 'b'){ const a = document.querySelector('#ww_bel'); if(a){ e.preventDefault(); a.click(); } }
@@ -1893,7 +2009,7 @@ function wegwerkModus(status){
         <div class="modal-h"><div class="h2">Stapel weggewerkt</div></div>
         <div class="modal-b">
           <div class="note ok" style="margin:0">${gedaan} van de ${stapel.length} ${gedaan===1?'sollicitant is':'sollicitanten zijn'} verwerkt${
-            over ? `, ${over} ${over===1?'is':'zijn'} overgeslagen en ${over===1?'staat':'staan'} nog op ${h(status)}` : ''}.</div>
+            over ? `, ${over} ${over===1?'is':'zijn'} overgeslagen${belronde ? '' : ` en ${over===1?'staat':'staan'} nog op ${h(status)}`}` : ''}.</div>
         </div>
         <div class="modal-f"><div class="spacer"></div><button class="btn" id="ww_klaar">Sluiten</button></div>`;
       box.querySelector('#ww_klaar').onclick = () => CRM.modal.close();
@@ -1909,10 +2025,11 @@ function wegwerkModus(status){
     const wa = waLink(l.telefoon);
     const qa = qaHtml(l.antwoorden);
     const pct = Math.round(i / stapel.length * 100);
+    const stNu = belronde ? CRM.leadNorm(l.status) : status;
     box.innerHTML = `
       <div class="modal-h">
         <div class="row" style="justify-content:space-between;align-items:baseline">
-          <div class="h2">Wegwerken · ${h(status)}</div>
+          <div class="h2">${belronde ? 'Belafspraken afbellen' : 'Wegwerken · ' + h(status)}</div>
           <span class="meta num">${i+1} van ${stapel.length}</span>
         </div>
         ${CRM.ui.bar(pct)}
@@ -1930,8 +2047,7 @@ function wegwerkModus(status){
                gesprek dan bij een 'Twijfelgeval' met een 30. Alleen
                weergave — de AM-status blijft leidend. */
             botChipHtml(l)}
-          ${l.score != null ? `<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent — prioriteit ${h(l.prioriteit||'onbekend')}">${h(l.score)}</span>` : ''}
-          ${status === 'Nieuw'
+          ${stNu === 'Nieuw'
             ? `<span class="chip ${ouderdomKlas(dg)} num" title="Binnengekomen ${h(CRM.fmtDate(l.binnen_op)||'onbekend')}">${
                 dg == null ? 'datum onbekend' : dg === 0 ? 'vandaag binnen' : dg + ' dag' + (dg===1?'':'en') + ' op Nieuw'}</span>`
             : st ? `<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`
@@ -1970,7 +2086,7 @@ function wegwerkModus(status){
         <div class="f-row" style="margin-top:14px"><label for="ww_note">Notitie (optioneel)</label>
           <input type="text" id="ww_note" placeholder="Bijv. belt maandag terug">
           <span class="hint">Terwijl je hier typt werken de cijfertoetsen niet — Enter zet ze weer aan.</span></div>
-        <div class="rc-wwkeuze">${keuzes.map(k =>
+        <div class="rc-wwkeuze">${keuzesNu().map(k =>
           `<button data-t="${h(k.t)}"${k.blijf?' class="blijf" title="De status blijft staan; de poging komt wel in de tijdlijn"':''}><kbd>${k.t}</kbd>${h(k.lbl)}</button>`).join('')}</div>
       </div>
       <div class="modal-f">
@@ -1980,7 +2096,7 @@ function wegwerkModus(status){
         <button class="btn ghost" data-mclose>Stoppen</button>
       </div>`;
     CRM.$$('[data-t]', box).forEach(b => b.onclick = () => {
-      const k = keuzes.find(x => x.t === b.dataset.t);
+      const k = keuzesNu().find(x => x.t === b.dataset.t);
       if(k) kies(k);
     });
     box.querySelector('#ww_over').onclick = () => volgende(true);
@@ -2029,6 +2145,14 @@ async function pasStatusToe(lead, nieuw, notitie){
   const patch = {status:nieuw, laatst_actie:new Date().toISOString()};
   if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
     .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
+  /* Herontwerp 3 sep 2026 (motorkap-punt 1): een statuswissel handelt de
+     belafspraak van vandaag/verlopen áf — anders staat dezelfde lead morgen
+     wéér bovenaan de belstapel (zo ontstond de berg van 28 verlopen).
+     Uitzondering: Intake ingepland — videocallPlannen zet zo zelf de datum. */
+  if(lead.opvolgen_op && String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO()
+     && !CRM.leadIs(nieuw, 'Intake ingepland')){
+    patch.opvolgen_op = null; patch.terugbel_om = null;
+  }
   const ok = await bewaarLead(lead, patch);
   if(!ok) return false;
   await CRM.logActiviteit('lead', lead.id, geenGehoor ? 'bel' : 'systeem',
