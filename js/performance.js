@@ -2212,7 +2212,9 @@ function blokSamenvatting(p, K){
 
   /* Trede 2 — rood signaal: veel leads, nul gekwalificeerd. */
   if(!zin){
-    const rood = rijen.find(r => r.t.binnen >= 10 && r.t.gekwal === 0);
+    /* Hersteld nageleverde leads zijn nooit door de bot gesproken — hun
+       0-kwalificatie telt niet als campagnesignaal. */
+    const rood = rijen.find(r => (r.t.binnen - r.hersteld) >= 10 && r.t.gekwal === 0);
     if(rood){
       zin = `Rood signaal: <b>${h(rood.naam)}</b> leverde ${rood.t.binnen} leads en nog géén enkele gekwalificeerde${rood.bedrag > 0 ? ` voor ${eurK(rood.bedrag)}` : ''} — kijk vandaag naar het formulier of de doelgroep, of zet de campagne stil.`;
       soort = 'warn';
