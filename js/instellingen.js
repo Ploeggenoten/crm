@@ -666,7 +666,10 @@ async function vulFormulieren(mount){
   for(const [f, info] of gezien)
     if(!rijen.has(f)) rijen.set(f, {form_id:f, vacature_id:'', omschrijving:info.campagne, _nieuw:true});
   if(!rijen.size){ el.innerHTML = `<p class="meta">Nog geen formulieren gezien — zodra er botleads binnenkomen staan ze hier klaar om te koppelen.</p>`; return; }
-  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open');
+  /* Alfabetisch, net als elke andere lijst — de dropdown stond in
+     aanmaakvolgorde en daarin was niets terug te vinden (Tjeerd, 3 sep). */
+  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open')
+    .sort((a,b) => ((a.functie||'')+' · '+(a.klant||'')).localeCompare((b.functie||'')+' · '+(b.klant||''), 'nl'));
   const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}</option>`;
   /* ── Eén werkplek voor Bryan (Tjeerd, 2 sep 2026): onder elk gekoppeld
      formulier staan meteen álle botgegevens, vooringevuld vanaf de
