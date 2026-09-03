@@ -116,7 +116,9 @@
 /* Werk-af-knop in een bordkolomkop: alleen zichtbaar als je er bent. */
 .rc-kolwerk{margin-left:auto;background:none;border:1px solid transparent;border-radius:999px;
   padding:1px 8px;font-family:var(--body);font-size:11px;font-weight:600;
-  color:var(--muted);cursor:pointer;opacity:0}
+  color:var(--muted);cursor:pointer;opacity:.55}
+/* Zichtbaar zonder hover (motorkap-punt 13): een knop die pas bestaat als
+   je er toevallig overheen zweeft wordt nooit gevonden. */
 .bcol:hover .rc-kolwerk,.rc-kolwerk:focus-visible{opacity:1}
 .rc-kolwerk:hover{border-color:var(--olive-l);color:var(--olive)}
 

@@ -37,6 +37,10 @@ const S = {
      "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
      (zie vulEigSelect voor het waarom). */
   l:{q:'', status:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false},
+  /* Render-rust (motorkap-punt 15): zolang de wegwerkronde open staat
+     hertekent de lijst niet mee met realtime-syncs — dat verspringt onder
+     je handen. Bij het sluiten van de ronde volgt één verse hertekening. */
+  wwOpen:false, wwHerteken:false,
   u:{f:'alles'},
   /* Aangevinkte sollicitanten in de lijst. Leeg zodra er een filter verandert:
      een selectie die deels buiten beeld staat en tóch meedoet met "zet alles op
@@ -510,11 +514,16 @@ CRM.registerModule('recruitment', {
         <div class="rc-tabwrap"><div class="tabs" id="rc_tabs"></div></div>
         <div id="rc_body"></div>
       </div>`;
+    /* Deeplink vanaf het dashboard (motorkap-punt 5): de belafspraken-regel
+       opent dit scherm in de iedereen-stand — anders verbergt de
+       Van-mij-standaard precies de eigenaarloze afspraken die meegeteld
+       waren. */
+    if(params && params.id === 'focus:belafspraken'){ S.tab = 'leads'; S.l.eig = ''; }
     tekenKop();
     tekenTabs();
     tekenBody();
     tekenActies(acties);
-    if(params && params.id && leadById(params.id)){ S.tab = 'leads'; openLead(params.id); }
+    if(params && params.id && params.id !== 'focus:belafspraken' && leadById(params.id)){ S.tab = 'leads'; openLead(params.id); }
   }
 });
 
@@ -970,6 +979,30 @@ function zetEigStandaard(){
    hieronder doet dat). Stand komt altijd uit S.l, nooit uit het element zelf.
    "Van mij" brandt zodra het eigenaarfilter op jezelf staat — óók als dat
    via de dropdown gebeurde, want het is dezelfde stand. */
+/* Tellers "(N)" in de bron-, klant- en vacature-opties (motorkap-punt 14),
+   zoals status/bot/eigenaar die al hebben: elke teller telt binnen de
+   ándere actieve filters, zodat je nooit naar een leeg scherm klikt.
+   De eigen stand wordt even genegeerd tijdens het tellen — synchroon,
+   dus veilig. */
+function vulKeuzeTellers(){
+  const zet = (id, negeer, telVan) => {
+    const s = document.getElementById(id); if(!s) return;
+    const oud = {}; negeer.forEach(k => { oud[k] = S.l[k]; S.l[k] = (k === 'zvac' ? false : ''); });
+    const basis = leadsGefilterd();
+    negeer.forEach(k => S.l[k] = oud[k]);
+    Array.from(s.options).forEach(o => {
+      if(o.value === '') return;
+      const n = telVan(basis, o.value);
+      o.textContent = o.textContent.replace(/\s*\(\d+\)\s*$/, '') + ` (${n})`;
+    });
+  };
+  zet('rc_bron',  ['bron'],          (b, v) => b.filter(l => l.bron === v).length);
+  zet('rc_klant', ['klant'],         (b, v) => b.filter(l => norm((vacVan(l)||{}).klant || l.klant || '') === v).length);
+  zet('rc_vac',   ['vac','zvac'],    (b, v) => v === '__zonder'
+    ? b.filter(l => !isGekoppeld(l)).length
+    : b.filter(l => String(l.vacature_id) === v).length);
+}
+
 function zetFilterstand(){
   const mijAan = !!S.l.eig && S.l.eig === CRM.naamNorm(CRM.me());
   [['rc_mijn', mijAan]].forEach(([id, aan]) => {
@@ -1135,9 +1168,24 @@ function tekenDoenregel(basis){
 
 /* Het werkvlak: bord of lijst, met dezelfde filters en dezelfde acties.
    Heette tekenLijst toen er alleen een lijst was. */
+/* Vers-goud-melding (motorkap-punt 4): een Hoog/Gekwalificeerd-lead die
+   live binnenkomt verdient meer dan een stille hertekening. Eén Set met
+   wat we al zagen; de eerste opbouw meldt niets (dat is de beginstand). */
+let goudGezien = null;
+function meldVersGoud(){
+  if(!goudGezien){ goudGezien = new Set(leads().filter(versGoud).map(l => l.id)); return; }
+  leads().filter(versGoud).forEach(l => {
+    if(goudGezien.has(l.id)) return;
+    goudGezien.add(l.id);
+    toastLink(`${leadNaam(l)} — ${String(l.bot_status||'').trim()==='Gekwalificeerd' ? 'Gekwalificeerd' : 'prioriteit Hoog'} net binnen`, 'Nu bellen', () => openLead(l.id));
+  });
+}
+
 function tekenWerk(){
+  if(S.wwOpen){ S.wwHerteken = true; return; }
   bouwDubbel();
   wisBelIndex();   // er kan sinds de vorige hertekening gelogd zijn
+  meldVersGoud();
   /* Eén keer uitrekenen: de doen-regel én de tellers in de statusdropdown
      rekenen op dezelfde basis — alles behalve het statusfilter zelf. */
   const basis = leadsGefilterd(true);
@@ -1145,6 +1193,7 @@ function tekenWerk(){
   vulStatusSelect(basis);
   vulBotSelect(leadsGefilterd(false, true));
   vulEigSelect(leadsGefilterd(false, false, true));
+  vulKeuzeTellers();
   zetFilterstand();
   /* De meldingen staan boven het werkvlak en niet eronder: ze gelden voor bord
      én lijst, en een lijst van tweehonderd regels duwt een voetnoot buiten beeld. */
@@ -1185,7 +1234,13 @@ function tekenWerk(){
     if(lw) lw.onclick = () => { wisFilters(); alles(); };
     return;
   }
-  if(weergave() === 'bord') tekenLeadBord(wrap, rijen);
+  if(weergave() === 'bord'){
+    /* Kolomscroll bewaren over een hertekening heen (motorkap-punt 15):
+       zonder dit springt elke kolom naar boven bij elke realtime-sync. */
+    const scrolls = Array.from(wrap.querySelectorAll('.bcol-b')).map(e => e.scrollTop);
+    tekenLeadBord(wrap, rijen);
+    Array.from(wrap.querySelectorAll('.bcol-b')).forEach((e, j) => { if(scrolls[j]) e.scrollTop = scrolls[j]; });
+  }
   else tekenLeadTabel(wrap, rijen);
 }
 /* Oude naam, nog gebruikt vanuit de import- en cv-flows. */
@@ -1882,13 +1937,15 @@ const WW_KEUZES = {
     {t:'1', blijf:'bel',          lbl:'Weer geen gehoor'},
     {t:'2', s:'Potentieel',       lbl:'Potentieel'},
     {t:'3', s:'Intake ingepland', lbl:'Intake plannen'},
-    {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'}
+    {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'},
+    {t:'5', pool:true,            lbl:'→ Talentpool'}
   ],
   'Potentieel':[
     {t:'1', s:'Intake ingepland', lbl:'Intake plannen'},
     {t:'2', blijf:'gesproken',    lbl:'Gesproken, nog niet zover'},
     {t:'3', s:'Geen gehoor',      lbl:'Geen gehoor'},
-    {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'}
+    {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'},
+    {t:'5', pool:true,            lbl:'→ Talentpool'}
   ],
   'Intake ingepland':[
     {t:'1', door:true,                   lbl:'Kandidaat maken'},
@@ -1950,6 +2007,15 @@ function wegwerkModus(status){
     : keuzes;
   let i = 0, gedaan = 0, over = 0;
   let aan = true;
+  /* Ongedaan-log (motorkap-punt 3): elke afgehandelde kaart komt hierin,
+     zodat 'u'/Backspace de vorige terughaalt én de statuswissel of gezette
+     belafspraak terugdraait. Kandidaat/talentpool maken is de uitzondering:
+     dat draai je op de kandidaatkaart terug, niet hier. */
+  const log = [];
+  /* Vers goud dat tijdens de ronde binnenkomt (motorkap-punt 4): de lijst
+     hertekent bewust niet onder je handen, dus melden we het op het
+     eindscherm. */
+  const goudStart = new Set(leads().filter(versGoud).map(l => l.id));
 
   const opToets = e => {
     if(!aan || !CRM.modal._aan) return;
@@ -1963,12 +2029,32 @@ function wegwerkModus(status){
     const k = keuzesNu().find(x => x.t === e.key);
     if(k){ e.preventDefault(); return kies(k); }
     if(e.key === 'ArrowRight' || e.key === 's'){ e.preventDefault(); return volgende(true); }
+    if(e.key === 'u' || e.key === 'Backspace'){ e.preventDefault(); return ongedaan(); }
     if(e.key === 'b'){ const a = document.querySelector('#ww_bel'); if(a){ e.preventDefault(); a.click(); } }
   };
 
   function volgende(overgeslagen){
-    if(overgeslagen) over++;
+    if(overgeslagen){ over++; log.push({type:'over'}); }
     i++; teken();
+  }
+
+  /* Eén stap terug (toets u of Backspace): haalt de vorige kaart terug en
+     draait de statuswissel of gezette belafspraak ook in de data terug. De
+     tijdlijnregels blijven staan — mét een terugdraai-regel erbij, zodat de
+     geschiedenis eerlijk blijft. */
+  async function ongedaan(){
+    const e = log.pop();
+    if(!e) return CRM.toast('Niets om terug te draaien', 'ok');
+    if(e.type === 'over'){ over = Math.max(0, over - 1); i = Math.max(0, i - 1); teken(); return; }
+    if(e.type === 'door'){ log.push(e); return CRM.toast('Kandidaat of talentpool maken draai je terug op de kandidaatkaart, niet hier', 'err'); }
+    const ok = await bewaarLead(e.l, e.oud);
+    if(!ok){ log.push(e); return; }
+    await CRM.logActiviteit('lead', e.l.id, 'systeem', 'Laatste actie teruggedraaid (wegwerkronde)');
+    gedaan = Math.max(0, gedaan - 1);
+    i = Math.max(0, i - 1);
+    wisBelIndex();
+    CRM.toast('Teruggedraaid', 'ok');
+    teken();
   }
   /* Even een ander venster over de belronde heen (koppelen, plannen,
      doorschieten). Eerst de toetsen loskoppelen — anders zet een 3 in dát
@@ -1978,21 +2064,27 @@ function wegwerkModus(status){
     aan = false;
     document.removeEventListener('keydown', opToets);
     open(() => setTimeout(start, 60));
+    /* Het tussenvenster sluit de ronde-modal (en diens onClose zet wwOpen
+       uit); de ronde is inhoudelijk nog bezig, dus meteen weer aan. */
+    S.wwOpen = true;
   }
   async function kies(keuze){
     const l = stapel[i]; if(!l) return;
     const inp = document.getElementById('ww_note');
     const notitie = inp ? inp.value.trim() : '';
-    if(keuze.door){
+    if(keuze.door || keuze.pool){
       /* Kandidaat maken heeft een poortwachter nodig die per persoon geldt.
          `rond:true` houdt het formulier binnen de belronde: geen sprong naar
-         de kandidatenkaart, wel de volgende sollicitant. */
-      i++;
-      return onderbreek(hervat => doorschietForm(l, {rond:true, naAfloop(gelukt){ if(gelukt) gedaan++; hervat(); }}));
+         de kandidatenkaart, wel de volgende sollicitant. Toets 5 = zelfde
+         formulier met het talentpool-vinkje al aan (motorkap-punt 9). */
+      i++; log.push({type:'door'});
+      return onderbreek(hervat => doorschietForm(l, {rond:true, talentpool:!!keuze.pool,
+        naAfloop(gelukt){ if(gelukt) gedaan++; hervat(); }}));
     }
+    const oud = {status:l.status, opvolgen_op:l.opvolgen_op || null, terugbel_om:l.terugbel_om || null};
     const ok = keuze.blijf ? await noteerPoging(l, keuze.blijf, notitie)
                            : await pasStatusToe(l, keuze.s, notitie);
-    if(ok) gedaan++;
+    if(ok){ gedaan++; log.push({type:keuze.blijf ? 'blijf' : 'status', l, oud}); }
     i++;
     /* Een intake zonder datum is geen afspraak. Wie hem plant of verzet
        krijgt daarom meteen het datumvenster — daarna gaat de ronde door. */
@@ -2005,11 +2097,17 @@ function wegwerkModus(status){
     const box = document.getElementById('ww_in'); if(!box) return;
     const l = stapel[i];
     if(!l){
+      /* Vers goud dat tijdens de ronde binnenkwam alsnog melden — de lijst
+         hertekende bewust niet onder je handen. */
+      const goudNieuw = leads().filter(x => versGoud(x) && !goudStart.has(x.id));
+      goudNieuw.forEach(x => goudGezien && goudGezien.add(x.id));
       box.innerHTML = `
         <div class="modal-h"><div class="h2">Stapel weggewerkt</div></div>
         <div class="modal-b">
           <div class="note ok" style="margin:0">${gedaan} van de ${stapel.length} ${gedaan===1?'sollicitant is':'sollicitanten zijn'} verwerkt${
             over ? `, ${over} ${over===1?'is':'zijn'} overgeslagen${belronde ? '' : ` en ${over===1?'staat':'staan'} nog op ${h(status)}`}` : ''}.</div>
+          ${goudNieuw.length ? `<div class="note warn" style="margin:10px 0 0">🔔 Tijdens de ronde ${goudNieuw.length===1?'kwam':'kwamen'} <b>${goudNieuw.length}</b> verse Hoog/Gekwalificeerd-lead${goudNieuw.length===1?'':'s'} binnen: ${
+            h(goudNieuw.slice(0,4).map(leadNaam).join(', '))}${goudNieuw.length>4?' …':''} — ${goudNieuw.length===1?'die staat':'die staan'} nu bovenaan de lijst.</div>` : ''}
         </div>
         <div class="modal-f"><div class="spacer"></div><button class="btn" id="ww_klaar">Sluiten</button></div>`;
       box.querySelector('#ww_klaar').onclick = () => CRM.modal.close();
@@ -2086,10 +2184,20 @@ function wegwerkModus(status){
         <div class="f-row" style="margin-top:14px"><label for="ww_note">Notitie (optioneel)</label>
           <input type="text" id="ww_note" placeholder="Bijv. belt maandag terug">
           <span class="hint">Terwijl je hier typt werken de cijfertoetsen niet — Enter zet ze weer aan.</span></div>
+        ${/* Belafspraak-snelzetter (motorkap-punt 10): "belt maandag terug"
+             wordt zo een échte afspraak in de bellijst i.p.v. vrije tekst.
+             Zetten = klaar met deze kaart, door naar de volgende. */''}
+        <div class="f-row" style="margin-top:8px"><label>Of zet een belafspraak</label>
+          <div class="row tight" style="align-items:center">
+            <input type="date" id="ww_beld" value="${h(CRM.todayISO())}" style="width:auto">
+            <input type="time" id="ww_belt" value="10:00" style="width:auto">
+            <button class="btn ghost sm" id="ww_belzet">Zet belafspraak &amp; volgende</button>
+          </div></div>
         <div class="rc-wwkeuze">${keuzesNu().map(k =>
           `<button data-t="${h(k.t)}"${k.blijf?' class="blijf" title="De status blijft staan; de poging komt wel in de tijdlijn"':''}><kbd>${k.t}</kbd>${h(k.lbl)}</button>`).join('')}</div>
       </div>
       <div class="modal-f">
+        <button class="btn ghost" id="ww_terug" ${log.length ? '' : 'disabled'} title="Vorige kaart terughalen en de actie terugdraaien">‹ Terug <kbd>u</kbd></button>
         <button class="btn ghost" id="ww_over">Overslaan <kbd>→</kbd></button>
         <div class="spacer"></div>
         <span class="meta">${gedaan} weggewerkt</span>
@@ -2100,6 +2208,20 @@ function wegwerkModus(status){
       if(k) kies(k);
     });
     box.querySelector('#ww_over').onclick = () => volgende(true);
+    box.querySelector('#ww_terug').onclick = () => ongedaan();
+    const bz = box.querySelector('#ww_belzet');
+    if(bz) bz.onclick = async () => {
+      const d = box.querySelector('#ww_beld').value, t = box.querySelector('#ww_belt').value || '10:00';
+      if(!d) return CRM.toast('Kies een datum', 'err');
+      const oud = {status:l.status, opvolgen_op:l.opvolgen_op || null, terugbel_om:l.terugbel_om || null};
+      const ok = await bewaarLead(l, {opvolgen_op:d,
+        terugbel_om:new Date(d + 'T' + t + ':00').toISOString(),
+        laatst_actie:new Date().toISOString()});
+      if(!ok) return;
+      await CRM.logActiviteit('lead', l.id, 'bel', `Belafspraak gezet op ${CRM.fmtDate(d)} ${t}`);
+      log.push({type:'status', l, oud});
+      gedaan++; i++; wisBelIndex(); teken();
+    };
     const kb = box.querySelector('#ww_koppel');
     /* Koppelen tussendoor: daarna komt dezelfde sollicitant terug (de teller
        loopt niet door), nu mét vacature — of ongewijzigd, als er is geannuleerd. */
@@ -2110,10 +2232,12 @@ function wegwerkModus(status){
 
   function start(){
     aan = true;
+    S.wwOpen = true;
     document.addEventListener('keydown', opToets);
     CRM.modal.open(`<div id="ww_in"></div>`, {
       onClose(){
         aan = false;
+        S.wwOpen = false; S.wwHerteken = false;
         document.removeEventListener('keydown', opToets);
         tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
       },
@@ -2191,13 +2315,30 @@ function videocallPlannen(l, naAfloop){
         <div class="f-row"><label>Datum</label><input type="date" id="ip_datum" value="${h(l.opvolgen_op||CRM.todayISO())}"></div>
         <div class="f-row"><label>Tijd</label><input type="time" id="ip_tijd" value="10:00"></div>
       </div>
-      <label class="check"><input type="checkbox" id="ip_agenda" checked> Zet ook in mijn agenda</label>
-      <p class="meta" style="margin:10px 0 0">Zonder datum blijft deze sollicitant als "zonder datum" gemeld staan — dan weet niemand of de call er echt komt.</p>
+      ${/* Snelkeuzes + Enter-submit (motorkap-punt 11): het gros van de
+           intakes is "morgen om 10" — dat mag één klik of één Enter zijn. */''}
+      <div class="row tight" style="margin:8px 0 0">
+        <button type="button" class="chip btn-like" data-snel="0|14:00">vandaag 14:00</button>
+        <button type="button" class="chip btn-like" data-snel="1|10:00">morgen 10:00</button>
+        <button type="button" class="chip btn-like" data-snel="1|14:00">morgen 14:00</button>
+      </div>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="ip_agenda" checked> Zet ook in mijn agenda</label>
+      <p class="meta" style="margin:10px 0 0">Enter = vastleggen. Zonder datum blijft deze sollicitant als "zonder datum" gemeld staan.</p>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Overslaan</button>
       <button class="btn" id="ip_ok">Vastleggen</button></div>`, {
     onClose(){ if(naAfloop) naAfloop(); },
     onOpen(m){
+    setTimeout(() => { const d = m.querySelector('#ip_datum'); if(d) d.focus(); }, 60);
+    m.addEventListener('keydown', e => {
+      if(e.key === 'Enter'){ e.preventDefault(); m.querySelector('#ip_ok').click(); }
+    });
+    CRM.$$('[data-snel]', m).forEach(b => b.onclick = () => {
+      const [plus, tijd] = b.dataset.snel.split('|');
+      const d = new Date(); d.setDate(d.getDate() + Number(plus));
+      m.querySelector('#ip_datum').value = d.toISOString().slice(0,10);
+      m.querySelector('#ip_tijd').value = tijd;
+    });
     m.querySelector('#ip_ok').onclick = async () => {
       const datum = m.querySelector('#ip_datum').value, tijd = m.querySelector('#ip_tijd').value || '10:00';
       if(!datum) return CRM.toast('Kies een datum','err');
@@ -2336,7 +2477,10 @@ function openLead(id){
           ${/* Dezelfde kleurtaal als de stip in de lijst en de chip in de rij —
                het paneel mag niet neutraal ogen waar de lijst rood zegt. */
             l.prioriteit?`<span class="chip"><i class="dot" style="background:${prioKleur(l.prioriteit)}"></i>Prioriteit ${h(l.prioriteit)}</span>`:''}
-          ${l.score!=null?`<span class="chip ${scoreKlas(l.score)} num" title="Score van de WhatsApp-agent (0–100)">Score ${h(l.score)}</span>`:''}
+          ${/* De belafspraak in de kop (motorkap-punt 16): het eerste dat je
+               wilt zien als je de kaart opent. De losse scorechip is weg —
+               de botchip hierboven draagt het getal al. */
+            belChipHtml(l)}
           ${belPogingen(l.id)?`<span class="chip">${belPogingen(l.id)}× gebeld</span>`:''}
           ${laatsteContact(l.id)?`<span class="chip" title="Laatste keer bellen, appen, mailen of spreken">contact ${h(CRM.geleden(laatsteContact(l.id)))}</span>`:''}
         </div>
@@ -2372,12 +2516,15 @@ function openLead(id){
                     : 'Nog niet aan een vacature gekoppeld.'}
                   Zolang dat zo blijft telt deze sollicitant niet mee bij leads per vacature en per klant.</p>
                  ${losFunctie(l)?`<div class="rc-kv"><span class="label">Ingevuld</span><span>${h(losFunctie(l))}${l.klant?' · '+h(l.klant):''}</span></div>`:''}`}
-          ${l.kwalificatie?`<div class="rc-kv"><span class="label">Kwalificatie</span><span>${h(l.kwalificatie)}</span></div>`:''}
         </div></div>
       </div>
 
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">WhatsApp-agent</div></div>
         <div class="card-b">
+          ${/* Belscript-volgorde (motorkap-punt 16): eerst het oordeel van de
+               bot, dan de fase, dan de antwoorden — de kwalificatie hoorde
+               bij dit blok, niet bij de vacaturekaart erboven. */
+            l.kwalificatie?`<div class="rc-kv"><span class="label">Kwalificatie</span><span>${h(l.kwalificatie)}</span></div>`:''}
           ${botFaseTekst(l) ? `<div class="rc-kv"><span class="label">Botfase</span><span>${h(botFaseTekst(l))}</span></div>` : ''}
           ${l.agent_notitie?`<p class="sub" style="margin:0 0 12px">${h(l.agent_notitie)}</p>`:''}
           ${qaHtml(l.antwoorden) || '<p class="meta" style="margin:0">Geen vragen en antwoorden vastgelegd.</p>'}

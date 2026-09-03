@@ -710,7 +710,10 @@ function opvolgingRijen(){
     .filter(l => kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
     .sort((a,b) => String(a.terugbel_om||a.opvolgen_op||'')
       .localeCompare(String(b.terugbel_om||b.opvolgen_op||'')));
-  if(afspraken.length) uit.nu.push({ sleutel:'belafspraken', mod:'recruitment', vink:true,
+  /* Deeplink mét context (motorkap-punt 5): recruitment opent dan in de
+     iedereen-stand zodat óók de eigenaarloze afspraken zichtbaar zijn.
+     Geen afvinkje meer — dit werk vink je af door het te bellen. */
+  if(afspraken.length) uit.nu.push({ sleutel:'belafspraken', mod:'recruitment', id:'focus:belafspraken',
     urgent: afspraken.some(l => kort(l.opvolgen_op) === nu),
     titel:`Bel je ${afspraken.length} ${afspraken.length===1?'belafspraak':'belafspraken'}`,
     sub: afspraken.slice(0,3).map(l=>l.naam).join(', ') + (afspraken.length>3?' …':'') });
