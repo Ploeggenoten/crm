@@ -1279,3 +1279,383 @@ CRM.oo = {
     return true;
   }
 };
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DE KETEN — van advertentie tot plaatsing
+   Verhuisd uit js/marketing.js (VERZOEK AAN CORE, 3 sep 2026): Performance
+   gaat dezelfde trechter tonen als Marketing, en twee kopieën van deze
+   motor lopen gegarandeerd uit elkaar. Marketing en Performance roepen
+   allebei CRM.keten() aan; de mkt_*-tabellen blijven van de modules zelf
+   en komen als parameters mee.
+   ═══════════════════════════════════════════════════════════════ */
+
+CRM.KETEN = {
+  FASE_VOORGESTELD: ['Voorgesteld','O&O sessie','Eerste gesprek','Tweede gesprek','Meeloopdag',
+                     'In de wacht','Offer','Contract ondertekenen','Contract getekend','Gestart'],
+  /* Statusmodel van 27 aug 2026: GEKWALIFICEERD is het oordeel van de bot
+     (bot_status), niet een middenmoot van AM-statussen. De AM-status zegt
+     waar het werk ligt; de bot zegt wat de advertentie opleverde. */
+  GEKWALIFICEERD: ['Gekwalificeerd','Twijfelgeval','Potentieel andere vacature'],   // bot_status!
+  AFGEVALLEN_TEL: ['Niet geschikt'],
+  NIET_BEREIKT:   'Geen gehoor',
+  /* Beoordeeld = de AM heeft de lead gesproken en een oordeel geveld. */
+  BEOORDEELD:     ['Potentieel','Intake ingepland','Niet geschikt']
+};
+
+CRM.bereikteVoorstel = c =>
+  CRM.faseIn(c.fase, CRM.KETEN.FASE_VOORGESTELD)
+  || (c.historie||[]).some(x => CRM.faseIn(x.fase, CRM.KETEN.FASE_VOORGESTELD));
+
+/* Geplaatst blijft geplaatst: wie later stopte is wél geplaatst geweest.
+   Een gestopte kaart telt alleen mee als er ook echt een plaatsingsdatum
+   staat — dezelfde eis als CRM.plaatsingenMaand, zodat geen enkel scherm
+   meer plaatsingen telt dan het bord. */
+CRM.ooitGeplaatst = c => CRM.faseIn(c.fase, CRM.PLACED)
+  || (CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp);
+
+/* Klein gerei dat elke ketenafnemer nodig heeft. binnen_op is een
+   timestamptz (UTC); we rekenen in lokale tijd, zodat een lead van
+   1 juli 00:30 in juli valt en niet in juni. */
+CRM.ketenGerei = (() => {
+  const isDatum = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d||''));
+  function dagVan(waarde){
+    const s = String(waarde||'').trim();
+    if(!s) return '';
+    if(isDatum(s)) return s;
+    const d = new Date(s);
+    return isNaN(d) ? '' : d.toLocaleDateString('sv-SE');
+  }
+  const maandVan = waarde => dagVan(waarde).slice(0,7);
+  function maandLabel(mk){
+    if(!/^\d{4}-\d{2}$/.test(mk)) return 'zonder datum';
+    const d = new Date(mk + '-01T12:00');
+    const t = d.toLocaleDateString('nl-NL',{month:'long', year:'numeric'});
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  const dezeMaand = () => CRM.todayISO().slice(0,7);
+  /* Sleutels om klant- en functienamen te vergelijken die door verschillende
+     mensen (en door Meta) met de hand getypt zijn. */
+  const kKey = s => CRM.normKlant(s);
+  const fKey = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+                     .replace(/[^a-z0-9]/g,'');
+  /* Delen zonder ongelukken: geen NaN, geen Infinity, geen deling door nul.
+     null betekent "niet te berekenen" en wordt op het scherm een streepje. */
+  const deel = (a,b) => (b > 0 && a != null && isFinite(a)) ? a/b : null;
+  /* Kostprijs per stap. Zonder toegerekende uitgaven is er géén kostprijs:
+     "€ 0,00 per lead" leest als "die leads waren gratis", terwijl het
+     betekent dat we het geld niet aan deze groep konden koppelen. */
+  const kost = (bedrag, aantal) => deel(bedrag > 0 ? bedrag : null, aantal);
+  const eur  = (v,dec=0) => v == null ? '—' : CRM.euro(v, dec);
+  const pctV = (a,b) => b > 0 ? Math.round(a/b*100) + '%' : '—';
+  return {dagVan, maandVan, maandLabel, dezeMaand, kKey, fKey, deel, kost, eur, pctV};
+})();
+
+/* Telt deze lead mee in de metingen? Meta-herkomst, en geen dubbele
+   aanmelding (botstatus 'Dubbel' — die persoon telt al via zijn eerste
+   aanmelding; hem nóg eens meetellen drukt € per lead kunstmatig omlaag). */
+CRM.leadTelbaar = l => !!l && String(l.bron||'') === 'Meta'
+  && String(l.bot_status||'').trim() !== 'Dubbel';
+
+/* Is deze lead doorgeschoten naar een kandidaat? Twee wegen naar dezelfde
+   kandidaat: de lead wijst vooruit (kandidaat_id) of de kandidaat wijst
+   terug (lead_id). De terugwijzende kaart zoeken we op via een map die per
+   cands-array één keer wordt gebouwd (WeakMap: vervalt vanzelf zodra een
+   sync de array vervangt). */
+CRM._leadKandCache = new WeakMap();
+CRM.kandVanLead = l => {
+  if(!l) return null;
+  const kandId = String(l.kandidaat_id||'').trim();
+  if(kandId){ const c = CRM.kandidaat(kandId); if(c) return c; }
+  const arr = CRM.state.cands || [];
+  let m = CRM._leadKandCache.get(arr);
+  if(!m){
+    m = new Map();
+    for(const r of arr) if(r.lead_id) m.set(String(r.lead_id), String(r.id));
+    CRM._leadKandCache.set(arr, m);
+  }
+  const id = m.get(String(l.id));
+  return id ? CRM.kandidaat(id) : null;
+};
+CRM.leadDoor = l => !!(l && (String(l.kandidaat_id||'').trim() || CRM.kandVanLead(l)));
+
+/* De trechter over een groep ketenrijen (uit CRM.keten().leads). Drie
+   sporen sinds 27 aug 2026: wat de AM met de lead deed (opgepakt, bereikt,
+   beoordeeld), wat de bót ervan vond (gekwal — uit bot_status, los van de
+   AM-status) en wat er dáárna met de kandidaat gebeurde (voorgesteld,
+   geplaatst). gekwal overlapt dus met de AM-tellers en telt niet op tot
+   `binnen`. */
+CRM.trechter = function(rijen){
+  const t = {binnen:rijen.length, nieuw:0, nietBereikt:0, afgeteld:0, beoordeeld:0,
+             gekwal:0, door:0, voorgesteld:0, geplaatst:0, gestopt:0, loopt:0, anders:0};
+  for(const r of rijen){
+    if(r.nieuw)       t.nieuw++;
+    if(r.nietBereikt) t.nietBereikt++;
+    if(r.afgeteld)    t.afgeteld++;
+    if(r.beoordeeld)  t.beoordeeld++;
+    if(r.gekwal)      t.gekwal++;
+    if(r.door)        t.door++;
+    if(r.voorgesteld) t.voorgesteld++;
+    if(r.geplaatst)   t.geplaatst++;
+    if(r.gestopt)     t.gestopt++;
+    if(r.loopt)       t.loopt++;
+    /* Buiten elk AM-hokje: status leeg of onbekend. Bot-kwalificatie telt
+       hier niet mee — dat is het andere spoor. */
+    if(!r.nieuw && !r.nietBereikt && !r.beoordeeld) t.anders++;
+  }
+  t.uitgewerkt = t.binnen > 0 && t.loopt === 0;
+  return t;
+};
+
+/* ─── De index: één keer per render door alle data ───────────────
+   ~350 kandidaten, honderden leads en duizenden statistiekregels worden
+   hier in één pass tot handzame lijstjes verwerkt; de schermen filteren
+   alleen nog. metaStats = mkt_meta_stats-rijen, campKlant =
+   mkt_campagne_klant-rijen — die tabellen blijven van marketing/performance
+   zelf. Zonder die parameters werkt de leadkant gewoon; alleen de
+   uitgavenkant blijft dan leeg. */
+CRM.keten = function(opts){
+  const metaStats = (opts && opts.metaStats) || [];
+  const campKlant = (opts && opts.campKlant) || [];
+  const {dagVan, maandVan, kKey, fKey} = CRM.ketenGerei;
+  const N = n => Number(n)||0;
+  const campNaam = r => String(r.campagne||'').trim() || '(campagne zonder naam)';
+  const GEKWALIFICEERD = CRM.KETEN.GEKWALIFICEERD;
+  const AFGEVALLEN_TEL = CRM.KETEN.AFGEVALLEN_TEL;
+  const NIET_BEREIKT   = CRM.KETEN.NIET_BEREIKT;
+  const BEOORDEELD     = CRM.KETEN.BEOORDEELD;
+  const STATUS_NAMEN   = CRM.LEAD_STATUS.map(s => s.k ?? s);
+  const bereikteVoorstel = CRM.bereikteVoorstel;
+  const isGeplaatst      = CRM.ooitGeplaatst;
+
+  /* 1. Kandidaten en vacatures indexeren. */
+  const cands = CRM.kandidaten();
+  const candById = new Map(), candByLead = new Map();
+  for(const c of cands){
+    candById.set(String(c.id), c);
+    if(c.leadId) candByLead.set(String(c.leadId), c);
+  }
+  const vacById = new Map(), vacsPerKlant = new Map();
+  for(const v of (CRM.state.vacs||[])){
+    vacById.set(String(v.id), v);
+    const k = kKey(v.klant);
+    if(!k) continue;
+    if(!vacsPerKlant.has(k)) vacsPerKlant.set(k, []);
+    vacsPerKlant.get(k).push(v);
+  }
+
+  /* 2. Meta-leads verrijken met hun kandidaat, klant en vacature. */
+  const gaten = {zonderDatum:[], zonderStatus:[], vreemdeStatus:[], zonderKlant:[],
+                 zonderVacature:[], kandidaatWeg:[], doorZonderKandidaat:[]};
+  const leads = [];
+  /* Dubbele aanmeldingen (botstatus 'Dubbel') apart houden — zie hieronder. */
+  const dubbels = [];
+  const gekoppeld = new Set();
+  const klantNaam = new Map();                 // kkey → nette schrijfwijze
+  const onthou = n => { const k = kKey(n); if(k.length >= 4 && !klantNaam.has(k)) klantNaam.set(k, String(n).trim()); };
+  for(const c of (CRM.state.clients||[])) if(c.naam) onthou(c.naam);
+  for(const v of (CRM.state.vacs||[]))    if(v.klant) onthou(v.klant);
+
+  for(const l of (CRM.state.leads||[])){
+    if(String(l.bron||'') !== 'Meta') continue;
+    const vac     = l.vacature_id ? vacById.get(String(l.vacature_id)) : null;
+    const klant   = String(vac?.klant   || l.klant   || '').trim();
+    const functie = String(vac?.functie || l.functie || '').trim();
+    /* Ruwe status apart houden: leadNorm vertaalt oude waarden (zoals
+       'Doorgeschoten' of 'CV binnen') naar het model van 27 aug 2026, maar
+       voor het gat "doorgeschoten zonder kandidaat" hieronder is juist de
+       ruwe, historische waarde het bewijs. */
+    const ruw     = String(l.status||'').trim();
+    const status  = ruw ? CRM.leadNorm(ruw) : '';
+    const botStatus = String(l.bot_status||'').trim();
+    const kandId  = String(l.kandidaat_id||'').trim();
+    /* Twee wegen naar dezelfde kandidaat: de lead wijst vooruit
+       (kandidaat_id) of de kandidaat wijst terug (lead_id). Eén van de
+       twee is genoeg om de keten heel te houden. */
+    const cand = (kandId ? candById.get(kandId) : null) || candByLead.get(String(l.id)) || null;
+    if(cand) gekoppeld.add(String(cand.id));
+    if(klant) onthou(klant);
+    const r = {
+      lead:l, id:String(l.id), naam:String(l.naam||''),
+      dk:dagVan(l.binnen_op), mk:maandVan(l.binnen_op),
+      klant, functie, status, botStatus, cand,
+      kkey:kKey(klant), fkey:fKey(functie), viaVacature:!!vac,
+      nieuw:       status === 'Nieuw',
+      nietBereikt: status === NIET_BEREIKT,
+      afgeteld:    AFGEVALLEN_TEL.includes(status),
+      beoordeeld:  BEOORDEELD.includes(status),
+      /* Sinds 27 aug 2026: het kwalificatiesignaal komt van de bot, los
+         van de AM-status. Een bot-gekwalificeerde lead kan dus tegelijk
+         op 'Nieuw' staan (nog niet opgepakt) of op 'Niet geschikt'
+         (AM oordeelde anders) — beide sporen tellen apart. */
+      gekwal:      GEKWALIFICEERD.includes(botStatus),
+      door:        !!(kandId || cand),
+      voorgesteld: !!(cand && bereikteVoorstel(cand)),
+      geplaatst:   !!(cand && isGeplaatst(cand)),
+      gestopt:     !!(cand && CRM.faseIs(cand.fase, 'Gestopt'))
+    };
+    /* Loopt hij nog? Mét kandidaat kijken we naar de pijplijnfase, zonder
+       kandidaat naar de leadstatus. Weten we het niet, dan telt hij als
+       "loopt nog" — liever een cohort te lang voorlopig noemen dan een
+       halve uitkomst als eindstand tonen. */
+    r.loopt = r.cand ? (!r.cand.fase || !CRM.faseIn(r.cand.fase, CRM.DONE))
+                     : !r.afgeteld;
+    /* Dubbele aanmelding: de bot herkende hetzelfde nummer als een
+       bestaande lead (botstatus 'Dubbel'). Die persoon telt al mee via
+       zijn eerste aanmelding — buiten élke telling, maar zichtbaar in het
+       gatenblok (Tjeerd, 2 sep 2026). */
+    if(r.botStatus === 'Dubbel'){ dubbels.push(r); continue; }
+    leads.push(r);
+
+    if(!r.mk)                       gaten.zonderDatum.push(r);
+    if(!status)                     gaten.zonderStatus.push(r);
+    else if(!STATUS_NAMEN.includes(status)) gaten.vreemdeStatus.push(r);
+    if(!klant)                      gaten.zonderKlant.push(r);
+    if(!vac)                        gaten.zonderVacature.push(r);
+    if(kandId && !candById.get(kandId)) gaten.kandidaatWeg.push(r);
+    /* 'Doorgeschoten' bestaat als status niet meer, maar oude data kan er
+       nog op staan. Zo'n lead zónder gekoppelde kandidaat is een gebroken
+       keten — bewust op de rúwe waarde gecheckt, want leadNorm poetst die
+       status juist weg. */
+    if(ruw === 'Doorgeschoten' && !cand) gaten.doorZonderKandidaat.push(r);
+  }
+
+  /* Kandidaten die uit Meta kwamen maar aan geen enkele lead hangen: daar
+     breekt de keten. Hun plaatsingen kunnen we aan geen maand en aan geen
+     campagne toerekenen. */
+  const losseKand = cands.filter(c => String(c.bron||'') === 'Meta' && !gekoppeld.has(String(c.id)));
+  const lossePlaatsingen = losseKand.filter(isGeplaatst);
+
+  /* 3. Campagne → klant. In het Meta-account is een campagne een klant en
+     een advertentieset een functie, maar die namen zijn met de hand
+     getypt. Twee wegen:
+       a. de campagnenaam bevat een klantnaam die wij kennen — dat is de
+          afspraak, dus die telt het zwaarst;
+       b. anders: de leads die zelf deze campagnenaam dragen. Dan eisen we
+          minstens twee leads en een duidelijke meerderheid, anders zou één
+          verkeerd ingevulde lead een hele campagne aan de verkeerde klant
+          hangen.
+     Lukt geen van beide, dan blijven de uitgaven expliciet
+     "niet toegewezen". Liever een zichtbaar gat dan een gokje. */
+  const perCampLead = new Map();
+  for(const r of leads){
+    const ck = fKey(r.lead.campagne);
+    if(!ck || !r.kkey) continue;
+    if(!perCampLead.has(ck)) perCampLead.set(ck, new Map());
+    const m = perCampLead.get(ck);
+    m.set(r.kkey, (m.get(r.kkey)||0) + 1);
+  }
+  const klantKeys = new Set(klantNaam.keys());
+  /* Een klantnaam herkennen in een campagnenaam doen we op hele woorden,
+     niet op letterreeksen: anders zou een klant "Land" oplichten in
+     "Zuid-Holland". De langste treffer wint, zodat "Van Vliet" niet wint
+     van "Van Vliet Zoetwaren". */
+  const woorden = naam => String(naam||'').toLowerCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g,'').split(/[^a-z0-9]+/).filter(Boolean);
+  const klantInNaam = naam => {
+    const w = woorden(naam);
+    let best = '';
+    for(let i = 0; i < w.length; i++){
+      let reeks = '';
+      for(let j = i; j < w.length; j++){
+        reeks += w[j];
+        if(klantKeys.has(reeks) && reeks.length > best.length) best = reeks;
+      }
+    }
+    return best;
+  };
+  /* Handmatige koppeling (mkt_campagne_klant) — weegt zwaarder dan de
+     automatische matching hieronder: Tjeerd/Bryan zei het expliciet, dus
+     daar twijfelen we niet meer over. Sleutel = exacte campagnenaam. */
+  const overrideKlant = new Map((campKlant||[]).map(r => [r.campagne, r.klant]));
+  const campCache = new Map();
+  const koppelCampagne = naam => {
+    if(campCache.has(naam)) return campCache.get(naam);
+    const ck = fKey(naam);
+    let uit = {naam, kkey:'', klant:'', hoe:'niet'};
+    const handmatig = overrideKlant.get(naam);
+    const treffer = handmatig ? kKey(handmatig) : klantInNaam(naam);
+    if(handmatig){
+      uit = {naam, kkey:treffer, klant:handmatig, hoe:'handmatig'};
+    }else if(treffer){
+      uit = {naam, kkey:treffer, klant:klantNaam.get(treffer), hoe:'naam'};
+    }else{
+      const viaLead = perCampLead.get(ck);
+      if(viaLead && viaLead.size){
+        const op = [...viaLead].sort((a,b) => b[1] - a[1]);
+        const totaal = op.reduce((s2,x) => s2 + x[1], 0);
+        if(op[0][1] >= 2 && op[0][1] > totaal/2)
+          uit = {naam, kkey:op[0][0], klant:klantNaam.get(op[0][0]) || op[0][0], hoe:'lead'};
+      }
+    }
+    campCache.set(naam, uit);
+    return uit;
+  };
+  /* Advertentieset → vacature van diezelfde klant. Langste treffer wint,
+     zodat "Operator" niet wint van "Senior Operator". */
+  const setCache = new Map();
+  const zoekFunctie = (kkey, setNaam) => {
+    const sleutel = kkey + '|' + setNaam;
+    if(setCache.has(sleutel)) return setCache.get(sleutel);
+    const s = fKey(setNaam);
+    let best = '';
+    if(s){
+      const vacs = vacsPerKlant.get(kkey) || [];
+      /* Eerst een exacte functienaam. Anders zou een advertentieset
+         "Operator" bij een klant met zowel Operator als Senior Operator de
+         langste naam pakken, en dat is de verkeerde vacature. */
+      const exact = vacs.find(v => fKey(v.functie) === s);
+      if(exact) best = exact.functie;
+      else for(const v of vacs){
+        const f = fKey(v.functie);
+        if(f.length >= 4 && (s.includes(f) || f.includes(s)) && f.length > fKey(best).length) best = v.functie;
+      }
+    }
+    setCache.set(sleutel, best);
+    return best;
+  };
+
+  /* 4. Uitgaven optellen per maand × campagne × advertentieset. Duizenden
+     dagregels worden hier een handvol rijen; alles daarna is filteren. */
+  const uitMap = new Map();
+  let uitZonderDatum = 0;
+  for(const r of metaStats){
+    /* Eerst koppelen, dan pas de datum keuren: campCache moet élke campagne
+       uit mkt_meta_stats kennen, ook een campagne waarvan alle dagregels een
+       onleesbare datum hebben. */
+    const camp = campNaam(r);
+    const k = koppelCampagne(camp);
+    const mk = String(r.datum||'').slice(0,7);
+    if(!/^\d{4}-\d{2}$/.test(mk)){ uitZonderDatum += N(r.uitgegeven); continue; }
+    const set  = String(r.advertentieset||'').trim();
+    const sleutel = mk + '|' + camp + '|' + set;
+    let rij = uitMap.get(sleutel);
+    if(!rij){
+      const functie = k.kkey ? zoekFunctie(k.kkey, set) : '';
+      rij = {mk, campagne:camp, set, kkey:k.kkey, klant:k.klant, hoe:k.hoe,
+             functie, fkey:fKey(functie), bedrag:0, formulieren:0};
+      uitMap.set(sleutel, rij);
+    }
+    rij.bedrag      += N(r.uitgegeven);
+    rij.formulieren += N(r.leads);
+  }
+  const uitRijen = [...uitMap.values()];
+
+  /* 5. Maanden waarover we iets te zeggen hebben: er is geld uitgegeven,
+     of er zijn leads binnengekomen. */
+  const maanden = [...new Set([...uitRijen.map(r => r.mk), ...leads.map(r => r.mk).filter(Boolean)])]
+    .sort().reverse();
+
+  /* Campagnes die we niet aan een klant konden koppelen — met bedrag, want
+     zonder bedrag weet je niet hoe erg het is. */
+  const campagnes = [...campCache.values()].map(c => {
+    const bedrag = uitRijen.filter(r => r.campagne === c.naam).reduce((s,r) => s + r.bedrag, 0);
+    return {...c, bedrag};
+  }).sort((a,b) => b.bedrag - a.bedrag);
+
+  return {leads, dubbels, uitRijen, maanden, gaten, losseKand, lossePlaatsingen,
+          campagnes, klantNaam, uitZonderDatum, aantalKand:cands.length,
+          /* campagnenaam → {kkey, klant, hoe}. Eén koppeling voor het hele
+             scherm: Rendement rekent ermee, Prestatie filtert ermee. */
+          campKoppel:campCache};
+};
