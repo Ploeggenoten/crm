@@ -678,6 +678,34 @@ async function vulFormulieren(mount){
   const vacBij = id => alleVacs.find(v => String(v.id) === String(id));
   const PLOEG = ['','Geen','2-ploegen','3-ploegen','4-ploegen','5-ploegen','Wisselend','Alleen nachtdienst'];
   const AMS   = ['','Tjeerd','Tjerk','Rajesh'];
+  /* ── Kwalificatievragen als vaste stappen (Tjeerd, 3 sep 2026): Bryan
+     moet hier dezelfde vragen afvinken als in Smits oude n8n-formulier —
+     geen vrij tekstvak waarin van alles mis kan gaan. Opslag blijft wél
+     het eisen-veld op de vacaturekaart (één regel per eis), zodat de
+     bot-feed en Smits kant niets merken van deze schermwijziging. */
+  const EIS_VAST = [
+    {sleutel:'rijbewijs',  label:'Rijbewijs B',            regel:'Rijbewijs B',            re:/rijbewijs/i},
+    {sleutel:'nederlands', label:'Nederlands',             regel:'Nederlands',             re:/nederlands/i},
+    {sleutel:'direct',     label:'Per direct beschikbaar', regel:'Per direct beschikbaar', re:/per direct/i},
+    {sleutel:'fysiek',     label:'Fysiek zwaar werk',      regel:'Fysiek zwaar werk aankunnen', re:/fysiek/i},
+  ];
+  const eisParse = txt => {
+    const o = {ervaring:'', extra:[]};
+    for(const e of EIS_VAST) o[e.sleutel] = false;
+    for(const regel of String(txt||'').split('\n').map(s => s.trim()).filter(Boolean)){
+      const vast = EIS_VAST.find(e => e.re.test(regel));
+      if(vast){ o[vast.sleutel] = true; continue; }
+      const m = regel.match(/^(?:werk)?ervaring\s*:?\s*(.*)$/i);
+      if(m){ o.ervaring = m[1] || 'vereist'; continue; }
+      o.extra.push(regel);
+    }
+    return o;
+  };
+  const eisBouw = o => [
+    ...EIS_VAST.filter(e => o[e.sleutel]).map(e => e.regel),
+    ...(String(o.ervaring||'').trim() ? ['Werkervaring: ' + String(o.ervaring).trim()] : []),
+    ...o.extra,
+  ].join('\n');
   const kolom = (lbl, veld, vacId, html) => `<label style="display:flex;flex-direction:column;gap:2px">
     <span class="label">${h(lbl)}</span>${html}</label>`;
   const mistVan = v => {
@@ -697,6 +725,7 @@ async function vulFormulieren(mount){
        toen elke regel al zijn invulvelden open had staan) — de chip in de
        hoofdrij zegt al of er iets mist; openklappen is alleen voor bewerken. */
     const mist = mistVan(v);
+    const eis = eisParse(v.eisen);
     return `<tr><td></td><td colspan="3" style="padding-top:0;padding-bottom:2px">
       <details>
       <summary class="meta" style="cursor:pointer;padding:2px 0">botgegevens ${mist.length ? `— vul nog in: ${h(mist.join(', '))}` : '(compleet — klik om te bewerken)'}</summary>
@@ -707,9 +736,19 @@ async function vulFormulieren(mount){
         ${kolom('Salaris van','sal_min',v.id,`<input type="number" data-vv="sal_min" data-vac="${h(String(v.id))}" value="${v.sal_min==null?'':h(String(v.sal_min))}" style="width:78px">`)}
         ${kolom('tot','sal_max',v.id,`<input type="number" data-vv="sal_max" data-vac="${h(String(v.id))}" value="${v.sal_max==null?'':h(String(v.sal_max))}" style="width:78px">`)}
         ${kolom('AM','eigenaar',v.id,`<select data-vv="eigenaar" data-vac="${h(String(v.id))}">${AMS.map(a=>`<option value="${h(a)}" ${String(v.eigenaar||'')===a?'selected':''}>${h(a||'—')}</option>`).join('')}</select>`)}
-        <label style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:240px">
-          <span class="label">Eisen — één per regel, de bot toetst hierop</span>
-          <textarea data-vv="eisen" data-vac="${h(String(v.id))}" rows="2" placeholder="Rijbewijs B&#10;Nederlands">${h(v.eisen||'')}</textarea></label>
+        <div style="flex-basis:100%;display:flex;flex-direction:column;gap:4px">
+          <span class="label">Kwalificatievragen — dezelfde stappen als het n8n-formulier</span>
+          <div class="row tight" style="flex-wrap:wrap;gap:4px 14px">
+            ${EIS_VAST.map(e => `<label class="check" title="Aangevinkt = de bot stelt deze kwalificatievraag">
+              <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>`).join('')}
+            <label class="check" style="gap:6px" title="Leeg = geen ervaringseis; de bot vraagt er dan niet naar">Werkervaring:
+              <input data-eis="ervaring" data-vac="${h(String(v.id))}" value="${h(eis.ervaring)}" placeholder="leeg = niet vereist" style="width:200px"></label>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:2px">
+            <span class="label">Extra eisen — één per regel, elke regel wordt één extra vraag</span>
+            <textarea data-eis="extra" data-vac="${h(String(v.id))}" rows="2" placeholder="Heftruckcertificaat&#10;Eigen vervoer">${h(eis.extra.join('\n'))}</textarea></label>
+          <span class="meta" data-eisprev="${h(String(v.id))}" style="display:flex;flex-wrap:wrap;gap:3px;align-items:center"></span>
+        </div>
       </div>
       </details>
     </td></tr>`;
@@ -774,7 +813,55 @@ async function vulFormulieren(mount){
     if(e3) return CRM.fout('Opslaan op de vacaturekaart mislukt', e3);
     const rij = alleVacs.find(v => String(v.id) === String(vacId));
     if(rij) rij[veld] = waarde;
+    if(rij && rij.sal_min != null && rij.sal_max != null && +rij.sal_min > +rij.sal_max)
+      return CRM.toast('Let op: salaris-van is hoger dan salaris-tot — draai de bedragen om', 'err');
     CRM.toast('Vacaturekaart bijgewerkt — de bot gebruikt dit bij zijn volgende gesprek', 'ok');
+  });
+  /* Kwalificatievragen-stappen: elk vinkje of tekstveld bouwt het
+     eisen-veld op de kaart opnieuw op en de chips eronder tonen live
+     welke vragen de bot gaat stellen — amber als er iets in de extra
+     eisen staat dat in een ander veld hoort. */
+  const eisAnalyse = regels => {
+    if(!regels.length) return `<span>Niets aangevinkt = de bot stelt geen kwalificatievragen voor deze vacature.</span>`;
+    const chips = regels.map(r => {
+      let fout = '';
+      if(/\d{1,2}[:.]\d{2}|werktijd|ploegendienst/i.test(r))          fout = 'Dit lijkt een werktijd — hoort in het veld Werktijden/Ploegen, anders vraagt de bot het dubbel';
+      else if(/€|\bsalaris\b|\bloon\b|\bp\/m\b|\bper maand\b/i.test(r)) fout = 'Dit lijkt salaris — hoort in Salaris van/tot, anders vraagt de bot het dubbel';
+      else if(r.length > 70)                                          fout = 'Lange zin — splits in losse, korte eisen: elke regel wordt één vraag';
+      return `<span class="chip ${fout?'amber':''}" title="${h(fout || 'De bot maakt hier één kwalificatievraag van')}">${h(r.length>40 ? r.slice(0,38)+'…' : r)}${fout?' ⚠':''}</span>`;
+    });
+    return `<span>vragen van de bot:</span>${chips.join('')}`;
+  };
+  const eisVeldenVan = vacId => CRM.$$(`[data-eis][data-vac="${CSS.escape(String(vacId))}"]`, el);
+  const eisUitScherm = vacId => {
+    const o = {ervaring:'', extra:[]};
+    for(const e of EIS_VAST) o[e.sleutel] = false;
+    for(const inp of eisVeldenVan(vacId)){
+      const s = inp.dataset.eis;
+      if(s === 'ervaring') o.ervaring = inp.value.trim();
+      else if(s === 'extra') o.extra = inp.value.split('\n').map(x => x.trim()).filter(Boolean);
+      else o[s] = inp.checked;
+    }
+    return o;
+  };
+  const eisPrev = vacId => {
+    const d = el.querySelector(`[data-eisprev="${CSS.escape(String(vacId))}"]`);
+    if(d) d.innerHTML = eisAnalyse(eisBouw(eisUitScherm(vacId)).split('\n').filter(Boolean));
+  };
+  const eisIds = [...new Set(CRM.$$('[data-eis]', el).map(i => i.dataset.vac))];
+  eisIds.forEach(eisPrev);
+  CRM.$$('[data-eis]', el).forEach(inp => {
+    inp.oninput = () => eisPrev(inp.dataset.vac);
+    inp.onchange = async () => {
+      const vacId = inp.dataset.vac;
+      const tekst = eisBouw(eisUitScherm(vacId));
+      const {error:e5} = await CRM.sb.from('vacatures').update({eisen: tekst}).eq('id', vacId);
+      if(e5) return CRM.fout('Opslaan op de vacaturekaart mislukt', e5);
+      const rij = alleVacs.find(v => String(v.id) === String(vacId));
+      if(rij) rij.eisen = tekst;
+      eisPrev(vacId);
+      CRM.toast('Kwalificatievragen bijgewerkt — de bot gebruikt dit bij zijn volgende gesprek', 'ok');
+    };
   });
   const bewaar = async (formId, patch) => {
     const r = rijen.get(String(formId)) || {omschrijving:''};
