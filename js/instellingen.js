@@ -729,10 +729,10 @@ async function vulFormulieren(mount){
     return `<tr><td></td><td colspan="3" style="padding-top:0;padding-bottom:2px">
       <details>
       <summary class="meta" style="cursor:pointer;padding:2px 0">botgegevens ${mist.length ? `— vul nog in: ${h(mist.join(', '))}` : '(compleet — klik om te bewerken)'}</summary>
-      <div style="border:1px solid rgba(0,0,0,.12);border-radius:10px;padding:16px 18px 14px;margin:6px 0 14px;max-width:960px;display:flex;flex-direction:column;gap:18px">
+      <div class="botform">
 
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <span class="label" style="opacity:.65">1 · Werkplek &amp; rooster</span>
+        <div class="stap">
+          <div class="stap-kop"><span class="stap-nr">1</span> Werkplek &amp; rooster</div>
           <div class="row tight" style="flex-wrap:wrap;gap:10px 24px;align-items:flex-end">
             ${kolom('Adres werklocatie','locatie',v.id,`<input data-vv="locatie" data-vac="${h(String(v.id))}" value="${h(v.locatie||'')}" placeholder="Straat 1, 1234 AB Plaats" style="width:280px">`)}
             ${kolom('Werktijden','werktijden',v.id,`<input data-vv="werktijden" data-vac="${h(String(v.id))}" value="${h(v.werktijden||'')}" placeholder="06:00-14:00 / 14:00-22:00" style="width:230px">`)}
@@ -740,8 +740,8 @@ async function vulFormulieren(mount){
           </div>
         </div>
 
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <span class="label" style="opacity:.65">2 · Salaris &amp; accountmanager</span>
+        <div class="stap">
+          <div class="stap-kop"><span class="stap-nr">2</span> Salaris &amp; accountmanager</div>
           <div class="row tight" style="flex-wrap:wrap;gap:10px 24px;align-items:flex-end">
             ${kolom('Salaris van (€ p/m)','sal_min',v.id,`<input type="number" data-vv="sal_min" data-vac="${h(String(v.id))}" value="${v.sal_min==null?'':h(String(v.sal_min))}" placeholder="2400" style="width:100px">`)}
             ${kolom('tot','sal_max',v.id,`<input type="number" data-vv="sal_max" data-vac="${h(String(v.id))}" value="${v.sal_max==null?'':h(String(v.sal_max))}" placeholder="2800" style="width:100px">`)}
@@ -749,10 +749,10 @@ async function vulFormulieren(mount){
           </div>
         </div>
 
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <span class="label" style="opacity:.65">3 · Kwalificatievragen — dezelfde stappen als het n8n-formulier</span>
-          <div class="row tight" style="flex-wrap:wrap;gap:10px 26px;padding:2px 0">
-            ${EIS_VAST.map(e => `<label class="check" style="gap:7px" title="Aangevinkt = de bot stelt deze kwalificatievraag">
+        <div class="stap">
+          <div class="stap-kop"><span class="stap-nr">3</span> Kwalificatievragen <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:400">— dezelfde stappen als het n8n-formulier; aangevinkt = de bot stelt de vraag</span></div>
+          <div class="row tight" style="flex-wrap:wrap;gap:8px 10px;padding:2px 0">
+            ${EIS_VAST.map(e => `<label class="eis-pil" title="Aangevinkt = de bot stelt deze kwalificatievraag">
               <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>`).join('')}
           </div>
           <label style="display:flex;flex-direction:column;gap:3px;max-width:420px" title="Leeg = geen ervaringseis; de bot vraagt er dan niet naar">
@@ -763,7 +763,7 @@ async function vulFormulieren(mount){
             <textarea data-eis="extra" data-vac="${h(String(v.id))}" rows="2" placeholder="Heftruckcertificaat&#10;Eigen vervoer">${h(eis.extra.join('\n'))}</textarea></label>
         </div>
 
-        <div class="meta" data-eisprev="${h(String(v.id))}" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;border-top:1px solid rgba(0,0,0,.08);padding-top:10px"></div>
+        <div class="meta bot-preview" data-eisprev="${h(String(v.id))}"></div>
       </div>
       </details>
     </td></tr>`;
@@ -837,7 +837,7 @@ async function vulFormulieren(mount){
      welke vragen de bot gaat stellen — amber als er iets in de extra
      eisen staat dat in een ander veld hoort. */
   const eisAnalyse = regels => {
-    if(!regels.length) return `<span>Niets aangevinkt = de bot stelt geen kwalificatievragen voor deze vacature.</span>`;
+    if(!regels.length) return `<span>💬 Niets aangevinkt = de bot stelt geen kwalificatievragen voor deze vacature.</span>`;
     const chips = regels.map(r => {
       let fout = '';
       if(/\d{1,2}[:.]\d{2}|werktijd|ploegendienst/i.test(r))          fout = 'Dit lijkt een werktijd — hoort in het veld Werktijden/Ploegen, anders vraagt de bot het dubbel';
@@ -845,7 +845,7 @@ async function vulFormulieren(mount){
       else if(r.length > 70)                                          fout = 'Lange zin — splits in losse, korte eisen: elke regel wordt één vraag';
       return `<span class="chip ${fout?'amber':''}" title="${h(fout || 'De bot maakt hier één kwalificatievraag van')}">${h(r.length>40 ? r.slice(0,38)+'…' : r)}${fout?' ⚠':''}</span>`;
     });
-    return `<span>vragen van de bot:</span>${chips.join('')}`;
+    return `<span>💬 vragen van de bot:</span>${chips.join('')}`;
   };
   const eisVeldenVan = vacId => CRM.$$(`[data-eis][data-vac="${CSS.escape(String(vacId))}"]`, el);
   const eisUitScherm = vacId => {

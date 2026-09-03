@@ -72,3 +72,25 @@ tr.in-nu td{background:var(--card-2)}
    een gróter scherm de kolom Rol alleen nog kon bereiken door binnen de
    kaart horizontaal te scrollen. Twee kolommen vullen het scherm ook, en
    dan blijft alles gewoon leesbaar. */
+
+/* ── Botformulieren: botgegevens als net stappenformulier (3 sep 2026) ──
+   Tjeerd: "het moet een net formulier zijn" + "maak het visueel
+   aantrekkelijker" — stapkaarten in huisstijl, kwalificatievragen als
+   pills die groen oplichten zodra ze aanstaan. */
+.botform{border:1px solid var(--line);border-radius:12px;background:var(--well);
+  padding:14px;margin:6px 0 14px;max-width:960px;display:flex;flex-direction:column;gap:12px}
+.botform .stap{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.botform .stap-kop{display:flex;align-items:center;gap:8px;font-size:.72rem;font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--txt-2)}
+.botform .stap-nr{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:20px;height:20px;border-radius:50%;background:var(--olive);color:#fff;
+  font-size:.72rem;font-weight:700;letter-spacing:0}
+.botform .bot-preview{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 2px}
+.eis-pil{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-2);
+  border-radius:999px;padding:5px 14px;cursor:pointer;background:var(--card);
+  user-select:none;transition:background .15s,border-color .15s,color .15s}
+.eis-pil:hover{border-color:var(--olive-l)}
+.eis-pil input{accent-color:var(--olive);margin:0}
+.eis-pil:has(input:checked){background:var(--green-bg);border-color:var(--green-line);
+  color:#1e6b3f;font-weight:600}
