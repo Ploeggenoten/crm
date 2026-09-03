@@ -627,6 +627,69 @@ function sectieSysteem(){
     </div></div>`;
 }
 
+
+/* ─── Kanaalkosten: Indeed en andere niet-Meta-werving ────────────
+   "Vaak Meta, heel soms Indeed" (Tjeerd, 3 sep 2026): geen sync, geen
+   koppeling — één klein maandbedrag per kanaal, met de hand. Performance
+   rekent er de €-per-lead voor die bronnen mee uit. Meta hoort hier
+   nadrukkelijk NIET: die kosten komen automatisch binnen via de
+   meta-sync, een handmatige regel ernaast zou dubbel tellen. */
+function sectieKanaalkosten(){
+  return `<div class="card" style="margin-top:20px"><div class="card-h"><div class="h2">Kanaalkosten</div>
+      <span class="meta">Indeed en andere niet-Meta-werving · per maand</span></div>
+    <div class="card-b">
+      <div id="in_kanaalkosten">${CRM.ui.laden('Kanaalkosten laden…')}</div>
+    </div></div>`;
+}
+async function vulKanaalkosten(mount){
+  const el = mount.querySelector('#in_kanaalkosten');
+  if(!el) return;
+  if(CRM.demo){ el.innerHTML = `<p class="meta">In demo-modus wordt de database niet benaderd.</p>`; return; }
+  const {data, error} = await CRM.sb.from('mkt_kanaal_kosten').select('*').order('maand',{ascending:false});
+  if(error){ el.innerHTML = `<div class="note err">Kanaalkosten niet leesbaar — is fase2-performance.sql gedraaid? (${h(error.message)})</div>`; return; }
+  const rijen = data || [];
+  const maandNu = CRM.todayISO().slice(0,7);
+  el.innerHTML = `
+    ${rijen.length ? `<div class="tblwrap"><table class="tbl"><thead><tr>
+        <th>Kanaal</th><th>Maand</th><th class="n">Bedrag</th><th></th></tr></thead>
+      <tbody>${rijen.map(r => `<tr>
+        <td><b>${h(r.kanaal)}</b></td><td class="num">${h(r.maand)}</td>
+        <td class="n num">${CRM.euro(Number(r.bedrag)||0)}</td>
+        <td class="n"><button class="btn ghost sm" data-kkweg="${h(r.kanaal)}|${h(r.maand)}">Verwijderen</button></td>
+      </tr>`).join('')}</tbody></table></div>`
+      : `<p class="meta" style="margin:0 0 10px">Nog geen kanaalkosten ingevuld.</p>`}
+    <div class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:10px">
+      <div class="f-row" style="margin:0"><label for="kk_kanaal">Kanaal</label>
+        <input id="kk_kanaal" value="Indeed" style="width:130px"></div>
+      <div class="f-row" style="margin:0"><label for="kk_maand">Maand</label>
+        <input id="kk_maand" type="month" value="${maandNu}" style="width:150px"></div>
+      <div class="f-row" style="margin:0"><label for="kk_bedrag">Bedrag (€)</label>
+        <input id="kk_bedrag" type="number" min="0" step="1" style="width:110px"></div>
+      <button class="btn" id="kk_zet">Vastleggen</button>
+    </div>
+    <p class="meta" style="margin:10px 2px 0">Meta hoort hier niet bij — die kosten komen automatisch binnen
+      via de dagelijkse synchronisatie. Eén regel per kanaal per maand; nogmaals vastleggen overschrijft.</p>`;
+  el.querySelector('#kk_zet').onclick = async () => {
+    const kanaal = el.querySelector('#kk_kanaal').value.trim();
+    const maand  = el.querySelector('#kk_maand').value;
+    const bedrag = Number(el.querySelector('#kk_bedrag').value);
+    if(!kanaal || !/^\d{4}-\d{2}$/.test(maand) || !(bedrag >= 0)) return CRM.toast('Vul kanaal, maand en bedrag in','err');
+    if(/^meta$/i.test(kanaal)) return CRM.toast('Meta-kosten komen automatisch binnen via de sync — niet dubbel invoeren','err');
+    const {error:e2} = await CRM.sb.from('mkt_kanaal_kosten')
+      .upsert({kanaal, maand, bedrag, door:CRM.me(), bijgewerkt:new Date().toISOString()});
+    if(e2) return CRM.fout('Opslaan mislukt', e2);
+    CRM.toast(`${kanaal} · ${maand}: ${CRM.euro(bedrag)} vastgelegd`,'ok');
+    vulKanaalkosten(mount);
+  };
+  CRM.$$('[data-kkweg]', el).forEach(b => b.onclick = async () => {
+    const [kanaal, maand] = b.dataset.kkweg.split('|');
+    const {error:e3} = await CRM.sb.from('mkt_kanaal_kosten').delete().eq('kanaal',kanaal).eq('maand',maand);
+    if(e3) return CRM.fout('Verwijderen mislukt', e3);
+    CRM.toast('Verwijderd','ok');
+    vulKanaalkosten(mount);
+  });
+}
+
 /* ─── Botformulieren → vacature ──────────────────────────────────
    Eén Meta-leadformulier = één vacature. De koppeltabel lead_formulieren
    (in onze eigen database) bepaalt aan welke vacature een botlead
@@ -978,12 +1041,13 @@ CRM.registerModule('instellingen', {
     mount.innerHTML = `<div class="in-wrap">${
       baas ? sectieTargets() + sectieTeam() : ''
     }${eigen}${sectieFormulieren()}${
-      baas ? sectieData() + sectieSysteem() : ''
+      baas ? sectieKanaalkosten() + sectieData() + sectieSysteem() : ''
     }${leeg ? `<div class="card"><div class="card-b">${CRM.ui.leeg(
       'Hier valt voor jou nog niets in te stellen',
       'De Microsoft-koppeling — je eigen agenda, mail en Teams-links in het CRM — is nog niet ingericht voor deze omgeving. Vraag Tjeerd om dat aan te zetten; daarna kun je hier je eigen account verbinden.'
     )}</div></div>` : ''}</div>`;
     vulFormulieren(mount);
+    vulKanaalkosten(mount);   // rendert alleen als de sectie er staat (eigenaar)
     CRM.$$('[data-target]', mount).forEach(inp => inp.onchange = async () => {
       const v = Math.max(0, +inp.value || 0);
       await zetTarget(inp.dataset.target, v);

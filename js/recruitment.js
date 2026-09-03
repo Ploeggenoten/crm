@@ -3645,6 +3645,12 @@ async function bewaarFase(c, fase, extra){
   }
   if(fase === 'Gestopt'){ if(!c.gestoptOp && patch.gestopt_op === undefined) patch.gestopt_op = vandaag; }
   else if(c.gestoptOp) patch.gestopt_op = '';
+  /* Wanneer is deze kandidaat vóór het eerst aan een klant voorgesteld?
+     Tot 3 sep 2026 leidde Performance dat af uit de fase-historie; sinds
+     fase 2 van het meetplan is het een echt veld. Alleen de éérste keer —
+     wie terugvalt en opnieuw wordt voorgesteld, houdt de originele datum. */
+  if(!c.voorgesteldOp && CRM.faseIn(fase, CRM.KETEN.FASE_VOORGESTELD))
+    patch.voorgesteld_op = vandaag;
   /* Haal je iemand terug uít de uitval, dan mag de uitvalreden niet blijven
      plakken — anders staat de kaart weer te lopen én telt hij nog als afvaller
      of stopper mee in de uitvalcijfers. */

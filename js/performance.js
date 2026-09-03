@@ -1938,10 +1938,16 @@ function mktLezen(na){
   _mktBezig = true;
   Promise.all([
     CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000),
-    CRM.sb.from('mkt_campagne_klant').select('*')
-  ]).then(([a,b]) => {
-    _mkt = {meta:a.data||[], campKlant:b.data||[], fout:a.error||b.error||null};
-  }).catch(e => { _mkt = {meta:[], campKlant:[], fout:e}; })
+    CRM.sb.from('mkt_campagne_klant').select('*'),
+    /* Fase 2 (3 sep 2026): handmatige kanaalkosten (Indeed) en de
+       routeringswacht. Bestaan de tabellen nog niet, dan vangt de catch
+       dat af en werkt de rest gewoon. */
+    CRM.sb.from('mkt_kanaal_kosten').select('*'),
+    CRM.sb.from('routering_gaten').select('*')
+  ]).then(([a,b,c,d]) => {
+    _mkt = {meta:a.data||[], campKlant:b.data||[], kanaalKosten:c.data||[],
+            routeringGaten:d.data||[], fout:a.error||b.error||null};
+  }).catch(e => { _mkt = {meta:[], campKlant:[], kanaalKosten:[], routeringGaten:[], fout:e}; })
     .finally(() => { _mktBezig = false; if(na) na(); });
 }
 const ketenIndex = () => CRM.keten({metaStats:_mkt ? _mkt.meta : [], campKlant:_mkt ? _mkt.campKlant : []});
@@ -2102,9 +2108,15 @@ function hoofdstukTrechter(p, K){
       if(!per.has(bron)) per.set(bron, []);
       per.get(bron).push(l);
     }
+    const mkVan = p.van.slice(0,7), mkTot = p.tot.slice(0,7);
+    const kostenVan = bron => (_mkt && _mkt.kanaalKosten || [])
+      .filter(r => String(r.kanaal||'').toLowerCase() === String(bron).toLowerCase()
+                && r.maand >= mkVan && r.maand <= mkTot)
+      .reduce((x,r) => x + (Number(r.bedrag)||0), 0);
     return [...per].map(([bron, ls]) => ({bron, n:ls.length,
       door: ls.filter(CRM.leadDoor).length,
-      geplaatst: ls.filter(l => { const c = CRM.kandVanLead(l); return c && CRM.teltAlsPlaatsing(c); }).length
+      geplaatst: ls.filter(l => { const c = CRM.kandVanLead(l); return c && CRM.teltAlsPlaatsing(c); }).length,
+      bedrag: kostenVan(bron)
     })).sort((a,b) => b.n - a.n);
   })();
   const tabel = `<div class="tblwrap"><table class="tbl pf-tbl">
@@ -2124,10 +2136,11 @@ function hoofdstukTrechter(p, K){
         <td class="num">${r.perGekwal != null ? eurK(r.perGekwal) : '—'}</td>
       </tr>`).join('')}
       ${nietMeta.map(r => `<tr class="pf-nietmeta">
-        <td><b>${h(r.bron)}</b><span class="meta"> · geen advertentiekosten bekend</span></td>
+        <td><b>${h(r.bron)}</b><span class="meta"> · ${r.bedrag > 0 ? 'handmatig maandbedrag (Instellingen)' : 'geen advertentiekosten bekend'}</span></td>
         <td class="num">${r.n}</td><td class="num">—</td>
         <td class="num">${r.door}</td><td class="num">${r.geplaatst}</td>
-        <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+        <td class="num">${r.bedrag > 0 ? eurK(r.bedrag) : '—'}</td>
+        <td class="num">${r.bedrag > 0 && r.n ? eurK(r.bedrag/r.n, 2) : '—'}</td><td class="num">—</td>
       </tr>`).join('')}
     </tbody></table></div>
     ${spendZonderLeads ? `<p class="pf-uitleg meta">Daarnaast is ${eurK(spendZonderLeads)} uitgegeven aan campagnes
@@ -2198,14 +2211,21 @@ function blokSamenvatting(p, K){
   const {rijen} = campRijen(p, K);
   let zin = '', soort = '';
 
-  /* Trede 1 — datakwaliteit. */
+  /* Trede 1 — datakwaliteit. De routeringswacht eerst: een ongerouteerd
+     formulier is exact het gat waardoor 129 Goodlife-leads buiten beeld
+     bleven (aug 2026), dus dat wint van alles. */
+  const gat = (_mkt && _mkt.routeringGaten || []).sort((a,b) => (b.leads_14d||0) - (a.leads_14d||0))[0];
+  if(gat){
+    zin = `Eerst de data: formulier ${h(gat.campagne || gat.form_id)} leverde ${gat.leads_14d} lead${gat.leads_14d===1?'':'s'} in veertien dagen maar hangt aan geen vacature — koppel hem bij Instellingen · Botformulieren, anders belandt deze instroom buiten elke telling.`;
+    soort = 'warn';
+  }
   const losGeld = (K.campagnes||[]).filter(c => c.hoe === 'niet' && c.bedrag > 0);
   const losBedrag = losGeld.reduce((s,c) => s + c.bedrag, 0);
   const zonderVac = (K.gaten.zonderVacature||[]).length;
-  if(losBedrag > 0){
+  if(!zin && losBedrag > 0){
     zin = `Eerst de data: ${eurK(losBedrag)} aan uitgaven hangt aan ${losGeld.length === 1 ? 'een campagne die' : losGeld.length + ' campagnes die'} aan geen klant te koppelen ${losGeld.length === 1 ? 'is' : 'zijn'} — koppel ze bij Marketing · Rendement, anders rekent geen enkel €-getal hieronder eerlijk.`;
     soort = 'warn';
-  } else if(zonderVac > 25){
+  } else if(!zin && zonderVac > 25){
     zin = `Eerst de data: ${zonderVac} Meta-leads hangen aan geen vacature — koppel de formulieren bij Instellingen · Botformulieren, dan gaan bestaande leads automatisch mee en klopt de verdeling per klant.`;
     soort = 'warn';
   }
