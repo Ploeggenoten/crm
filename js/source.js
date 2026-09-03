@@ -1425,6 +1425,7 @@ function inPoolZ(c){
   if(Z.pool === 'alle') return true;
   const voorraad = CRM.klaarOmVoorTeStellen(c), besch = CRM.isBeschikbaar(c);
   if(Z.pool === 'voorraad')    return voorraad;
+  if(Z.pool === 'talentpool')  return CRM.inTalentpool(c);
   if(Z.pool === 'beschikbaar') return besch;
   return voorraad || besch;
 }
@@ -1755,6 +1756,7 @@ function tekenZoek(mount, acties){
         ${gold ? '<span class="src2-goud" title="Golden candidate">★</span>' : ''}
         ${sterHtml(c.ster)}
         <span class="spacer"></span>
+        ${profielChip(c)}
         ${r.km != null ? `<span class="chip"><span class="num">${r.km}</span> km</span>` : ''}
         ${st.dagen != null ? `<span class="chip ${st.kleur}">${h(st.tekst)}</span>` : ''}
         ${c.bemiddelbaar===false ? `<span class="chip">niet bemiddelen</span>`
