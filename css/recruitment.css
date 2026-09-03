@@ -415,11 +415,25 @@ table.rc-qa tr:last-child td{border-bottom:none}
   align-items:center;justify-content:center;border:1px solid var(--line-2);
   border-radius:50%;font-size:11.5px;font-weight:700;color:var(--txt-2)}
 
-/* De regel met de knop "Samenvatting maken" en zijn uitleg, vlak boven het
-   samenvattingsveld. wrap: op een smal scherm valt de hint eronder in
-   plaats van buiten beeld. */
-.ig-samenvat{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px}
-.ig-samenvat .hint{font-size:11.5px;color:var(--muted)}
+/* Brede uitvoering: het paneel moet zowel het formulier als een leesbare
+   cv-kolom ernaast bieden. Alleen déze drawer wordt breder — de klasse
+   wordt in onOpen() van intakeForm() toegevoegd, andere drawers raakt
+   dit niet (zie .drawer in css/base.css). */
+.drawer.ig-breed{width:min(1400px,97vw)}
+.drawer-b.ig-split{display:flex;padding:0;overflow:hidden}
+.ig-col-form{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 22px 60px}
+.ig-col-cv{flex:0 0 320px;overflow-y:auto;padding:18px;
+  border-left:1px solid var(--line);background:var(--card-2)}
+.ig-cv-kop{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.ig-cv-blok{margin-top:14px}
+.ig-cv-blok .label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
+@media (max-width:900px){
+  .drawer.ig-breed{width:100vw}
+  .drawer-b.ig-split{flex-direction:column;overflow-y:auto}
+  .ig-col-form{overflow-y:visible;padding:16px 14px 30px}
+  .ig-col-cv{flex:0 0 auto;overflow-y:visible;border-left:0;border-top:1px solid var(--line)}
+}
 
 /* ── Herontwerp 3 sep 2026: belafspraken-regel + actieve-filters-rij ── */
 .rc-doenbel{background:var(--amber-bg);border-color:var(--amber-line);margin-bottom:8px}

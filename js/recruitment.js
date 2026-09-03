@@ -1659,7 +1659,7 @@ function klaarRegelHtml(){
       <span class="meta">intake gehad · wacht op een klant — daarna gaat het verder bij Klanttrajecten</span>
       <button class="btn ghost sm" data-voorraad>Hele voorraad →</button></div>
     <div class="rc-klaarrij">${toon.map(c => `<button class="rc-naamchip" data-klaar="${h(c.id)}">${h(c.naam)}<em>${
-      h(c.functie || '—')}${c.intake && c.intake.cijfer ? ' · ' + h(c.intake.cijfer) + '/10' : ''}</em></button>`).join('')}
+      h(c.functie || '—')}</em></button>`).join('')}
       ${k.length > toon.length ? `<button class="btn ghost sm" data-voorraad>+ ${k.length - toon.length} meer</button>` : ''}</div>
   </div>`;
 }
@@ -1720,9 +1720,7 @@ function tekenLeadBord(wrap, rijen){
       ${klaar.slice(0,BORD_MAX).map(c => `<div class="bcard" data-klaar="${h(c.id)}">
         <div class="bc-t"><div class="bc-n">${h(c.naam)}<div class="bc-s">${h(c.functie||'—')}${c.klant?' @ '+h(c.klant):''}</div></div>
         ${c.rec?`<span class="rc-rec" title="${h(c.rec)}">${h(CRM.initialen(c.rec))}</span>`:''}</div>
-        <div class="bc-f">${c.intake && c.intake.cijfer
-            ? `<span class="chip ${c.intake.cijfer<7?'amber':'green'} num">intake ${h(c.intake.cijfer)}/10</span>`
-            : intakeDone(c) ? '<span class="chip green">intake ✓</span>'
+        <div class="bc-f">${intakeDone(c) ? '<span class="chip green">intake ✓</span>'
             : '<span class="chip amber" title="De videocall is geweest, de vragenlijst is nog niet ingevuld">intake nog invullen</span>'}
           ${c.intake && c.intake.videocallOp ? `<span class="chip num" title="Datum van de videocall">call ${h(CRM.fmtDateShort(c.intake.videocallOp))}</span>` : ''}
           ${c.woonplaats?`<span class="chip">${h(c.woonplaats)}</span>`:''}</div>
@@ -3598,9 +3596,9 @@ const garantieEnd = c => c.garantieMnd > 0 ? addMonths(c.start || c.geplaatstOp,
 const repOf = c => CRM.kandidaten().find(x => x.vervangt === c.id);
 const herstartOf = c => CRM.kandidaten().find(x => x.herstartVan === c.id);
 
-const intakeDone = c => !!(c.intake && (c.intake.cijfer
-  || String(c.intake.drijfveer||'').trim() || String(c.intake.jaZegt||'').trim()
-  || String(c.intake.samenvatting||'').trim()));
+/* "Opgeslagen" ⇒ gedaan: `op` wordt alleen door intakeForm() gezet, dus dit
+   is precies het moment waarop de AM op "Intake opslaan" heeft geklikt. */
+const intakeDone = c => !!(c.intake && c.intake.op);
 
 const ooSessies = () => CRM.state.ooSessions || [];
 const ooSessie  = id => ooSessies().find(s => String(s.id) === String(id));
@@ -4359,7 +4357,7 @@ function snelBewerk(id){
           ${c.herstartVan?`<span class="chip purple" title="Heraangeboden — eerdere uitkomst staat op de oude kaart">herstart</span>`:''}
           ${c.vervangt?`<span class="chip blue">vervanger</span>`:''}
           ${sess?`<span class="chip">O&amp;O ${h(CRM.fmtDateShort(sess.datum))} · ${h(sess.klant)}</span>`:''}
-          ${c.intake && c.intake.cijfer!=null?`<span class="chip ${c.intake.cijfer<7?'amber':'green'} num">Intake ${h(c.intake.cijfer)}/10</span>`:''}
+          ${intakeDone(c)?`<span class="chip green">Intake ✓</span>`:''}
           ${c.noShows?`<span class="chip red num">${h(c.noShows)}× no-show</span>`:''}
         </div>
       </div>
@@ -4656,6 +4654,27 @@ function planAfspraak(c){
    listeners en scrim-guard op. Zonder dit stapelen Escape-guards. */
 let igVorigeOpruimen = null;
 
+/* Sleutel → Nederlands label, in gespreksvolgorde. Ook gebruikt door de
+   kandidatenkaart (js/kandidaten.js, intakeHtml) om dezelfde velden te
+   tonen — vandaar de export via CRM._rcDeel hieronder. */
+const INTAKE_LBL = {
+  roosterfit:'Kan structureel op de gevraagde tijden werken', roosterfitTxt:'Tijden die structureel niet lukken',
+  certificatenCheck:'Heeft de benodigde certificaten', certificatenTxt:'Welke certificaten',
+  persoonlijkBeeld:'Persoonlijk beeld',
+  why1:'Vertrekreden (WHY #1)', why2:'Motivatie voor deze vacature (WHY #2)', zoekvraag:'Wat de volgende baan moet opleveren',
+  werkgeschiedenis1:'Vorige werkgever 1', werkgeschiedenis2:'Vorige werkgever 2',
+  functieKennis:'Weet wat de functie-inhoud precies inhoudt', functieKennisTxt:'Verwachte drempel',
+  eigenaarschap:'Eigenaarschap (1-5)', eigenaarschapTxt:'Toelichting eigenaarschap',
+  behoudsvoorwaarde:'Belangrijk om over een jaar nog met plezier te werken',
+  loonZekerheid:'Hoogste loon nu of zekerheid (1-5)',
+  concurrerendeTrajecten:'Andere lopende trajecten',
+  tegenbodrisico:'Risico bij een tegenbod (1-5)', tegenbodrisicoTxt:'Toelichting tegenbodrisico',
+  beslisdatum:'Beslisdatum', beslisBetrokkenen:'Betrokkenen bij de beslissing',
+  voorstellen:'Voorstellen aan de klant', voorstellenTxt:'Toelichting bij voorstellen/twijfel',
+  beschikbaarheidGesprek:'Beschikbaar voor gesprek', beschikbaarheidGesprekTxt:'Tijden en flexibiliteit',
+  verwachtingKandidaat:'Verwachting van dit traject', contactAppen:'Akkoord met tussentijds appen'
+};
+
 function intakeForm(id){
   const c = CRM.kandidaat(id); if(!c) return;
   const it = c.intake || {};
@@ -4678,13 +4697,22 @@ function intakeForm(id){
   };
   igVorigeOpruimen = opruimen;
 
-  /* Bouwstenen. De gespreksvelden houden hun oude in_*-ids (dus dezelfde
-     intake-sleutels); de feitenvelden heten ig_* en schrijven naar de
-     kandidaat zelf. */
-  const ta = (k, vraag, ph) => `<div class="f-row"><label for="in_${k}">${h(vraag)}</label>
-    <textarea id="in_${k}" rows="2" placeholder="${h(ph||'')}">${h(it[k]||'')}</textarea></div>`;
+  /* Bouwstenen. De gespreksvelden houden hun in_*-ids (dus de
+     intake-sleutels hierboven); de feitenvelden heten ig_* en schrijven
+     naar de kandidaat zelf. */
+  const ta = (k, vraag, ph, rows) => `<div class="f-row"><label for="in_${k}">${h(vraag)}</label>
+    <textarea id="in_${k}" rows="${rows||2}" placeholder="${h(ph||'')}">${h(it[k]||'')}</textarea></div>`;
+  const ti = (k, lbl, ph) => `<div class="f-row"><label for="in_${k}">${h(lbl)}</label>
+    <input type="text" id="in_${k}" value="${h(it[k]||'')}" placeholder="${h(ph||'')}"></div>`;
+  const datum = (k, lbl) => `<div class="f-row"><label for="in_${k}">${h(lbl)}</label>
+    <input type="date" id="in_${k}" value="${h(it[k]||'')}"></div>`;
   const chips = (k, ops, sel) => `<div class="rc-inchips" data-veld="${h(k)}">${
     ops.map(o=>`<button type="button" class="chip btn-like ${sel===o?'on':''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`;
+  const multichips = (k, ops, sel) => { const arr = Array.isArray(sel) ? sel : [];
+    return `<div class="rc-inchips ig-multi" data-veld="${h(k)}">${
+      ops.map(o=>`<button type="button" class="chip btn-like ${arr.includes(o)?'on':''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`; };
+  const schaal = (k, max, val) => `<div class="rc-schaal" data-veld="${h(k)}">${
+    Array.from({length:max},(_,i)=>i+1).map(n=>`<button type="button" class="rc-cijfer ${+val===n?'on':''}" data-c="${n}">${n}</button>`).join('')}</div>`;
   const fi = (k, lbl, val, ph) => `<div class="f-row"><label for="ig_${k}">${h(lbl)}</label>
     <input type="text" id="ig_${k}" value="${h(val||'')}" placeholder="${h(ph||'')}"></div>`;
   const fsel = (k, lbl, ops, val) => {
@@ -4695,6 +4723,37 @@ function intakeForm(id){
       <select id="ig_${k}"><option value="">—</option>${lijst.map(o=>`<option ${o===val?'selected':''}>${h(o)}</option>`).join('')}</select></div>`;
   };
   const blok = (nr, titel, eerste) => `<div class="ig-blok${eerste?' ig-eerste':''}"><span class="ig-nr num">${nr}</span><span>${titel}</span></div>`;
+
+  /* Rechterkolom: een rustig, alleen-lezen overzicht van het cv, zodat de
+     AM tijdens het gesprek niet hoeft te wisselen van scherm. */
+  const cvPaneelHtml = () => {
+    const werkRegels = (Array.isArray(cv.werkgevers) ? cv.werkgevers : []).slice(0, 4)
+      .map(w => `<div class="rc-kv"><span class="label">${h(w.periode||'')}</span>
+        <span>${h([w.functie, w.werkgever].filter(Boolean).join(' bij '))}</span></div>`).join('');
+    const oplRegels = (Array.isArray(cv.opleidingen) ? cv.opleidingen : []).slice(0, 3)
+      .map(o => `<div class="rc-kv"><span class="label">${h(o.jaar||'')}</span>
+        <span>${h([o.opleiding, o.school].filter(Boolean).join(', '))}</span></div>`).join('');
+    const certNamen = (Array.isArray(cv.certificaten) ? cv.certificaten : [])
+      .map(x => (x && typeof x === 'object') ? (x.naam||'') : x).filter(Boolean);
+    const skills = Array.isArray(cv.skills) ? cv.skills : [];
+    const talen = Array.isArray(cv.talen) && cv.talen.length ? cv.talen.join(', ') : (c.talen||'');
+    const leeg = !werkRegels && !oplRegels && !certNamen.length && !skills.length;
+    return `
+      <div class="ig-cv-kop"><div class="h2" style="font-size:15px;margin:0">${h(c.naam)}</div>
+        <span class="meta">${h(cv.huidigeFunctie||c.functie||'—')}${cv.werkgever?' · '+h(cv.werkgever):''}</span></div>
+      ${CRM.cvParse ? CRM.cvParse.bestandHtml(c) : ''}
+      ${werkRegels ? `<div class="ig-cv-blok"><span class="label">Werkverleden</span>${werkRegels}</div>` : ''}
+      ${oplRegels ? `<div class="ig-cv-blok"><span class="label">Opleiding</span>${oplRegels}</div>` : ''}
+      ${certNamen.length ? `<div class="ig-cv-blok"><span class="label">Certificaten</span>
+        <div class="rc-kv"><span>${h(certNamen.join(', '))}</span></div></div>` : ''}
+      ${skills.length ? `<div class="ig-cv-blok"><span class="label">Vaardigheden</span>
+        <div class="rc-kv"><span>${h(skills.join(', '))}</span></div></div>` : ''}
+      ${talen ? `<div class="ig-cv-blok"><span class="label">Talen</span>
+        <div class="rc-kv"><span>${h(talen)}</span></div></div>` : ''}
+      ${(c.rijbewijs || c.vervoer) ? `<div class="ig-cv-blok"><span class="label">Mobiliteit</span>
+        <div class="rc-kv"><span>${h([c.rijbewijs?'rijbewijs '+c.rijbewijs:'', c.vervoer].filter(Boolean).join(' · '))}</span></div></div>` : ''}
+      ${leeg ? CRM.ui.leeg('Nog geen cv-gegevens','Er is nog geen cv ingelezen voor deze kandidaat.') : ''}`;
+  };
 
   /* "Er staat nog een concept" — eigen mini-modal in plaats van CRM.bevestig,
      omdat Escape/ernaast klikken hier de VEILIGE keuze moet zijn (verdergaan);
@@ -4728,87 +4787,119 @@ function intakeForm(id){
       </div>
       <button class="btn sub x" id="ig_sluit">✕</button>
     </div>
-    <div class="drawer-b" id="ig_body">
-      <p class="ig-uitleg">Loop het paneel van boven naar beneden door tijdens het gesprek. Enter springt naar het volgende veld (Shift+Enter = nieuwe regel); je invoer wordt tussendoor als concept bewaard.</p>
-      ${blok('0','Feiten', true)}
-      <div class="f-grid">
-        ${fi('functie','Gezochte functie', c.functie)}
-        ${fsel('beschikbaar','Beschikbaar', CRM.BESCHIKBAAR, c.beschikbaar)}
-        ${fsel('ploegen','Ploegen', CRM.PLOEGEN, c.ploegen)}
-        ${fsel('vervoer','Vervoer', CRM.VERVOER, c.vervoer)}
-        ${fi('woonplaats','Woonplaats', c.woonplaats)}
-        ${fi('adres','Adres', c.adres)}
-        ${fi('postcode','Postcode', c.postcode)}
-        ${fi('talen','Talen', c.talen, 'Nederlands, Engels…')}
-        ${fi('rijbewijs','Rijbewijs', c.rijbewijs, 'B')}
+    <div class="drawer-b ig-split">
+      <div class="ig-col-form" id="ig_body">
+        <p class="ig-uitleg">Loop het paneel van boven naar beneden door tijdens het gesprek. Enter springt naar het volgende veld (Shift+Enter = nieuwe regel); je invoer wordt tussendoor als concept bewaard.</p>
+        ${blok('0','Feiten', true)}
+        <div class="f-grid">
+          ${fi('functie','Gezochte functie', c.functie)}
+          ${fsel('beschikbaar','Beschikbaar', CRM.BESCHIKBAAR, c.beschikbaar)}
+          ${fsel('ploegen','Ploegen', CRM.PLOEGEN, c.ploegen)}
+          ${fsel('vervoer','Vervoer', CRM.VERVOER, c.vervoer)}
+          ${fi('woonplaats','Woonplaats', c.woonplaats)}
+          ${fi('adres','Adres', c.adres)}
+          ${fi('postcode','Postcode', c.postcode)}
+          ${fi('talen','Talen', c.talen, 'Nederlands, Engels…')}
+          ${fi('rijbewijs','Rijbewijs', c.rijbewijs, 'B')}
+          ${fi('opzegtermijn','Opzegtermijn bij huidige werkgever', cv.opzegtermijn, 'bijv. 1 maand')}
+        </div>
+        <div class="f-row"><label>Kun je structureel op de gevraagde tijden werken (ochtend/avond/nacht, weekend)?</label>
+          ${chips('roosterfit',['ja','nee'],it.roosterfit)}
+          <textarea id="in_roosterfitTxt" rows="1" placeholder="tijden die structureel niet lukken" style="margin-top:8px">${h(it.roosterfitTxt||'')}</textarea></div>
+        <div class="f-row"><label>Heb je de benodigde certificaten (indien van toepassing)?</label>
+          ${chips('certificatenCheck',['ja','deels','nee'],it.certificatenCheck)}
+          <textarea id="in_certificatenTxt" rows="1" placeholder="welke certificaten, en welke ontbreken nog" style="margin-top:8px">${h(it.certificatenTxt||'')}</textarea>
+          <span class="hint">Certificaten met een geldigheidsdatum zet je apart bij Certificaten op de kaart.</span></div>
+
+        ${blok('1','Persoonlijk')}
+        ${ta('persoonlijkBeeld','Vertel eens wat over jezelf — wie ben je, wat doe je zoal?','Hulpvragen: waar ben je goed in buiten je werk? Hoe ziet een gewone week eruit? (vrije tijd/relatie/gezin/woonstatus)', 3)}
+
+        ${blok('2','Functie &amp; werkzaamheden')}
+        <div class="f-grid">
+          ${fi('huidigeFunctie','Huidige functie', cv.huidigeFunctie)}
+          ${fi('werkgever','Huidig bedrijf', cv.werkgever)}
+        </div>
+        ${ta('why1','Waarom ben je nu op zoek naar een nieuwe baan? Wat is de directe aanleiding?','WHY #1 — vertrekreden, letterlijk noteren')}
+        ${ta('why2','Waarom ben je gestopt met scrollen en heeft deze vacature jouw aandacht getrokken?','WHY #2 — motivatie vacature, letterlijk noteren')}
+        ${ta('zoekvraag','Wat zoek je eigenlijk? Wat moet je volgende baan je opleveren?',"opvolging op de WHY's, verdiepend")}
+        <div class="f-grid">
+          ${ti('werkgeschiedenis1','Vorige werkgever 1','functie, bedrijf, periode')}
+          ${ti('werkgeschiedenis2','Vorige werkgever 2','functie, bedrijf, periode')}
+        </div>
+        <div class="f-row"><label>Weet je wat de functie-inhoud precies inhoudt (tempo/omgeving/temperatuur)? Waar verwacht je aan te moeten wennen?</label>
+          ${chips('functieKennis',['ja','nee'],it.functieKennis)}
+          <textarea id="in_functieKennisTxt" rows="1" placeholder="verwachtingsmanagement — verwachte drempel" style="margin-top:8px">${h(it.functieKennisTxt||'')}</textarea></div>
+        <p class="ig-uitleg" style="margin:2px 0 12px">Vertel hier zelf precies wat het werk inhoudt en wat de kandidaat kan verwachten.</p>
+        <div class="f-row"><label>Aan de hand van de functie een vraag stellen, bijv.: het gaat mis op de lijn, machine ligt eruit, niemand in de buurt. Wat doe je?</label>
+          ${schaal('eigenaarschap',5,it.eigenaarschap)}
+          <textarea id="in_eigenaarschapTxt" rows="1" placeholder="toelichting" style="margin-top:8px">${h(it.eigenaarschapTxt||'')}</textarea></div>
+        ${ta('behoudsvoorwaarde','Wat is voor jou belangrijk om hier over een jaar nog met plezier te werken?','behoudsvoorwaarde — logisch sluitstuk')}
+
+        ${blok('3','Salaris &amp; voorwaarden')}
+        <div class="f-grid">
+          ${fi('huidigSalaris','Huidig salaris (bruto p/m)', cv.huidigSalaris, 'bijv. 2800')}
+          ${fi('salariswens','Salariswens (bruto p/m)', cv.salariswens, 'bijv. 3100')}
+        </div>
+        <div class="f-row"><label>Wat weegt zwaarder: het hoogste uurloon nu, of zekerheid en op termijn vast?</label>
+          ${schaal('loonZekerheid',5,it.loonZekerheid)}</div>
+        <div class="f-row"><label>Loop je bij andere bureaus of heb je andere gesprekken lopen? Hoe ver staat dat?</label>
+          ${chips('concurrerendeTrajecten',['nee','oriënterend','gesprek gehad','aanbod ligt er'],it.concurrerendeTrajecten)}</div>
+        <div class="f-row"><label>Je zegt op, en ze komen met meer geld of een betere ploeg. Wat doe je dan?</label>
+          ${schaal('tegenbodrisico',5,it.tegenbodrisico)}
+          <textarea id="in_tegenbodrisicoTxt" rows="1" placeholder="toelichting" style="margin-top:8px">${h(it.tegenbodrisicoTxt||'')}</textarea></div>
+        <div class="f-grid">
+          ${datum('beslisdatum','Beslisdatum')}
+          ${ti('beslisBetrokkenen','Betrokkenen bij de beslissing','bijv. partner')}
+        </div>
+        <p class="ig-uitleg" style="margin:2px 0 0">Leg hier in twee zinnen de vorm uit: hij komt bij Ploeggenoten op de loonlijst, en na 1.560 gewerkte uren neemt de klant hem kosteloos over als het van beide kanten bevalt.</p>
+
+        ${blok('4','Samenvatting / conclusie kandidaat')}
+        <div class="f-row"><label>Voorstellen aan de klant?</label>
+          ${chips('voorstellen',['voorstellen','twijfel','niet voorstellen'],it.voorstellen)}
+          <textarea id="in_voorstellenTxt" rows="1" placeholder="waarom, en waarover eventueel twijfel" style="margin-top:8px">${h(it.voorstellenTxt||'')}</textarea></div>
+        <div class="f-row"><label>Wanneer zou je op gesprek kunnen? Welke dagen/tijden, hoe flexibel ben je?</label>
+          ${multichips('beschikbaarheidGesprek',['ma','di','wo','do','vr'],it.beschikbaarheidGesprek)}
+          <textarea id="in_beschikbaarheidGesprekTxt" rows="1" placeholder="tijden en flexibiliteit" style="margin-top:8px">${h(it.beschikbaarheidGesprekTxt||'')}</textarea></div>
+        ${ta('verwachtingKandidaat','Wat verwacht je van mij / van dit traject?')}
+        <div class="f-row"><label>Ik hou je op de hoogte, ook als er even niks te melden is. Mag ik je daarvoor om de paar dagen even appen?</label>
+          ${chips('contactAppen',['ja','nee'],it.contactAppen)}</div>
       </div>
-      ${blok('1','Functie &amp; werkverleden')}
-      <div class="f-grid">
-        ${fi('huidigeFunctie','Huidige functie', cv.huidigeFunctie)}
-        ${fi('werkgever','Huidig bedrijf', cv.werkgever)}
-        ${fi('opzegtermijn','Opzegtermijn', cv.opzegtermijn, 'bijv. 1 maand')}
-      </div>
-      ${ta('situatie','Wat is er veranderd waardoor je nu openstaat? Wat mis je in je huidige/vorige werk?','de reden achter de reden — vraag door')}
-      ${ta('werkbeeld','Wat weet je van dit soort werk — tempo, fysiek, omgeving? Waar verwacht je aan te moeten wennen?','voorkomt uitval in de eerste 30 dagen')}
-      ${blok('2','Salaris &amp; voorwaarden')}
-      <div class="f-grid">
-        ${fi('huidigSalaris','Huidig salaris (bruto p/m)', cv.huidigSalaris, 'bijv. 2800')}
-        ${fi('salariswens','Salariswens (bruto p/m)', cv.salariswens, 'bijv. 3100')}
-      </div>
-      ${blok('3','Motivatie')}
-      ${ta('jaZegt','Stel je krijgt een aanbod: wat maakt dat je ja zegt — behalve het geld?')}
-      ${ta('droombaan','Wat maakt een baan voor jou een droombaan?')}
-      ${ta('blijven','Wat zou je huidige werkgever moeten veranderen zodat je tóch blijft?','ontmaskert de echte drijfveer en de tegenbod-gevoeligheid')}
-      ${ta('jaar13','Waar wil je over 1 jaar staan? En over 3 jaar?')}
-      ${ta('leren','Wat wil je leren of ontwikkelen in je volgende stap?')}
-      ${blok('4','Risico’s')}
-      <div class="f-row"><label>Loop je ook bij andere bureaus of bedrijven?</label>
-        ${chips('trajecten',['nee','ja'],it.trajecten)}
-        <textarea id="in_trajectenTxt" rows="1" placeholder="zo ja: waar, en hoe ver in het proces?" style="margin-top:8px;${it.trajecten==='ja'?'':'display:none'}">${h(it.trajectenTxt||'')}</textarea></div>
-      ${ta('blokkade','Is er iets of iemand die je zou tegenhouden om ja te zeggen op een passend aanbod?','partner, reistijd, twijfel…')}
-      <div class="f-row"><label>Verwacht je een tegenbod als je opzegt?</label>${chips('tegenbod',['nee','misschien','ja'],it.tegenbod)}</div>
-      <div class="f-row"><label>Heb je je onvrede al eens bij je leidinggevende aangekaart?</label>${chips('aangekaart',['ja','nee'],it.aangekaart)}</div>
-      ${blok('5','Oordeel &amp; samenvatting')}
-      <div class="f-row"><label>Als het aanbod klopt: hoe graag maak je deze overstap? (1–10)</label>
-        <div class="rc-schaal">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button type="button" class="rc-cijfer ${+it.cijfer===n?'on':''}" data-c="${n}">${n}</button>`).join('')}</div></div>
-      ${ta('nietLager','Waarom geen twee punten lager?','hier komt het echte verhaal')}
-      ${ta('tien','Wat zou het een 10 maken?','je onderhandel-checklist bij het offer')}
-      ${ta('drijfveer','Echte drijfveer (één zin)')}
-      ${ta('risicos','Afhaakrisico’s')}
-      <div class="ig-samenvat">
-        <button type="button" class="btn ghost sm" id="ig_samenvat">Samenvatting maken</button>
-        <span class="hint">bouwt een paar zinnen uit wat je hierboven invulde — daarna gewoon aanpasbaar</span>
-      </div>
-      ${ta('samenvatting','Samenvatting voor de klant','drie feitelijke zinnen die de kandidaat verkopen')}
-      <div class="f-row"><label>Klaar om voor te stellen?</label>${chips('klaar',['ja','nog niet'],it.klaar)}</div>
+      <aside class="ig-col-cv" id="ig_cv">${cvPaneelHtml()}</aside>
     </div>
     <div class="drawer-f" style="flex-wrap:wrap;row-gap:8px">
       <button class="btn" id="in_ok">Intake opslaan</button>
-      <button class="btn ghost" id="in_uittranscript">Uit transcript</button>
       <div class="spacer"></div>
       <button class="btn ghost" id="ig_annuleer">Sluiten</button>
     </div>`, {onClose:opruimen, onOpen(dr){
+      dr.classList.add('ig-breed');
       const $ = sel => dr.querySelector(sel);
       dr.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
+      if(CRM.cvParse) CRM.cvParse.bindBestand(dr);
 
       /* ── Conceptopslag: alles wat in het paneel staat, als één object ── */
       const lees = () => {
-        const d = {velden:{}, chips:{}, cijfer:null};
+        const d = {velden:{}, chips:{}, multi:{}, schaal:{}};
         CRM.$$('#ig_body input[id], #ig_body select[id], #ig_body textarea[id]', dr)
           .forEach(el => { d.velden[el.id] = el.value; });
-        CRM.$$('.rc-inchips[data-veld]', dr).forEach(g => {
+        CRM.$$('.rc-inchips[data-veld]:not(.ig-multi)', dr).forEach(g => {
           const on = g.querySelector('.chip.on'); if(on) d.chips[g.dataset.veld] = on.dataset.w;
         });
-        const cij = dr.querySelector('.rc-cijfer.on'); if(cij) d.cijfer = +cij.dataset.c;
+        CRM.$$('.rc-inchips.ig-multi[data-veld]', dr).forEach(g => {
+          d.multi[g.dataset.veld] = CRM.$$('.chip.on', g).map(b => b.dataset.w);
+        });
+        CRM.$$('.rc-schaal[data-veld]', dr).forEach(g => {
+          const on = g.querySelector('.rc-cijfer.on'); if(on) d.schaal[g.dataset.veld] = +on.dataset.c;
+        });
         return d;
       };
       const heeftInhoud = d => !!d && (
         Object.values(d.velden||{}).some(v => String(v).trim() !== '') ||
-        Object.keys(d.chips||{}).length > 0 || d.cijfer != null);
+        Object.keys(d.chips||{}).length > 0 ||
+        Object.values(d.multi||{}).some(a => a && a.length) ||
+        Object.keys(d.schaal||{}).length > 0);
       const zetTerug = d => {
         /* Alleen gevulde conceptvelden terugzetten: een leeg veld in het
-           concept mag niet wissen wat er intussen op de kaart of via de
-           transcript-route is ingevuld. */
+           concept mag niet wissen wat er intussen op de kaart is ingevuld. */
         Object.entries((d && d.velden) || {}).forEach(([k, v]) => {
           if(String(v).trim() === '') return;
           const el = dr.querySelector('#'+k); if(el) el.value = v;
@@ -4817,11 +4908,14 @@ function intakeForm(id){
           const g = dr.querySelector(`.rc-inchips[data-veld="${veld}"]`); if(!g) return;
           CRM.$$('.chip', g).forEach(b => b.classList.toggle('on', b.dataset.w === w));
         });
-        if(d && d.cijfer != null)
-          CRM.$$('.rc-cijfer', dr).forEach(b => b.classList.toggle('on', +b.dataset.c === d.cijfer));
-        const tr = dr.querySelector('.rc-inchips[data-veld="trajecten"] .chip.on');
-        const txt = $('#in_trajectenTxt');
-        if(txt) txt.style.display = (tr && tr.dataset.w === 'ja') ? '' : 'none';
+        Object.entries((d && d.multi) || {}).forEach(([veld, arr]) => {
+          const g = dr.querySelector(`.rc-inchips.ig-multi[data-veld="${veld}"]`); if(!g) return;
+          CRM.$$('.chip', g).forEach(b => b.classList.toggle('on', (arr||[]).includes(b.dataset.w)));
+        });
+        Object.entries((d && d.schaal) || {}).forEach(([veld, n]) => {
+          const g = dr.querySelector(`.rc-schaal[data-veld="${veld}"]`); if(!g) return;
+          CRM.$$('.rc-cijfer', g).forEach(b => b.classList.toggle('on', +b.dataset.c === n));
+        });
       };
       const schrijfConcept = () => {
         try{ localStorage.setItem(conceptKey, JSON.stringify({op:new Date().toISOString(), data:lees()})); }catch(e){}
@@ -4844,18 +4938,20 @@ function intakeForm(id){
         });
       }
 
-      /* ── Chips en cijferschaal (ongewijzigd gedrag, plus conceptopslag) ── */
-      CRM.$$('.rc-inchips', dr).forEach(g => CRM.$$('.chip', g).forEach(b => b.onclick = () => {
-        CRM.$$('.chip', g).forEach(x => x.classList.remove('on'));
+      /* ── Chips (enkel- en meervoudig) en schalen, plus conceptopslag ── */
+      CRM.$$('.rc-inchips[data-veld]', dr).forEach(g => {
+        const multi = g.classList.contains('ig-multi');
+        CRM.$$('.chip', g).forEach(b => b.onclick = () => {
+          if(multi) b.classList.toggle('on');
+          else { CRM.$$('.chip', g).forEach(x => x.classList.remove('on')); b.classList.add('on'); }
+          noteer();
+        });
+      });
+      CRM.$$('.rc-schaal[data-veld]', dr).forEach(g => CRM.$$('.rc-cijfer', g).forEach(b => b.onclick = () => {
+        CRM.$$('.rc-cijfer', g).forEach(x => x.classList.remove('on'));
         b.classList.add('on');
-        if(g.dataset.veld === 'trajecten') $('#in_trajectenTxt').style.display = b.dataset.w === 'ja' ? '' : 'none';
         noteer();
       }));
-      CRM.$$('.rc-cijfer', dr).forEach(b => b.onclick = () => {
-        CRM.$$('.rc-cijfer', dr).forEach(x => x.classList.remove('on'));
-        b.classList.add('on');
-        noteer();
-      });
 
       /* ── Invulritme: Enter = volgend veld, Shift+Enter = nieuwe regel ── */
       dr.addEventListener('keydown', e => {
@@ -4904,85 +5000,34 @@ function intakeForm(id){
       $('#ig_sluit').onclick = sluitVeilig;
       $('#ig_annuleer').onclick = sluitVeilig;
 
-      /* ── Samenvatting zonder AI: 3–4 zinnen uit de ingevulde velden ── */
-      $('#ig_samenvat').onclick = () => {
-        const f = k => { const el = $('#ig_'+k); return el ? el.value.trim() : ''; };
-        const t = k => { const el = $('#in_'+k); return el ? el.value.trim() : ''; };
-        const zonderPunt = s => String(s).replace(/[.\s]+$/, '');
-        const lijstNL = d => d.length > 1 ? d.slice(0, -1).join(', ') + ' en ' + d[d.length - 1] : (d[0] || '');
-        const geld = v => {
-          const s = String(v || '').trim();
-          const m = s.match(/^€?\s*(\d{1,2}\.?\d{3}|\d+)(?:,\d+)?$/);
-          return m ? '€' + m[1].replace('.', '') + ' bruto per maand' : s;
-        };
-        const voornaam = (c.naam || 'De kandidaat').trim().split(/\s+/)[0];
-        const zinnen = [];
-        /* Wie is het, wat doet hij nu, wat zoekt hij. */
-        const d1 = [];
-        const hf = f('huidigeFunctie'), wg = f('werkgever');
-        if(hf && wg) d1.push(`werkt als ${hf} bij ${wg}`);
-        else if(hf) d1.push(`werkt als ${hf}`);
-        else if(wg) d1.push(`werkt bij ${wg}`);
-        if(f('woonplaats')) d1.push(`woont in ${f('woonplaats')}`);
-        if(f('functie')) d1.push(`zoekt een baan als ${f('functie')}`);
-        if(d1.length) zinnen.push(`${voornaam} ${lijstNL(d1)}.`);
-        /* Wat wil hij verdienen en per wanneer. */
-        const d2 = [];
-        if(f('salariswens')) d2.push(`wil ${geld(f('salariswens'))} verdienen${f('huidigSalaris') ? ' (nu ' + geld(f('huidigSalaris')) + ')' : ''}`);
-        const b = f('beschikbaar');
-        if(b === 'direct') d2.push('kan per direct beginnen');
-        else if(f('opzegtermijn')) d2.push(`heeft een opzegtermijn van ${zonderPunt(f('opzegtermijn'))}`);
-        else if(b && b !== 'niet') d2.push(`is ${b} beschikbaar`);
-        const pl = f('ploegen');
-        if(pl && pl !== 'geen') d2.push(`wil in ${pl === 'wisselend' ? 'wisselende ploegen' : pl} werken`);
-        if(d2.length) zinnen.push(`${voornaam} ${lijstNL(d2)}.`);
-        /* Drijfveer + eventueel risico en commitment. */
-        const drijf = t('drijfveer') || t('jaZegt') || t('droombaan');
-        if(drijf) zinnen.push(`Belangrijkste drijfveer: ${zonderPunt(drijf)}.`);
-        const cijEl = dr.querySelector('.rc-cijfer.on');
-        const risico = t('risicos') || t('blokkade');
-        let z4 = '';
-        if(cijEl) z4 = `Commitment voor de overstap: ${cijEl.dataset.c}/10`;
-        if(risico) z4 = z4 ? `${z4}; aandachtspunt: ${zonderPunt(risico)}` : `Aandachtspunt: ${zonderPunt(risico)}`;
-        if(z4) zinnen.push(z4 + '.');
-        if(!zinnen.length) return CRM.toast('Vul eerst een paar velden in — er valt nog niets samen te vatten','err');
-        $('#in_samenvatting').value = zinnen.join(' ');
-        noteer();
-        $('#in_samenvatting').focus();
-      };
-
-      /* ── Transcript-route: blijft werken, maar gooit geen typwerk meer
-         weg — het concept staat in localStorage vóór het paneel sluit, en
-         bij terugkomst kiest de recruiter zelf tussen concept en
-         transcript-resultaat. ── */
-      $('#in_uittranscript').onclick = () => {
-        if(!CRM.intakeAI) return CRM.toast('Transcript inlezen is nu niet beschikbaar','err');
-        if(dirty){ clearTimeout(wachter); schrijfConcept(); }
-        CRM.drawer.close();
-        CRM.intakeAI.open({kandidaat:c, onKlaar:() => intakeForm(c.id)});
-      };
-
-      /* ── Opslaan: intake als vanouds, plus de feiten naar de kandidaat ── */
+      /* ── Opslaan: intake, plus de feiten naar de kandidaat ── */
       $('#in_ok').onclick = async () => {
         const g = k => { const el = $('#in_'+k); return el ? el.value.trim() : ''; };
         const f = k => { const el = $('#ig_'+k); return el ? el.value.trim() : ''; };
         const chip = k => { const b = dr.querySelector(`.rc-inchips[data-veld="${k}"] .chip.on`); return b ? b.dataset.w : ''; };
-        const cij = dr.querySelector('.rc-cijfer.on');
+        const multi = k => { const g2 = dr.querySelector(`.rc-inchips.ig-multi[data-veld="${k}"]`);
+          return g2 ? CRM.$$('.chip.on', g2).map(b => b.dataset.w) : []; };
+        const schaalVal = k => { const b = dr.querySelector(`.rc-schaal[data-veld="${k}"] .rc-cijfer.on`); return b ? +b.dataset.c : null; };
         const intake = {
-          situatie:g('situatie'), trajecten:chip('trajecten'), trajectenTxt:g('trajectenTxt'),
-          jaZegt:g('jaZegt'), droombaan:g('droombaan'), blijven:g('blijven'), werkbeeld:g('werkbeeld'),
-          jaar13:g('jaar13'), leren:g('leren'), blokkade:g('blokkade'),
-          tegenbod:chip('tegenbod'), aangekaart:chip('aangekaart'),
-          cijfer:cij ? +cij.dataset.c : null, nietLager:g('nietLager'), tien:g('tien'),
-          drijfveer:g('drijfveer'), risicos:g('risicos'), samenvatting:g('samenvatting'), klaar:chip('klaar'),
+          roosterfit:chip('roosterfit'), roosterfitTxt:g('roosterfitTxt'),
+          certificatenCheck:chip('certificatenCheck'), certificatenTxt:g('certificatenTxt'),
+          persoonlijkBeeld:g('persoonlijkBeeld'),
+          why1:g('why1'), why2:g('why2'), zoekvraag:g('zoekvraag'),
+          werkgeschiedenis1:g('werkgeschiedenis1'), werkgeschiedenis2:g('werkgeschiedenis2'),
+          functieKennis:chip('functieKennis'), functieKennisTxt:g('functieKennisTxt'),
+          eigenaarschap:schaalVal('eigenaarschap'), eigenaarschapTxt:g('eigenaarschapTxt'),
+          behoudsvoorwaarde:g('behoudsvoorwaarde'),
+          loonZekerheid:schaalVal('loonZekerheid'),
+          concurrerendeTrajecten:chip('concurrerendeTrajecten'),
+          tegenbodrisico:schaalVal('tegenbodrisico'), tegenbodrisicoTxt:g('tegenbodrisicoTxt'),
+          beslisdatum:g('beslisdatum'), beslisBetrokkenen:g('beslisBetrokkenen'),
+          voorstellen:chip('voorstellen'), voorstellenTxt:g('voorstellenTxt'),
+          beschikbaarheidGesprek:multi('beschikbaarheidGesprek'), beschikbaarheidGesprekTxt:g('beschikbaarheidGesprekTxt'),
+          verwachtingKandidaat:g('verwachtingKandidaat'), contactAppen:chip('contactAppen'),
           /* De datum van de videocall komt uit de recruitmentpijplijn en wordt
              hier niet opnieuw gevraagd — maar hij mag ook niet verdwijnen
              zodra iemand de vragenlijst opslaat. */
           videocallOp:it.videocallOp || '',
-          /* Kwam (een deel van) deze intake uit een transcript, dan is dít
-             de enige plek waar dat staat — niet laten verdampen bij opslaan
-             (wens js/intake.js, punt 4 van de inbouwnotitie). */
-          bron:it.bron || '',
           op:CRM.todayISO(), door:CRM.me()
         };
         /* De feiten schrijven naar de kandidaat zelf (kolommen + c.cv),
@@ -5007,10 +5052,9 @@ function intakeForm(id){
         clearTimeout(wachter);
         try{ localStorage.removeItem(conceptKey); }catch(e){}
         dirty = false;
-        await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
-          `Video-intake afgenomen${intake.cijfer ? ' — commitment ' + intake.cijfer + '/10' : ''}`);
+        await CRM.logActiviteit('kandidaat', c.id, 'gesprek', 'Video-intake afgenomen');
         CRM.drawer.close();
-        CRM.toast(`Intake opgeslagen${intake.cijfer ? ' — ' + intake.cijfer + '/10' : ''}`, 'ok');
+        CRM.toast('Intake opgeslagen', 'ok');
         tekenBody();
       };
     }});
@@ -5234,7 +5278,7 @@ CRM.kandidaatIntake  = id => intakeForm(id);                // video-intakeformu
 CRM.kandidaatPlannen = id => { const c = CRM.kandidaat(id); if(c) planAfspraak(c); };
 CRM._rcDeel = {
   intakeForm, ooModal, promoteerStarts, weekGrens,
-  ooSessies, ooSessie, sessLeden, sessDeelnemers, sessFuncties, intakeDone,
+  ooSessies, ooSessie, sessLeden, sessDeelnemers, sessFuncties, intakeDone, INTAKE_LBL,
   garantieEnd, owesReplacement, repOf, totaalJaarSalaris,
   /* "+ Kandidaat" stond op het vervallen tabblad Voorselectie; die knop hoort
      nu op het bord, want de kandidaat komt in de eerste kolom (Intake). */

@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="css/sales.css?v=20260820d">
 <link rel="stylesheet" href="css/klanten.css?v=20260813a">
 <link rel="stylesheet" href="css/contactkaart.css?v=20260813a">
-<link rel="stylesheet" href="css/recruitment.css?v=20260903b">
+<link rel="stylesheet" href="css/recruitment.css?v=20260903c">
 <link rel="stylesheet" href="css/kandidaten.css?v=20260813a">
 <link rel="stylesheet" href="css/kandverwijder.css?v=20260810h4">
 <link rel="stylesheet" href="css/traject.css?v=20260810h4">
@@ -37,7 +37,6 @@
      plan van aanpak. Geen eigen menu-item; ze openen vanaf een kaart. -->
 <link rel="stylesheet" href="css/cv.css?v=20260810h5">
 <link rel="stylesheet" href="css/cvparse.css?v=20260810h4">
-<link rel="stylesheet" href="css/intake.css?v=20260810h4">
 <link rel="stylesheet" href="css/swo.css?v=20260901a">
 <link rel="stylesheet" href="css/pva.css?v=20260810h4">
 <link rel="stylesheet" href="css/dictee.css?v=20260817a">
@@ -111,7 +110,7 @@
 <!-- Kandidaat verwijderen of anonimiseren. Bibliotheek zonder eigen scherm:
      de kandidatenkaart hangt de knoppen onderaan. Leest CRM.PLACED bij het
      laden, dus moet ná js/data.js staan. -->
-<script src="js/kandverwijder.js?v=20260826a"></script>
+<script src="js/kandverwijder.js?v=20260903a"></script>
 <!-- Trajectpoort: voorkomt dat een tweede voorstel het eerste traject
      stilzwijgend overschrijft, en bewaart wat er wordt afgesloten. -->
 <script src="js/traject.js?v=20260810h4"></script>
@@ -120,15 +119,12 @@
 <!-- CV inlezen: tekstlaag uit pdf/docx halen, velden voorstellen naast
      wat er al staat, en het bestand zelf bewaren bij de kandidaat. -->
 <script src="js/cvparse.js?v=20260810h4"></script>
-<!-- Video-intake: transcript inlezen, opdracht voor Claude op het klembord,
-     antwoord terug en de intakevelden als voorstel invullen. -->
-<script src="js/intake.js?v=20260810h4"></script>
 <!-- CV door Claude laten lezen: voor cv-opmaak die met regels niet te
      vangen is. Zelfde werkwijze als de video-intake — klembord heen,
      klembord terug, geen API en geen kosten. Moet ná cvparse.js staan:
      het hergebruikt diens leesBestand en controlevenster. -->
 <script src="js/cvclaude.js?v=20260810h4"></script>
-<script src="js/cv.js?v=20260901a"></script>
+<script src="js/cv.js?v=20260903a"></script>
 <script src="js/swo.js?v=20260901c"></script>
 <script src="js/pva.js?v=20260810h4"></script>
 <!-- Modules: elk bestand registreert zichzelf via CRM.registerModule(). -->
@@ -139,14 +135,14 @@
      overzicht. Geen menu-item — het hoort bij Relaties en registreert zich
      alleen om #contacten/<id> te kunnen routeren. -->
 <script src="js/contactkaart.js?v=20260820b"></script>
-<script src="js/recruitment.js?v=20260903k"></script>
+<script src="js/recruitment.js?v=20260903l"></script>
 <script src="js/pijplijn.js?v=20260810h4"></script>
 <!-- Plaatsingen: alles vanaf de handtekening. Het bord hierboven houdt op bij
      'Contract ondertekenen' — na het tekenen is er geen volgende stap meer,
      alleen een startdatum en een aftelling, en dat is geen kanban. -->
 <script src="js/plaatsingen.js?v=20260903a"></script>
 <script src="js/hot.js?v=20260820a"></script>
-<script src="js/kandidaten.js?v=20260903a"></script>
+<script src="js/kandidaten.js?v=20260903b"></script>
 <script src="js/source.js?v=20260903b"></script>
 <script src="js/marketing.js?v=20260903c"></script>
 <script src="js/performance.js?v=20260903d"></script>

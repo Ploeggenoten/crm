@@ -467,11 +467,10 @@ function anonPatch(c){
        kunt iemand niet terugbellen van wie het telefoonnummer net gewist
        is. Zo valt de kaart ook uit de Beschikbaar-pool. */
     bemiddelbaar:false, beschikbaar_per:null,
-    /* Van de intake blijft het commitmentcijfer over. Dat is een getal
-       waar de recruitmentcijfers mee werken; de antwoorden eronder zijn
-       het verhaal van een persoon en gaan eruit. */
-    intake: c.intake ? {cijfer: c.intake.cijfer == null ? null : c.intake.cijfer,
-                        op: c.intake.op || '', door: c.intake.door || ''} : null
+    /* Van de intake blijft alleen dat er één is geweest en wanneer over —
+       de recruitmentcijfers (intakeDone) werken daarmee; de antwoorden
+       eronder zijn het verhaal van een persoon en gaan eruit. */
+    intake: c.intake ? {op: c.intake.op || '', door: c.intake.door || ''} : null
   };
   /* js/finance.js haalt het maandloon uit het notitieveld als de kolom
      leeg is (feeBerekening: /\b([2-6]\d{3})\b/). Gooien we `note` weg

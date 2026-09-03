@@ -1287,7 +1287,6 @@ function kaart(mount, acties, id){
     if(b) b.onclick = () => CRM.cvClaude.open({kandidaat:c, onKlaar: x => CRM.ga('kandidaten', {id:x.id})}); }
   /* Het cv-bestand zelf, met een tijdelijke link om te openen. */
   if(CRM.cvParse) CRM.cvParse.bindBestand(mount);
-  if(CRM.intakeAI) CRM.intakeAI.bindBlok(mount);
   { const b = mount.querySelector('#c_skillnieuw');
     if(b) b.onclick = () => vaardigheidToevoegen(c); }
   mount.querySelectorAll('[data-skillweg]').forEach(b =>
@@ -2702,38 +2701,30 @@ function intakeHtml(c){
   /* Het intakeformulier zelf staat in js/recruitment.js (CRM.kandidaatIntake);
      vroeger kon je er alleen vanaf het bord bij. */
   const knop = `<button class="btn ghost sm" id="c_intake2">${i?'Intake bijwerken':'Intake invullen'}</button>`;
-  if(!i) return `<div class="card"><div class="card-h"><div class="h2">Intake</div>
+  if(!i || !i.op) return `<div class="card"><div class="card-h"><div class="h2">Intake</div>
       <span class="spacer"></span>${knop}</div>
-    <div class="card-b">${CRM.intakeAI ? CRM.intakeAI.blokHtml(c) : ''}${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall — of lees een transcript in.')}</div></div>`;
-  const cijfer = Number(i.cijfer || i.commitment || 0);
-  /* Nederlandse labels in gespreksvolgorde, in plaats van de rauwe sleutels
-     ("jaZegt", "nietLager") die hier eerst op de kaart stonden. Onbekende
-     sleutels vallen terug op de sleutelnaam, zodat een nieuw intakeveld
-     nooit onzichtbaar is. */
-  const INTAKE_LBL = {
-    situatie:'Situatie & urgentie', trajecten:'Ook bij andere bureaus', trajectenTxt:'Waar en hoe ver',
-    jaZegt:'Waarom ja, los van geld', droombaan:'Droombaan', blijven:'Wat de werkgever moest veranderen',
-    werkbeeld:'Beeld van het werk', jaar13:'Over 1 en 3 jaar', leren:'Wil leren of ontwikkelen',
-    blokkade:'Mogelijke blokkade', tegenbod:'Verwacht tegenbod', aangekaart:'Onvrede aangekaart',
-    nietLager:'Waarom geen twee punten lager', tien:'Wat het een 10 maakt', klaar:'Klaar om voor te stellen'
-  };
-  const verstopt = ['cijfer','commitment','drijfveer','drijfveren','risico','risicos','samenvatting','op','door'];
+    <div class="card-b">${CRM.ui.leeg('Geen intake vastgelegd','Vul het intakeformulier in tijdens de videocall.')}</div></div>`;
+  /* De labels komen uit js/recruitment.js (CRM._rcDeel.INTAKE_LBL) — één
+     plek voor het formulier én de weergave hier, zodat ze niet uit elkaar
+     kunnen lopen. Onbekende sleutels (bv. van een oude, vervangen intake)
+     vallen terug op de sleutelnaam, zodat niets stilletjes onzichtbaar is. */
+  const INTAKE_LBL = (CRM._rcDeel && CRM._rcDeel.INTAKE_LBL) || {};
+  const verstopt = ['videocallOp','op','door'];
   const volgorde = Object.keys(INTAKE_LBL).concat(Object.keys(i).filter(k => !INTAKE_LBL[k] && !verstopt.includes(k)));
-  const toon = k => { const w = i[k]; return w == null || w === '' ? ''
-    : `<div class="kd-veld"><span class="label">${h(INTAKE_LBL[k] || k)}</span><span>${h(typeof w==='object'?JSON.stringify(w):w)}</span></div>`; };
+  const toon = k => {
+    const w = i[k];
+    const leeg = w == null || w === '' || (Array.isArray(w) && !w.length);
+    if(leeg) return '';
+    const weer = Array.isArray(w) ? w.join(', ') : (typeof w === 'object' ? JSON.stringify(w) : w);
+    return `<div class="kd-veld"><span class="label">${h(INTAKE_LBL[k] || k)}</span><span>${h(weer)}</span></div>`;
+  };
   return `<div class="card">
     <div class="card-h"><div class="h2">Intake</div>
-      ${cijfer?`<span class="chip${cijfer<7?' amber':' green'}">Commitment <span class="num">${cijfer}</span>/10</span>`:''}
       <span class="spacer"></span>
-      <span class="meta num">${h(i.op?CRM.fmtDate(i.op):'')}${i.door?' · '+h(i.door):''}</span>
+      <span class="meta num">${h(CRM.fmtDate(i.op))}${i.door?' · '+h(i.door):''}</span>
       ${knop}</div>
     <div class="card-b">
-      ${cijfer && cijfer < 7 ? '<div class="note warn" style="margin-bottom:14px">Commitmentcijfer onder de 7 — bespreek de twijfel vóór je voorstelt.</div>' : ''}
-      ${i.samenvatting ? `<div class="kd-intsam"><span class="label">Samenvatting voor de klant</span>
-        <p>${h(i.samenvatting)}</p></div>` : ''}
       <div class="kd-velden">
-        ${(i.drijfveer||i.drijfveren)?`<div class="kd-veld"><span class="label">Echte drijfveer</span><span>${h(i.drijfveer||i.drijfveren)}</span></div>`:''}
-        ${(i.risico||i.risicos)?`<div class="kd-veld"><span class="label">Afhaakrisico's</span><span>${h(i.risico||i.risicos)}</span></div>`:''}
         ${volgorde.map(toon).join('')}
       </div>
     </div></div>`;
