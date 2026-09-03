@@ -28,6 +28,7 @@ function dagVan(waarde){
 
 /* ─── Periode ────────────────────────────────────────────────── */
 let periode = 'maand', eigenVan = '', eigenTot = '';
+let trOpen = '';                            /* opengeklapte funnelstap (drill-down) */
 let recSort   = {k:'plaatsingen', dir:-1};
 /* 'omzet' is in de klanttabel de kolom van de gekozen bron: bij het team
    (geen bedragen) staat daar het aantal plaatsingen, dus deze standaard
@@ -237,6 +238,15 @@ function blokBasis(){
     'geen bron ingevuld — die staan in geen enkele regel van "Per bron"']);
   if(zonderLoon.length) punten.push([zonderLoon.length,
     'een W&S-plaatsing zonder bruto maandsalaris — daarvan is geen fee te berekenen']);
+  /* Sinds de trechter vanaf de campagne meet (3 sep 2026) rusten de cijfers
+     ook op de leadtabel — dus dezelfde eerlijkheid voor die twee gaten. */
+  const mLeads = (CRM.state.leads||[]).filter(CRM.leadTelbaar);
+  const zonderCamp = mLeads.filter(l => !(l.campagne||'').trim()).length;
+  const zonderVacK = mLeads.filter(l => !String(l.vacature_id||'').trim()).length;
+  if(zonderCamp) punten.push([zonderCamp,
+    'Meta-leads zonder campagnenaam — hun kosten zijn aan geen campagne toe te rekenen, dus zij drukken nergens op een €-per-lead']);
+  if(zonderVacK) punten.push([zonderVacK,
+    'Meta-leads zonder vacature-koppeling — koppel het formulier bij Instellingen · Botformulieren, dan gaan bestaande leads meteen mee']);
   if(!punten.length) return '';
 
   const pct = Math.round(Math.max(geenFase.length, geenSince.length) / cs.length * 100);
@@ -441,9 +451,12 @@ function intakeRatio(){
    twee losse tellingen op elkaar te delen die niets met elkaar te maken
    hoeven te hebben. */
 function leadRatio(){
-  const leads = CRM.state.leads || [];
-  const door  = leads.filter(l => String(l.kandidaat_id || '').trim());
-  return {n:leads.length, door:door.length, ratio: door.length ? door.length / leads.length : null};
+  /* Op de core-motor (3 sep 2026): doorgeschoten = kandidaat_id gevuld ÓF de
+     kandidaat wijst met lead_id terug. De oude telling keek alleen naar
+     kandidaat_id en toonde daardoor onterecht "niet te meten". */
+  const leads = (CRM.state.leads || []).filter(CRM.leadTelbaar);
+  const door  = leads.filter(CRM.leadDoor);
+  return {n:leads.length, door:door.length, ratio: leads.length ? door.length / leads.length : null};
 }
 
 /* De fee van dit jaar. Volgorde is hier wezenlijk: eerst de afspraak van de
@@ -659,17 +672,22 @@ function blokNaar(){
       </div></div>`;
   })();
 
-  return `<section class="pf-sec pf-naar">
-    <div class="pf-kop"><span class="label">Op weg naar ${J.doel}</span>
-      <span class="meta">van ratio naar tempo naar omzet · ${gehaald ? 'doel gehaald'
-        : `${J.teGaan} te gaan in ${een(weken)} ${weken < 2 ? 'week' : 'weken'}`}</span></div>
+  /* Ingeklapt tot één kernrij (Performance-conceptplan, 3 sep 2026): vier
+     kaarten rekenwerk zijn naslagwerk, geen dagelijkse kost. De kernrij zegt
+     wat je moet weten; wie het rekenpad wil zien klapt open. */
+  return `<section class="pf-sec pf-naar"><details class="pf-inklap">
+    <summary><div class="pf-kop"><span class="label">Op weg naar ${J.doel}</span>
+      <span class="meta">${gehaald ? 'doel gehaald'
+        : `${J.teGaan} te gaan in ${een(weken)} ${weken < 2 ? 'week' : 'weken'}${
+          perWeek != null && !gehaald ? ` · ${een(perWeek)} per week nodig` : ''}`}
+        · klik voor het rekenpad</span></div></summary>
     <div class="pf-naargrid">
       ${kaartRatios}
       ${kaartMoet}
       ${kaartTrechter}
       ${kaartOmzet}
     </div>
-  </section>`;
+  </details></section>`;
 }
 
 /* ═══ 1. PLAATSINGEN ═════════════════════════════════════════════ */
@@ -871,68 +889,10 @@ function blokRecruiters(p, D){
   </section>`;
 }
 
-/* ═══ 4. CONVERSIETRECHTER ═══════════════════════════════════════ */
-function blokTrechter(p, D){
-  /* Alleen kandidaten die daadwerkelijk een pijplijnfase bereikten. Een
-     geïmporteerde kandidaat zonder fase heeft nooit in de trechter gezeten
-     en zou het startgetal anders vervuilen. */
-  const cohort = D.instroom.filter(c => verste(c) >= 0);
-  const buiten = D.instroom.length - cohort.length;
-  const buitenTxt = buiten ? ` · <span class="num">${buiten}</span> zonder pijplijnfase niet meegeteld` : '';
-  if(cohort.length < 3){
-    /* Nul instroom heeft twee heel verschillende oorzaken en het scherm zei
-       allebei "te weinig instroom". Ligt het aan een lege instroomdatum, dan
-       helpt een langere periode NIET — die kaarten vallen buiten élke maand.
-       Dat verschil moet je zien, anders blijf je periodes proberen. */
-    const zonderSince = CRM.kandidaten().filter(c => !kort(c.since)).length;
-    const uitleg = !D.instroom.length && zonderSince
-      ? `Er staat geen enkele instroomdatum in deze periode, terwijl ${zonderSince} kandidaten helemaal geen instroomdatum hebben — die vallen buiten elke periode. Een langere periode helpt hier niet; een instroomdatum invullen wel.`
-      : `Er gingen ${cohort.length} kandidaten de pijplijn in${buiten?` (${buiten} kandidaten zonder pijplijnfase tellen niet mee — meestal de import uit het oude ATS)`:''}. Kies een langere periode voor een betrouwbaar beeld.`;
-    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Conversietrechter</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Te weinig instroom in deze periode', uitleg)}</div></div></section>`;
-  }
-
-  const verstes = cohort.map(verste);
-  const tel = FUNNEL.map((f,i) => ({fase:f.k, kleur:f.c, n:verstes.filter(v => v>=i).length}));
-  const start = tel[0].n || 1;
-  const plaatsingen = tel[fIdx('Contract getekend')].n;
-  const voorgesteld = tel[fIdx('Voorgesteld')].n;
-  const offers      = tel[fIdx('Offer')].n;
-
-  return `<section class="pf-sec">
-    <div class="pf-kop"><span class="label">Conversietrechter</span>
-      <span class="meta"><span class="num">${cohort.length}</span> kandidaten de pijplijn in ${h(p.lbl)}${buitenTxt}</span></div>
-    <div class="card"><div class="card-b">
-      <div class="pf-funnel">
-        ${tel.map((t,i)=>{
-          const door = i<tel.length-1 ? tel[i+1].n : null;
-          return `<div class="pf-fr">
-            <div class="pf-fl">${h(t.fase)}</div>
-            <div class="pf-fb"><i style="width:${Math.round(t.n/start*100)}%"></i>
-              <span class="pf-fn num">${t.n}</span></div>
-            <div class="pf-fd meta num">${door!=null && t.n ? pctDoor(door, t.n) : ''}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="pf-ratios">
-        <div><span class="label">Voorstellen per plaatsing</span>
-          <b class="num">${plaatsingen ? (voorgesteld/plaatsingen).toFixed(1).replace('.',',') : '—'}</b>
-          <span class="meta num">${voorgesteld} voorgesteld · ${plaatsingen} ${plaatsingen===1?'tekende':'tekenden'}${
-            plaatsingen ? '' : ' — niemand uit deze lichting heeft getekend'}</span></div>
-        <div><span class="label">Offers per plaatsing</span>
-          <b class="num">${plaatsingen ? (offers/plaatsingen).toFixed(1).replace('.',',') : '—'}</b>
-          <span class="meta num">${offers} ${offers===1?'offer':'offers'} · ${plaatsingen} ${plaatsingen===1?'tekende':'tekenden'}</span></div>
-      </div>
-      <p class="pf-uitleg meta">Een kandidaat telt bij elke fase die ooit is bereikt (uit de historie).
-        Afgevallen en Gestopt zijn geen trechterpositie — daar telt de verste fase die is gehaald.
-        De onderste twee treden vragen wél een bewijs: <b>Contract getekend en Gestart tellen alleen met een
-        datum van tekenen</b>, precies zoals het pijplijnbord en Finance. Zonder die eis telde iedereen die ooit
-        tot een contract kwam en tóch afhaakte hier als plaatsing, en stond er in dit blok een hoger aantal
-        plaatsingen dan in het jaarblok bovenaan.
-        Kandidaten zonder fase (import uit het oude ATS) zijn nooit de pijplijn in gegaan en tellen dus nergens mee.</p>
-    </div></div>
-  </section>`;
-}
+/* De losse fase-conversietrechter is op 3 sep 2026 opgegaan in het
+   hoofdstuk Trechter (vanaf de campagne): twee trechters naast elkaar
+   vertelden hetzelfde verhaal met verschillende startpunten. De
+   voorstellen/offers-per-plaatsing-ratio's leven daar door. */
 
 /* ═══ 5. UITVAL ══════════════════════════════════════════════════ */
 function topReden(lijst, veld){
@@ -1635,130 +1595,10 @@ function blokKlanten(fin){
    onherkenbaar verdunnen.                                          */
 const BRON_GEEN_WERVING = b => /\bimport\b|oud ats|migratie/i.test(b);
 
-function blokBron(p, D){
-  /* binnen_op is een timestamptz: eerst naar de lokale dag, anders valt een
-     lead van na 22:00 in de vorige maand (zie dagVan bovenaan). */
-  const leads = (CRM.state.leads||[]).filter(l => { const d = dagVan(l.binnen_op); return !!d && d >= p.van && d <= p.tot; });
-  const bronnen = Array.from(new Set([
-    ...leads.map(l => (l.bron||'').trim()),
-    ...D.instroom.map(c => (c.bron||'').trim()),
-    ...D.getekend.map(c => (c.bron||'').trim())
-  ].filter(Boolean)));
-
-  /* Wat NIET in de tabel kan staan omdat er geen bron bij staat. Dit is geen
-     detail: elke conclusie over Meta hangt aan dit ene veld, dus als het bij
-     een deel leeg is moet je dat zien staan naast de percentages. */
-  const geenBron = {
-    leads:    leads.filter(l => !(l.bron||'').trim()).length,
-    kand:     D.instroom.filter(c => !(c.bron||'').trim()).length,
-    plaats:   D.getekend.filter(c => !(c.bron||'').trim()).length
-  };
-  const geenBronTxt = (geenBron.leads || geenBron.kand || geenBron.plaats)
-    ? `<div class="note warn" style="margin-top:14px">Zonder bron ingevuld, dus in geen enkele regel hierboven meegeteld:
-        <span class="num">${geenBron.leads}</span> ${geenBron.leads===1?'lead':'leads'},
-        <span class="num">${geenBron.kand}</span> ${geenBron.kand===1?'kandidaat':'kandidaten'} en
-        <span class="num">${geenBron.plaats}</span> ${geenBron.plaats===1?'plaatsing':'plaatsingen'}.
-        Zolang dat veld leeg blijft, is elk percentage hierboven een ondergrens.</div>`
-    : '';
-
-  if(!bronnen.length)
-    return `<section class="pf-sec"><div class="pf-kop"><span class="label">Per bron</span></div>
-      <div class="card"><div class="card-b">${CRM.ui.leeg('Geen bron vastgelegd','Vul het veld bron bij leads en kandidaten in om marketing aan plaatsingen te koppelen.')}</div></div></section>`;
-
-  /* DRIE KOLOMMEN, DRIE POPULATIES — en twee percentages die daardoor onzin
-     waren. Op de demodata stond er "Indeed → kandidaat 192%": 13 leads en 25
-     kandidaatkaarten met bron Indeed, op elkaar gedeeld. Dat zijn geen 25 van
-     die 13 leads — een kandidaatkaart kan ook zonder lead worden aangemaakt.
-     Een conversie boven de 100% is het bewijs dat teller en noemer niet uit
-     dezelfde groep komen.
-     Nu meten we allebei de stappen als een échte doorstroom:
-       → kandidaatkaart : van de leads uit deze periode, hoeveel zijn er aan
-         een kandidaat gekoppeld (crm_leads.kandidaat_id — dezelfde meetlat
-         als leadRatio() hierboven). Is dat veld nergens gevuld, dan is de
-         stap niet te meten en staat er een streepje in plaats van een breuk.
-       → plaatsing : van de kandidaten die in deze periode instroomden,
-         hoeveel hebben er inmiddels getekend. Dat is een cohort, dus teller
-         en noemer gaan over dezelfde mensen. De kolom Plaatsingen ernaast
-         blijft het volume van de periode (getekend in deze periode, ongeacht
-         wanneer iemand binnenkwam) — dat zijn bewust twee vragen.        */
-  const gekoppeld = leads.filter(l => String(l.kandidaat_id || '').trim());
-  const meetbaarLead = gekoppeld.length > 0;
-
-  const alle = bronnen.map(b => {
-    const mijnKand = D.instroom.filter(c => (c.bron||'').trim()===b);
-    return {
-      bron: b,
-      werving: !BRON_GEEN_WERVING(b),
-      leads: leads.filter(l => (l.bron||'').trim()===b).length,
-      leadDoor: gekoppeld.filter(l => (l.bron||'').trim()===b).length,
-      kand:  mijnKand.length,
-      kandGeplaatst: mijnKand.filter(c => !!kort(c.geplaatstOp)).length,
-      plaats:D.getekend.filter(c => (c.bron||'').trim()===b).length
-    };
-  }).sort((a,b)=> (b.leads+b.kand*3+b.plaats*10) - (a.leads+a.kand*3+a.plaats*10));
-
-  const rijen  = alle.filter(r => r.werving);
-  const buiten = alle.filter(r => !r.werving);
-  const tot = rijen.reduce((s,r)=>({leads:s.leads+r.leads, leadDoor:s.leadDoor+r.leadDoor,
-    kand:s.kand+r.kand, kandGeplaatst:s.kandGeplaatst+r.kandGeplaatst, plaats:s.plaats+r.plaats}),
-    {leads:0, leadDoor:0, kand:0, kandGeplaatst:0, plaats:0});
-
-  /* Is de stap nergens te meten, dan staat er in élke rij hetzelfde zinnetje —
-     vijf keer "niet te meten" onder elkaar is ruis. Eén streepje per cel, de
-     reden één keer in de toelichting onder de tabel. */
-  const leadCel = r => (!meetbaarLead || !r.leads) ? '<span class="meta">—</span>'
-    : pctTxt(r.leadDoor, r.leads);
-  const plCel = r => r.kand ? pctTxt(r.kandGeplaatst, r.kand) : '<span class="meta">—</span>';
-
-  const rij = r => `<tr>
-    <td><b>${h(r.bron)}</b></td>
-    <td class="n num">${r.leads}</td>
-    <td class="n num">${r.kand}</td>
-    <td class="n">${leadCel(r)}</td>
-    <td class="n num">${r.plaats}</td>
-    <td class="n">${plCel(r)}</td>
-  </tr>`;
-
-  return `<section class="pf-sec">
-    <div class="pf-kop"><span class="label">Per bron</span>
-      <span class="meta">van advertentie tot plaatsing · ${h(p.lbl)}</span></div>
-    <div class="tblwrap"><table class="tbl pf-tbl">
-      <thead><tr><th>Bron</th><th class="n">Leads</th><th class="n">Kandidaten</th>
-        <th class="n">→ kandidaatkaart</th><th class="n">Getekend</th><th class="n">Instroom geplaatst</th></tr></thead>
-      <tbody>
-        ${rijen.map(rij).join('') || `<tr><td colspan="6"><span class="meta">Geen wervingsbron in deze periode.</span></td></tr>`}
-        <tr class="pf-tot"><td><b>Totaal wervingsbronnen</b></td>
-          <td class="n num">${tot.leads}</td><td class="n num">${tot.kand}</td>
-          <td class="n">${leadCel(tot)}</td>
-          <td class="n num">${tot.plaats}</td>
-          <td class="n">${plCel(tot)}</td></tr>
-      </tbody>
-      ${buiten.length ? `<tbody class="pf-buiten">${buiten.map(r=>`<tr>
-        <td><b>${h(r.bron)}</b><div class="rowsub">historisch bestand, geen werving</div></td>
-        <td class="n num">${r.leads}</td>
-        <td class="n num">${r.kand}</td>
-        <td class="n"><span class="meta">niet meegeteld</span></td>
-        <td class="n num">${r.plaats}</td>
-        <td class="n"><span class="meta">niet meegeteld</span></td>
-      </tr>`).join('')}</tbody>` : ''}
-    </table></div>
-    <p class="pf-uitleg meta"><b>Leads</b> zijn binnengekomen reacties, <b>Kandidaten</b> zijn de kaarten die in deze
-      periode instroomden; dat zijn twee aparte lijsten, want een kandidaatkaart kan ook zonder lead ontstaan.
-      Daarom deelt <b>→ kandidaatkaart</b> ze niet op elkaar, maar telt het welk deel van de leads
-      daadwerkelijk aan een kandidaat is gekoppeld${meetbaarLead
-        ? ` (${tot.leadDoor} van de ${tot.leads})`
-        : ' — bij geen enkele lead is dat gedaan, dus die stap is nu niet te meten'}.
-      <b>Getekend</b> is het volume van deze periode, ongeacht wanneer iemand binnenkwam;
-      <b>Instroom geplaatst</b> volgt juist de kandidaten die in deze periode instroomden en kijkt hoeveel daarvan
-      inmiddels getekend hebben. Over een korte periode staat dat laatste laag: wie deze maand binnenkwam heeft
-      meestal nog niet getekend.${
-      buiten.length ? ` Onder de streep staat het overgezette bestand uit het oude ATS
-      (${buiten.reduce((s,r)=>s+r.kand,0).toLocaleString('nl-NL')} kandidaten in deze periode). Die namen zijn nooit geworven,
-      dus ze tellen niet mee in het totaal en krijgen geen conversiepercentage — anders lijkt elke echte bron
-      opeens veel slechter dan hij is.` : ''}</p>
-    ${geenBronTxt}
-  </section>`;
-}
+/* "Per bron" is op 3 sep 2026 vervangen door de campagnetabel in het
+   hoofdstuk Trechter: die zegt hetzelfde, maar dan mét kosten erbij en per
+   campagne in plaats van per grofkorrelige bron. Niet-Meta-bronnen staan
+   daar als eigen regels. */
 
 /* ═══ 7b. FINANCIËLE DATA — alleen Tjeerd (RLS-beschermd) ════════ */
 let _fin = null;
@@ -2079,30 +1919,378 @@ function kiezerHTML(p){
 }
 
 /* ═══ REGISTRATIE ════════════════════════════════════════════════ */
+
+/* ═══ HOOFDSTUK TRECHTER — van campagne-binnenkomst tot plaatsing ══════
+   Nieuw op 3 sep 2026 (Performance-conceptplan). Rekent op CRM.keten() —
+   exact dezelfde motor als Marketing · Rendement, dus de twee schermen
+   kunnen niet uit elkaar lopen. De kostenkant (mkt_meta_stats en de
+   handmatige campagne→klant-koppelingen) laden we hier zelf; zonder die
+   data werkt de lead-kant gewoon en blijven de €-kolommen leeg.
+
+   Cohort-tucht: alles telt op de maand/dag van binnen_op. Eindteller
+   "geplaatst" en elke €-per-plaatsing rekenen op CRM.teltAlsPlaatsing —
+   de strengste definitie (eist een datum van tekenen), dezelfde als het
+   bord. Waar "ooit voorgesteld" als tussenstap staat telt de historie.  */
+
+let _mkt = null, _mktBezig = false;
+function mktLezen(na){
+  if(_mkt || _mktBezig || CRM.demo) return;
+  _mktBezig = true;
+  Promise.all([
+    CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000),
+    CRM.sb.from('mkt_campagne_klant').select('*')
+  ]).then(([a,b]) => {
+    _mkt = {meta:a.data||[], campKlant:b.data||[], fout:a.error||b.error||null};
+  }).catch(e => { _mkt = {meta:[], campKlant:[], fout:e}; })
+    .finally(() => { _mktBezig = false; if(na) na(); });
+}
+const ketenIndex = () => CRM.keten({metaStats:_mkt ? _mkt.meta : [], campKlant:_mkt ? _mkt.campKlant : []});
+
+/* Hersteld nageleverde leads (12–25 aug via de rauwe inloop, 3 sep 2026):
+   ze tellen gewoon mee in hun eigen cohortmaand — hun binnen_op is de
+   originele datum en de advertentie-uitgaven van die maand horen erbij —
+   maar het scherm benoemt ze, want ze zijn nooit door de bot gesproken. */
+const isHersteld = l => /^hersteld/i.test(String((l||{}).kwalificatie||''));
+
+const eurK = (v,dec=0) => v == null ? '—' : CRM.euro(v, dec);
+const pctK = (a,b) => b > 0 ? Math.round(a/b*100) + '%' : '—';
+
+/* Geplaatst — streng (B2): via de kandidaat, met CRM.teltAlsPlaatsing. */
+const rGeplaatst = r => !!(r.cand && CRM.teltAlsPlaatsing(r.cand));
+
+/* De selectie van dit hoofdstuk: telbare Meta-ketenrijen binnen de periode. */
+function ketenSelectie(p, K){
+  return K.leads.filter(r => r.dk && r.dk >= p.van && r.dk <= p.tot);
+}
+function spendPerCamp(p, K){
+  const mkVan = p.van.slice(0,7), mkTot = p.tot.slice(0,7);
+  const per = new Map(); let totaal = 0;
+  for(const r of K.uitRijen){
+    if(r.mk < mkVan || r.mk > mkTot) continue;
+    per.set(r.campagne, (per.get(r.campagne)||0) + r.bedrag);
+    totaal += r.bedrag;
+  }
+  return {per, totaal};
+}
+
+/* Campagnerijen voor tabel, tweezinnen en samenvatting — één berekening. */
+function campRijen(p, K){
+  const sel = ketenSelectie(p, K);
+  const {per:spend} = spendPerCamp(p, K);
+  const perCamp = new Map();
+  for(const r of sel){
+    const naam = String(r.lead.campagne||'').trim() || '(zonder campagnenaam)';
+    if(!perCamp.has(naam)) perCamp.set(naam, []);
+    perCamp.get(naam).push(r);
+  }
+  const rijen = [...perCamp].map(([naam, rs]) => {
+    const t = CRM.trechter(rs);
+    const geplaatst = rs.filter(rGeplaatst).length;
+    const bedrag = spend.get(naam) || 0;
+    const kop = K.campKoppel.get(naam);
+    return {naam, klant:(kop && kop.klant) || '', rs, t, geplaatst, bedrag,
+            perLead: t.binnen && bedrag > 0 ? bedrag / t.binnen : null,
+            perGekwal: t.gekwal && bedrag > 0 ? bedrag / t.gekwal : null,
+            perPlaatsing: geplaatst && bedrag > 0 ? bedrag / geplaatst : null,
+            hersteld: rs.filter(r => isHersteld(r.lead)).length};
+  }).sort((a,b) => b.bedrag - a.bedrag || b.t.binnen - a.t.binnen);
+  /* Campagnes met uitgaven in deze periode maar zonder één lead erin. */
+  const metLeads = new Set(rijen.map(r => r.naam));
+  let spendZonderLeads = 0;
+  for(const [naam, bedrag] of spend) if(!metLeads.has(naam)) spendZonderLeads += bedrag;
+  return {rijen, sel, spendZonderLeads};
+}
+
+/* Beste en zwakste campagne — twee zinnen, met de eisen uit het conceptplan:
+   minstens 10 leads én toegewezen spend, anders één neutrale zin. Gemeten op
+   € per gekwalificeerde lead (CPQL): dat is het leading stuurgetal; op
+   €/plaatsing oordeel je pas als een cohort is uitgewerkt. */
+function tweeZinnen(rijen){
+  const mee = rijen.filter(r => r.t.binnen >= 10 && r.bedrag > 0 && r.perGekwal != null);
+  if(mee.length < 2){
+    const tekort = rijen.filter(r => r.bedrag > 0 && r.t.binnen < 10);
+    return {mee:null, zin:`Nog geen eerlijke vergelijking te maken: er zijn ${mee.length === 1
+      ? 'maar één campagne' : 'geen campagnes'} met minstens 10 leads én toegewezen uitgaven in deze periode${
+      tekort.length ? ` — ${tekort.length === 1 ? 'één campagne zit' : tekort.length + ' campagnes zitten'} er qua leads nog onder` : ''}.`};
+  }
+  const op = [...mee].sort((a,b) => a.perGekwal - b.perGekwal);
+  const beste = op[0], zwakste = op[op.length-1];
+  return {mee, beste, zwakste,
+    zin:`<b>${h(beste.naam)}</b> levert het goedkoopst: ${eurK(beste.perGekwal)} per gekwalificeerde lead (${beste.t.gekwal} van ${beste.t.binnen} gekwalificeerd). `
+      + `<b>${h(zwakste.naam)}</b> is met ${eurK(zwakste.perGekwal)} per gekwalificeerde lead de duurste — ${Math.round(zwakste.perGekwal/beste.perGekwal*10)/10}× zo duur.`};
+}
+
+function hoofdstukTrechter(p, K){
+  const {rijen, sel, spendZonderLeads} = campRijen(p, K);
+  const t = CRM.trechter(sel);
+  const geplaatst = sel.filter(rGeplaatst).length;
+  const {totaal:spendTot} = spendPerCamp(p, K);
+  const herstelN = sel.filter(r => isHersteld(r.lead)).length;
+  const dubbelN  = K.dubbels.filter(r => r.dk && r.dk >= p.van && r.dk <= p.tot).length;
+  const loopt = sel.filter(r => r.loopt).length;
+
+  if(!sel.length && !spendTot)
+    return `<div class="card"><div class="card-b">${CRM.ui.leeg('Geen Meta-leads of uitgaven in deze periode',
+      'Kies een langere periode, of kijk bij Koers voor het jaarbeeld.')}</div></div>`;
+
+  /* ── Aansluitregel (B3): wat kwam er binnen en wat telt er mee. ── */
+  const mktStil = !_mkt ? ' · kosten worden nog geladen…' : (_mkt.fout ? ' · kosten konden niet geladen worden' : '');
+  const aansluit = `<p class="pf-aansluit meta"><span class="num">${t.binnen}</span> Meta-leads in het CRM in deze periode${
+      dubbelN ? ` · <span class="num">${dubbelN}</span> dubbele aanmelding${dubbelN===1?'':'en'} apart gehouden` : ''}${
+      herstelN ? ` · <span class="num">${herstelN}</span> hersteld nageleverd (nooit door de bot gesproken)` : ''}${
+      spendTot ? ` · ${eurK(spendTot)} uitgegeven` : ''}${mktStil}.
+      €-per-lead is een ondergrens op de CRM-telling: wat Meta leverde maar het CRM nooit haalde, staat hier niet in.</p>`;
+
+  /* ── 2.1 De funnel zelf. ── */
+  const stappen = [
+    {k:'binnen',      lbl:'Binnengekomen',        n:t.binnen,      rs:sel},
+    {k:'gekwal',      lbl:'Bot-gekwalificeerd',   n:t.gekwal,      rs:sel.filter(r=>r.gekwal)},
+    {k:'door',        lbl:'Kandidaatkaart',       n:t.door,        rs:sel.filter(r=>r.door)},
+    {k:'voorgesteld', lbl:'Voorgesteld',          n:t.voorgesteld, rs:sel.filter(r=>r.voorgesteld)},
+    {k:'geplaatst',   lbl:'Geplaatst',            n:geplaatst,     rs:sel.filter(rGeplaatst)}
+  ];
+  const start = t.binnen || 1;
+  const funnel = `<div class="pf-funnel">${stappen.map((st,i) => {
+    const kosten = st.n && spendTot > 0 ? ` · ${eurK(spendTot/st.n)}/stuk` : '';
+    const open = trOpen === st.k;
+    const drill = open ? `<div class="pf-drill">${st.rs.slice(0,40).map(r =>
+        `<span>${h(r.naam || r.id)}${r.klant ? ` <i>· ${h(r.klant)}</i>` : ''}</span>`).join('')}${
+        st.rs.length > 40 ? `<span class="meta">… en ${st.rs.length-40} meer</span>` : ''}${
+        st.rs.length ? '' : '<span class="meta">niemand in deze stap</span>'}</div>` : '';
+    return `<div class="pf-fr" data-trstap="${st.k}" role="button" title="klik voor de namen">
+        <div class="pf-fl">${h(st.lbl)}</div>
+        <div class="pf-fb"><i style="width:${Math.round(st.n/start*100)}%"></i>
+          <span class="pf-fn num">${st.n}</span></div>
+        <div class="pf-fd meta num">${pctK(st.n, t.binnen)}${kosten}</div>
+      </div>${drill}`;
+  }).join('')}</div>`;
+
+  /* ── "Advertentie of opvolging?" — waar zit het als het tegenvalt. ──
+     De advertentiekant meet de bot-kwalificatie tegen het eigen rollende
+     accountgemiddelde (geen branchecijfers, huisregel); de opvolgingskant
+     telt gekwalificeerde leads die nog op Nieuw of Geen gehoor staan. */
+  const alleT = CRM.trechter(K.leads);
+  const normGekwal = alleT.binnen >= 30 ? alleT.gekwal / alleT.binnen : null;
+  const gekwalNu = t.binnen >= 10 ? t.gekwal / t.binnen : null;
+  const blijftLiggen = sel.filter(r => r.gekwal && (r.nieuw || r.nietBereikt)).length;
+  let advOpv = '';
+  if(gekwalNu != null){
+    const stuk = [];
+    if(normGekwal != null && gekwalNu < normGekwal * 0.7)
+      stuk.push(`De <b>advertentiekant</b> hapert: ${pctK(t.gekwal, t.binnen)} van de leads is bot-gekwalificeerd, tegen ${Math.round(normGekwal*100)}% als eigen accountgemiddelde — dat wijst naar de doelgroep of het formulier, niet naar de opvolging.`);
+    else
+      stuk.push(`De <b>advertentiekant</b> doet zijn werk: ${pctK(t.gekwal, t.binnen)} bot-gekwalificeerd${normGekwal != null ? ` (eigen gemiddelde: ${Math.round(normGekwal*100)}%)` : ''}.`);
+    if(blijftLiggen)
+      stuk.push(`Aan de <b>opvolgingskant</b> ${blijftLiggen === 1 ? 'ligt 1 gekwalificeerde lead' : `liggen ${blijftLiggen} gekwalificeerde leads`} nog op Nieuw of Geen gehoor — dat is betaald materiaal dat wacht op een belletje, niet op een betere campagne.`);
+    else if(t.gekwal)
+      stuk.push(`De <b>opvolging</b> is bij: geen enkele gekwalificeerde lead staat nog onaangeroerd.`);
+    advOpv = `<div class="pf-advopv"><span class="label">Advertentie of opvolging?</span><p>${stuk.join(' ')}</p></div>`;
+  }
+
+  /* ── 2.2 Twee zinnen. ── */
+  const tz = tweeZinnen(rijen);
+
+  /* ── 2.3 De campagnetabel (vervangt "Per bron"). Niet-Meta-bronnen als
+        eigen regels met — in de kostenkolommen. ── */
+  const nietMeta = (() => {
+    const per = new Map();
+    for(const l of (CRM.state.leads||[])){
+      const bron = String(l.bron||'').trim();
+      if(!bron || bron === 'Meta') continue;
+      const d = dagVan(l.binnen_op);
+      if(!d || d < p.van || d > p.tot) continue;
+      if(!per.has(bron)) per.set(bron, []);
+      per.get(bron).push(l);
+    }
+    return [...per].map(([bron, ls]) => ({bron, n:ls.length,
+      door: ls.filter(CRM.leadDoor).length,
+      geplaatst: ls.filter(l => { const c = CRM.kandVanLead(l); return c && CRM.teltAlsPlaatsing(c); }).length
+    })).sort((a,b) => b.n - a.n);
+  })();
+  const tabel = `<div class="tblwrap"><table class="tbl pf-tbl">
+    <thead><tr><th>Campagne</th><th class="num">Leads</th><th class="num">Gekwalificeerd</th>
+      <th class="num">Kandidaat</th><th class="num">Geplaatst</th>
+      <th class="num">Uitgegeven</th><th class="num">€ / lead</th><th class="num">€ / gekwalificeerd</th></tr></thead>
+    <tbody>
+      ${rijen.map(r => `<tr>
+        <td><b>${h(r.naam)}</b>${r.klant ? `<span class="meta"> · ${h(r.klant)}</span>` : (r.bedrag > 0 ? `<span class="chip amber"> niet aan een klant gekoppeld</span>` : '')}${
+          r.hersteld ? `<span class="meta"> · ${r.hersteld} hersteld</span>` : ''}</td>
+        <td class="num">${r.t.binnen}</td>
+        <td class="num">${r.t.gekwal}<span class="meta"> (${pctK(r.t.gekwal, r.t.binnen)})</span></td>
+        <td class="num">${r.t.door}</td>
+        <td class="num">${r.geplaatst}</td>
+        <td class="num">${r.bedrag > 0 ? eurK(r.bedrag) : '—'}</td>
+        <td class="num">${r.perLead != null ? eurK(r.perLead, 2) : '—'}</td>
+        <td class="num">${r.perGekwal != null ? eurK(r.perGekwal) : '—'}</td>
+      </tr>`).join('')}
+      ${nietMeta.map(r => `<tr class="pf-nietmeta">
+        <td><b>${h(r.bron)}</b><span class="meta"> · geen advertentiekosten bekend</span></td>
+        <td class="num">${r.n}</td><td class="num">—</td>
+        <td class="num">${r.door}</td><td class="num">${r.geplaatst}</td>
+        <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    ${spendZonderLeads ? `<p class="pf-uitleg meta">Daarnaast is ${eurK(spendZonderLeads)} uitgegeven aan campagnes
+      waarvan in deze periode geen enkele lead in het CRM staat — dat geld is niet "gratis verdwenen", het hoort bij
+      leads van een andere maand of bij een routeringsgat.</p>` : ''}`;
+
+  /* ── 2.4 Rendement per campagne — alleen wie opbrengsten mag zien. ── */
+  let rendement = '';
+  if(CRM.magOpbrengstZien()){
+    const met = rijen.filter(r => r.geplaatst > 0);
+    if(met.length){
+      const rrijen = met.map(r => {
+        let fee = 0, metFee = 0, dagen = [];
+        for(const kr of r.rs.filter(rGeplaatst)){
+          const f = feeVan(kr.cand);
+          if(f.bedrag != null){ fee += f.bedrag; metFee++; }
+          const d = dagenTussen(kr.lead.binnen_op, kr.cand.geplaatstOp);
+          if(d != null && d >= 0) dagen.push(d);
+        }
+        return {...r, fee:Math.round(fee), metFee, netto:Math.round(fee - r.bedrag), dagen:gem(dagen)};
+      });
+      const feeTot = rrijen.reduce((x,r)=>x+r.fee,0), spendSel = rrijen.reduce((x,r)=>x+r.bedrag,0);
+      rendement = `<div class="pf-rendement"><span class="label">Rendement per campagne</span>
+        <div class="tblwrap"><table class="tbl pf-tbl"><thead><tr>
+          <th>Campagne</th><th class="num">Geplaatst</th><th class="num">Fee</th>
+          <th class="num">Uitgegeven</th><th class="num">Fee − spend</th><th class="num">Lead → plaatsing</th></tr></thead>
+        <tbody>${rrijen.map(r => `<tr>
+          <td><b>${h(r.naam)}</b>${r.metFee < r.geplaatst ? `<span class="meta"> · ${r.geplaatst - r.metFee} plaatsing${r.geplaatst-r.metFee===1?'':'en'} zonder fee (apart, telt niet als €0)</span>` : ''}</td>
+          <td class="num">${r.geplaatst}</td>
+          <td class="num">${r.metFee ? eurK(r.fee) : '—'}</td>
+          <td class="num">${r.bedrag > 0 ? eurK(r.bedrag) : '—'}</td>
+          <td class="num">${r.metFee && r.bedrag > 0 ? `<b>${r.netto >= 0 ? '+' : '−'}${eurK(Math.abs(r.netto))}</b>` : '—'}</td>
+          <td class="num">${r.dagen != null ? `${r.dagen} dagen` : '—'}</td>
+        </tr>`).join('')}</tbody></table></div>
+        ${feeTot && spendSel ? `<p class="pf-uitleg meta">Elke euro advertentiegeld in deze selectie leverde tot nu toe
+          ${(feeTot/spendSel).toFixed(1).replace('.',',')} euro aan fees op${loopt ? ` — en dat is een <b>voorlopige ondergrens</b>: ${loopt} van de ${t.binnen} leads uit deze periode ${loopt===1?'loopt':'lopen'} nog` : ''}.</p>` : ''}
+      </div>`;
+    } else {
+      rendement = `<div class="pf-rendement"><span class="label">Rendement per campagne</span>
+        <p class="pf-uitleg meta">Nog geen plaatsingen uit de leads van deze periode${loopt ? ` — ${loopt} ${loopt===1?'lead loopt':'leads lopen'} nog, dus dit is een tussenstand, geen eindstand` : ''}. ROAS: nog geen.</p></div>`;
+    }
+  }
+
+  return `<div class="card"><div class="card-h"><div class="h2">Van campagne tot plaatsing</div>
+      <span class="meta">${h(p.lbl)} · cohort op de maand van binnenkomst${loopt ? ` · <b>voorlopig</b> — ${loopt} ${loopt===1?'lead loopt':'leads lopen'} nog` : t.binnen ? ' · uitgewerkt' : ''}</span></div>
+    <div class="card-b">
+      ${aansluit}
+      ${funnel}
+      ${advOpv}
+      <div class="pf-2zin">${tz.zin}</div>
+      ${tabel}
+      ${rendement}
+      <p class="pf-uitleg meta">Stapdefinities: <b>bot-gekwalificeerd</b> = het oordeel van de WhatsApp-agent
+        (Gekwalificeerd, Twijfelgeval of Potentieel andere vacature), los van wat de AM ervan vond.
+        <b>Kandidaatkaart</b> = de lead is doorgeschoten (of een kaart wijst terug). <b>Geplaatst</b> telt
+        alleen met een datum van tekenen — exact de definitie van het pijplijnbord (CRM.teltAlsPlaatsing),
+        zodat dit blok nooit meer plaatsingen toont dan het bord. Dubbele aanmeldingen tellen nérgens mee.
+        Klik op een trede voor de namen.</p>
+    </div></div>`;
+}
+
+/* ═══ SAMENVATTING — één zin bovenaan, via de prioriteitsladder ══════
+   (1) datakwaliteit stuk → dat eerst; (2) rood signaal open; (3) de
+   vergelijkende campagne-zin; (4) te weinig data → wat er nog moet staan.
+   Altijd een bedrag én een handeling; nooit een opgewekte zin terwijl
+   trede 1 geldt. */
+function blokSamenvatting(p, K){
+  const {rijen} = campRijen(p, K);
+  let zin = '', soort = '';
+
+  /* Trede 1 — datakwaliteit. */
+  const losGeld = (K.campagnes||[]).filter(c => c.hoe === 'niet' && c.bedrag > 0);
+  const losBedrag = losGeld.reduce((s,c) => s + c.bedrag, 0);
+  const zonderVac = (K.gaten.zonderVacature||[]).length;
+  if(losBedrag > 0){
+    zin = `Eerst de data: ${eurK(losBedrag)} aan uitgaven hangt aan ${losGeld.length === 1 ? 'een campagne die' : losGeld.length + ' campagnes die'} aan geen klant te koppelen ${losGeld.length === 1 ? 'is' : 'zijn'} — koppel ze bij Marketing · Rendement, anders rekent geen enkel €-getal hieronder eerlijk.`;
+    soort = 'warn';
+  } else if(zonderVac > 25){
+    zin = `Eerst de data: ${zonderVac} Meta-leads hangen aan geen vacature — koppel de formulieren bij Instellingen · Botformulieren, dan gaan bestaande leads automatisch mee en klopt de verdeling per klant.`;
+    soort = 'warn';
+  }
+
+  /* Trede 2 — rood signaal: veel leads, nul gekwalificeerd. */
+  if(!zin){
+    const rood = rijen.find(r => r.t.binnen >= 10 && r.t.gekwal === 0);
+    if(rood){
+      zin = `Rood signaal: <b>${h(rood.naam)}</b> leverde ${rood.t.binnen} leads en nog géén enkele gekwalificeerde${rood.bedrag > 0 ? ` voor ${eurK(rood.bedrag)}` : ''} — kijk vandaag naar het formulier of de doelgroep, of zet de campagne stil.`;
+      soort = 'warn';
+    }
+  }
+
+  /* Trede 3 — de vergelijkende zin. */
+  if(!zin){
+    const tz = tweeZinnen(rijen);
+    if(tz.mee){ zin = tz.zin; soort = ''; }
+  }
+
+  /* Trede 4 — nog niet genoeg data om te vergelijken. */
+  if(!zin){
+    const grootste = rijen.filter(r => r.bedrag > 0).sort((a,b) => b.t.binnen - a.t.binnen)[0];
+    zin = grootste
+      ? `Nog te weinig om op te sturen: de grootste campagne (${h(grootste.naam)}) staat op ${grootste.t.binnen} van de 10 leads die nodig zijn voor een eerlijke vergelijking — nog ${Math.max(0, 10 - grootste.t.binnen)} te gaan.`
+      : `Nog geen campagnedata in deze periode om op te sturen.`;
+    soort = '';
+  }
+  return `<div class="pf-samenvatting${soort ? ' ' + soort : ''}">${zin}</div>`;
+}
+
+/* ═══ ANKERBALK — vier hoofdstukken in plaats van twaalf secties ════ */
+const HOOFDSTUKKEN = [
+  {id:'pf_h_koers',    lbl:'Koers'},
+  {id:'pf_h_trechter', lbl:'Trechter'},
+  {id:'pf_h_team',     lbl:'Team & maand'},
+  {id:'pf_h_klanten',  lbl:'Klanten'}
+];
+const ankerBalk = () => `<nav class="pf-anker">${HOOFDSTUKKEN.map(hs =>
+  `<button data-anker="${hs.id}">${hs.lbl}</button>`).join('')}</nav>`;
+const hKop = (id, lbl, sub) => `<div class="pf-hkop" id="${id}"><span class="label">${lbl}</span>${
+  sub ? `<span class="meta">${sub}</span>` : ''}</div>`;
+
+
 function teken(mount, acties){
-  const p = bereik(), D = cijfers(p);
+  const p = bereik(), D = cijfers(p), K = ketenIndex();
 
   if(acties) acties.innerHTML = kiezerHTML(p);
 
   /* Omgekeerd eigen bereik gaf een scherm vol nullen zonder uitleg. */
   const omgekeerd = p.van > p.tot;
 
+  /* Vier ankerhoofdstukken in plaats van twaalf losse secties (3 sep 2026):
+     Koers (waar staan we op het jaar), Trechter (van campagne tot
+     plaatsing), Team & maand, Klanten. */
   mount.innerHTML = `<div class="pf">
     ${omgekeerd ? `<div class="note warn">De begindatum (${h(CRM.fmtDate(p.van))}) ligt ná de einddatum
       (${h(CRM.fmtDate(p.tot))}), dus er valt niets binnen deze periode. Draai de datums om.</div>` : ''}
+    ${blokSamenvatting(p, K)}
+    ${ankerBalk()}
+    ${hKop('pf_h_koers','Koers','het jaardoel en wat ervoor nodig is')}
     ${blokBasis()}
     ${blokJaar()}
     ${blokNaar()}
     ${blokDoel(_fin)}
+    ${hKop('pf_h_trechter','Trechter','van campagne-binnenkomst tot plaatsing — wat kost een plaatsing en wat werkt')}
+    ${hoofdstukTrechter(p, K)}
+    ${hKop('pf_h_team','Team & maand','plaatsingen, tempo, recruiters en uitval')}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
+    ${blokRecruiters(p, D)}
+    ${blokUitval(p, D)}
+    ${hKop('pf_h_klanten','Klanten','wie draagt het jaar')}
     ${blokKlanten(_fin)}
     ${blokOmzet(p, _fin)}
-    ${blokRecruiters(p, D)}
-    ${blokTrechter(p, D)}
-    ${blokUitval(p, D)}
-    ${blokBron(p, D)}
   </div>`;
+
+  /* Ankerbalk en funnel-drilldown. */
+  CRM.$$('[data-anker]', mount).forEach(b => b.onclick = () => {
+    const doel = mount.querySelector('#' + b.dataset.anker);
+    if(doel) doel.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+  CRM.$$('[data-trstap]', mount).forEach(rij => rij.onclick = () => {
+    trOpen = trOpen === rij.dataset.trstap ? '' : rij.dataset.trstap;
+    teken(mount, acties);
+  });
 
   /* Doel instellen / aanpassen */
   const dz = mount.querySelector('#pf_doelzetten');
@@ -2169,6 +2357,9 @@ function teken(mount, acties){
      niet (je bent direct op Performance binnengekomen), dan halen we ze
      alsnog op en tekenen we opnieuw. */
   zorgAfspraken(() => { if(CRM.view === 'performance') teken(mount, acties); });
+  /* Advertentiekosten (mkt_meta_stats + campagne→klant) — één keer laden,
+     daarna opnieuw tekenen zodat de €-kolommen in de Trechter gevuld zijn. */
+  mktLezen(() => { if(CRM.view === 'performance') teken(mount, acties); });
 }
 
 CRM.registerModule('performance', {
@@ -2200,12 +2391,9 @@ CRM.registerModule('performance', {
       ooit een alias voor 'Gestart' of 'Gestopt' bij komt, wijkt het bord af
       van elk scherm dat wél CRM.faseIs/faseIn gebruikt. Graag omzetten.
 
-   3. `crm_leads.kandidaat_id` wordt bij het doorschieten van een lead
-      nergens gevuld. Daardoor is de stap lead → kandidaatkaart nergens te
-      meten: zowel de trechter in "Op weg naar het jaardoel" als de kolom
-      "→ kandidaatkaart" in Per bron staat daarom op een streepje. Dat is
-      eerlijk, maar het is ook het enige gat in de keten van advertentie tot
-      plaatsing. Eén regel in de doorschiet-actie van Recruitment vult het.
+   3. OPGELOST (3 sep 2026): `crm_leads.kandidaat_id` wordt bij het
+      doorschieten gevuld en de meting loopt via CRM.leadDoor (beide
+      richtingen). De stap lead → kandidaatkaart is nu te meten.
 
    4. Er is geen veld "voorgesteld op". Performance leidt die datum af uit de
       eerste historieregel met fase 'Voorgesteld' en valt anders terug op de
