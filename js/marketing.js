@@ -390,6 +390,10 @@
     for(const r of D.leads){
       const naam = String(r.lead.campagne||'').trim();
       if(!naam || !r.dk) continue;
+      /* Hersteld nageleverde leads (rauwe inloop, 3 sep 2026) zijn nooit
+         door de bot gesproken: hun 0-kwalificatie zegt niets over de
+         campagne, dus buiten alle bot-signalen. */
+      if(/^hersteld/i.test(String(r.lead.kwalificatie||''))) continue;
       if(!perCampK.has(naam)) perCampK.set(naam, {l7:0, g7:0, l30:0, g30:0});
       const c = perCampK.get(naam);
       if(r.dk >= d30grens){ c.l30++; if(r.gekwal) c.g30++; }
