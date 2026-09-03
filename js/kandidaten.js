@@ -542,8 +542,95 @@ async function bewaarRij(tabel, veld, rij, bestaat){
    OVERZICHT — kandidatenlijst met filters.
    (Sourcing is een eigen module in de zijbalk geworden — js/source.js.)
    ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Opschoonronde: de oude ATS-import zonder fase ───────────────
+   234 kaarten uit het oude systeem hebben geen (herkenbare) pijplijnfase
+   en vervuilen elke kandidaat-telling. Besluit Tjeerd (3 sep 2026): die
+   gaan we opschonen — per kaart óf naar de Talentpool (interessant,
+   terugvindbaar via Sourcing) óf op Niet geschikt (Afgevallen). Zelfde
+   wegwerk-ritme als de belronde in Recruitment: één kaart per keer,
+   toetsen 1 / 2 / s, en de teller loopt af.
+
+   Bewust NIET aangepast: `since`. De wegwerkfuncties zetten die op vandaag,
+   maar déze kaarten kregen hun instroomdatum in het oude ATS — op vandaag
+   zetten zou 234 oude kaarten in het septembercohort duwen en precies de
+   meting vervuilen die deze ronde moet schoonmaken. */
+const zonderFaseRijen = () => (CRM.state.cands || []).filter(r => {
+  const f = String(r.fase || '').trim();
+  return !f || !CRM.ALLE_FASES.some(x => CRM.faseIs(x.k, f));
+});
+function opschoonRonde(){
+  const rijen = zonderFaseRijen();
+  if(!rijen.length) return CRM.toast('Niets meer op te schonen — alles heeft een fase', 'ok');
+  let i = 0, gedaan = 0, naarPool = 0, naarWeg = 0, over = 0;
+  const teken = () => {
+    if(i >= rijen.length){
+      CRM.modal.close();
+      CRM.toast(`Opschoonronde klaar: ${naarPool} naar Talentpool, ${naarWeg} niet geschikt${over ? `, ${over} overgeslagen` : ''}`, 'ok');
+      CRM.render();
+      return;
+    }
+    const r = rijen[i];
+    const laatste = (Array.isArray(r.notities) && r.notities.length)
+      ? r.notities[r.notities.length - 1].tekst : (r.note || '');
+    const m = document.getElementById('modal');
+    m.querySelector('.modal-b').innerHTML = `
+      <div class="meta" style="margin-bottom:10px">Kaart ${i+1} van ${rijen.length} · nog ${rijen.length - i} te gaan</div>
+      <div class="h2" style="margin:0 0 4px">${CRM.h(r.naam || '(zonder naam)')}</div>
+      <div class="sub" style="margin:0 0 10px">${CRM.h([r.functie, r.klant, r.woonplaats].filter(Boolean).join(' · ') || 'geen functie of klant bekend')}
+        ${r.since ? ` · in beeld sinds ${CRM.fmtDate(r.since)}` : ''}${r.bron ? ` · bron ${CRM.h(r.bron)}` : ''}</div>
+      ${laatste ? `<div class="note" style="margin:0 0 12px">${CRM.h(String(laatste).slice(0,220))}</div>` : ''}
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <button class="btn" id="os_pool"><b>1</b> · → Talentpool</button>
+        <button class="btn ghost" id="os_weg"><b>2</b> · Niet geschikt</button>
+        <button class="btn ghost" id="os_over"><b>s</b> · Overslaan</button>
+        <button class="btn ghost sm" id="os_kaart">Kaart bekijken</button>
+      </div>`;
+    m.querySelector('#os_pool').onclick  = () => zet(r, 'pool');
+    m.querySelector('#os_weg').onclick   = () => zet(r, 'weg');
+    m.querySelector('#os_over').onclick  = () => { over++; i++; teken(); };
+    m.querySelector('#os_kaart').onclick = () => { CRM.modal.close(); CRM.ga('kandidaten', {id:r.id}); };
+  };
+  async function zet(r, keuze){
+    const vandaag = CRM.todayISO();
+    const hist = (Array.isArray(r.historie) ? r.historie : [])
+      .concat([{fase: keuze === 'pool' ? 'Talentpool' : 'Afgevallen', op:vandaag}]);
+    const patch = keuze === 'pool'
+      ? {fase:'Talentpool', historie:hist, bemiddelbaar:true}
+      : {fase:'Afgevallen', historie:hist, afval_type:'niet_gekwalificeerd', afval_categorie:'Anders'};
+    Object.assign(r, patch);
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('candidates').update(patch).eq('id', r.id);
+      if(error){ CRM.fout('Opslaan mislukt', error); return; }
+    }
+    await CRM.logActiviteit('kandidaat', r.id, 'systeem', keuze === 'pool'
+      ? 'Opschoonronde oude ATS-import: naar de Talentpool'
+      : 'Opschoonronde oude ATS-import: niet geschikt (Afgevallen)');
+    if(keuze === 'pool') naarPool++; else naarWeg++;
+    gedaan++; i++; teken();
+  }
+  const toets = e => {
+    if(!document.getElementById('modal')) return;
+    if(e.key === '1'){ e.preventDefault(); const b = document.querySelector('#os_pool'); if(b) b.click(); }
+    if(e.key === '2'){ e.preventDefault(); const b = document.querySelector('#os_weg'); if(b) b.click(); }
+    if(e.key === 's'){ e.preventDefault(); const b = document.querySelector('#os_over'); if(b) b.click(); }
+  };
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Opschonen: oude kaarten zonder fase</div>
+      <p class="sub" style="margin:6px 0 0">Interessant genoeg om te bewaren → Talentpool (terug te vinden via Sourcing).
+        Niet meer relevant → Niet geschikt. De originele instroomdatum blijft staan, dus de maandcijfers blijven schoon.</p></div>
+    <div class="modal-b"></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Stoppen (voortgang blijft bewaard)</button></div>`,
+    {onOpen(){ document.addEventListener('keydown', toets); teken(); },
+     onClose(){ document.removeEventListener('keydown', toets); }});
+}
+
 function overzicht(mount, acties){
-  acties.innerHTML = '';
+  const opTeSchonen = zonderFaseRijen().length;
+  acties.innerHTML = opTeSchonen
+    ? `<button class="btn ghost sm" id="kd_opschoon">Opschonen (${opTeSchonen} zonder fase)</button>` : '';
+  const os = acties.querySelector('#kd_opschoon');
+  if(os) os.onclick = opschoonRonde;
   mount.innerHTML = `<div class="stack"><div id="kd_tabwrap"></div></div>`;
   lijstTab(mount.querySelector('#kd_tabwrap'));
 }

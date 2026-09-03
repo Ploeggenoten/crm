@@ -1610,7 +1610,7 @@ async function finLezen(){
   if(CRM.demo) return (_fin = {ok:false, settings:{}});
   try{
     const [p,i,s] = await Promise.all([
-      CRM.sb.from('fin_placements').select('id,klant,kandidaat,fee_excl,contract_datum,gestopt_op'),
+      CRM.sb.from('fin_placements').select('id,klant,kandidaat,fee_excl,contract_datum,gestopt_op,pipeline_candidate_id'),
       CRM.sb.from('fin_installments').select('placement_id,bedrag_excl,geplande_datum,factuurdatum,status'),
       CRM.sb.from('fin_settings').select('key,value')
     ]);
@@ -2152,11 +2152,23 @@ function hoofdstukTrechter(p, K){
   if(CRM.magOpbrengstZien()){
     const met = rijen.filter(r => r.geplaatst > 0);
     if(met.length){
+      /* Fee: eerst de wérkelijke fee uit de finance-administratie
+         (fin_placements, Yuki-gekoppeld, via pipeline_candidate_id) — daar
+         klopt alles, zei Tjeerd (3 sep 2026). Alleen als daar geen regel
+         staat rekenen we terug uit loon × afspraak (feeVan). Zo telt een
+         plaatsing zonder ingevuld maandloon toch met zijn echte fee mee. */
+      const finFee = new Map(((_fin && _fin.placements) || [])
+        .filter(x => x.pipeline_candidate_id && Number(x.fee_excl) > 0)
+        .map(x => [String(x.pipeline_candidate_id), Number(x.fee_excl)]));
       const rrijen = met.map(r => {
         let fee = 0, metFee = 0, dagen = [];
         for(const kr of r.rs.filter(rGeplaatst)){
-          const f = feeVan(kr.cand);
-          if(f.bedrag != null){ fee += f.bedrag; metFee++; }
+          const echt = finFee.get(String(kr.cand.id));
+          if(echt != null){ fee += echt; metFee++; }
+          else {
+            const f = feeVan(kr.cand);
+            if(f.bedrag != null){ fee += f.bedrag; metFee++; }
+          }
           const d = dagenTussen(kr.lead.binnen_op, kr.cand.geplaatstOp);
           if(d != null && d >= 0) dagen.push(d);
         }
