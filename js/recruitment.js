@@ -4675,9 +4675,13 @@ const INTAKE_LBL = {
   verwachtingKandidaat:'Verwachting van dit traject', contactAppen:'Akkoord met tussentijds appen'
 };
 
-function intakeForm(id){
+/* opts.voorstel: velden uit het transcript-hulpmiddel (js/intaketranscript.js)
+   die als voorstel op het scherm staan zonder al te zijn opgeslagen — de AM
+   controleert en corrigeert ze, precies zoals bij een ingelezen cv, en pas
+   "Intake opslaan" schrijft ze echt weg. */
+function intakeForm(id, opts){
   const c = CRM.kandidaat(id); if(!c) return;
-  const it = c.intake || {};
+  const it = Object.assign({}, c.intake || {}, (opts && opts.voorstel) || {});
   const cv = c.cv || {};
   const conceptKey = 'intakeConcept:' + c.id;
   if(igVorigeOpruimen) igVorigeOpruimen();
@@ -4868,6 +4872,7 @@ function intakeForm(id){
     </div>
     <div class="drawer-f" style="flex-wrap:wrap;row-gap:8px">
       <button class="btn" id="in_ok">Intake opslaan</button>
+      <button class="btn ghost" id="in_uittranscript">Uit Teams-transcript</button>
       <div class="spacer"></div>
       <button class="btn ghost" id="ig_annuleer">Sluiten</button>
     </div>`, {onClose:opruimen, onOpen(dr){
@@ -5000,6 +5005,18 @@ function intakeForm(id){
       $('#ig_sluit').onclick = sluitVeilig;
       $('#ig_annuleer').onclick = sluitVeilig;
 
+      /* ── Transcript-route: gratis en halfautomatisch (js/intaketranscript.js)
+         — het CRM haalt zelf het Teams-transcript op en zet er een
+         kant-en-klare opdracht van klaar; de AM plakt die in Claude en
+         plakt het antwoord terug. Concept staat al veilig in localStorage
+         vóór het paneel sluit, dus er gaat geen typwerk verloren. ── */
+      $('#in_uittranscript').onclick = () => {
+        if(!CRM.intaketranscript) return CRM.toast('Transcript-hulpmiddel niet geladen — herlaad de pagina','err');
+        if(dirty){ clearTimeout(wachter); schrijfConcept(); }
+        CRM.drawer.close();
+        CRM.intaketranscript.open({kandidaat:c, onKlaar:voorstel => intakeForm(c.id, {voorstel})});
+      };
+
       /* ── Opslaan: intake, plus de feiten naar de kandidaat ── */
       $('#in_ok').onclick = async () => {
         const g = k => { const el = $('#in_'+k); return el ? el.value.trim() : ''; };
@@ -5024,10 +5041,11 @@ function intakeForm(id){
           voorstellen:chip('voorstellen'), voorstellenTxt:g('voorstellenTxt'),
           beschikbaarheidGesprek:multi('beschikbaarheidGesprek'), beschikbaarheidGesprekTxt:g('beschikbaarheidGesprekTxt'),
           verwachtingKandidaat:g('verwachtingKandidaat'), contactAppen:chip('contactAppen'),
-          /* De datum van de videocall komt uit de recruitmentpijplijn en wordt
-             hier niet opnieuw gevraagd — maar hij mag ook niet verdwijnen
+          /* De datum van de videocall en het Teams-meeting-ID komen uit de
+             recruitmentpijplijn resp. het inplannen van de call, en worden
+             hier niet opnieuw gevraagd — maar mogen ook niet verdwijnen
              zodra iemand de vragenlijst opslaat. */
-          videocallOp:it.videocallOp || '',
+          videocallOp:it.videocallOp || '', teamsCallId:it.teamsCallId || '',
           op:CRM.todayISO(), door:CRM.me()
         };
         /* De feiten schrijven naar de kandidaat zelf (kolommen + c.cv),
@@ -5274,7 +5292,7 @@ CRM.voorstellen = async (id, vac) => {
     `${c.naam} voorgesteld voor ${vac.functie || 'een vacature'}`);
   return true;
 };
-CRM.kandidaatIntake  = id => intakeForm(id);                // video-intakeformulier
+CRM.kandidaatIntake  = (id, opts) => intakeForm(id, opts);  // video-intakeformulier
 CRM.kandidaatPlannen = id => { const c = CRM.kandidaat(id); if(c) planAfspraak(c); };
 CRM._rcDeel = {
   intakeForm, ooModal, promoteerStarts, weekGrens,

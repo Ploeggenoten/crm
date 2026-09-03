@@ -92,7 +92,7 @@
 <!-- Kostprijsfactor per CAO/contractfase (Pronkert-rekentool nagebouwd). -->
 <script src="js/kostprijs.js?v=20260811kf1"></script>
 <!-- Outlook-koppeling per gebruiker (Microsoft Graph + deeplink-terugval) -->
-<script src="js/outlook.js?v=20260828b"></script>
+<script src="js/outlook.js?v=20260903a"></script>
 <!-- Demo-testdata: doet alleen iets op localhost met ?demo=1 -->
 <script src="js/demo.js?v=20260901b"></script>
 <!-- Rekenregels voor de fee: leidt uit de klantafspraak en de
@@ -120,10 +120,14 @@
      wat er al staat, en het bestand zelf bewaren bij de kandidaat. -->
 <script src="js/cvparse.js?v=20260810h4"></script>
 <!-- CV door Claude laten lezen: voor cv-opmaak die met regels niet te
-     vangen is. Zelfde werkwijze als de video-intake — klembord heen,
-     klembord terug, geen API en geen kosten. Moet ná cvparse.js staan:
-     het hergebruikt diens leesBestand en controlevenster. -->
+     vangen is. Klembord heen, klembord terug, geen API en geen kosten.
+     Moet ná cvparse.js staan: het hergebruikt diens leesBestand en
+     controlevenster. -->
 <script src="js/cvclaude.js?v=20260810h4"></script>
+<!-- Video-intake uit Teams-transcript: haalt het transcript op via de
+     Outlook-koppeling (js/outlook.js, dus moet daarna staan) en werkt
+     verder zoals cvclaude.js hierboven — klembord heen, klembord terug. -->
+<script src="js/intaketranscript.js?v=20260903a"></script>
 <script src="js/cv.js?v=20260903a"></script>
 <script src="js/swo.js?v=20260901c"></script>
 <script src="js/pva.js?v=20260810h4"></script>
@@ -135,14 +139,14 @@
      overzicht. Geen menu-item — het hoort bij Relaties en registreert zich
      alleen om #contacten/<id> te kunnen routeren. -->
 <script src="js/contactkaart.js?v=20260820b"></script>
-<script src="js/recruitment.js?v=20260903l"></script>
+<script src="js/recruitment.js?v=20260903m"></script>
 <script src="js/pijplijn.js?v=20260810h4"></script>
 <!-- Plaatsingen: alles vanaf de handtekening. Het bord hierboven houdt op bij
      'Contract ondertekenen' — na het tekenen is er geen volgende stap meer,
      alleen een startdatum en een aftelling, en dat is geen kanban. -->
 <script src="js/plaatsingen.js?v=20260903a"></script>
 <script src="js/hot.js?v=20260820a"></script>
-<script src="js/kandidaten.js?v=20260903b"></script>
+<script src="js/kandidaten.js?v=20260903c"></script>
 <script src="js/source.js?v=20260903b"></script>
 <script src="js/marketing.js?v=20260903d"></script>
 <script src="js/performance.js?v=20260903d"></script>

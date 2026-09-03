@@ -24,11 +24,16 @@ const MS_TENANT_ID = 'c0436a3b-5aa8-4ada-bd4d-a3138ec11fa6';
 /* Kern: alleen wat zeker is toegekend. Staat hier iets in wat de tenant
    niet heeft, dan mislukt élke tokenaanvraag — dus bewust minimaal. */
 const MS_KERN = ['User.Read','Calendars.ReadWrite'];
-/* Extra's: toegevoegd in Entra op 30 jul 2026. Wordt er één geweigerd,
-   dan valt token() terug op de kern in plaats van de koppeling te breken. */
+/* Extra's: toegevoegd in Entra op 30 jul 2026, aangevuld op 3 sep 2026
+   (transcript video-intake + schrijfrechten bestanden). Wordt er één
+   geweigerd, dan valt token() terug op de kern in plaats van de koppeling
+   te breken. */
 const MS_EXTRA = ['Tasks.ReadWrite','Mail.Read','Mail.Send','Contacts.ReadWrite',
-  'Files.Read.All','Sites.Read.All','ChatMessage.Send','Chat.Read','ChatMessage.Read',
-  'OnlineMeetings.Read','MailboxSettings.Read','User.ReadBasic.All','offline_access'];
+  'Files.Read.All','Files.ReadWrite.All','Sites.Read.All','Sites.ReadWrite.All',
+  'ChatMessage.Send','Chat.Read','ChatMessage.Read',
+  'OnlineMeetings.Read','OnlineMeetings.ReadWrite','OnlineMeetingTranscript.Read.All',
+  'Calendars.ReadWrite.Shared','People.Read',
+  'MailboxSettings.Read','User.ReadBasic.All','offline_access'];
 const MS_SCOPES = MS_KERN.concat(MS_EXTRA);
 const MSAL_CDN = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js';
 
@@ -198,6 +203,22 @@ async function graph(pad, opties = {}, interactiefOk = true){
   return data;
 }
 
+/* Zelfde als graph(), maar voor endpoints die geen JSON teruggeven — de
+   transcriptinhoud komt als VTT-tekst (webvtt), niet als een JSON-object. */
+async function graphTekst(pad){
+  const t = await token(true);
+  if(!t) return null;
+  const r = await fetch('https://graph.microsoft.com/v1.0' + pad, {
+    headers:{ 'Authorization':'Bearer '+t }
+  });
+  if(!r.ok){
+    const fout = new Error('Graph-fout ' + r.status);
+    fout.status = r.status;
+    throw fout;
+  }
+  return r.text();
+}
+
 const pauze = ms => new Promise(r => setTimeout(r, ms));
 
 /* Graph-aanroep die tegen een dichtgeknepen kraan kan. Bij bulkwerk
@@ -263,6 +284,27 @@ function bestandRij(r){
   const url = /^https:\/\//i.test(String(r.webUrl||'')) ? String(r.webUrl) : '';
   return { naam: r.name, webUrl: url, gewijzigd: r.lastModifiedDateTime || '',
            grootte: Number(r.size) || 0, waar: waarStaatHet(url) };
+}
+
+/* ─── Transcript (WEBVTT) → leesbare tekst ─────────────────────────
+   Teams levert het transcript als WEBVTT: tijdcodes plus per regel
+   <v Naam>tekst</v>. Voor het intakeformulier is alleen "wie zei wat"
+   van belang, geen tijdcodes — en opeenvolgende regels van dezelfde
+   spreker mogen achter elkaar, anders wordt de opdracht aan Claude
+   onnodig lang en breekt elke zin op de vtt-regelbreedte af. */
+function vttNaarTekst(vtt){
+  const regels = String(vtt || '').split(/\r?\n/);
+  const zinnen = [];
+  let vorigeSpreker = '';
+  for(const regel of regels){
+    const m = regel.match(/^<v\s+([^>]+)>(.*)<\/v>\s*$/);
+    if(!m) continue;
+    const spreker = m[1].trim(), tekst = m[2].replace(/<[^>]+>/g, '').trim();
+    if(!tekst) continue;
+    if(spreker === vorigeSpreker && zinnen.length) zinnen[zinnen.length - 1] += ' ' + tekst;
+    else { zinnen.push(`${spreker}: ${tekst}`); vorigeSpreker = spreker; }
+  }
+  return zinnen.join('\n');
 }
 
 /* ─── Publieke API voor modules ───────────────────────────────── */
@@ -390,7 +432,21 @@ CRM.outlook = {
         attendees: (opts.deelnemers||[]).filter(Boolean).map(a => ({emailAddress:{address:a}, type:'required'})),
         isOnlineMeeting: !!opts.teams, onlineMeetingProvider: opts.teams ? 'teamsForBusiness' : undefined
       }});
-      return {via:'graph', link: ev?.webLink || '', online: ev?.onlineMeeting?.joinUrl || ''};
+      const joinUrl = ev?.onlineMeeting?.joinUrl || '';
+      /* Voor een transcript heb je later het ID van de ONLINE MEETING nodig
+         (/me/onlineMeetings/{id}/transcripts) — dat is een ander ID dan het
+         agenda-item en zit niet in het antwoord hierboven. Losse opzoeking
+         op de join-url; mislukt die (bv. nog geen rechten), dan blijft de
+         afspraak gewoon staan, alleen zonder latere transcript-koppeling. */
+      let meetingId = '';
+      if(joinUrl){
+        try{
+          const m = await graph('/me/onlineMeetings?$filter=' +
+            encodeURIComponent(`JoinWebUrl eq '${odataTekst(joinUrl)}'`));
+          meetingId = m?.value?.[0]?.id || '';
+        }catch(e){ console.warn('online-meeting-id opzoeken', e); }
+      }
+      return {via:'graph', link: ev?.webLink || '', online: joinUrl, meetingId};
     }
     window.open(composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers}), '_blank', 'noopener');
     return {via:'deeplink'};
@@ -407,6 +463,35 @@ CRM.outlook = {
       dueDateTime: opts.datum ? { dateTime: opts.datum + 'T09:00:00', timeZone:'W. Europe Standard Time' } : undefined,
       body: opts.notities ? { content: opts.notities, contentType:'text' } : undefined
     }});
+  },
+
+  /* Transcript van een Teams-call ophalen, voor de video-intake
+     (js/intaketranscript.js). meetingId komt van maakAfspraak() (het
+     "meetingId" veld, niet de agenda-afspraak zelf). Teams heeft na afloop
+     van de call enige tijd nodig om het transcript te verwerken — een lege
+     lijst betekent meestal "nog niet klaar", niet per se "nooit gestart". */
+  async haalTranscript(meetingId){
+    if(!(CRM.outlook.beschikbaar() && _account)) return {fout:'Niet verbonden met Outlook/Teams.'};
+    if(!meetingId) return {fout:'Van deze kandidaat is geen Teams-call bekend bij het CRM.'};
+    let lijst;
+    try{ lijst = await graph(`/me/onlineMeetings/${meetingId}/transcripts`); }
+    catch(e){
+      if(e.status === 403) return {fout:'Geen toegang tot dit transcript — alleen de organisator van de call kan hem ophalen.'};
+      if(e.status === 404) return {fout:'Deze vergadering is niet gevonden bij Teams — mogelijk te lang geleden of nooit gestart.'};
+      return {fout:'Ophalen mislukt: ' + (e.message || e)};
+    }
+    const transcripten = lijst?.value || [];
+    if(!transcripten.length) return {fout:'Nog geen transcript beschikbaar. Teams heeft na de call meestal een paar minuten nodig om het te verwerken — en er moet tijdens de call op "Transcript starten" zijn geklikt (of het staat standaard aan, zie SETUP-TEAMS-TRANSCRIPT.md).'};
+    /* De nieuwste eerst — zou er ooit meer dan één transcript zijn (bv. de
+       call werd hervat), dan is dat de relevante. */
+    const laatste = transcripten.slice().sort((a, b) =>
+      String(b.createdDateTime||'').localeCompare(String(a.createdDateTime||'')))[0];
+    let vtt;
+    try{ vtt = await graphTekst(`/me/onlineMeetings/${meetingId}/transcripts/${laatste.id}/content`); }
+    catch(e){ return {fout:'Transcriptinhoud ophalen mislukt: ' + (e.message || e)}; }
+    const tekst = vttNaarTekst(vtt);
+    if(!tekst) return {fout:'Het transcript kwam leeg terug — mogelijk stond de microfoon van beide kanten uit.'};
+    return {tekst, gemaakt: laatste.createdDateTime || ''};
   },
 
   /* ─── Mail ──────────────────────────────────────────────────

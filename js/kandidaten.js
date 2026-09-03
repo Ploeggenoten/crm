@@ -3779,11 +3779,14 @@ function videocallModal(c){
       try{
         const r = (await CRM.outlook.maakAfspraak(d)) || {};
         /* (a) datum/tijd op de kaart, zodat bord, pijplijn en dashboard
-           de afspraak tonen. (c) een Teams-link bewaren we als notitie —
-           die staat bij de kandidaat en niet alleen in een toast. */
+           de afspraak tonen. (b) een Teams-link bewaren we als notitie —
+           die staat bij de kandidaat en niet alleen in een toast. (c) het
+           meeting-ID gaat structureel mee in de intake, want daarmee haalt
+           de video-intake straks het transcript op (js/intaketranscript.js). */
         const bij = Object.assign({}, c, {datum:d.datum, tijd:d.tijd});
         if(r.online) bij.notities = [{op:new Date().toISOString(), door:CRM.me(),
           tekst:'Teams-link: ' + r.online}].concat(c.notities||[]);
+        if(r.meetingId) bij.intake = Object.assign({}, c.intake||{}, {teamsCallId:r.meetingId});
         await bewaarKandidaat(bij);
         await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
           `Videocall ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
