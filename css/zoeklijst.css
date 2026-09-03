@@ -5,8 +5,10 @@
   display:flex;flex-direction:column;gap:6px;max-width:420px}
 .zoeklijst input{width:100%;box-sizing:border-box}
 .zoeklijst .zl-opties{overflow-y:auto;max-height:260px;display:flex;flex-direction:column}
-.zoeklijst .zl-optie{padding:6px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
+.zoeklijst .zl-optie{flex:none;padding:6px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
+/* flex:none is essentieel: zonder krimpen flex-kinderen in de kolom met
+   max-height samen tot onleesbare slierten zodra er veel opties zijn. */
 .zoeklijst .zl-optie:hover,.zoeklijst .zl-optie.act{background:var(--well-2,#e3e7d1)}
 .zoeklijst .zl-optie.sel{font-weight:600;color:var(--olive,#3d6400)}
-.zoeklijst .zl-leeg{padding:8px 10px;color:var(--muted,#5b6544)}
+.zoeklijst .zl-leeg{flex:none;padding:8px 10px;color:var(--muted,#5b6544)}
