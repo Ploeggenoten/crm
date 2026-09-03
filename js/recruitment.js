@@ -673,15 +673,31 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
    van vandaag of eerder tellen (een afspraak voor morgen is nog geen werk),
    en alleen op openstaand werk. Onderling op tijd: 9:00 vóór 19:00; de
    terugbel_om-tijd van de bot als die er is, anders de kale opvolgdatum. */
-const belRang   = l => (CRM.leadIn(l.status, CRM.LEAD_OPEN) && l.opvolgen_op
-                        && String(l.opvolgen_op).slice(0,10) <= CRM.todayISO()) ? 0 : 1;
-const belMoment = l => belRang(l) === 0 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
+/* Drietrap (Tjeerd, 3 sep 2026: "belafspraken moeten te allen tijden
+   chronologisch in de lijst"): 0 = afspraak vandaag of verlopen,
+   1 = afspraak in de toekomst (chronologisch zichtbaar, mét chip),
+   2 = geen afspraak. Vóór deze fix was een afspraak voor morgen
+   onvindbaar tussen de rest. */
+const belRang   = l => {
+  if(!(CRM.leadIn(l.status, CRM.LEAD_OPEN) && l.opvolgen_op)) return 2;
+  return String(l.opvolgen_op).slice(0,10) <= CRM.todayISO() ? 0 : 1;
+};
+const belMoment = l => belRang(l) <= 1 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
 /* De chip die dat zichtbaar maakt: alleen als er nú iets te bellen valt —
    geen afspraak, geen chip, en de lijst blijft kaal. */
 function belChipHtml(l){
-  if(belRang(l) !== 0) return '';
+  const rang = belRang(l);
+  if(rang === 2) return '';
   const t = l.terugbel_om ? new Date(l.terugbel_om) : null;
   const vandaag = String(l.opvolgen_op).slice(0,10) === CRM.todayISO();
+  /* Toekomstige afspraak: neutrale chip met dag+tijd — geen amber, want er
+     is nog niets aan de hand; hij moet alleen vindbaar en chronologisch zijn. */
+  if(rang === 1){
+    const lbl = 'belafspraak ' + (t && !isNaN(t)
+      ? t.toLocaleString('nl-NL', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})
+      : (CRM.fmtDate(l.opvolgen_op) || ''));
+    return `<span class="chip num" title="Met de kandidaat afgesproken belmoment (toekomst)">${h(lbl)}</span>`;
+  }
   const lbl = t && vandaag && !isNaN(t) ? 'bel om ' + t.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
             : vandaag ? 'bel vandaag'
             : 'belafspraak ' + (CRM.fmtDate(l.opvolgen_op) || '');
@@ -2352,7 +2368,7 @@ function doorschietForm(lead, opts){
   const vroeg = !CRM.leadIs(lead.status, 'Intake ingepland');
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Kandidaat maken van ${h(leadNaam(lead))}</div>
-      <p class="sub" style="margin:6px 0 0">De kaart komt op fase <b>Intake</b> en staat daarmee klaar om voorgesteld te worden. Maak de gegevens eerst compleet — half ingevulde kandidaten vervuilen het systeem.</p></div>
+      <p class="sub" style="margin:6px 0 0">De kaart komt op fase <b>Klaar om voor te stellen</b>. Maak de gegevens eerst compleet — half ingevulde kandidaten vervuilen het systeem.</p></div>
     <div class="modal-b">
       ${ken.kands.length ? `<div class="note warn" style="margin-bottom:12px">
         <b>Deze persoon heeft al een kandidaatkaart</b> — ${h(ken.kands.map(eerderTekst).join(' · '))}.

@@ -29,16 +29,22 @@
     paneel.style.minWidth = Math.max(r.width, 240) + 'px';
     paneel.innerHTML = `<input type="search" placeholder="Typ om te zoeken…" autocomplete="off"><div class="zl-opties"></div>`;
     document.body.appendChild(paneel);
-    /* Onder het veld, tenzij daar geen ruimte is — dan erboven. */
-    const hoogte = Math.min(300, paneel.offsetHeight + 260);
-    if(r.bottom + hoogte > window.innerHeight && r.top > hoogte)
-         paneel.style.top = (r.top - Math.min(300, paneel.offsetHeight || 300) - 4) + 'px';
-    else paneel.style.top = (r.bottom + 4) + 'px';
+    /* Onder het veld, tenzij daar geen ruimte is — dan erboven. Na élke
+       hertekening opnieuw meten (rapport 3, 3 sep 2026: de eerste meting
+       gebruikte de nog lege paneelhoogte en het gevulde paneel groeide
+       vervolgens over het select en de viewportrand heen). */
+    const plaats = () => {
+      const hh = paneel.offsetHeight;
+      if(r.bottom + hh + 8 > window.innerHeight && r.top > hh + 8)
+           paneel.style.top = (r.top - hh - 4) + 'px';
+      else paneel.style.top = (r.bottom + 4) + 'px';
+    };
 
     const inp = paneel.querySelector('input');
     const box = paneel.querySelector('.zl-opties');
     const opts = Array.from(sel.options).map(o => ({v:o.value, t:o.textContent}));
-    let actief = 0, zicht = opts;
+    /* Enter direct na openen = huidige keuze bevestigen, niet de eerste optie. */
+    let actief = Math.max(0, opts.findIndex(o => o.v === sel.value)), zicht = opts;
 
     const kies = v => {
       sluit();
@@ -56,13 +62,16 @@
         : `<div class="zl-leeg">niets gevonden</div>`;
       const a = box.querySelector('.act');
       if(a) a.scrollIntoView({block:'nearest'});
+      plaats();
     };
     inp.oninput = () => { actief = 0; teken(); };
     inp.onkeydown = e => {
       if(e.key === 'ArrowDown'){ e.preventDefault(); actief = Math.min(actief+1, zicht.length-1); teken(); }
       else if(e.key === 'ArrowUp'){ e.preventDefault(); actief = Math.max(actief-1, 0); teken(); }
-      else if(e.key === 'Enter'){ e.preventDefault(); if(zicht[actief]) kies(zicht[actief].v); }
-      else if(e.key === 'Escape' || e.key === 'Tab'){ sluit(); }
+      else if(e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); if(zicht[actief]) kies(zicht[actief].v); }
+      /* stopPropagation: anders leest core.js dezelfde Escape en sluit óók
+         de modal/lade waar het select in staat (rapport 3, 3 sep 2026). */
+      else if(e.key === 'Escape' || e.key === 'Tab'){ e.stopPropagation(); sluit(); }
     };
     /* mousedown, niet click: vóór blur, anders sluit het paneel zichzelf. */
     box.onmousedown = e => {
@@ -86,7 +95,7 @@
   }, true);
   /* Toetsenbord: op een gefocuste select meteen beginnen te typen. */
   document.addEventListener('keydown', e => {
-    if(e.key === 'Escape'){ sluit(); return; }
+    if(e.key === 'Escape'){ if(paneel){ e.stopPropagation(); sluit(); } return; }
     if(paneel) return;
     const sel = document.activeElement;
     if(geschikt(sel) && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){

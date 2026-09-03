@@ -703,8 +703,10 @@ function opvolgingRijen(){
           langer liggen én geen gepland belmoment hebben. Zonder eigenaar
           telt hier niet meer mee: dat is verdeel-werk voor de eigenaar
           (zie de regel verderop), geen belwerk voor alle drie tegelijk. */
+  /* Genormaliseerd vergelijken (rapport 5, 3 sep 2026): gemigreerde botleads
+     hebben eigenaren als "TJERK"/"bryan" en vielen met === uit de belsignalen. */
   const afspraken = belLeads
-    .filter(l => eigenaarLoos(l) || l.eigenaar === mij)
+    .filter(l => eigenaarLoos(l) || CRM.naamNorm(l.eigenaar) === CRM.naamNorm(mij))
     .filter(l => kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
     .sort((a,b) => String(a.terugbel_om||a.opvolgen_op||'')
       .localeCompare(String(b.terugbel_om||b.opvolgen_op||'')));
@@ -714,7 +716,7 @@ function opvolgingRijen(){
     sub: afspraken.slice(0,3).map(l=>l.naam).join(', ') + (afspraken.length>3?' …':'') });
 
   const leads = belLeads
-    .filter(l => l.eigenaar === mij)
+    .filter(l => CRM.naamNorm(l.eigenaar) === CRM.naamNorm(mij))
     .filter(l => CRM.leadIs(l.status, 'Nieuw') && (CRM.dagenGeleden(l.binnen_op)||0) >= 2
               && !kort(l.opvolgen_op));
   if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,

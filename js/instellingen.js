@@ -686,11 +686,14 @@ async function vulFormulieren(mount){
      geen vrij tekstvak waarin van alles mis kan gaan. Opslag blijft wél
      het eisen-veld op de vacaturekaart (één regel per eis), zodat de
      bot-feed en Smits kant niets merken van deze schermwijziging. */
+  /* Regels matchen alleen exact (rapport 3, 3 sep 2026): "Rijbewijs B
+     aanbevolen" of "Nederlands niet vereist" moet een vrije extra eis
+     blijven en mag niet stilletjes in een kaal vinkje veranderen. */
   const EIS_VAST = [
-    {sleutel:'rijbewijs',  label:'Rijbewijs B',            regel:'Rijbewijs B',            re:/rijbewijs/i},
-    {sleutel:'nederlands', label:'Nederlands',             regel:'Nederlands',             re:/nederlands/i},
-    {sleutel:'direct',     label:'Per direct beschikbaar', regel:'Per direct beschikbaar', re:/per direct/i},
-    {sleutel:'fysiek',     label:'Fysiek zwaar werk',      regel:'Fysiek zwaar werk aankunnen', re:/fysiek/i},
+    {sleutel:'rijbewijs',  label:'Rijbewijs B',            regel:'Rijbewijs B',            re:/^rijbewijs\s*b?\s*(vereist)?$/i},
+    {sleutel:'nederlands', label:'Nederlands',             regel:'Nederlands',             re:/^nederlands\s*(vereist)?$/i},
+    {sleutel:'direct',     label:'Per direct beschikbaar', regel:'Per direct beschikbaar', re:/^per direct( beschikbaar)?\s*(vereist)?$/i},
+    {sleutel:'fysiek',     label:'Fysiek zwaar werk',      regel:'Fysiek zwaar werk aankunnen', re:/^fysiek zwaar werk( aankunnen)?$/i},
   ];
   const eisParse = txt => {
     const o = {ervaring:'', extra:[]};
@@ -850,11 +853,14 @@ async function vulFormulieren(mount){
     });
     return `<span>💬 vragen van de bot:</span>${chips.join('')}`;
   };
-  const eisVeldenVan = vacId => CRM.$$(`[data-eis][data-vac="${CSS.escape(String(vacId))}"]`, el);
-  const eisUitScherm = vacId => {
+  /* Alles gescoped op de eigen <details>-rij (rapport 3, 3 sep 2026):
+     twee formulieren kunnen dezelfde vacature delen (Smurfit oud + 2.0) en
+     op vac-id selecteren las dan de velden van de zústerrij mee — het
+     laatst gevonden veld won, en een vinkje sprong stilletjes terug. */
+  const eisUitScherm = wortel => {
     const o = {ervaring:'', extra:[]};
     for(const e of EIS_VAST) o[e.sleutel] = false;
-    for(const inp of eisVeldenVan(vacId)){
+    for(const inp of CRM.$$('[data-eis]', wortel)){
       const s = inp.dataset.eis;
       if(s === 'ervaring') o.ervaring = inp.value.trim();
       else if(s === 'extra') o.extra = inp.value.split('\n').map(x => x.trim()).filter(Boolean);
@@ -862,22 +868,22 @@ async function vulFormulieren(mount){
     }
     return o;
   };
-  const eisPrev = vacId => {
-    const d = el.querySelector(`[data-eisprev="${CSS.escape(String(vacId))}"]`);
-    if(d) d.innerHTML = eisAnalyse(eisBouw(eisUitScherm(vacId)).split('\n').filter(Boolean));
+  const eisPrev = wortel => {
+    const d = wortel.querySelector('[data-eisprev]');
+    if(d) d.innerHTML = eisAnalyse(eisBouw(eisUitScherm(wortel)).split('\n').filter(Boolean));
   };
-  const eisIds = [...new Set(CRM.$$('[data-eis]', el).map(i => i.dataset.vac))];
-  eisIds.forEach(eisPrev);
+  CRM.$$('[data-eisprev]', el).forEach(d => eisPrev(d.closest('details')));
   CRM.$$('[data-eis]', el).forEach(inp => {
-    inp.oninput = () => eisPrev(inp.dataset.vac);
+    const wortel = inp.closest('details');
+    inp.oninput = () => eisPrev(wortel);
     inp.onchange = async () => {
       const vacId = inp.dataset.vac;
-      const tekst = eisBouw(eisUitScherm(vacId));
+      const tekst = eisBouw(eisUitScherm(wortel));
       const {error:e5} = await CRM.sb.from('vacatures').update({eisen: tekst}).eq('id', vacId);
       if(e5) return CRM.fout('Opslaan op de vacaturekaart mislukt', e5);
       const rij = alleVacs.find(v => String(v.id) === String(vacId));
       if(rij) rij.eisen = tekst;
-      eisPrev(vacId);
+      eisPrev(wortel);
       CRM.toast('Kwalificatievragen bijgewerkt — de bot gebruikt dit bij zijn volgende gesprek', 'ok');
     };
   });
