@@ -3523,7 +3523,13 @@ function koppelStap(rijen){
             prioriteit:veld('prioriteit'), kwalificatie:veld('kwalificatie'),
             score: score && !isNaN(+score) ? +score : null,
             agent_notitie:veld('agent_notitie'), antwoorden:null, cv:null,
-            eigenaar:veld('eigenaar') || CRM.me(), binnen_op:nu, opvolgen_op:null,
+            /* Cohort-tucht (fase 2, 3 sep 2026): een import op "vandaag"
+               zetten duwt oude leads in het verkeerde maandcohort. Staat er
+               een datumkolom in het bestand, dan telt die. */
+            eigenaar:veld('eigenaar') || CRM.me(),
+            binnen_op:(() => { const d = new Date(veld('binnen_op') || veld('datum') || '');
+              return isNaN(d) ? nu : d.toISOString(); })(),
+            opvolgen_op:null,
             kandidaat_id:'', notities:[]
           });
         });

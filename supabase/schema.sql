@@ -769,3 +769,50 @@ on conflict (id) do update
       email   = excluded.email,
       functie = excluded.functie,
       rol     = excluded.rol;
+
+-- ═══ Performance fase 2 (3 sep 2026) — zie ook fase2-performance.sql ═══
+-- Statuslog-vangnet: elke status/bot_status-wissel, ook buiten de app om.
+create table if not exists crm_lead_status_log (
+  id bigint generated always as identity primary key,
+  lead_id text not null,
+  veld text not null check (veld in ('status','bot_status')),
+  van text,
+  naar text,
+  op timestamptz not null default now()
+);
+
+-- Dagsnapshot van het recruitmentbord (pg_cron, 23:55).
+create table if not exists crm_lead_snapshot (
+  datum date not null,
+  status text not null,
+  aantal int not null,
+  primary key (datum, status)
+);
+
+-- Routeringswacht: formulieren met leads (14 dagen) zonder vacature-koppeling.
+create or replace view routering_gaten as
+select l.form_id,
+       max(l.campagne)  as campagne,
+       count(*)          as leads_14d,
+       min(l.binnen_op)  as eerste,
+       max(l.binnen_op)  as laatste
+from crm_leads l
+left join lead_formulieren f
+  on f.form_id = l.form_id and coalesce(f.vacature_id,'') <> ''
+where l.binnen_op >= now() - interval '14 days'
+  and coalesce(l.form_id,'') <> ''
+  and f.form_id is null
+group by l.form_id;
+
+-- Wanneer een kandidaat vóór het eerst is voorgesteld (app vult dit).
+alter table candidates add column if not exists voorgesteld_op date;
+
+-- Handmatige wervingskosten per kanaal per maand (Indeed e.d., nooit Meta).
+create table if not exists mkt_kanaal_kosten (
+  kanaal text not null,
+  maand text not null check (maand ~ '^\d{4}-\d{2}$'),
+  bedrag numeric not null default 0,
+  door text,
+  bijgewerkt timestamptz not null default now(),
+  primary key (kanaal, maand)
+);
