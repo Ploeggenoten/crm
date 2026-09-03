@@ -797,7 +797,14 @@ async function vulFormulieren(mount){
     <tbody>${volgorde.map(r => `<tr>
       <td class="num">${h(String(r.form_id))}</td>
       <td>${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
-        ? ` <span class="meta">· <span class="num">${gezien.get(String(r.form_id)).n}</span> lead${gezien.get(String(r.form_id)).n===1?'':'s'}</span>` : ''}</td>
+        ? ` <span class="meta">· <span class="num">${gezien.get(String(r.form_id)).n}</span> lead${gezien.get(String(r.form_id)).n===1?'':'s'}</span>` : ''}${(() => {
+          /* Losse leads per formulier zichtbaar maken: kies je hier een
+             vacature, dan worden ze automatisch meegekoppeld. */
+          const los = (CRM.state.leads||[]).filter(l =>
+            String(l.form_id||'').trim() === String(r.form_id)
+            && !String(l.vacature_id||'').trim()).length;
+          return los ? ` <span class="chip amber num" title="Deze leads hebben nog geen vacature — kies (opnieuw) een vacature in de lijst hiernaast en ze worden automatisch meegekoppeld">${los} zonder vacature</span>` : '';
+        })()}</td>
       <td><select data-form="${h(String(r.form_id))}">
         <option value="">— nog niet gekoppeld —</option>
         ${vacs.map(v => optie(v, r.vacature_id)).join('')}
@@ -899,8 +906,26 @@ async function vulFormulieren(mount){
   };
   CRM.$$('[data-form]', el).forEach(sel => sel.onchange = async () => {
     if(await bewaar(sel.dataset.form, {vacature_id: sel.value})){
+      /* Retro-koppeling (Tjeerd, 3 sep 2026: "allemaal handmatig koppelen
+         heeft geen zin"): de trigger koppelt alleen bij binnenkomst, dus
+         bestaande leads van dit formulier hier meteen meenemen. In brokken
+         van 50 — een campagne kan honderden losse leads hebben. */
+      let mee = 0;
+      if(sel.value){
+        const los = (CRM.state.leads||[]).filter(l =>
+          String(l.form_id||'').trim() === String(sel.dataset.form)
+          && !String(l.vacature_id||'').trim()).map(l => l.id);
+        for(let i = 0; i < los.length; i += 50){
+          const brok = los.slice(i, i+50);
+          const {error:e6} = await CRM.sb.from('crm_leads')
+            .update({vacature_id: sel.value}).in('id', brok);
+          if(e6){ CRM.fout('Bestaande leads meekoppelen mislukte deels', e6); break; }
+          mee += brok.length;
+          brok.forEach(id => { const l = (CRM.state.leads||[]).find(x => x.id === id); if(l) l.vacature_id = sel.value; });
+        }
+      }
       CRM.toast(sel.value
-        ? 'Gekoppeld — nieuwe leads van dit formulier hangen nu automatisch aan die vacature'
+        ? `Gekoppeld — nieuwe leads hangen er automatisch aan${mee ? `, en ${mee} bestaande lead${mee===1?' is':'s zijn'} meteen meegekoppeld` : ''}`
         : 'Koppeling weggehaald', 'ok');
       vulFormulieren(mount);   // de botgegevens-regel eronder verschijnt/verdwijnt mee
     }
