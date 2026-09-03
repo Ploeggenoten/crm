@@ -433,6 +433,20 @@ async function veilig(promise, naam){
     return r.data || [];
   }catch(e){ console.warn('Laden '+naam, e); CRM.laadfouten.push(naam); return []; }
 }
+/* Gepagineerd laden voor tabellen die boven de stille PostgREST-cap van
+   1000 rijen groeien (Performance-conceptplan, 3 sep 2026): crm_leads zat
+   op 531 rijen met ±370/maand instroom — zonder dit zouden de oudste
+   leads over ±6 weken geruisloos uit élke telling en lijst vallen. */
+async function veiligAlles(maakQ, naam){
+  const uit = [];
+  for(let van = 0;; van += 1000){
+    const rijen = await veilig(maakQ().range(van, van + 999), naam);
+    uit.push(...rijen);
+    if(rijen.length < 1000) break;
+    if(van >= 49000){ console.warn('veiligAlles: afgekapt op', van, naam); break; }
+  }
+  return uit;
+}
 
 /* Eén centrale plek voor "welke tabel hoort bij welk CRM.state-veld en
    hoe haal je hem op" — CRM.load() (bij het inloggen) én de realtime-sync
@@ -443,12 +457,12 @@ async function veilig(promise, naam){
    niet meer: er is maar één lijst. (Tjeerd, 14 aug 2026: "ik wil dat
    alles realtime is".) */
 const TABEL_QUERY = {
-  candidates:        {veld:'cands',         q:() => sb.from('candidates').select('*')},
+  candidates:        {veld:'cands',         alles:true, q:() => sb.from('candidates').select('*').order('since',{ascending:false})},
   clients:           {veld:'clients',       q:() => sb.from('clients').select('*')},
   vacatures:         {veld:'vacs',          q:() => sb.from('vacatures').select('*')},
   profiles:          {veld:'profiles',      q:() => sb.from('profiles').select('*')},
   targets:           {veld:'targets',       q:() => sb.from('targets').select('*')},
-  crm_leads:         {veld:'leads',         q:() => sb.from('crm_leads').select('*').order('binnen_op',{ascending:false})},
+  crm_leads:         {veld:'leads',         alles:true, q:() => sb.from('crm_leads').select('*').order('binnen_op',{ascending:false})},
   crm_activiteiten:  {veld:'activiteiten',  q:() => sb.from('crm_activiteiten').select('*').order('op',{ascending:false}).limit(2000)},
   crm_taken:         {veld:'taken',         q:() => sb.from('crm_taken').select('*').order('datum')},
   crm_documenten:    {veld:'documenten',    q:() => sb.from('crm_documenten').select('*').order('op',{ascending:false})},
@@ -477,7 +491,8 @@ CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
   CRM.laadfouten = [];
   const namen = Object.keys(TABEL_QUERY);
-  const rijen = await Promise.all(namen.map(t => veilig(TABEL_QUERY[t].q(), t)));
+  const rijen = await Promise.all(namen.map(t => TABEL_QUERY[t].alles
+    ? veiligAlles(TABEL_QUERY[t].q, t) : veilig(TABEL_QUERY[t].q(), t)));
   const nieuw = {}; namen.forEach((t,i) => { nieuw[TABEL_QUERY[t].veld] = rijen[i]; });
   Object.assign(CRM.state, nieuw, {_loaded:true});
   const cands = CRM.state.cands;
@@ -1188,7 +1203,7 @@ function sync(tabel){
 }
 async function syncNu(tabel){
   const cfg = TABEL_QUERY[tabel]; if(!cfg) return;
-  const d = await veilig(cfg.q(), tabel);
+  const d = await (cfg.alles ? veiligAlles(cfg.q, tabel) : veilig(cfg.q(), tabel));
   CRM.state[cfg.veld] = d;
   navBadges();
   if(CRM.modules[CRM.view]?.herlaadBijSync !== false){
