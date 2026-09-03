@@ -597,9 +597,9 @@ function tekenStrook(c){
   const naamchip = (k, extra, klasse='') =>
     `<button class="rc-naamchip ${klasse}" data-open="${h(k.id)}">${h(k.naam)}<em>${h(extra)}</em></button>`;
   const rijen = [];
-  if(c.startsWeek.length) rijen.push(`<div class="rc-strookrij"><span class="label">Deze week starten</span>${
-    c.startsWeek.slice().sort((a,b)=>(a.start||'').localeCompare(b.start||''))
-      .map(k=>naamchip(k, `${CRM.fmtDay(k.start)}${k.klant?' · '+k.klant:''}`)).join('')}</div>`);
+  /* "Deze week starten" is hier weggehaald (Tjeerd, 3 sep 2026): de starters
+     hebben nu hun eigen overzicht mét namen bovenaan Plaatsingen — twee keer
+     dezelfde strook is één keer te veel, en dit is een belwerkscherm. */
   if(c.vroeg < 3) rijen.push(`<div class="rc-strookrij"><span class="chip amber">Instroom laag: ${c.vroeg} kandidaat${c.vroeg===1?'':'en'} in Voorgesteld/O&amp;O/Eerste gesprek — over ± 6 weken droogte</span></div>`);
   el.innerHTML = rijen.join('');
   el.style.display = rijen.length ? '' : 'none';
