@@ -450,6 +450,7 @@ const geanonimiseerd = c => !!(CRM.kandVerwijder && CRM.kandVerwijder.isGeanonim
 const POOLS = [
   {k:'beide',       lbl:'Voorraad + beschikbaar'},
   {k:'voorraad',    lbl:'Klaar om voor te stellen'},
+  {k:'talentpool',  lbl:'Talentpool (bewaard, geen actief traject)'},
   {k:'beschikbaar', lbl:'Beschikbaar (nu of binnen een maand)'},
   {k:'alle',        lbl:'Iedereen in het bestand'}
 ];
@@ -458,9 +459,31 @@ function inPool(c){
   const voorraad = CRM.klaarOmVoorTeStellen(c);
   const besch = CRM.isBeschikbaar(c);
   if(S.pool === 'voorraad')    return voorraad;
+  /* Talentpool = fase Talentpool + bemiddelbare uitvallers (data.js). */
+  if(S.pool === 'talentpool')  return CRM.inTalentpool(c);
   if(S.pool === 'beschikbaar') return besch;
   return voorraad || besch;
 }
+
+/* ─── Geschiktheidsmeter (Tjeerd, 3 sep 2026) ─────────────────────
+   "Misschien kan er een meter gemaakt worden welke profielen meer
+   geschikt naar voren komen doordat een profiel veel beter is ingevuld."
+   Profielscore = hoe goed we iemand kénnen (volledigheid) plus hoe goed
+   we hem vínden (sterren). De totale geschiktheid weegt de vacaturematch
+   het zwaarst; profiel telt mee zodat van twee gelijke matches de best
+   gekende, hoogst beoordeelde kandidaat bovenaan staat. */
+const profielScore = c => {
+  const vol = (CRM.volledigheid ? (CRM.volledigheid(c).pct || 0) : 0);
+  const st  = (Number(c.ster) || 0) / 5 * 100;
+  return Math.round(0.6 * vol + 0.4 * st);
+};
+const geschiktheid = (c, m) => m ? Math.round(0.7 * m.score + 0.3 * profielScore(c))
+                                 : profielScore(c);
+const profielChip = c => {
+  const p = profielScore(c);
+  const vol = CRM.volledigheid ? (CRM.volledigheid(c).pct || 0) : 0;
+  return `<span class="chip${p >= 70 ? ' green' : p >= 40 ? '' : ' amber'}" title="Profielscore: ${vol}% ingevuld · ${Number(c.ster)||0} van 5 sterren — telt mee in de volgorde"><span class="num">${p}%</span> profiel</span>`;
+};
 
 /* Talen: kandidaten schrijven afkortingen ("NL, EN"), de gebruiker typt vaak
    voluit. Zelfde tabel als in js/kandidaten.js — die staat daar module-lokaal;
@@ -946,6 +969,7 @@ function tekenSourcing(mount, acties){
         ${sterHtml(c.ster)}
         <span class="spacer"></span>
         ${score != null ? `<span class="chip${m.blokkers.length?' red':score>=70?' green':score>=50?'':' amber'}" title="${h(m.regel)}"><span class="num">${score}%</span> match</span>` : ''}
+        ${profielChip(c)}
         ${km != null ? `<span class="chip"><span class="num">${km}</span> km</span>` : ''}
       </div>
       <div class="src2-kand-s">${h(c.functie||'geen functie ingevuld')} · ${h(c.woonplaats||'woonplaats onbekend')}</div>
@@ -1527,7 +1551,9 @@ function zoekResultaat(){
   else if(Z.sort === 'naam')   rijen.sort((a,b) => String(a.c.naam||'').localeCompare(String(b.c.naam||''),'nl'));
   else {
     const blok  = r => r.beste && r.beste.m.blokkers.length ? 1 : 0;
-    const score = r => r.beste ? r.beste.m.score : -1;
+    /* Geschiktheid i.p.v. kale matchscore: bij twee gelijke matches wint
+       het best ingevulde, hoogst beoordeelde profiel (de meter). */
+    const score = r => r.beste ? geschiktheid(r.c, r.beste.m) : -1;
     rijen.sort((a,b) => blok(a) - blok(b) || score(b) - score(a) || ster(b) - ster(a));
   }
 

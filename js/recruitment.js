@@ -2405,8 +2405,8 @@ function doorschietForm(lead, opts){
           <input type="text" id="ds_rec" value="${h(lead.eigenaar || CRM.me())}"></div>
       </div>
       ${opts.rond ? '' : `<label class="check"><input type="checkbox" id="ds_intake" checked> Intakeformulier meteen openen</label>`}
-      <label class="check" title="Voor kandidaten die interessant zijn maar waar nu geen tijd is voor een volledige intake: de kaart komt dan op fase Potentieel en blijft in de recruitmentpijplijn staan — hij wordt dus níét als 'klaar om voor te stellen' aangeboden.">
-        <input type="checkbox" id="ds_later"> Nog geen volledige intake gehad — zet de kaart op <b>Potentieel</b> (intake volgt later)</label>
+      <label class="check" title="Voor kandidaten die interessant zijn maar waar nu geen tijd of vacature voor is: de kaart gaat de Talentpool in — uit het dagelijkse werk, maar mét sterren terug te vinden via Sourcing zodra er een aanvraag komt.">
+        <input type="checkbox" id="ds_later"> Nog geen volledige intake — bewaar in de <b>Talentpool</b> (intake volgt bij een aanvraag)</label>
       <div class="note err" id="ds_err" style="display:none"></div>
     </div>
     <div class="modal-f">
@@ -2461,11 +2461,11 @@ function doorschietForm(lead, opts){
         }
         const x = vacById(vacSel.value);
         const vandaag = CRM.todayISO();
-        /* 'Potentieel' voor wie interessant is maar nog geen volledige intake
-           had (Tjeerd, 3 sep 2026) — blijft in de pijplijn, komt niet in de
-           klaar-om-voor-te-stellen-voorraad. */
+        /* Talentpool voor wie interessant is maar nog geen volledige intake
+           had (Tjeerd, 3 sep 2026) — uit het dagelijkse werk, terugvindbaar
+           via Sourcing; zie CRM.TALENTPOOL in data.js. */
         const laterVink = m.querySelector('#ds_later');
-        const fase = laterVink && laterVink.checked ? 'Potentieel' : 'Klaar om voor te stellen';
+        const fase = laterVink && laterVink.checked ? 'Talentpool' : 'Klaar om voor te stellen';
         const cand = {
           id: CRM.uid(), naam:g('naam'), telefoon:g('telefoon'), email:g('email'),
           woonplaats:g('woonplaats'), functie:g('functie'), klant:(x && x.klant) || lead.klant || '',
@@ -2494,7 +2494,7 @@ function doorschietForm(lead, opts){
         await CRM.logActiviteit('kandidaat', cand.id, 'gesprek', `Intake (videocall) gehad op ${CRM.fmtDate(cand.datum)} — kandidaat aangemaakt vanuit sollicitant (${cand.bron})`);
         const intakeVak = m.querySelector('#ds_intake');
         /* Bij 'intake volgt later' heeft het intakeformulier nu geen zin. */
-        const nuIntake = fase === 'Potentieel' ? false : (intakeVak ? intakeVak.checked : false);
+        const nuIntake = fase === 'Talentpool' ? false : (intakeVak ? intakeVak.checked : false);
         CRM.modal._onClose = null;
         CRM.modal.close(); CRM.drawer.close();
         tekenKop(); tekenTabs(); tekenBody(); CRM.navBadges();
@@ -3665,7 +3665,7 @@ function uitvalForm(c, doel){
       <div class="f-row"><label for="uv_txt">Toelichting (optioneel)</label>
         <input type="text" id="uv_txt" value="${h(c.reden||'')}" placeholder="Korte toelichting — daar leren we van"></div>
       <label class="check"><input type="checkbox" id="uv_bemid" ${c.bemiddelbaar!==false?'checked':''}>
-        Blijft bemiddelbaar — staat open voor een andere klant of vacature</label>
+        Blijft bemiddelbaar — komt in de <b>Talentpool</b> voor een andere klant of vacature</label>
       <div class="f-row" id="uv_perwrap" style="${c.bemiddelbaar===false?'display:none':''}">
         <label for="uv_per">Beschikbaar per (optioneel, leeg = nu)</label>
         <input type="date" id="uv_per" value="${h(c.beschikbaarPer||'')}"></div>
@@ -4251,6 +4251,8 @@ function fasePicker(id){
     <div class="modal-b">
       <div class="label" style="margin:0 0 8px">Bij ons — nog geen klant</div>
       <div class="rc-fasepick">${CRM.INSTROOM.map(knop).join('')}</div>
+      <div class="label" style="margin:18px 0 8px">Bewaren — geen actief traject</div>
+      <div class="rc-fasepick">${CRM.TALENTPOOL.map(knop).join('')}</div>
       <div class="label" style="margin:18px 0 8px">Bij een klant</div>
       <div class="rc-fasepick">${CRM.PHASES.map(knop).join('')}</div>
     </div>

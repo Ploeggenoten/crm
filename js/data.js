@@ -105,7 +105,19 @@ CRM.INSTROOM   = [
 /* VOOR_BORD is wat er ná de instroom komt maar vóór het bord: de laatste
    halte. Blijft bestaan omdat het bord en de kandidatenlijst hem gebruiken. */
 CRM.VOOR_BORD  = [{k:'Klaar om voor te stellen', c:'#9aa3b2'}];
-CRM.ALLE_FASES = CRM.INSTROOM.concat(CRM.PHASES);
+/* Talentpool (Tjeerd, 3 sep 2026): de rustplek NA recruitment — goed genoeg
+   om te bewaren, maar nu geen actief traject. Wie hier staat telt nérgens
+   als werkvoorraad: niet in de recruitmentlijst (geen instroomfase), niet in
+   de klaar-om-voor-te-stellen-voorraad, niet op het bord. Terugvinden doe je
+   via Kandidaten en vooral via Sourcing (eigen pool + geschiktheidsmeter). */
+CRM.TALENTPOOL = [{k:'Talentpool', c:'#a8862d'}];
+CRM.ALLE_FASES = CRM.INSTROOM.concat(CRM.TALENTPOOL, CRM.PHASES);
+/* In de talentpool = de expliciete fase, plus de bemiddelbare uitvallers
+   (uitvalformulier: "blijft bemiddelbaar") — die bewaren hun uitvalfase
+   voor de cijfers maar horen bij een aanvraag gewoon in de pool op te
+   duiken. */
+CRM.inTalentpool = c => !!c && (CRM.faseIs(c.fase, 'Talentpool')
+  || (CRM.faseIn(c.fase, ['Afgevallen','Gestopt']) && c.bemiddelbaar !== false));
 /* Zit deze kandidaat nog vóór de klant? */
 CRM.isInstroom = f => CRM.INSTROOM.some(p => p.k === CRM.faseNorm(f));
 
@@ -134,6 +146,7 @@ CRM.zzpIngepland = c => !!c && c.type === 'ZZP' && (CRM.state.klussen||[])
 
 CRM.klaarOmVoorTeStellen = c =>
   !!c && !CRM.faseIn(c.fase, CRM.DONE) && CRM.faseIdx(c.fase) === -1 && !CRM.zzpIngepland(c)
+      && !CRM.faseIs(c.fase, 'Talentpool') /* rust ≠ voorraad — zie CRM.TALENTPOOL */
       && (CRM.faseIs(c.fase, 'Klaar om voor te stellen') || (!!c.intake && !CRM.isInstroom(c.fase)));
 
 /* ─── Twee gedeelde vragen over een plaatsing ────────────────────
