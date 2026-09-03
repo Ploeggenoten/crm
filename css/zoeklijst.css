@@ -1,0 +1,12 @@
+/* Doorzoekbare dropdowns (zoeklijst.js) — paneel in huisstijl. */
+.zoeklijst{position:fixed;z-index:9999;background:var(--card,#fff);
+  border:1px solid var(--line-2,#d3dabf);border-radius:10px;
+  box-shadow:0 8px 28px rgba(26,31,10,.16);padding:6px;
+  display:flex;flex-direction:column;gap:6px;max-width:420px}
+.zoeklijst input{width:100%;box-sizing:border-box}
+.zoeklijst .zl-opties{overflow-y:auto;max-height:260px;display:flex;flex-direction:column}
+.zoeklijst .zl-optie{padding:6px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.zoeklijst .zl-optie:hover,.zoeklijst .zl-optie.act{background:var(--well-2,#e3e7d1)}
+.zoeklijst .zl-optie.sel{font-weight:600;color:var(--olive,#3d6400)}
+.zoeklijst .zl-leeg{padding:8px 10px;color:var(--muted,#5b6544)}
