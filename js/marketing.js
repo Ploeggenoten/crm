@@ -2120,7 +2120,15 @@
                (mkt_campagne_klant) — voor als de naam te veel afwijkt om
                automatisch te herkennen (Tjeerd, 25 aug 2026). */
             if(perKlant && r.geenKlant){
-              const klanten = [...D.klantNaam.values()].sort((a,b) => a.localeCompare(b,'nl'));
+              /* Niet alleen de afgeleide namenlijst (die kent een minimum
+                 van 4 tekens tegen valse automatische treffers — daardoor
+                 ontbrak N.W.B., Tjeerd 3 sep 2026), maar álle klanten uit
+                 Relaties en de vacatures: handmatig koppelen mag alles. */
+              const klanten = [...new Set([
+                ...(CRM.state.clients||[]).map(c => String(c.naam||'').trim()),
+                ...(CRM.state.vacs||[]).map(v => String(v.klant||'').trim()),
+                ...D.klantNaam.values()
+              ].filter(Boolean))].sort((a,b) => a.localeCompare(b,'nl'));
               return `<div class="rowsub" style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
                 ${[...r.campagnes].sort((a,b) => a.localeCompare(b,'nl')).map(c => `
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
