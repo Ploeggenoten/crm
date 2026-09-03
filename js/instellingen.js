@@ -731,9 +731,16 @@ async function vulFormulieren(mount){
   if(!rijen.size){ el.innerHTML = `<p class="meta">Nog geen formulieren gezien — zodra er botleads binnenkomen staan ze hier klaar om te koppelen.</p>`; return; }
   /* Alfabetisch, net als elke andere lijst — de dropdown stond in
      aanmaakvolgorde en daarin was niets terug te vinden (Tjeerd, 3 sep). */
-  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open') === 'Open')
-    .sort((a,b) => ((a.functie||'')+' · '+(a.klant||'')).localeCompare((b.functie||'')+' · '+(b.klant||''), 'nl'));
-  const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}</option>`;
+  /* Ook vervulde/gesloten vacatures zijn koppelbaar (Tjeerd, 3 sep 2026:
+     Proponent-campagne hoorde bij twee inmiddels vervulde vacatures en was
+     nergens aan te hangen). Ze staan in een eigen groep onderaan — voor het
+     terugkoppelen van oude leads, én omdat de waakhond juist moet kunnen
+     zien dat een lopende campagne aan een dichte vacature hangt. */
+  const opAlfabet = (a,b) => ((a.functie||'')+' · '+(a.klant||'')).localeCompare((b.functie||'')+' · '+(b.klant||''), 'nl');
+  const alleVacsSort = (CRM.state.vacs||[]).slice().sort(opAlfabet);
+  const vacs  = alleVacsSort.filter(v => (v.status||'Open') === 'Open');
+  const dicht = alleVacsSort.filter(v => (v.status||'Open') !== 'Open');
+  const optie = (v, huidig) => `<option value="${h(String(v.id))}" ${String(huidig)===String(v.id)?'selected':''}>${h((v.functie||'?') + ' · ' + (v.klant||'?'))}${(v.status||'Open')!=='Open' ? ` — ${h(v.status)}` : ''}</option>`;
   /* ── Eén werkplek voor Bryan (Tjeerd, 2 sep 2026): onder elk gekoppeld
      formulier staan meteen álle botgegevens, vooringevuld vanaf de
      vacaturekaart als suggestie — Bryan geeft hier zijn laatste check en
@@ -871,6 +878,7 @@ async function vulFormulieren(mount){
       <td><select data-form="${h(String(r.form_id))}">
         <option value="">— nog niet gekoppeld —</option>
         ${vacs.map(v => optie(v, r.vacature_id)).join('')}
+        ${dicht.length ? `<optgroup label="— vervuld of gesloten —">${dicht.map(v => optie(v, r.vacature_id)).join('')}</optgroup>` : ''}
       </select> ${statusChip(r)}</td>
       <td><label class="check" title="Uit = seniorrol: de lead komt wel binnen en wordt gerouteerd, maar de bot start geen WhatsApp-gesprek">
         <input type="checkbox" data-botform="${h(String(r.form_id))}" ${r.bot_enabled === false ? '' : 'checked'}> aan</label></td>
