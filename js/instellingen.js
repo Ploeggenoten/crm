@@ -729,26 +729,41 @@ async function vulFormulieren(mount){
     return `<tr><td></td><td colspan="3" style="padding-top:0;padding-bottom:2px">
       <details>
       <summary class="meta" style="cursor:pointer;padding:2px 0">botgegevens ${mist.length ? `— vul nog in: ${h(mist.join(', '))}` : '(compleet — klik om te bewerken)'}</summary>
-      <div class="row tight" style="flex-wrap:wrap;gap:8px 14px;align-items:flex-end;padding:6px 0 10px">
-        ${kolom('Adres werklocatie','locatie',v.id,`<input data-vv="locatie" data-vac="${h(String(v.id))}" value="${h(v.locatie||'')}" placeholder="Straat 1, 1234 AB Plaats" style="width:220px">`)}
-        ${kolom('Werktijden','werktijden',v.id,`<input data-vv="werktijden" data-vac="${h(String(v.id))}" value="${h(v.werktijden||'')}" placeholder="06:00-14:00 / 14:00-22:00" style="width:170px">`)}
-        ${kolom('Ploegen','ploegendienst',v.id,`<select data-vv="ploegendienst" data-vac="${h(String(v.id))}">${PLOEG.map(p=>`<option value="${h(p)}" ${String(v.ploegendienst||'')===p?'selected':''}>${h(p||'—')}</option>`).join('')}</select>`)}
-        ${kolom('Salaris van','sal_min',v.id,`<input type="number" data-vv="sal_min" data-vac="${h(String(v.id))}" value="${v.sal_min==null?'':h(String(v.sal_min))}" style="width:78px">`)}
-        ${kolom('tot','sal_max',v.id,`<input type="number" data-vv="sal_max" data-vac="${h(String(v.id))}" value="${v.sal_max==null?'':h(String(v.sal_max))}" style="width:78px">`)}
-        ${kolom('AM','eigenaar',v.id,`<select data-vv="eigenaar" data-vac="${h(String(v.id))}">${AMS.map(a=>`<option value="${h(a)}" ${String(v.eigenaar||'')===a?'selected':''}>${h(a||'—')}</option>`).join('')}</select>`)}
-        <div style="flex-basis:100%;display:flex;flex-direction:column;gap:4px">
-          <span class="label">Kwalificatievragen — dezelfde stappen als het n8n-formulier</span>
-          <div class="row tight" style="flex-wrap:wrap;gap:4px 14px">
-            ${EIS_VAST.map(e => `<label class="check" title="Aangevinkt = de bot stelt deze kwalificatievraag">
-              <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>`).join('')}
-            <label class="check" style="gap:6px" title="Leeg = geen ervaringseis; de bot vraagt er dan niet naar">Werkervaring:
-              <input data-eis="ervaring" data-vac="${h(String(v.id))}" value="${h(eis.ervaring)}" placeholder="leeg = niet vereist" style="width:200px"></label>
+      <div style="border:1px solid rgba(0,0,0,.12);border-radius:10px;padding:16px 18px 14px;margin:6px 0 14px;max-width:960px;display:flex;flex-direction:column;gap:18px">
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="label" style="opacity:.65">1 · Werkplek &amp; rooster</span>
+          <div class="row tight" style="flex-wrap:wrap;gap:10px 24px;align-items:flex-end">
+            ${kolom('Adres werklocatie','locatie',v.id,`<input data-vv="locatie" data-vac="${h(String(v.id))}" value="${h(v.locatie||'')}" placeholder="Straat 1, 1234 AB Plaats" style="width:280px">`)}
+            ${kolom('Werktijden','werktijden',v.id,`<input data-vv="werktijden" data-vac="${h(String(v.id))}" value="${h(v.werktijden||'')}" placeholder="06:00-14:00 / 14:00-22:00" style="width:230px">`)}
+            ${kolom('Ploegen','ploegendienst',v.id,`<select data-vv="ploegendienst" data-vac="${h(String(v.id))}" style="min-width:130px">${PLOEG.map(p=>`<option value="${h(p)}" ${String(v.ploegendienst||'')===p?'selected':''}>${h(p||'—')}</option>`).join('')}</select>`)}
           </div>
-          <label style="display:flex;flex-direction:column;gap:2px">
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="label" style="opacity:.65">2 · Salaris &amp; accountmanager</span>
+          <div class="row tight" style="flex-wrap:wrap;gap:10px 24px;align-items:flex-end">
+            ${kolom('Salaris van (€ p/m)','sal_min',v.id,`<input type="number" data-vv="sal_min" data-vac="${h(String(v.id))}" value="${v.sal_min==null?'':h(String(v.sal_min))}" placeholder="2400" style="width:100px">`)}
+            ${kolom('tot','sal_max',v.id,`<input type="number" data-vv="sal_max" data-vac="${h(String(v.id))}" value="${v.sal_max==null?'':h(String(v.sal_max))}" placeholder="2800" style="width:100px">`)}
+            ${kolom('AM','eigenaar',v.id,`<select data-vv="eigenaar" data-vac="${h(String(v.id))}" style="min-width:110px">${AMS.map(a=>`<option value="${h(a)}" ${String(v.eigenaar||'')===a?'selected':''}>${h(a||'—')}</option>`).join('')}</select>`)}
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="label" style="opacity:.65">3 · Kwalificatievragen — dezelfde stappen als het n8n-formulier</span>
+          <div class="row tight" style="flex-wrap:wrap;gap:10px 26px;padding:2px 0">
+            ${EIS_VAST.map(e => `<label class="check" style="gap:7px" title="Aangevinkt = de bot stelt deze kwalificatievraag">
+              <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>`).join('')}
+          </div>
+          <label style="display:flex;flex-direction:column;gap:3px;max-width:420px" title="Leeg = geen ervaringseis; de bot vraagt er dan niet naar">
+            <span class="label">Werkervaring vereist — beschrijf kort, of laat leeg</span>
+            <input data-eis="ervaring" data-vac="${h(String(v.id))}" value="${h(eis.ervaring)}" placeholder="bijv. 1 jaar ervaring in productie"></label>
+          <label style="display:flex;flex-direction:column;gap:3px;max-width:560px">
             <span class="label">Extra eisen — één per regel, elke regel wordt één extra vraag</span>
             <textarea data-eis="extra" data-vac="${h(String(v.id))}" rows="2" placeholder="Heftruckcertificaat&#10;Eigen vervoer">${h(eis.extra.join('\n'))}</textarea></label>
-          <span class="meta" data-eisprev="${h(String(v.id))}" style="display:flex;flex-wrap:wrap;gap:3px;align-items:center"></span>
         </div>
+
+        <div class="meta" data-eisprev="${h(String(v.id))}" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;border-top:1px solid rgba(0,0,0,.08);padding-top:10px"></div>
       </div>
       </details>
     </td></tr>`;
