@@ -323,11 +323,17 @@ table.rc-qa tr:last-child td{border-bottom:none}
 
 /* ─── Intake: keuzechips en cijferschaal ─────────────────────── */
 .rc-inchips{display:flex;gap:6px;flex-wrap:wrap}
+.rc-inchips .chip{padding:8px 16px;font-size:13px}
 .rc-schaal{display:flex;gap:4px;flex-wrap:wrap}
+.rc-schaal-rij{display:flex;align-items:center;gap:8px}
+.rc-schaal-eind{font-size:11px;color:var(--muted);white-space:nowrap}
 .rc-cijfer{width:34px;height:30px;border:1px solid var(--line);background:var(--card);
   border-radius:var(--r-s);font-family:var(--body);font-weight:600;font-size:13px;color:var(--txt-2);cursor:pointer}
 .rc-cijfer:hover{border-color:var(--olive-l)}
 .rc-cijfer.on{background:var(--olive);border-color:var(--olive);color:#fff}
+.f-row label + .rc-inchips, .f-row label + .rc-schaal-rij{margin-top:4px}
+.rc-inchips .chip.on.chip-warn{background:var(--amber);border-color:var(--amber)}
+.rc-inchips .chip.on.chip-neg{background:var(--red);border-color:var(--red)}
 
 /* ─── O&O-modaal: ledenlijst ─────────────────────────────────── */
 .rc-oolid{border-bottom:1px solid var(--line);padding:6px 0}
@@ -405,7 +411,8 @@ table.rc-qa tr:last-child td{border-bottom:none}
    tekst, geen paginatitel (huisstijlbrief 30 jul 2026). */
 .ig-blok{display:flex;align-items:center;gap:9px;margin:22px 0 12px;
   padding-top:16px;border-top:1px solid var(--line);
-  font-size:13px;font-weight:700;color:var(--ink)}
+  font-size:13px;font-weight:700;color:var(--ink);
+  position:sticky;top:0;background:var(--paper);z-index:2}
 /* Het eerste blok (0 · Feiten) volgt direct op de uitlegregel; een extra
    lijn plus marge zou daar alleen maar lucht tussen duwen. */
 .ig-blok.ig-eerste{margin-top:0;padding-top:0;border-top:none}
@@ -414,6 +421,8 @@ table.rc-qa tr:last-child td{border-bottom:none}
 .ig-nr{flex:0 0 auto;width:22px;height:22px;display:inline-flex;
   align-items:center;justify-content:center;border:1px solid var(--line-2);
   border-radius:50%;font-size:11.5px;font-weight:700;color:var(--txt-2)}
+.ig-conclusie{background:var(--card);border:1px solid var(--olive-l);border-radius:var(--r);padding:16px}
+.ig-conclusie .f-row:last-child{margin-bottom:0}
 
 /* Brede uitvoering: het paneel moet zowel het formulier als een leesbare
    cv-kolom ernaast bieden. Alleen déze drawer wordt breder — de klasse
@@ -422,9 +431,10 @@ table.rc-qa tr:last-child td{border-bottom:none}
 .drawer.ig-breed{width:min(1400px,97vw)}
 .drawer-b.ig-split{display:flex;padding:0;overflow:hidden}
 .ig-col-form{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 22px 60px}
-.ig-col-cv{flex:0 0 320px;overflow-y:auto;padding:18px;
+.ig-col-cv{flex:0 0 360px;overflow-y:auto;padding:18px;
   border-left:1px solid var(--line);background:var(--card-2)}
 .ig-cv-kop{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.ig-cv-naam{font-family:var(--body);font-weight:600;font-size:13px;color:var(--ink);margin:0}
 .ig-cv-blok{margin-top:14px}
 .ig-cv-blok .label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;
   letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
@@ -432,7 +442,7 @@ table.rc-qa tr:last-child td{border-bottom:none}
   .drawer.ig-breed{width:100vw}
   .drawer-b.ig-split{flex-direction:column;overflow-y:auto}
   .ig-col-form{overflow-y:visible;padding:16px 14px 30px}
-  .ig-col-cv{flex:0 0 auto;overflow-y:visible;border-left:0;border-top:1px solid var(--line)}
+  .ig-col-cv{flex:0 0 auto;overflow-y:visible;border-left:0;border-top:0;border-bottom:1px solid var(--line);order:-1}
 }
 
 /* ── Herontwerp 3 sep 2026: belafspraken-regel + actieve-filters-rij ── */
