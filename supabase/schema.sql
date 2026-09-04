@@ -816,3 +816,7 @@ create table if not exists mkt_kanaal_kosten (
   bijgewerkt timestamptz not null default now(),
   primary key (kanaal, maand)
 );
+
+-- Belpogingen hard op de leadrij (4 sep 2026): de teller uit de activiteiten-
+-- log was een schuivend venster; deze kolom kan alleen maar stijgen.
+alter table crm_leads add column if not exists belpogingen int default 0;

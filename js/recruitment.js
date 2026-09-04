@@ -411,13 +411,22 @@ function belPogingen(leadId){
   if(!BEL_AANTAL){
     BEL_AANTAL = new Map();
     (CRM.state.activiteiten || []).forEach(a => {
-      if(a.entiteit === 'lead' && a.soort === 'bel'){
+      /* 'Belafspraak gezet …' droeg ook soort 'bel' en telde zo als poging,
+         terwijl er alleen een afspraak was gezet (audit 4 sep 2026). */
+      if(a.entiteit === 'lead' && a.soort === 'bel' && !/^Belafspraak gezet/.test(String(a.tekst||''))){
         const k = String(a.ref);
         BEL_AANTAL.set(k, (BEL_AANTAL.get(k) || 0) + 1);
       }
     });
   }
-  return BEL_AANTAL.get(String(leadId)) || 0;
+  const uitLog = BEL_AANTAL.get(String(leadId)) || 0;
+  /* De activiteitencache is een venster (zie core.js): oude regels vallen
+     eruit en dan kromp deze teller — juist bij de lang lopende leads waar de
+     vraag "hoe vaak is er gebeld?" over gaat. Sinds 4 sep 2026 staat de
+     stand daarom óók hard op de leadrij (kolom belpogingen); het hoogste
+     van de twee is de waarheid, en dat getal kan nooit meer krimpen. */
+  const rij = (CRM.state.leads || []).find(l => String(l.id) === String(leadId));
+  return Math.max(uitLog, (rij && rij.belpogingen) || 0);
 }
 /* Wanneer was er voor het laatst écht contact? Welke activiteitsoorten als
    contact tellen komt uit js/opvolging.js (CRM.opvolging.CONTACT) — het
@@ -1356,7 +1365,12 @@ function rijHtml(l){
     <td>
       ${l.telefoon ? `<a class="rc-tel num" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">${h(l.telefoon)}</a>
         ${wa?`<a class="rc-tel rc-wa" href="${h(wa)}" target="_blank" rel="noopener" title="WhatsApp">wa</a>`:''}` : '<span class="meta">geen nummer</span>'}
-      ${bel ? `<div class="rowsub">${bel}× gebeld</div>` : ''}
+      ${bel ? `<div class="rowsub">${bel}× gebeld${(() => {
+        /* 'Veel gebeld' en 'veel gebeld, lang geleden' zijn twee andere
+           verhalen (audit 4 sep 2026). */
+        const lc = laatsteContact(l.id); const d = lc ? CRM.dagenGeleden(lc) : null;
+        return d == null ? '' : d === 0 ? ' · vandaag' : ` · ${d} d geleden`;
+      })()}</div>` : ''}
     </td>
     <td>${vacCelHtml(l, v)}</td>
     <td>${botChipHtml(l)}</td>
@@ -1941,9 +1955,13 @@ const WW_KEUZES = {
   'Potentieel':[
     {t:'1', s:'Intake ingepland', lbl:'Intake plannen'},
     {t:'2', blijf:'gesproken',    lbl:'Gesproken, nog niet zover'},
-    {t:'3', s:'Geen gehoor',      lbl:'Geen gehoor'},
+    /* 'Weer geen gehoor' laat de status staan maar telt de poging wél —
+       anders moest je een potentieel iemand degraderen om een belpoging
+       kwijt te kunnen (audit 4 sep 2026). */
+    {t:'3', blijf:'bel',          lbl:'Weer geen gehoor'},
     {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'},
-    {t:'5', pool:true,            lbl:'→ Talentpool'}
+    {t:'5', pool:true,            lbl:'→ Talentpool'},
+    {t:'6', s:'Geen gehoor',      lbl:'Terug naar Geen gehoor'}
   ],
   'Intake ingepland':[
     {t:'1', door:true,                   lbl:'Kandidaat maken'},
@@ -1958,6 +1976,9 @@ async function noteerPoging(lead, sleutel, notitie){
   const w = WW_BLIJF[sleutel]; if(!w) return false;
   const poging = (w.soort === 'bel' ? belPogingen(lead.id) + 1 : 0);
   const patch = {laatst_actie:new Date().toISOString()};
+  /* Harde teller mee (alleen als de kolom al bestaat — vóór de migratie zou
+     een onbekende kolom de hele schrijfactie laten stranden). */
+  if(w.soort === 'bel' && 'belpogingen' in lead) patch.belpogingen = Math.max((lead.belpogingen||0), belPogingen(lead.id)) + 1;
   /* Zelfde afspraak-wissen als in pasStatusToe: ook een genoteerde belpoging
      zónder statuswissel handelt de belafspraak van vandaag/verlopen af. */
   if(w.soort === 'bel' && lead.opvolgen_op
@@ -2271,6 +2292,7 @@ async function pasStatusToe(lead, nieuw, notitie){
   const geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
   const poging = belPogingen(lead.id) + 1;
   const patch = {status:nieuw, laatst_actie:new Date().toISOString()};
+  if(geenGehoor && 'belpogingen' in lead) patch.belpogingen = Math.max((lead.belpogingen||0), poging - 1) + 1;
   if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
     .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
   /* Herontwerp 3 sep 2026 (motorkap-punt 1): een statuswissel handelt de
@@ -2295,6 +2317,18 @@ async function pasStatusToe(lead, nieuw, notitie){
 }
 
 async function zetStatus(lead, nieuw){
+  /* Nogmaals 'Geen gehoor' kiezen bij iemand die er al op staat was een
+     stille no-op — terwijl de AM net wél gebeld heeft. Dat is nu een
+     genoteerde poging (audit 4 sep 2026): teller omhoog, regel in de
+     tijdlijn, status blijft staan. */
+  if(lead && CRM.leadIs(lead.status, nieuw) && CRM.leadIs(nieuw, 'Geen gehoor')){
+    const p = belPogingen(lead.id) + 1;
+    if(await noteerPoging(lead, 'bel')){
+      CRM.toast(`Belpoging ${p} genoteerd`, 'ok');
+      tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
+    }
+    return;
+  }
   if(!lead || CRM.leadIs(lead.status, nieuw)) return;
   const geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
   const poging = belPogingen(lead.id) + 1;
@@ -2571,7 +2605,10 @@ function openLead(id){
           <div class="f-row"><label for="rc_note">Notitie toevoegen</label>
             <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea>
             <span class="hint">@naam om een collega te melden</span></div>
-          <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
+          <div class="row tight">
+            <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
+            <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
+          </div>
         </div></div>
 
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Geschiedenis</div></div>
@@ -2611,6 +2648,17 @@ function openLead(id){
       };
       dr.querySelector('#rc_eig').onchange = async e => {
         await bewaarLead(l, {eigenaar:e.target.value.trim()}); CRM.toast('Eigenaar bijgewerkt','ok'); tekenLijst();
+      };
+      /* Bellen vanuit de drawer zonder statuswissel was nergens vast te
+         leggen (audit 4 sep 2026): geen enkele knop schreef soort 'bel'. */
+      dr.querySelector('#rc_belpoging').onclick = async () => {
+        const t = dr.querySelector('#rc_note').value.trim();
+        const p = belPogingen(l.id) + 1;
+        if(await noteerPoging(l, 'bel', t)){
+          if(t) CRM.verwerkTags(t, 'lead', l.id);
+          CRM.toast(`Belpoging ${p} genoteerd`, 'ok');
+          tekenKop(); tekenLijst(); openLead(l.id);
+        }
       };
       dr.querySelector('#rc_noteok').onclick = async () => {
         const t = dr.querySelector('#rc_note').value.trim(); if(!t) return;
@@ -4725,17 +4773,17 @@ function intakeForm(id, opts){
      naar de kandidaat zelf. */
   const ta = (k, vraag, ph, rows) => `<div class="f-row"><label for="in_${k}">${h(vraag)}</label>
     <textarea id="in_${k}" rows="${rows||2}" placeholder="${h(ph||'')}">${h(it[k]||'')}</textarea></div>`;
-  const ti = (k, lbl, ph) => `<div class="f-row"><label for="in_${k}">${h(lbl)}</label>
-    <input type="text" id="in_${k}" value="${h(it[k]||'')}" placeholder="${h(ph||'')}"></div>`;
+  const ti = (k, lbl, ph, dflt) => `<div class="f-row"><label for="in_${k}">${h(lbl)}</label>
+    <input type="text" id="in_${k}" value="${h(it[k]||dflt||'')}" placeholder="${h(ph||'')}"></div>`;
   const datum = (k, lbl) => `<div class="f-row"><label for="in_${k}">${h(lbl)}</label>
     <input type="date" id="in_${k}" value="${h(it[k]||'')}"></div>`;
-  const chips = (k, ops, sel) => `<div class="rc-inchips" data-veld="${h(k)}">${
-    ops.map(o=>`<button type="button" class="chip btn-like ${sel===o?'on':''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`;
+  const chips = (k, ops, sel, kleur) => `<div class="rc-inchips" data-veld="${h(k)}">${
+    ops.map(o=>`<button type="button" class="chip btn-like ${sel===o?'on':''} ${(kleur&&kleur[o])||''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`;
   const multichips = (k, ops, sel) => { const arr = Array.isArray(sel) ? sel : [];
     return `<div class="rc-inchips ig-multi" data-veld="${h(k)}">${
       ops.map(o=>`<button type="button" class="chip btn-like ${arr.includes(o)?'on':''}" data-w="${h(o)}">${h(o)}</button>`).join('')}</div>`; };
-  const schaal = (k, max, val) => `<div class="rc-schaal" data-veld="${h(k)}">${
-    Array.from({length:max},(_,i)=>i+1).map(n=>`<button type="button" class="rc-cijfer ${+val===n?'on':''}" data-c="${n}">${n}</button>`).join('')}</div>`;
+  const schaal = (k, max, val, laag, hoog) => `<div class="rc-schaal-rij">${laag?`<span class="rc-schaal-eind">${h(laag)}</span>`:''}<div class="rc-schaal" data-veld="${h(k)}">${
+    Array.from({length:max},(_,i)=>i+1).map(n=>`<button type="button" class="rc-cijfer ${+val===n?'on':''}" data-c="${n}">${n}</button>`).join('')}</div>${hoog?`<span class="rc-schaal-eind">${h(hoog)}</span>`:''}</div>`;
   const fi = (k, lbl, val, ph) => `<div class="f-row"><label for="ig_${k}">${h(lbl)}</label>
     <input type="text" id="ig_${k}" value="${h(val||'')}" placeholder="${h(ph||'')}"></div>`;
   const fsel = (k, lbl, ops, val) => {
@@ -4746,6 +4794,9 @@ function intakeForm(id, opts){
       <select id="ig_${k}"><option value="">—</option>${lijst.map(o=>`<option ${o===val?'selected':''}>${h(o)}</option>`).join('')}</select></div>`;
   };
   const blok = (nr, titel, eerste) => `<div class="ig-blok${eerste?' ig-eerste':''}"><span class="ig-nr num">${nr}</span><span>${titel}</span></div>`;
+  /* i=0 is de huidige werkgever (staat al in huidigeFunctie/werkgever); 1 en 2
+     zijn de vorige, voor het prefillen van werkgeschiedenis1/2. */
+  const wg = i => { const w = (cv.werkgevers||[])[i]; return w ? [w.functie, w.werkgever].filter(Boolean).join(' bij ') + (w.periode ? ` (${w.periode})` : '') : ''; };
 
   /* Rechterkolom: een rustig, alleen-lezen overzicht van het cv, zodat de
      AM tijdens het gesprek niet hoeft te wisselen van scherm. */
@@ -4762,8 +4813,8 @@ function intakeForm(id, opts){
     const talen = Array.isArray(cv.talen) && cv.talen.length ? cv.talen.join(', ') : (c.talen||'');
     const leeg = !werkRegels && !oplRegels && !certNamen.length && !skills.length;
     return `
-      <div class="ig-cv-kop"><div class="h2" style="font-size:15px;margin:0">${h(c.naam)}</div>
-        <span class="meta">${h(cv.huidigeFunctie||c.functie||'—')}${cv.werkgever?' · '+h(cv.werkgever):''}</span></div>
+      <div class="ig-cv-kop"><div class="ig-cv-naam">${h(c.naam)}</div>
+        <span class="meta">${cv.ervaringJaren?h(cv.ervaringJaren)+' jaar ervaring · ':''}${h(cv.huidigeFunctie||c.functie||'—')}${cv.werkgever?' · '+h(cv.werkgever):''}</span></div>
       ${CRM.cvParse ? CRM.cvParse.bestandHtml(c) : ''}
       ${werkRegels ? `<div class="ig-cv-blok"><span class="label">Werkverleden</span>${werkRegels}</div>` : ''}
       ${oplRegels ? `<div class="ig-cv-blok"><span class="label">Opleiding</span>${oplRegels}</div>` : ''}
@@ -4820,10 +4871,6 @@ function intakeForm(id, opts){
           ${fsel('ploegen','Ploegen', CRM.PLOEGEN, c.ploegen)}
           ${fsel('vervoer','Vervoer', CRM.VERVOER, c.vervoer)}
           ${fi('woonplaats','Woonplaats', c.woonplaats)}
-          ${fi('adres','Adres', c.adres)}
-          ${fi('postcode','Postcode', c.postcode)}
-          ${fi('talen','Talen', c.talen, 'Nederlands, Engels…')}
-          ${fi('rijbewijs','Rijbewijs', c.rijbewijs, 'B')}
           ${fi('opzegtermijn','Opzegtermijn bij huidige werkgever', cv.opzegtermijn, 'bijv. 1 maand')}
         </div>
         <div class="f-row"><label>Kun je structureel op de gevraagde tijden werken (ochtend/avond/nacht, weekend)?</label>
@@ -4846,8 +4893,8 @@ function intakeForm(id, opts){
         ${ta('why2','Waarom ben je gestopt met scrollen en heeft deze vacature jouw aandacht getrokken?','WHY #2 — motivatie vacature, letterlijk noteren')}
         ${ta('zoekvraag','Wat zoek je eigenlijk? Wat moet je volgende baan je opleveren?',"opvolging op de WHY's, verdiepend")}
         <div class="f-grid">
-          ${ti('werkgeschiedenis1','Vorige werkgever 1','functie, bedrijf, periode')}
-          ${ti('werkgeschiedenis2','Vorige werkgever 2','functie, bedrijf, periode')}
+          ${ti('werkgeschiedenis1','Vorige werkgever 1','functie, bedrijf, periode', wg(1))}
+          ${ti('werkgeschiedenis2','Vorige werkgever 2','functie, bedrijf, periode', wg(2))}
         </div>
         <div class="f-row"><label>Weet je wat de functie-inhoud precies inhoudt (tempo/omgeving/temperatuur)? Waar verwacht je aan te moeten wennen?</label>
           ${chips('functieKennis',['ja','nee'],it.functieKennis)}
@@ -4864,9 +4911,9 @@ function intakeForm(id, opts){
           ${fi('salariswens','Salariswens (bruto p/m)', cv.salariswens, 'bijv. 3100')}
         </div>
         <div class="f-row"><label>Wat weegt zwaarder: het hoogste uurloon nu, of zekerheid en op termijn vast?</label>
-          ${schaal('loonZekerheid',5,it.loonZekerheid)}</div>
+          ${schaal('loonZekerheid',5,it.loonZekerheid,'uurloon nu','zekerheid vast')}</div>
         <div class="f-row"><label>Loop je bij andere bureaus of heb je andere gesprekken lopen? Hoe ver staat dat?</label>
-          ${chips('concurrerendeTrajecten',['nee','oriënterend','gesprek gehad','aanbod ligt er'],it.concurrerendeTrajecten)}</div>
+          ${chips('concurrerendeTrajecten',['nee','oriënterend','gesprek gehad','aanbod ligt er'],it.concurrerendeTrajecten,{oriënterend:'chip-warn','gesprek gehad':'chip-warn','aanbod ligt er':'chip-neg'})}</div>
         <div class="f-row"><label>Je zegt op, en ze komen met meer geld of een betere ploeg. Wat doe je dan?</label>
           ${schaal('tegenbodrisico',5,it.tegenbodrisico)}
           <textarea id="in_tegenbodrisicoTxt" rows="1" placeholder="toelichting" style="margin-top:8px">${h(it.tegenbodrisicoTxt||'')}</textarea></div>
@@ -4877,8 +4924,15 @@ function intakeForm(id, opts){
         <p class="ig-uitleg" style="margin:2px 0 0">Leg hier in twee zinnen de vorm uit: hij komt bij Ploeggenoten op de loonlijst, en na 1.560 gewerkte uren neemt de klant hem kosteloos over als het van beide kanten bevalt.</p>
 
         ${blok('4','Samenvatting / conclusie kandidaat')}
+        <div class="f-grid">
+          ${fi('adres','Adres', c.adres)}
+          ${fi('postcode','Postcode', c.postcode)}
+          ${fi('talen','Talen', c.talen, 'Nederlands, Engels…')}
+          ${fi('rijbewijs','Rijbewijs', c.rijbewijs, 'B')}
+        </div>
+        <div class="ig-conclusie">
         <div class="f-row"><label>Voorstellen aan de klant?</label>
-          ${chips('voorstellen',['voorstellen','twijfel','niet voorstellen'],it.voorstellen)}
+          ${chips('voorstellen',['voorstellen','twijfel','niet voorstellen'],it.voorstellen,{twijfel:'chip-warn','niet voorstellen':'chip-neg'})}
           <textarea id="in_voorstellenTxt" rows="1" placeholder="waarom, en waarover eventueel twijfel" style="margin-top:8px">${h(it.voorstellenTxt||'')}</textarea></div>
         <div class="f-row"><label>Wanneer zou je op gesprek kunnen? Welke dagen/tijden, hoe flexibel ben je?</label>
           ${multichips('beschikbaarheidGesprek',['ma','di','wo','do','vr'],it.beschikbaarheidGesprek)}
@@ -4887,6 +4941,7 @@ function intakeForm(id, opts){
         <div class="f-row"><label>Ik hou je op de hoogte, ook als er even niks te melden is. Mag ik je daarvoor om de paar dagen even appen?</label>
           ${chips('contactAppen',['ja','nee'],it.contactAppen)}</div>
         ${ta('samenvatting','Samenvatting van het gesprek','een paar zinnen: wie is dit, wat drijft hem, waarom nu, en wat is je conclusie — bruikbaar als je de kandidaat aan een klant voorstelt', 4)}
+        </div>
       </div>
       <aside class="ig-col-cv" id="ig_cv">${cvPaneelHtml()}</aside>
     </div>
@@ -4898,7 +4953,9 @@ function intakeForm(id, opts){
     </div>`, {onClose:opruimen, onOpen(dr){
       dr.classList.add('ig-breed');
       const $ = sel => dr.querySelector(sel);
-      dr.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
+      /* Bewust GEEN CRM.dictee.hang() hier — de Teams-transcript-route
+         (js/intaketranscript.js) maakt spraak-naar-tekst per veld overbodig
+         tijdens dit formulier. */
       if(CRM.cvParse) CRM.cvParse.bindBestand(dr);
 
       /* ── Conceptopslag: alles wat in het paneel staat, als één object ── */
@@ -4964,18 +5021,27 @@ function intakeForm(id, opts){
       }
 
       /* ── Chips (enkel- en meervoudig) en schalen, plus conceptopslag ── */
+      const springNaar = vanaf => {
+        const lijst = CRM.$$('#ig_body input, #ig_body select, #ig_body textarea', dr)
+          .filter(x => x.offsetParent !== null && !x.disabled);
+        const vlg = lijst.find(x => vanaf.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if(vlg){ vlg.focus(); vlg.scrollIntoView({block:'center', behavior:'smooth'}); }
+        else $('#in_ok').focus();
+      };
       CRM.$$('.rc-inchips[data-veld]', dr).forEach(g => {
         const multi = g.classList.contains('ig-multi');
         CRM.$$('.chip', g).forEach(b => b.onclick = () => {
           if(multi) b.classList.toggle('on');
           else { CRM.$$('.chip', g).forEach(x => x.classList.remove('on')); b.classList.add('on'); }
           noteer();
+          if(!multi) springNaar(g);
         });
       });
       CRM.$$('.rc-schaal[data-veld]', dr).forEach(g => CRM.$$('.rc-cijfer', g).forEach(b => b.onclick = () => {
         CRM.$$('.rc-cijfer', g).forEach(x => x.classList.remove('on'));
         b.classList.add('on');
         noteer();
+        springNaar(g);
       }));
 
       /* ── Invulritme: Enter = volgend veld, Shift+Enter = nieuwe regel ── */
@@ -4985,11 +5051,7 @@ function intakeForm(id, opts){
         if(!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
         if(el.tagName === 'TEXTAREA' && e.shiftKey) return;
         e.preventDefault();
-        const lijst = CRM.$$('#ig_body input, #ig_body select, #ig_body textarea', dr)
-          .filter(x => x.offsetParent !== null && !x.disabled);
-        const vlg = lijst[lijst.indexOf(el) + 1];
-        if(vlg){ vlg.focus(); vlg.scrollIntoView({block:'center', behavior:'smooth'}); }
-        else $('#in_ok').focus();
+        springNaar(el);
       });
 
       /* ── Sluiten met onopgeslagen werk: eerst bevestigen ──

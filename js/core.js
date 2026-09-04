@@ -463,7 +463,11 @@ const TABEL_QUERY = {
   profiles:          {veld:'profiles',      q:() => sb.from('profiles').select('*')},
   targets:           {veld:'targets',       q:() => sb.from('targets').select('*')},
   crm_leads:         {veld:'leads',         alles:true, q:() => sb.from('crm_leads').select('*').order('binnen_op',{ascending:false})},
-  crm_activiteiten:  {veld:'activiteiten',  q:() => sb.from('crm_activiteiten').select('*').order('op',{ascending:false}).limit(2000)},
+  /* Was .limit(2000) — maar de belpogingenteller, laatsteContact() en de
+     stilstand-meting rekenen op deze cache, en dat schuivende venster liet
+     ze stilletjes krimpen bij precies de leads die het langst lopen
+     (audit 4 sep 2026). Nu gepagineerd volledig, net als de leadtabellen. */
+  crm_activiteiten:  {veld:'activiteiten',  alles:true, q:() => sb.from('crm_activiteiten').select('*').order('op',{ascending:false})},
   crm_taken:         {veld:'taken',         q:() => sb.from('crm_taken').select('*').order('datum')},
   crm_documenten:    {veld:'documenten',    q:() => sb.from('crm_documenten').select('*').order('op',{ascending:false})},
   crm_kansen:        {veld:'kansen',        q:() => sb.from('crm_kansen').select('*').order('created_at',{ascending:false})},
@@ -585,14 +589,16 @@ CRM.rowToCand = r => ({
    die laat de kolommen weg die de database (nog) niet kent. */
 const candRijVol = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
-  /* datum/tijd/start/geplaatst_op/gestopt_op/voorgesteld_op zijn date/time-
-     kolommen in Postgres — die accepteren geen lege string ("invalid input
-     syntax for type date: \"\""), dus bij ontbreken moet het echt null zijn,
-     niet ''. Elk kandidaataanmaakformulier laat een deel van deze velden
-     onbeschreven (ze horen pas bij een latere fase), dus dit brak vrijwel
-     elke "Kandidaat aanmaken". */
-  datum:c.datum||null, tijd:c.tijd||null, start:c.start||null, since:c.since||CRM.todayISO(), bron:c.bron||'',
-  geplaatst_op:c.geplaatstOp||null, gestopt_op:c.gestoptOp||null, garantie_mnd:c.garantieMnd||0,
+  /* Geverifieerd via information_schema (4 sep 2026): datum/tijd/start/
+     geplaatst_op/gestopt_op zijn TEXT-kolommen met een not-null-constraint
+     en default ''::text — die willen dus juist '' bij ontbreken, null geeft
+     "violates not-null constraint". voorgesteld_op is de ENIGE echte
+     date-kolom van dit stel (nullable) — die wil juist null, niet '', anders
+     "invalid input syntax for type date: \"\"". Elk kandidaataanmaakformulier
+     laat voorgesteld_op onbeschreven (hoort pas bij een latere fase), dus dat
+     brak vrijwel elke "Kandidaat aanmaken" totdat dit veld op null stond. */
+  datum:c.datum||'', tijd:c.tijd||'', start:c.start||'', since:c.since||CRM.todayISO(), bron:c.bron||'',
+  geplaatst_op:c.geplaatstOp||'', gestopt_op:c.gestoptOp||'', garantie_mnd:c.garantieMnd||0,
   voorgesteld_op:c.voorgesteldOp||null,
   /* Zelfde reden als bij het lezen: een ingevulde 0 moet een 0 blijven,
      anders wist opslaan stilletjes "geen ploegentoeslag" weer uit. */
