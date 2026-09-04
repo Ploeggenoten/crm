@@ -1970,19 +1970,21 @@ function ketenSelectie(p, K){
 }
 function spendPerCamp(p, K){
   const mkVan = p.van.slice(0,7), mkTot = p.tot.slice(0,7);
-  const per = new Map(); let totaal = 0;
+  const per = new Map(), perForm = new Map(); let totaal = 0, formulieren = 0;
   for(const r of K.uitRijen){
     if(r.mk < mkVan || r.mk > mkTot) continue;
     per.set(r.campagne, (per.get(r.campagne)||0) + r.bedrag);
+    perForm.set(r.campagne, (perForm.get(r.campagne)||0) + (r.formulieren||0));
     totaal += r.bedrag;
+    formulieren += r.formulieren||0;
   }
-  return {per, totaal};
+  return {per, perForm, totaal, formulieren};
 }
 
 /* Campagnerijen voor tabel, tweezinnen en samenvatting — één berekening. */
 function campRijen(p, K){
   const sel = ketenSelectie(p, K);
-  const {per:spend} = spendPerCamp(p, K);
+  const {per:spend, perForm} = spendPerCamp(p, K);
   const perCamp = new Map();
   for(const r of sel){
     const naam = String(r.lead.campagne||'').trim() || '(zonder campagnenaam)';
@@ -1993,9 +1995,15 @@ function campRijen(p, K){
     const t = CRM.trechter(rs);
     const geplaatst = rs.filter(rGeplaatst).length;
     const bedrag = spend.get(naam) || 0;
+    /* €/lead rekent op Meta's eigen formulierentelling (Tjeerd, 4 sep 2026):
+       vóór de CRM-koppeling ving het CRM lang niet alles, dus de CRM-telling
+       als noemer flatteerde niets — hij maakte leads juist te duur. Meta's
+       telling is wat er gefactureerd is. Geen formulieren bekend (niet-Meta,
+       of naamverschil) → terugval op de CRM-telling. */
+    const formulieren = perForm.get(naam) || 0;
     const kop = K.campKoppel.get(naam);
-    return {naam, klant:(kop && kop.klant) || '', rs, t, geplaatst, bedrag,
-            perLead: t.binnen && bedrag > 0 ? bedrag / t.binnen : null,
+    return {naam, klant:(kop && kop.klant) || '', rs, t, geplaatst, bedrag, formulieren,
+            perLead: bedrag > 0 && (formulieren || t.binnen) ? bedrag / (formulieren || t.binnen) : null,
             perGekwal: t.gekwal && bedrag > 0 ? bedrag / t.gekwal : null,
             perPlaatsing: geplaatst && bedrag > 0 ? bedrag / geplaatst : null,
             hersteld: rs.filter(r => isHersteld(r.lead)).length};
@@ -2030,7 +2038,7 @@ function hoofdstukTrechter(p, K){
   const {rijen, sel, spendZonderLeads} = campRijen(p, K);
   const t = CRM.trechter(sel);
   const geplaatst = sel.filter(rGeplaatst).length;
-  const {totaal:spendTot} = spendPerCamp(p, K);
+  const {totaal:spendTot, formulieren:formTot} = spendPerCamp(p, K);
   const herstelN = sel.filter(r => isHersteld(r.lead)).length;
   const dubbelN  = K.dubbels.filter(r => r.dk && r.dk >= p.van && r.dk <= p.tot).length;
   const loopt = sel.filter(r => r.loopt).length;
@@ -2041,21 +2049,27 @@ function hoofdstukTrechter(p, K){
 
   /* ── Aansluitregel (B3): wat kwam er binnen en wat telt er mee. ── */
   const mktStil = !_mkt ? ' · kosten worden nog geladen…' : (_mkt.fout ? ' · kosten konden niet geladen worden' : '');
-  const aansluit = `<p class="pf-aansluit meta"><span class="num">${t.binnen}</span> Meta-leads in het CRM in deze periode${
-      dubbelN ? ` · <span class="num">${dubbelN}</span> dubbele aanmelding${dubbelN===1?'':'en'} apart gehouden` : ''}${
-      herstelN ? ` · <span class="num">${herstelN}</span> hersteld nageleverd (nooit door de bot gesproken)` : ''}${
-      spendTot ? ` · ${eurK(spendTot)} uitgegeven` : ''}${mktStil}.
-      €-per-lead is een ondergrens op de CRM-telling: wat Meta leverde maar het CRM nooit haalde, staat hier niet in.</p>`;
+  /* Meta's telling is de noemer, het CRM de conversie (Tjeerd, 4 sep 2026:
+     "daarin moet je eigenlijk kijken naar Meta en niet naar het CRM" — vóór
+     de koppeling ving het CRM lang niet alles). Vanaf sep 2026 lopen de twee
+     tellingen vrijwel gelijk; het verschil blijft hier altijd zichtbaar. */
+  const aansluit = `<p class="pf-aansluit meta">${
+      formTot ? `Meta telde <span class="num">${formTot}</span> formulieren voor ${eurK(spendTot)} — ` : ''}<span class="num">${t.binnen}</span> ${formTot?'daarvan kwamen':'Meta-leads kwamen'} als lead het CRM in${
+      dubbelN ? ` · <span class="num">${dubbelN}</span> dubbel apart gehouden` : ''}${
+      herstelN ? ` · <span class="num">${herstelN}</span> hersteld nageleverd` : ''}${!formTot && spendTot ? ` · ${eurK(spendTot)} uitgegeven` : ''}${mktStil}.
+      €-per-lead rekent op Meta's eigen telling (dat is wat er gefactureerd is); de trechter eronder toont wat het CRM ermee deed.
+      ${p.van < '2026-09-01' ? 'Let op: vóór september ving het CRM nog niet alles — de conversiestappen zijn daar een ondergrens, vanaf september is de keten volledig meetbaar.' : ''}</p>`;
 
   /* ── 2.1 De funnel zelf. ── */
   const stappen = [
-    {k:'binnen',      lbl:'Binnengekomen',        n:t.binnen,      rs:sel},
+    ...(formTot ? [{k:'meta', lbl:'Meta-formulieren', n:formTot, rs:[]}] : []),
+    {k:'binnen',      lbl:'In het CRM',           n:t.binnen,      rs:sel},
     {k:'gekwal',      lbl:'Bot-gekwalificeerd',   n:t.gekwal,      rs:sel.filter(r=>r.gekwal)},
     {k:'door',        lbl:'Kandidaatkaart',       n:t.door,        rs:sel.filter(r=>r.door)},
     {k:'voorgesteld', lbl:'Voorgesteld',          n:t.voorgesteld, rs:sel.filter(r=>r.voorgesteld)},
     {k:'geplaatst',   lbl:'Geplaatst',            n:geplaatst,     rs:sel.filter(rGeplaatst)}
   ];
-  const start = t.binnen || 1;
+  const start = Math.max(formTot, t.binnen) || 1;
   const funnel = `<div class="pf-funnel">${stappen.map((st,i) => {
     const kosten = st.n && spendTot > 0 ? ` · ${eurK(spendTot/st.n)}/stuk` : '';
     const open = trOpen === st.k;
@@ -2067,7 +2081,7 @@ function hoofdstukTrechter(p, K){
         <div class="pf-fl">${h(st.lbl)}</div>
         <div class="pf-fb"><i style="width:${Math.round(st.n/start*100)}%"></i>
           <span class="pf-fn num">${st.n}</span></div>
-        <div class="pf-fd meta num">${pctK(st.n, t.binnen)}${kosten}</div>
+        <div class="pf-fd meta num">${pctK(st.n, formTot || t.binnen)}${kosten}</div>
       </div>${drill}`;
   }).join('')}</div>`;
 
@@ -2120,13 +2134,14 @@ function hoofdstukTrechter(p, K){
     })).sort((a,b) => b.n - a.n);
   })();
   const tabel = `<div class="tblwrap"><table class="tbl pf-tbl">
-    <thead><tr><th>Campagne</th><th class="num">Leads</th><th class="num">Gekwalificeerd</th>
+    <thead><tr><th>Campagne</th><th class="num">Form. (Meta)</th><th class="num">In CRM</th><th class="num">Gekwalificeerd</th>
       <th class="num">Kandidaat</th><th class="num">Geplaatst</th>
-      <th class="num">Uitgegeven</th><th class="num">€ / lead</th><th class="num">€ / gekwalificeerd</th></tr></thead>
+      <th class="num">Uitgegeven</th><th class="num">€ / lead (Meta)</th><th class="num">€ / gekwalificeerd</th></tr></thead>
     <tbody>
       ${rijen.map(r => `<tr>
         <td><b>${h(r.naam)}</b>${r.klant ? `<span class="meta"> · ${h(r.klant)}</span>` : (r.bedrag > 0 ? `<span class="chip amber"> niet aan een klant gekoppeld</span>` : '')}${
           r.hersteld ? `<span class="meta"> · ${r.hersteld} hersteld</span>` : ''}</td>
+        <td class="num">${r.formulieren || '—'}</td>
         <td class="num">${r.t.binnen}</td>
         <td class="num">${r.t.gekwal}<span class="meta"> (${pctK(r.t.gekwal, r.t.binnen)})</span></td>
         <td class="num">${r.t.door}</td>
@@ -2137,6 +2152,7 @@ function hoofdstukTrechter(p, K){
       </tr>`).join('')}
       ${nietMeta.map(r => `<tr class="pf-nietmeta">
         <td><b>${h(r.bron)}</b><span class="meta"> · ${r.bedrag > 0 ? 'handmatig maandbedrag (Instellingen)' : 'geen advertentiekosten bekend'}</span></td>
+        <td class="num">—</td>
         <td class="num">${r.n}</td><td class="num">—</td>
         <td class="num">${r.door}</td><td class="num">${r.geplaatst}</td>
         <td class="num">${r.bedrag > 0 ? eurK(r.bedrag) : '—'}</td>
@@ -2210,6 +2226,7 @@ function hoofdstukTrechter(p, K){
         <b>Kandidaatkaart</b> = de lead is doorgeschoten (of een kaart wijst terug). <b>Geplaatst</b> telt
         alleen met een datum van tekenen — exact de definitie van het pijplijnbord (CRM.teltAlsPlaatsing),
         zodat dit blok nooit meer plaatsingen toont dan het bord. Dubbele aanmeldingen tellen nérgens mee.
+        <b>€/lead</b> deelt door Meta's eigen formulierentelling — dat is wat er gefactureerd is.
         Klik op een trede voor de namen.</p>
     </div></div>`;
 }
