@@ -299,6 +299,13 @@ const statusOptieExtra = s => { const x = CRM.leadNorm(s);
   return `<option value="${h(s)}" selected>${h(x||'(geen status)')}${statusBestaat(s)?'':' — bestaat niet meer'}</option>`;
 };
 
+/* Een dropdown die al op 'Geen gehoor' staat vuurt niets af als je dezelfde
+   waarde nóg eens kiest — zo was een tweede belpoging via de lijst letterlijk
+   niet aan te klikken (Tjeerd, 4 sep 2026). Daarom een eigen optie die de
+   status laat staan maar de poging wél telt. */
+const pogingOptie = l => CRM.leadIn(l.status, ['Geen gehoor','Potentieel'])
+  ? `<option value="__poging">Weer geen gehoor (poging ${belPogingen(l.id)+1})</option>` : '';
+
 /* ─── Kennen we deze persoon al? ──────────────────────────────────
    Dezelfde persoon die twee keer solliciteert — op een tweede advertentie, of
    een paar weken later opnieuw. We voegen niets samen: welke van de twee de
@@ -1322,6 +1329,16 @@ function tekenLeadTabel(wrap, rijen){
         sel.value = CRM.leadNorm(l && l.status) || 'Nieuw';
         return doorschietForm(l, {talentpool:true});
       }
+      if(sel.value === '__poging'){
+        sel.value = CRM.leadNorm(l && l.status) || 'Nieuw';
+        return (async () => {
+          const p = belPogingen(l.id) + 1;
+          if(await noteerPoging(l, 'bel')){
+            CRM.toast(`Belpoging ${p} genoteerd`, 'ok');
+            tekenKop(); tekenLijst();
+          }
+        })();
+      }
       zetStatus(l, sel.value);
     };
   });
@@ -1379,6 +1396,7 @@ function rijHtml(l){
         <select class="rc-stsel" data-id="${h(l.id)}">
           ${statusOptieExtra(l.status)}
           ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${CRM.leadIs(l.status, s.k)?'selected':''}>${h(s.k)}</option>`).join('')}
+          ${pogingOptie(l)}
           <option value="__talentpool">→ Talentpool (kaart bewaren)</option>
         </select>
       </div>
@@ -2618,6 +2636,7 @@ function openLead(id){
       <select id="rc_dst" style="width:auto;min-width:210px">
         ${statusOptieExtra(l.status)}
         ${CRM.LEAD_STATUS.map(s=>`<option value="${h(s.k)}" ${CRM.leadIs(l.status, s.k)?'selected':''}>${h(s.k)}</option>`).join('')}
+        ${pogingOptie(l)}
         <option value="__talentpool">→ Talentpool (kaart bewaren)</option>
       </select>
       <button class="btn ghost danger" id="rc_del" title="Sollicitant verwijderen">Verwijderen…</button>
@@ -2637,6 +2656,16 @@ function openLead(id){
         if(e.target.value === '__talentpool'){
           e.target.value = CRM.leadNorm(l.status) || 'Nieuw';
           return doorschietForm(l, {talentpool:true});
+        }
+        if(e.target.value === '__poging'){
+          e.target.value = CRM.leadNorm(l.status) || 'Nieuw';
+          return (async () => {
+            const p = belPogingen(l.id) + 1;
+            if(await noteerPoging(l, 'bel')){
+              CRM.toast(`Belpoging ${p} genoteerd`, 'ok');
+              tekenKop(); tekenLijst(); openLead(l.id);
+            }
+          })();
         }
         zetStatus(l, e.target.value);
       };
