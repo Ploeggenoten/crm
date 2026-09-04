@@ -2709,7 +2709,10 @@ function intakeHtml(c){
      kunnen lopen. Onbekende sleutels (bv. van een oude, vervangen intake)
      vallen terug op de sleutelnaam, zodat niets stilletjes onzichtbaar is. */
   const INTAKE_LBL = (CRM._rcDeel && CRM._rcDeel.INTAKE_LBL) || {};
-  const verstopt = ['videocallOp','op','door'];
+  /* De samenvatting krijgt een eigen, opvallend blok bovenaan (net als
+     vroeger) in plaats van tussen de losse velden te verdwijnen — dat is
+     precies de tekst die je zo kopieert naar een klant. */
+  const verstopt = ['videocallOp','op','door','samenvatting'];
   const volgorde = Object.keys(INTAKE_LBL).concat(Object.keys(i).filter(k => !INTAKE_LBL[k] && !verstopt.includes(k)));
   const toon = k => {
     const w = i[k];
@@ -2724,6 +2727,8 @@ function intakeHtml(c){
       <span class="meta num">${h(CRM.fmtDate(i.op))}${i.door?' · '+h(i.door):''}</span>
       ${knop}</div>
     <div class="card-b">
+      ${i.samenvatting ? `<div class="kd-intsam"><span class="label">Samenvatting van het gesprek</span>
+        <p>${h(i.samenvatting)}</p></div>` : ''}
       <div class="kd-velden">
         ${volgorde.map(toon).join('')}
       </div>

@@ -4672,7 +4672,8 @@ const INTAKE_LBL = {
   beslisdatum:'Beslisdatum', beslisBetrokkenen:'Betrokkenen bij de beslissing',
   voorstellen:'Voorstellen aan de klant', voorstellenTxt:'Toelichting bij voorstellen/twijfel',
   beschikbaarheidGesprek:'Beschikbaar voor gesprek', beschikbaarheidGesprekTxt:'Tijden en flexibiliteit',
-  verwachtingKandidaat:'Verwachting van dit traject', contactAppen:'Akkoord met tussentijds appen'
+  verwachtingKandidaat:'Verwachting van dit traject', contactAppen:'Akkoord met tussentijds appen',
+  samenvatting:'Samenvatting van het gesprek'
 };
 
 /* opts.voorstel: velden uit het transcript-hulpmiddel (js/intaketranscript.js)
@@ -4867,6 +4868,7 @@ function intakeForm(id, opts){
         ${ta('verwachtingKandidaat','Wat verwacht je van mij / van dit traject?')}
         <div class="f-row"><label>Ik hou je op de hoogte, ook als er even niks te melden is. Mag ik je daarvoor om de paar dagen even appen?</label>
           ${chips('contactAppen',['ja','nee'],it.contactAppen)}</div>
+        ${ta('samenvatting','Samenvatting van het gesprek','een paar zinnen: wie is dit, wat drijft hem, waarom nu, en wat is je conclusie — bruikbaar als je de kandidaat aan een klant voorstelt', 4)}
       </div>
       <aside class="ig-col-cv" id="ig_cv">${cvPaneelHtml()}</aside>
     </div>
@@ -5041,6 +5043,7 @@ function intakeForm(id, opts){
           voorstellen:chip('voorstellen'), voorstellenTxt:g('voorstellenTxt'),
           beschikbaarheidGesprek:multi('beschikbaarheidGesprek'), beschikbaarheidGesprekTxt:g('beschikbaarheidGesprekTxt'),
           verwachtingKandidaat:g('verwachtingKandidaat'), contactAppen:chip('contactAppen'),
+          samenvatting:g('samenvatting'),
           /* De datum van de videocall en het Teams-meeting-ID komen uit de
              recruitmentpijplijn resp. het inplannen van de call, en worden
              hier niet opnieuw gevraagd — maar mogen ook niet verdwijnen

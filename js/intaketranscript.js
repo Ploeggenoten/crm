@@ -18,7 +18,9 @@
 
    Wat dit WEL doet: de open vragen en keuzes uit het intakeformulier
    (Persoonlijk, Functie & werkzaamheden, Salaris & voorwaarden,
-   Samenvatting/conclusie) uit het transcript halen.
+   Samenvatting/conclusie) uit het transcript halen — plus een
+   samenvatting van het hele gesprek (het enige veld dat niet letterlijk
+   wordt overgenomen, maar echt samengevat).
    Wat dit NIET doet: de feitenvelden bovenaan het formulier (gezochte
    functie, beschikbaarheid, vervoer, huidige functie/bedrijf, salaris)
    blijven voor rekening van de AM — die staan meestal al op de kaart
@@ -77,7 +79,11 @@ REGELS
    ["ma","di","wo","do","vr"].
 7. "beslisdatum": alleen invullen als een concrete datum genoemd is, in de
    vorm "JJJJ-MM-DD". Anders leeg.
-8. Antwoord met uitsluitend het JSON-object. Geen inleiding, geen
+8. "samenvatting": dit is de ENIGE tekst die je zelf samenvat in plaats van
+   letterlijk overneemt — drie tot vijf feitelijke zinnen over wie de
+   kandidaat is, waarom hij nu op zoek is, wat hij zoekt, en je conclusie.
+   Geschikt om zo aan een klant te sturen; niet overdrijven, niet verkopen.
+9. Antwoord met uitsluitend het JSON-object. Geen inleiding, geen
    toelichting, geen codeblok eromheen.
 
 VELDEN EN WAT ZE BETEKENEN
@@ -107,7 +113,8 @@ VORM — precies deze sleutels:
   "beslisdatum": "", "beslisBetrokkenen": "",
   "voorstellen": "", "voorstellenTxt": "",
   "beschikbaarheidGesprek": [], "beschikbaarheidGesprekTxt": "",
-  "verwachtingKandidaat": "", "contactAppen": ""
+  "verwachtingKandidaat": "", "contactAppen": "",
+  "samenvatting": ""
 }
 
 TRANSCRIPT
@@ -159,7 +166,8 @@ function naarVoorstel(o){
     voorstellen: keuze(o.voorstellen, 'voorstellen'), voorstellenTxt: t(o.voorstellenTxt),
     beschikbaarheidGesprek: (Array.isArray(o.beschikbaarheidGesprek) ? o.beschikbaarheidGesprek : []).map(t).filter(d => DAGEN.includes(d)),
     beschikbaarheidGesprekTxt: t(o.beschikbaarheidGesprekTxt),
-    verwachtingKandidaat: t(o.verwachtingKandidaat), contactAppen: keuze(o.contactAppen, 'contactAppen')
+    verwachtingKandidaat: t(o.verwachtingKandidaat), contactAppen: keuze(o.contactAppen, 'contactAppen'),
+    samenvatting: t(o.samenvatting)
   };
 }
 const heeftInhoud = v => Object.entries(v).some(([k, w]) =>

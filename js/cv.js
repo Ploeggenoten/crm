@@ -502,10 +502,12 @@ function open(kandidaat, opts){
   const o = laadOpts();
   cvNaamVoorTitel = t(c.naam) || 'Kandidaat';
 
-  /* Profielschets voorvullen: het nieuwe intakeformulier (js/recruitment.js)
-     heeft geen losse "samenvatting voor de klant" meer — de AM typt deze
-     schets dus zelf, met een neutrale beginzin als startpunt. */
-  if(ctx.vac) o.schets = 'Voor de functie ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') +
+  /* Profielschets voorvullen: de samenvatting uit de intake (js/recruitment.js,
+     sectie 4) is precies waarvoor dit vlak bedoeld is. Anders een neutrale
+     beginzin. */
+  const samenvatting = t((c.intake || {}).samenvatting);
+  if(samenvatting) o.schets = samenvatting;
+  else if(ctx.vac) o.schets = 'Voor de functie ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') +
     ' stellen wij deze kandidaat aan je voor. ';
   /* Sector: de branche van de klant is een startpunt, geen aanname — de
      AM ziet hem staan en kan hem aanpassen of weghalen. */
