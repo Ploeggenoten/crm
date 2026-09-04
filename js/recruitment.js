@@ -2171,7 +2171,7 @@ function wegwerkModus(status){
           ${l.kwalificatie ? `<div class="rc-kv"><span class="label">Kwalificatie</span><span>${h(l.kwalificatie)}</span></div>` : ''}
           ${l.agent_notitie ? `<div class="rc-kv"><span class="label">Agent</span><span>${h(l.agent_notitie)}</span></div>` : ''}
           ${belChipHtml(l) ? `<div class="rc-kv"><span class="label">Belafspraak</span><span>${belChipHtml(l)}</span></div>` : ''}
-          ${l.cv_url ? `<div class="rc-kv"><span class="label">CV</span><span><a href="${h(l.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : ''}
+          ${cvUrlHtml('CV', l.cv_url)}
           ${botFaseTekst(l) ? `<div class="rc-kv"><span class="label">Botfase</span><span>${h(botFaseTekst(l))}</span></div>` : ''}
           ${bel || contact ? `<div class="rc-kv"><span class="label">Eerder</span><span>${
             bel ? bel + '× gebeld' : ''}${bel && contact ? ' · ' : ''}${
@@ -2393,13 +2393,31 @@ function qaHtml(antwoorden){
 /* Het cv-paneel in het sollicitantpaneel. Krijgt de hele lead mee, want het
    bestand zelf hangt aan `lead.cv.bestandPad` en wordt door CRM.cvParse
    getoond — met een link die pas bij het klikken wordt ondertekend. */
+/* De WhatsApp-bot levert soms een cv_url aan die geen volledige, geldige
+   link is (bv. een kaal pad zonder http(s)-schema). Als kale <a href> vult
+   de browser zo'n waarde aan tegen de HUIDIGE pagina — op de live site dus
+   tegen ploeggenoten.github.io, waar hij op een GitHub Pages 404 uitkomt in
+   plaats van op het cv. Alleen een echte http(s)-link wordt klikbaar; alles
+   anders tonen we als platte tekst (met de ruwe waarde in de title), zodat
+   je zíet dat er iets staat zonder op een dode link te klikken. Zelfde
+   grens die CRM.opslag.open() al hanteert voor eigen documentlinks. */
+function cvUrlHtml(label, url){
+  const u = String(url || '').trim();
+  if(!u) return '';
+  const geldig = /^https?:\/\//i.test(u);
+  return `<div class="rc-kv"><span class="label">${h(label)}</span><span>${
+    geldig ? `<a href="${h(u)}" target="_blank" rel="noopener">Open cv →</a>`
+           : `<span class="meta" title="${h(u)}">Cv-link van de bot is ongeldig — niet klikbaar</span>`
+  }</span></div>`;
+}
+
 function cvHtml(lead){
   const cv = lead.cv;
   const bestand = CRM.cvParse ? CRM.cvParse.bestandHtml(lead) : '';
   /* Een cv dat de WhatsApp-bot aanleverde is een link (cv_url), geen geparsed
      bestand. Die moet altijd te openen zijn — ook naast een geparsed cv, want
      het origineel zegt meer dan de samenvatting. */
-  const link = lead.cv_url ? `<div class="rc-kv"><span class="label">Bestand</span><span><a href="${h(lead.cv_url)}" target="_blank" rel="noopener">Open cv →</a></span></div>` : '';
+  const link = cvUrlHtml('Bestand', lead.cv_url);
   if(!cv) return link || `<p class="meta" style="margin:0">Nog geen cv gekoppeld.</p>`;
   const lijst = (t, arr) => (arr && arr.length)
     ? `<div class="rc-kv"><span class="label">${h(t)}</span><div class="row tight">${arr.map(x=>`<span class="chip">${h(x)}</span>`).join('')}</div></div>` : '';

@@ -585,9 +585,15 @@ CRM.rowToCand = r => ({
    die laat de kolommen weg die de database (nog) niet kent. */
 const candRijVol = c => ({
   id:c.id, naam:c.naam, klant:c.klant||'', functie:c.functie||'', type:c.type||'', fase:c.fase,
-  datum:c.datum||'', tijd:c.tijd||'', start:c.start||'', since:c.since||CRM.todayISO(), bron:c.bron||'',
-  geplaatst_op:c.geplaatstOp||'', gestopt_op:c.gestoptOp||'', garantie_mnd:c.garantieMnd||0,
-  voorgesteld_op:c.voorgesteldOp||'',
+  /* datum/tijd/start/geplaatst_op/gestopt_op/voorgesteld_op zijn date/time-
+     kolommen in Postgres — die accepteren geen lege string ("invalid input
+     syntax for type date: \"\""), dus bij ontbreken moet het echt null zijn,
+     niet ''. Elk kandidaataanmaakformulier laat een deel van deze velden
+     onbeschreven (ze horen pas bij een latere fase), dus dit brak vrijwel
+     elke "Kandidaat aanmaken". */
+  datum:c.datum||null, tijd:c.tijd||null, start:c.start||null, since:c.since||CRM.todayISO(), bron:c.bron||'',
+  geplaatst_op:c.geplaatstOp||null, gestopt_op:c.gestoptOp||null, garantie_mnd:c.garantieMnd||0,
+  voorgesteld_op:c.voorgesteldOp||null,
   /* Zelfde reden als bij het lezen: een ingevulde 0 moet een 0 blijven,
      anders wist opslaan stilletjes "geen ploegentoeslag" weer uit. */
   maandloon:c.maandloon==null||c.maandloon===''?null:Number(c.maandloon),
