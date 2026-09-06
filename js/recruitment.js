@@ -2601,6 +2601,21 @@ async function verwijderLead(l){
   tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
 }
 
+/* Vrij tekstveld liet typefouten door (Tjeerd, 7 sep 2026: "moet je zijn naam
+   typen, maak dit een dropdown") — en een typefout hier is stil: de
+   eigenaarfilter (CRM.naamNorm/CRM.PLAATSERS) telt hem dan gewoon niet mee.
+   Een bestaande, niet-erkende naam (oude data, of ooit hier getypt) blijft
+   als extra optie staan zodat kiezen nooit ongemerkt de waarde wegneemt. */
+function eigenaarSelectHtml(huidig){
+  const norm = CRM.naamNorm(huidig);
+  const vreemd = norm && !CRM.PLAATSERS.includes(norm) ? norm : '';
+  return `<select id="rc_eig">
+    <option value="">— geen —</option>
+    ${vreemd ? `<option value="${h(vreemd)}" selected>${h(vreemd)}</option>` : ''}
+    ${CRM.PLAATSERS.map(n=>`<option value="${h(n)}" ${norm===n?'selected':''}>${h(n)}</option>`).join('')}
+  </select>`;
+}
+
 function openLead(id){
   const l = leadById(id); if(!l) return;
   /* Rijen die uit de kandidatentabel komen hebben al een kaart. Het
@@ -2700,7 +2715,8 @@ function openLead(id){
         <div class="card-b">
           <div class="f-grid">
             <div class="f-row"><label for="rc_opv">Opvolgdatum</label><input type="date" id="rc_opv" value="${h(l.opvolgen_op||'')}"></div>
-            <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label><input type="text" id="rc_eig" value="${h(l.eigenaar||'')}" placeholder="Naam"></div>
+            <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label>
+              ${eigenaarSelectHtml(l.eigenaar)}</div>
           </div>
           <div class="f-row"><label for="rc_note">Notitie toevoegen</label>
             <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea>
