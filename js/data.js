@@ -232,6 +232,11 @@ CRM.STOP_CATS = {
    niet matchten. */
 CRM.LEAD_NIET_GESCHIKT_CATS = ['Taal','Geen vervoer','Te ver / verkeerde regio','Rooster/ploegen past niet',
   'Salarisverwachting te hoog','Onvoldoende ervaring','Geen motivatie','Onbereikbaar / reageert niet','Anders'];
+/* Optionele reden bij 'Potentieel' — geen verplichting (Tjeerd, 6 sep 2026:
+   "optioneel veld, geen verplichting"), dus geen eigen modal: dit vult
+   alleen de categorielijst boven de algemene notitie in het leadvenster. */
+CRM.LEAD_POTENTIEEL_CATS = ['Sterke ervaring','Beschikbaar per direct','Goede eerste indruk',
+  'Actief op zoek','Past goed bij de functie','Anders'];
 
 /* ─── Sales-pijplijn (klantzijde) ───────────────────────────────
    Volgorde zoals Tjeerd hem voert. 'Project uitgesteld' en

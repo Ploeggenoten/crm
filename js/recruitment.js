@@ -2124,6 +2124,18 @@ function wegwerkModus(status){
       return onderbreek(hervat => doorschietForm(l, {rond:true, talentpool:!!keuze.pool,
         naAfloop(gelukt){ if(gelukt) gedaan++; hervat(); }}));
     }
+    if(CRM.leadIs(keuze.s, 'Niet geschikt')){
+      /* Ook hier verplicht een reden (zelfde als de andere drie plekken
+         waar dit kan) — anders is dit precies de snelste route waarop de
+         meeste "Niet geschikt"-beslissingen zonder reden zouden ontstaan,
+         want de belronde is juist gemaakt om snel door grote aantallen heen
+         te gaan. Zelfde pauze/hervat-patroon als hierboven bij 'door'. */
+      i++; log.push({type:'status', l, oud:{status:l.status, opvolgen_op:l.opvolgen_op||null, terugbel_om:l.terugbel_om||null}});
+      return onderbreek(hervat => nietGeschiktForm(l, async reden => {
+        if(await pasStatusToe(l, keuze.s, reden)) gedaan++;
+        hervat();
+      }, hervat));
+    }
     const oud = {status:l.status, opvolgen_op:l.opvolgen_op || null, terugbel_om:l.terugbel_om || null};
     const ok = keuze.blijf ? await noteerPoging(l, keuze.blijf, notitie)
                            : await pasStatusToe(l, keuze.s, notitie);
@@ -2300,6 +2312,10 @@ function wegwerkModus(status){
    De schrijfactie zelf, zonder schermwerk: de wegwerkmodus roept deze
    tientallen keren achter elkaar aan en moet daar niet elke keer het hele
    bord voor hertekenen. */
+/* notitie mag een platte string zijn (ongecategoriseerd, zoals vanouds)
+   of {cat, txt} — cat gaat dan ook los in extra.categorie van de
+   activiteit, zodat Performance erop kan groeperen zonder tekst te
+   moeten parsen. */
 async function pasStatusToe(lead, nieuw, notitie){
   /* Genormaliseerd vergelijken: een rij die nog op 'CV binnen' staat en op
      'Potentieel' wordt gezet is geen wissel — het scherm toonde al
@@ -2307,12 +2323,15 @@ async function pasStatusToe(lead, nieuw, notitie){
      vertaalt hem overal. */
   if(!lead || CRM.leadIs(lead.status, nieuw)) return false;
   const oud = lead.status;
+  const gestructureerd = notitie && typeof notitie === 'object';
+  const cat = gestructureerd ? notitie.cat : '';
+  const tekst = gestructureerd ? (notitie.cat + (notitie.txt ? ' — ' + notitie.txt : '')) : notitie;
   const geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
   const poging = belPogingen(lead.id) + 1;
   const patch = {status:nieuw, laatst_actie:new Date().toISOString()};
   if(geenGehoor && 'belpogingen' in lead) patch.belpogingen = Math.max((lead.belpogingen||0), poging - 1) + 1;
-  if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
-    .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
+  if(tekst) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
+    .concat([{op:new Date().toISOString(), door:CRM.me(), tekst}]);
   /* Herontwerp 3 sep 2026 (motorkap-punt 1): een statuswissel handelt de
      belafspraak van vandaag/verlopen áf — anders staat dezelfde lead morgen
      wéér bovenaan de belstapel (zo ontstond de berg van 28 verlopen).
@@ -2329,7 +2348,9 @@ async function pasStatusToe(lead, nieuw, notitie){
   await CRM.logActiviteit('lead', lead.id, geenGehoor ? 'bel' : 'systeem',
     geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${CRM.leadNorm(oud) || 'geen status'} → ${nieuw}`,
     {van: CRM.leadNorm(oud) || '', naar: CRM.leadNorm(nieuw)});
-  if(notitie) await CRM.logActiviteit('lead', lead.id, 'notitie', notitie);
+  /* extra.categorie: dezelfde reden nogmaals, maar dan los van de tekst —
+     dat is wat het "Top redenen"-blokje in Performance uitleest. */
+  if(tekst) await CRM.logActiviteit('lead', lead.id, 'notitie', tekst, cat ? {categorie:cat} : {});
   if(geenGehoor) wisBelIndex();   // zie noteerPoging
   return true;
 }
@@ -2405,7 +2426,10 @@ function nietGeschiktForm(lead, verder, bijAnnuleren){
         }
         CRM.modal._onClose = null;
         CRM.modal.close();
-        verder(cat + (txt ? ' — ' + txt : ''));
+        /* Structuur i.p.v. platte tekst: {cat, txt} kan pasStatusToe apart
+           als tekst (leesbaar in de Geschiedenis) én als extra.categorie
+           (machinaal uit te lezen door Performance) wegschrijven. */
+        verder({cat, txt});
       };
     }});
 }
@@ -2671,6 +2695,17 @@ function openLead(id){
           <div class="f-row"><label for="rc_note">Notitie toevoegen</label>
             <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea>
             <span class="hint">@naam om een collega te melden</span></div>
+          <div class="f-row"><label for="rc_notecat">Reden (optioneel)</label>
+            <select id="rc_notecat">
+              <option value="">— geen categorie —</option>
+              <optgroup label="Potentieel">
+                ${CRM.LEAD_POTENTIEEL_CATS.map(c=>`<option value="${h(c)}">${h(c)}</option>`).join('')}
+              </optgroup>
+              <optgroup label="Niet geschikt">
+                ${CRM.LEAD_NIET_GESCHIKT_CATS.map(c=>`<option value="${h(c)}">${h(c)}</option>`).join('')}
+              </optgroup>
+            </select>
+            <span class="hint">Komt terug in Performance onder "Top redenen"</span></div>
           <div class="row tight">
             <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
             <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
@@ -2738,10 +2773,12 @@ function openLead(id){
         }
       };
       dr.querySelector('#rc_noteok').onclick = async () => {
-        const t = dr.querySelector('#rc_note').value.trim(); if(!t) return;
+        const t0 = dr.querySelector('#rc_note').value.trim(); if(!t0) return;
+        const cat = dr.querySelector('#rc_notecat').value;
+        const t = cat ? `${cat} — ${t0}` : t0;
         const lijst = notities.concat([{op:new Date().toISOString(), door:CRM.me(), tekst:t}]);
         await bewaarLead(l, {notities:lijst, laatst_actie:new Date().toISOString()});
-        await CRM.logActiviteit('lead', l.id, 'notitie', t);
+        await CRM.logActiviteit('lead', l.id, 'notitie', t, cat ? {categorie:cat} : {});
         CRM.verwerkTags(t, 'lead', l.id);
         CRM.toast('Notitie opgeslagen','ok'); tekenKop(); tekenLijst(); openLead(l.id);
       };

@@ -942,6 +942,41 @@ function blokUitval(p, D){
   </section>`;
 }
 
+/* Redenen die de AM bij een lead vastlegt (recruitment.js: het verplichte
+   veld bij "Niet geschikt", het optionele veld bij de algemene notitie —
+   meestal "Potentieel"). Ze staan niet in een eigen kolom maar in
+   crm_activiteiten.extra.categorie (soort 'notitie', entiteit 'lead'),
+   juist om geen schema te hoeven wijzigen voor dit ene overzicht. */
+function leadRedenen(p){
+  return (CRM.state.activiteiten||[]).filter(a =>
+    a.entiteit === 'lead' && a.soort === 'notitie' && a.extra && a.extra.categorie && inP(a.op, p));
+}
+
+function blokLeadRedenen(p){
+  const redenen = leadRedenen(p);
+  const nietGeschikt = redenen.filter(a => CRM.LEAD_NIET_GESCHIKT_CATS.includes(a.extra.categorie));
+  const potentieel   = redenen.filter(a => CRM.LEAD_POTENTIEEL_CATS.includes(a.extra.categorie));
+  if(!nietGeschikt.length && !potentieel.length) return '';
+
+  const tel = lijst => { const t={}; lijst.forEach(a=>{ t[a.extra.categorie]=(t[a.extra.categorie]||0)+1; }); return Object.entries(t).sort((a,b)=>b[1]-a[1]); };
+  const kaart = (titel, rijen, totaal) => `<div class="card"><div class="card-h"><div class="h2">${h(titel)}</div>
+      <span class="chip">${totaal}</span></div>
+    <div class="card-b">${rijen.length ? `<div class="pf-redenen">${rijen.slice(0,6).map(([r,n])=>`
+      <div class="pf-reden"><span class="pf-rl">${h(r)}</span>
+        <span class="pf-rb">${CRM.ui.bar(Math.round(n/totaal*100))}</span>
+        <span class="pf-rn num">${n}</span></div>`).join('')}</div>`
+      : CRM.ui.leeg('Nog niets vastgelegd','')}
+    </div></div>`;
+
+  return `<section class="pf-sec">
+    <div class="pf-kop"><span class="label">Top redenen — leads</span><span class="meta">${h(p.lbl)}</span></div>
+    <div class="grid c2">
+      ${kaart('Niet geschikt', tel(nietGeschikt), nietGeschikt.length)}
+      ${kaart('Potentieel', tel(potentieel), potentieel.length)}
+    </div>
+  </section>`;
+}
+
 /* ═══ 6. PER KLANT — waar de omzet en de plaatsingen vandaan komen ═
    De vraag van Tjeerd: wie zijn de topklanten, wie draagt weinig bij,
    en hoeveel plaatsingen staan er per klant.
@@ -2328,6 +2363,7 @@ function teken(mount, acties){
     ${blokTrend()}
     ${blokRecruiters(p, D)}
     ${blokUitval(p, D)}
+    ${blokLeadRedenen(p)}
     ${hKop('pf_h_klanten','Klanten','wie draagt het jaar')}
     ${blokKlanten(_fin)}
     ${blokOmzet(p, _fin)}
