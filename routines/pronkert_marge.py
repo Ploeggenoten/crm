@@ -60,11 +60,20 @@ def splits_naam(ruw):
 # Alleen déze regels zijn gewerkte uren. Eindejaarsuitkering en
 # arbeidstijdverkorting zijn reserveringen: ze leveren wél marge op, maar het
 # zijn geen uren die meetellen voor de kosteloze-overnamegrens van de klant.
-UURSOORTEN = ('loon normale uren', 'loon overwerkuren')
+UURSOORTEN = ('normale uren', 'overwerkuren')
 
 
 def is_gewerkt(soort):
-    return str(soort or '').strip().lower() in UURSOORTEN
+    """Op deelwoord toetsen, niet op de hele naam.
+
+    De twee factuurvormen noemen dezelfde uursoort anders: vorm A schrijft
+    'Loon overwerkuren', vorm B 'Overwerkuren 150%' — zonder het woord 'Loon' en
+    mét het toeslagpercentage erachter. Een exacte lijst ving die tweede niet,
+    waardoor Alains 8,5 overwerkuren in week 35 wegvielen uit de urentelling en
+    zijn kosteloze-overnamegrens te laag bleef staan (6 sep 2026).
+    """
+    s = str(soort or '').strip().lower()
+    return any(u in s for u in UURSOORTEN)
 
 
 def persoon_sleutel(r):
@@ -90,13 +99,27 @@ _VOET = re.compile(r'(Factuurnummer\s+\d+\.\s*Transporteren pagina\s+\d+|Getrans
 
 # Kop boven het blok regels van één flexkracht:
 #   "Factuur 268110 S. van Nicolaas (Sven), Reg.nr. 7653911, Logistiek medewerker"
-# Eén factuurregel:
-#   "Week 31-2026 27-07-2026 Loon normale uren: 8:00, uurloon € 16,09 tarief
-#    € 38,62 factor 1,7880   1,00   -78,80 2   -78,80"
+#
+# Er komen TWEE factuurvormen binnen, en dat blijft zo: Tjeerd heeft de tweede
+# er bewust bij gevraagd omdat die voor hem beter leesbaar is. Ze verschillen in
+# waar de uren staan, en dus in wat het getal vóór de btw-code betekent:
+#
+#   vorm A — uren in de omschrijving, kolom Uren/eenh. is altijd 1,00:
+#     "Week 31-2026 27-07-2026 Loon normale uren: 8:00, uurloon € 16,09 tarief
+#      € 38,62 factor 1,7880   1,00   -78,80 2   -78,80"
+#   vorm B — uren in de kolom Uren/eenh., met de marge PER EENHEID ernaast:
+#     "Week 35-2026 24-08-2026 Loon normale uren, uurloon € 20,03 tarief
+#      € 47,07 factor 1,7760   8,00   -11,50 2   -92,00"
+#
+# In beide vormen is het laatste bedrag de regelmarge; alleen het urenveld
+# verschilt. Vorm A staat als eerste in de alternatie, zodat een regel met
+# ": 8:00," daar terechtkomt en niet half door vorm B wordt opgeslokt.
 _BLOK = re.compile(
     r'Factuur (?P<fnr>\d+) (?P<naam>[^,]+?\([^)]+\)), Reg\.nr\. (?P<reg>\d+), (?P<functie>.+?)(?= Week |$)'
     r'|Week (?P<wk>\d+)-(?P<jr>\d{4}) (?P<dat>\d{2}-\d{2}-\d{4}) (?P<soort>[^:]+?): (?P<uren>-?\d+:\d+),'
     r'(?P<rest>.*?) (?P<basis>-?[\d.]*\d,\d{2}) 2 (?P<bedrag>-?[\d.]*\d,\d{2})'
+    r'|Week (?P<nwk>\d+)-(?P<njr>\d{4}) (?P<ndat>\d{2}-\d{2}-\d{4}) (?P<nsoort>[^:,]+?),'
+    r'(?P<nrest>.*?) (?P<naantal>-?[\d.]*\d,\d{2}) (?P<nper>-?[\d.]*\d,\d{2}) 2 (?P<nbedrag>-?[\d.]*\d,\d{2})'
 )
 
 
@@ -133,9 +156,17 @@ def lees_tekst(tekst, bestand=''):
             continue
         if not huidig:
             continue                      # regel zonder kop: overslaan, niet gokken
-        rest, soort = m.group('rest'), m.group('soort').strip()
+        # Welke vorm we te pakken hebben zie je aan welke groepen gevuld zijn:
+        # vorm A vult 'soort', vorm B vult 'nsoort'. Daarna loopt alles gelijk.
+        if m.group('soort') is not None:
+            vorm, rest, soort = 'A', m.group('rest'), m.group('soort').strip()
+            uren = _uren(m.group('uren'))            # "8:00" in de omschrijving
+            wk, jr, dat, bedrag = m.group('wk'), m.group('jr'), m.group('dat'), m.group('bedrag')
+        else:
+            vorm, rest, soort = 'B', m.group('nrest'), m.group('nsoort').strip()
+            uren = _getal(m.group('naantal'))        # "8,00" in de kolom Uren/eenh.
+            wk, jr, dat, bedrag = m.group('nwk'), m.group('njr'), m.group('ndat'), m.group('nbedrag')
         getal = lambda p: (_getal(re.search(p, rest).group(1)) if re.search(p, rest) else None)
-        uren = _uren(m.group('uren'))
         uurloon, tarief = getal(r'uurloon € ([\d.,]+)'), getal(r'(?:basis)?tarief € ([\d.,]+)')
         # Omzet naar de klant staat niet apart op de factuur, maar volgt uit
         # tarief × uren. Daarmee kun je de marge ook als percentage van de
@@ -148,14 +179,14 @@ def lees_tekst(tekst, bestand=''):
             if (tarief is not None and uren) else None
         regels.append(dict(
             klantbedrag=klantbedrag,
-            factuur=factuurnr, factuurdatum=factuurdatum, bron='pdf',
-            week=int(m.group('wk')), jaar=int(m.group('jr')),
-            weekmaandag=maandag_van(m.group('jr'), m.group('wk')),
-            datum='{2}-{1}-{0}'.format(*m.group('dat').split('-')),
+            factuur=factuurnr, factuurdatum=factuurdatum, bron='pdf', vorm=vorm,
+            week=int(wk), jaar=int(jr),
+            weekmaandag=maandag_van(jr, wk),
+            datum='{2}-{1}-{0}'.format(*dat.split('-')),
             soort=soort, uren=uren if is_gewerkt(soort) else 0.0, uren_regel=uren,
             uurloon=uurloon, tarief=tarief,
             factor=getal(r'factor ([\d.,]+)'),
-            marge=-_getal(m.group('bedrag')),
+            marge=-_getal(bedrag),
             klant='',                      # staat niet op de PDF — komt uit het CRM
             **huidig))
 

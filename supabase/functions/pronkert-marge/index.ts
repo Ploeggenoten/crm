@@ -54,14 +54,40 @@ function maandagVan(jaar: number, week: number) {
 
 // Eindejaarsuitkering en arbeidstijdverkorting leveren wel marge op, maar zijn
 // geen gewerkte uren - ze mogen de kosteloze-overnamegrens niet opsouperen.
-const GEWERKT = ["loon normale uren", "loon overwerkuren"];
+//
+// Op deelwoord toetsen, niet op de hele naam: de twee factuurvormen noemen
+// dezelfde uursoort anders. Vorm A schrijft "Loon overwerkuren", vorm B
+// "Overwerkuren 150%" - zonder "Loon" en met het toeslagpercentage erachter.
+// Een exacte lijst ving die tweede niet, waardoor Alains 8,5 overwerkuren in
+// week 35 wegvielen uit de urentelling (6 sep 2026).
+const GEWERKT = ["normale uren", "overwerkuren"];
+const isGewerkt = (soort: string) => {
+  const s = String(soort ?? "").trim().toLowerCase();
+  return GEWERKT.some((u) => s.includes(u));
+};
 
 const KOP = /Omschrijving\s+Uren\/eenh\.[\s\S]*?ALPHEN AAN DEN RIJN/g;
 const VOET = /(Factuurnummer\s+\d+\.\s*Transporteren pagina\s+\d+|Getransporteerd van pagina\s+\d+)\s+-?[\d.]*\d,\d{2}/g;
+// Er komen TWEE factuurvormen binnen, en dat blijft zo: Tjeerd heeft de tweede
+// er bewust bij gevraagd omdat die voor hem beter leesbaar is. Ze verschillen in
+// waar de uren staan, en dus in wat het getal vóór de btw-code betekent:
+//
+//   vorm A - uren in de omschrijving, kolom Uren/eenh. is altijd 1,00:
+//     "Week 31-2026 27-07-2026 Loon normale uren: 8:00, uurloon EUR 16,09 ...
+//      factor 1,7880   1,00   -78,80 2   -78,80"
+//   vorm B - uren in de kolom Uren/eenh., met de marge PER EENHEID ernaast:
+//     "Week 35-2026 24-08-2026 Loon normale uren, uurloon EUR 20,03 ...
+//      factor 1,7760   8,00   -11,50 2   -92,00"
+//
+// In beide vormen is het laatste bedrag de regelmarge; alleen het urenveld
+// verschilt. Vorm A staat als eerste in de alternatie, zodat een regel met
+// ": 8:00," daar terechtkomt en niet half door vorm B wordt opgeslokt.
 const BLOK = new RegExp(
   "Factuur (?<fnr>\\d+) (?<pnaam>[^,]+?\\([^)]+\\)), Reg\\.nr\\. (?<reg>\\d+), (?<functie>.+?)(?= Week |$)" +
   "|Week (?<wk>\\d+)-(?<jr>\\d{4}) (?<dat>\\d{2}-\\d{2}-\\d{4}) (?<soort>[^:]+?): (?<uren>-?\\d+:\\d+)," +
-  "(?<rest>[\\s\\S]*?) (?<basis>-?[\\d.]*\\d,\\d{2}) 2 (?<bedrag>-?[\\d.]*\\d,\\d{2})",
+  "(?<rest>[\\s\\S]*?) (?<basis>-?[\\d.]*\\d,\\d{2}) 2 (?<bedrag>-?[\\d.]*\\d,\\d{2})" +
+  "|Week (?<nwk>\\d+)-(?<njr>\\d{4}) (?<ndat>\\d{2}-\\d{2}-\\d{4}) (?<nsoort>[^:,]+?)," +
+  "(?<nrest>[\\s\\S]*?) (?<naantal>-?[\\d.]*\\d,\\d{2}) (?<nper>-?[\\d.]*\\d,\\d{2}) 2 (?<nbedrag>-?[\\d.]*\\d,\\d{2})",
   "g",
 );
 
@@ -88,16 +114,22 @@ export function leesFactuur(ruw: string) {
       continue;
     }
     if (!kop) continue;                       // regel zonder kop: overslaan, niet gokken
-    const soort = (g.soort || "").trim();
-    const uit = (p: RegExp) => { const x = g.rest.match(p); return x ? getal(x[1]) : null; };
-    const uren = urenVan(g.uren);
-    const [d, mm, jj] = g.dat.split("-");
+    // Welke vorm we te pakken hebben zie je aan welke groepen gevuld zijn:
+    // vorm A vult 'soort', vorm B vult 'nsoort'. Daarna loopt alles gelijk.
+    const isA = g.soort != null;
+    const soort = ((isA ? g.soort : g.nsoort) || "").trim();
+    const rest = (isA ? g.rest : g.nrest) || "";
+    const uren = isA ? urenVan(g.uren) : getal(g.naantal);
+    const wk = isA ? g.wk : g.nwk, jr = isA ? g.jr : g.njr;
+    const bedrag = isA ? g.bedrag : g.nbedrag;
+    const uit = (p: RegExp) => { const x = rest.match(p); return x ? getal(x[1]) : null; };
+    const [d, mm, jj] = (isA ? g.dat : g.ndat).split("-");
     const uurloon = uit(/uurloon \u20ac ([\d.,]+)/), tarief = uit(/(?:basis)?tarief \u20ac ([\d.,]+)/);
     regels.push({
-      factuur, factuurdatum, bron: "pdf", ...kop,
-      week: Number(g.wk), jaar: Number(g.jr), weekmaandag: maandagVan(Number(g.jr), Number(g.wk)),
+      factuur, factuurdatum, bron: "pdf", vorm: isA ? "A" : "B", ...kop,
+      week: Number(wk), jaar: Number(jr), weekmaandag: maandagVan(Number(jr), Number(wk)),
       datum: `${jj}-${mm}-${d}`, soort,
-      uren: GEWERKT.includes(soort.toLowerCase()) ? uren : 0, uren_regel: uren,
+      uren: isGewerkt(soort) ? uren : 0, uren_regel: uren,
       uurloon, tarief, factor: uit(/factor ([\d.,]+)/), klant: "",
       // Omzet naar de klant staat niet apart op de factuur maar volgt uit
       // tarief x uren - daarmee is de marge ook als percentage te zien.
@@ -106,7 +138,7 @@ export function leesFactuur(ruw: string) {
       // klantomzet te laag uit (bij Alain in week 30 met 9,42 euro).
       klantbedrag: (tarief != null && uren)
         ? rond(tarief * uren * ((uit(/toeslag ([\d.,]+)%/) ?? 100) / 100)) : null,
-      marge: -getal(g.bedrag),
+      marge: -getal(bedrag),
     });
   }
 
@@ -178,6 +210,57 @@ function perWeek(regels: Record<string, unknown>[]) {
 const woorden = (s: string) =>
   String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .split(/[^a-z0-9]+/).filter(Boolean);
+
+// Factuurregel of persoon aan een plaatsing knopen. E\u00e9n plek, zodat het
+// vullen van de klantnaam en het bijwerken van de plaatsing niet uit elkaar
+// kunnen lopen: wat de een koppelt, koppelt de ander ook.
+// deno-lint-ignore no-explicit-any
+function zoekPlaatsing(
+  plaatsingen: any[],
+  p: { regnr?: unknown; roepnaam?: unknown },
+): any {
+  const regnr = String(p.regnr ?? "");
+  // 1) op registratienummer - dat verandert nooit
+  let pl = plaatsingen.find((x) => x.regnr && String(x.regnr) === regnr);
+  // 2) anders op roepnaam binnen de kandidaatnaam
+  if (!pl) {
+    const roep = woorden(String(p.roepnaam ?? ""))[0];
+    if (roep) {
+      const kandidaten = plaatsingen.filter((x) => woorden(String(x.kandidaat)).includes(roep));
+      // Meer dan een Sven? Dan niet gokken, maar laten koppelen.
+      if (kandidaten.length === 1) pl = kandidaten[0];
+    }
+  }
+  return pl ?? null;
+}
+
+// -- Klantnaam uit de plaatsing ---------------------------------
+// De klantnaam staat NIET op de margefactuur en WEL op het marge-overzicht van
+// Sasja - maar dat komt onregelmatig, en soms helemaal niet: van week 29 heeft
+// ze er nooit een gestuurd. Hij staat echter ook gewoon in het CRM, vast aan de
+// plaatsing, en daar wisselt hij niet: Sven zit bij Van Vliet, Alain bij Burg
+// Siroop (Tjeerd, 6 sep 2026). Dus halen we hem bij het inboeken meteen daar
+// vandaan, en is het overzicht van Sasja nog puur controle.
+// Alleen lege velden: een klantnaam die al ergens vandaan kwam blijft staan.
+async function vulKlantUitPlaatsing(
+  service: ReturnType<typeof createClient>,
+  weken: string[],
+) {
+  const { data: plaatsingen } = await service.from("fin_flex_plaatsingen")
+    .select("id,kandidaat,klant,regnr");
+  const { data: rijen } = await service.from("fin_flex_regels")
+    .select("id,regnr,naam,roepnaam,klant").in("week", weken);
+  let bij = 0;
+  for (const r of rijen ?? []) {
+    if (String(r.klant ?? "").trim()) continue;
+    const pl = zoekPlaatsing(plaatsingen ?? [], r);
+    const klant = String(pl?.klant ?? "").trim();
+    if (!klant) continue;
+    await service.from("fin_flex_regels").update({ klant }).eq("id", r.id);
+    bij++;
+  }
+  return bij;
+}
 
 // Een flexkracht = een sleutel, ongeacht de bron. NIET op registratienummer
 // groeperen: dat staat wel op de PDF-factuur en niet op het Excel-marge-
@@ -275,29 +358,39 @@ Deno.serve(async (req) => {
   // BOTSING TUSSEN DE TWEE BRONNEN. Dezelfde week komt bij Pronkert in twee
   // vormen binnen: de margefactuur (een nummer voor alles, bv. 267947) en het
   // Excel-marge-overzicht (een nummer per flexkracht, bv. 267817/267845/267876).
-  // Dedupliceren gaat op factuurnummer, dus zonder deze controle zou week 30
-  // twee keer meetellen: 2.679,70 in plaats van 1.339,85.
+  // Zonder controle zou week 30 twee keer meetellen: 2.679,70 in plaats van
+  // 1.339,85.
+  //
+  // Die twee vormen zijn aan elkaar te knopen via het DEELFACTUURNUMMER: op de
+  // PDF is dat de kop 'Factuur 267817 S. van Nicolaas (Sven), Reg.nr. ...', op
+  // het Excel-overzicht is het de kolom Factuurnummer. Beide lezers vullen
+  // `deelfactuur`, dus dat nummer - niet de week - is waarop dubbel werk te
+  // herkennen is. Deze functie dedupliceert daarop: alles wat onder dezelfde
+  // deelfactuur al in de tabel staat gaat er eerst uit en komt daarna opnieuw
+  // in, ongeacht via welke bron het binnenkwam.
+  //
+  // Op de week sleutelen was te grof (31 aug 2026): Pronkert splitst een week
+  // over meerdere margefacturen als niet alle flexkrachten tegelijk verloond
+  // zijn. Week 34 stond op 268867 (alleen Alain) en 269171 (Sven + Artur);
+  // de oude controle zag "week 34 bestaat al" en weigerde 844,50 euro, terwijl
+  // er niets dubbels was. Weigeren op de week laat dus echte marge liggen.
   const weekLijst = [...new Set(regels.map((r) => String(r.weekmaandag ?? r.week)))];
-  const { data: bestaand } = await service.from("fin_flex_regels")
-    .select("factuur,week,marge").in("week", weekLijst);
-  const andere = [...new Set((bestaand ?? [])
-    .filter((r) => !facturen.includes(String(r.factuur))).map((r) => String(r.factuur)))];
+  const deelIn = new Set(regels.map((r) => String(r.deelfactuur ?? "")).filter(Boolean));
+  // Alles waaronder dit bestand bekend kan staan: het overkoepelende nummer en
+  // elk deelnummer eronder. Een rij in de tabel hoort bij dit bestand zodra een
+  // van haar twee nummers hierin voorkomt.
+  const ids = new Set([...facturen, ...deelIn]);
+  const hoortBijDitBestand = (r: Record<string, unknown>) =>
+    ids.has(String(r.factuur ?? "")) || ids.has(String(r.deelfactuur ?? ""));
 
-  if (andere.length && !body.vervang && !body.verrijk) {
-    const alTotaal = rond((bestaand ?? [])
-      .filter((r) => !facturen.includes(String(r.factuur)))
-      .reduce((s, r) => s + Number(r.marge || 0), 0));
-    const nuTotaal = rond(regels.reduce((s, r) => s + (Number(r.marge) || 0), 0));
-    return new Response(JSON.stringify({
-      ok: false,
-      waarschuwing: `Deze week${weekLijst.length > 1 ? "en staan" : " staat"} al in het systeem via ` +
-        `factuur ${andere.join(", ")} (${alTotaal.toFixed(2)} euro). Dit bestand levert ` +
-        `${nuTotaal.toFixed(2)} euro voor dezelfde periode. Er is niets opgeslagen, anders ` +
-        `zou de marge dubbel tellen. Stuur 'vervang' mee om de oude regels te vervangen, of ` +
-        `'verrijk' om alleen de klantnamen aan te vullen.`,
-      weekLijst, bestaande_facturen: andere, al_geboekt: alTotaal, in_dit_bestand: nuTotaal,
-    }), { headers: { "Content-Type": "application/json" } });
-  }
+  const { data: bestaand } = await service.from("fin_flex_regels")
+    .select("factuur,deelfactuur,week,marge").in("week", weekLijst);
+  // Andere facturen in dezelfde weken zijn geen fout meer, maar wel het melden
+  // waard: zo blijft in de weekmelding zichtbaar dat een week uit meer dan een
+  // factuur is opgebouwd.
+  const naast = (bestaand ?? []).filter((r) => !hoortBijDitBestand(r));
+  const andere = [...new Set(naast.map((r) => String(r.factuur)))];
+  const naastTotaal = rond(naast.reduce((s, r) => s + Number(r.marge || 0), 0));
 
   // Verrijken: niets bijboeken, alleen invullen wat op de margefactuur ontbreekt.
   // De klantnaam staat namelijk WEL op het Excel-overzicht en NIET op de PDF.
@@ -321,8 +414,14 @@ Deno.serve(async (req) => {
       { headers: { "Content-Type": "application/json" } });
   }
 
-  // Eerst weg, dan opnieuw: dat maakt een tweede import onschadelijk.
-  for (const f of facturen) await service.from("fin_flex_regels").delete().eq("factuur", f);
+  // Eerst weg, dan opnieuw: dat maakt een tweede import onschadelijk. Beide
+  // kolommen langs, want hetzelfde deelnummer staat bij een PDF-import in
+  // `deelfactuur` en bij een Excel-import in allebei. Zo verdwijnt de oude
+  // versie ook als dezelfde uren nu via de andere bron binnenkomen - dat is
+  // precies het geval waarin week 30 anders dubbel zou tellen.
+  const idLijst = [...ids];
+  await service.from("fin_flex_regels").delete().in("factuur", idLijst);
+  await service.from("fin_flex_regels").delete().in("deelfactuur", idLijst);
   if (body.vervang) for (const f of andere) await service.from("fin_flex_regels").delete().eq("factuur", f);
 
   const rijen = regels.map((r) => ({
@@ -344,11 +443,23 @@ Deno.serve(async (req) => {
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 
-  const weken = await herberekenWeken(service, [...new Set(rijen.map((r) => String(r.week)))]);
+  // Eerst de klantnaam erbij, dan pas herrekenen: de weekstand en de plaatsing
+  // lezen die regels terug en tonen anders een week zonder klant.
+  const geraakteWeken = [...new Set(rijen.map((r) => String(r.week)))];
+  const klant_uit_crm = await vulKlantUitPlaatsing(service, geraakteWeken);
+  const weken = await herberekenWeken(service, geraakteWeken);
   const kracht = await herberekenKrachten(service);
 
   return new Response(
-    JSON.stringify({ ok: true, facturen, regels: rijen.length, weken, ...kracht }),
+    JSON.stringify({
+      ok: true, facturen, regels: rijen.length, klant_uit_crm, weken, ...kracht,
+      ...(andere.length
+        ? { naast_deze_factuur: andere, naast_geboekt: naastTotaal,
+            let_op: `Deze week${weekLijst.length > 1 ? "en bevatten" : " bevat"} ook regels van ` +
+              `factuur ${andere.join(", ")} (${naastTotaal.toFixed(2)} euro). Die zijn blijven staan; ` +
+              `het weektotaal is de som van beide.` }
+        : {}),
+    }),
     { headers: { "Content-Type": "application/json" } },
   );
 });
@@ -422,15 +533,7 @@ async function herberekenKrachten(service: ReturnType<typeof createClient>) {
   const bijgewerkt: Record<string, unknown>[] = [];
   const onbekend: Record<string, unknown>[] = [];
   for (const p of personen.values()) {
-    // 1) op registratienummer - dat verandert nooit
-    let pl = (plaatsingen ?? []).find((x) => x.regnr && String(x.regnr) === p.regnr);
-    // 2) anders op roepnaam binnen de kandidaatnaam
-    if (!pl && p.roepnaam) {
-      const roep = woorden(p.roepnaam)[0];
-      const kandidaten = (plaatsingen ?? []).filter((x) => woorden(x.kandidaat).includes(roep));
-      // Meer dan een Sven? Dan niet gokken, maar laten koppelen.
-      if (kandidaten.length === 1) pl = kandidaten[0];
-    }
+    const pl = zoekPlaatsing(plaatsingen ?? [], p);
     if (!pl) {
       onbekend.push({ regnr: p.regnr, naam: p.naam, roepnaam: p.roepnaam, functie: p.functie,
         klant: p.klant, uren: rond(p.uren), marge: rond(p.marge), laatste_week: p.laatste });
