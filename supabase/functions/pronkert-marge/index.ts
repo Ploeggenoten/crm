@@ -242,9 +242,14 @@ function zoekPlaatsing(
 // Siroop (Tjeerd, 6 sep 2026). Dus halen we hem bij het inboeken meteen daar
 // vandaan, en is het overzicht van Sasja nog puur controle.
 // Alleen lege velden: een klantnaam die al ergens vandaan kwam blijft staan.
+// Met `overschrijf` trekt hij ook al gevulde velden gelijk. Dat is nodig omdat
+// dezelfde klant in twee schrijfwijzen bestaat: het CRM zegt 'Van Vliet
+// Zoetwaren', het overzicht van Pronkert 'Van Vliet B.V.'. Twee spellingen
+// tellen bij groeperen als twee klanten, en het CRM is de bron.
 async function vulKlantUitPlaatsing(
   service: ReturnType<typeof createClient>,
   weken: string[],
+  overschrijf = false,
 ) {
   const { data: plaatsingen } = await service.from("fin_flex_plaatsingen")
     .select("id,kandidaat,klant,regnr");
@@ -252,10 +257,11 @@ async function vulKlantUitPlaatsing(
     .select("id,regnr,naam,roepnaam,klant").in("week", weken);
   let bij = 0;
   for (const r of rijen ?? []) {
-    if (String(r.klant ?? "").trim()) continue;
+    const huidig = String(r.klant ?? "").trim();
+    if (huidig && !overschrijf) continue;
     const pl = zoekPlaatsing(plaatsingen ?? [], r);
     const klant = String(pl?.klant ?? "").trim();
-    if (!klant) continue;
+    if (!klant || klant === huidig) continue;
     await service.from("fin_flex_regels").update({ klant }).eq("id", r.id);
     bij++;
   }
@@ -302,6 +308,20 @@ Deno.serve(async (req) => {
     await service.from("fin_flex_plaatsingen").update({ regnr: String(k.regnr) }).eq("id", k.plaatsing_id);
     await herberekenKrachten(service);
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+
+  // -- Klantnamen gelijktrekken met het CRM ---------------------
+  // Eenmalig nodig toen de klantnaam uit de plaatsing ging komen: de oude weken
+  // stonden nog op de spelling van Pronkert. Blijft bruikbaar - hernoem je een
+  // klant in het CRM, dan haal je de historie hiermee bij.
+  // Raakt alleen het klantveld; bedragen, uren en koppelingen blijven zoals ze
+  // zijn, en een regel zonder te vinden plaatsing houdt gewoon wat hij had.
+  if (body.klant_uit_crm) {
+    const { data: alle } = await service.from("fin_flex_regels").select("week").limit(5000);
+    const weken = [...new Set((alle ?? []).map((r) => String(r.week)))];
+    const bijgewerkt = await vulKlantUitPlaatsing(service, weken, true);
+    return new Response(JSON.stringify({ ok: true, bijgewerkt, weken: weken.length }),
+      { headers: { "Content-Type": "application/json" } });
   }
 
   // -- Stand teruglezen (voor de routine-samenvatting) ----------

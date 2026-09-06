@@ -84,7 +84,8 @@ case "${1:-}" in
            BODY="$(cat "$2")" ;;
   klanten) [ -f "${2:-}" ] || { echo "FOUT: bestand niet gevonden: ${2:-<geen>}" >&2; exit 4; }
            BODY="$(pak_klanten "$2")" ;;
-  *) echo "Gebruik: pronkert.sh stand | lees <txt> | opslaan <txt> | regels <json> | klanten <tsv>" >&2; exit 1 ;;
+  klantsync) BODY='{"klant_uit_crm":true}' ;;
+  *) echo "Gebruik: pronkert.sh stand | lees <txt> | opslaan <txt> | regels <json> | klanten <tsv> | klantsync" >&2; exit 1 ;;
 esac
 
 curl -sS -X POST "$FUNCTIE" \
