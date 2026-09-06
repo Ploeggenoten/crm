@@ -226,6 +226,12 @@ CRM.STOP_CATS = {
   klant:['Functioneren onvoldoende','Te weinig werk/krimp','Einde project/seizoen','Conflict/houding','Anders'],
   anders:['Anders']
 };
+/* Reden bij het EINDSTATION van een lead ('Niet geschikt') — vóór hij ooit
+   kandidaat werd. Andere vraag dan AFVAL_CATS (dat is een kandidaat die al
+   verder in het proces zat); hier zijn het vooral de harde bot-criteria die
+   niet matchten. */
+CRM.LEAD_NIET_GESCHIKT_CATS = ['Taal','Geen vervoer','Te ver / verkeerde regio','Rooster/ploegen past niet',
+  'Salarisverwachting te hoog','Onvoldoende ervaring','Geen motivatie','Onbereikbaar / reageert niet','Anders'];
 
 /* ─── Sales-pijplijn (klantzijde) ───────────────────────────────
    Volgorde zoals Tjeerd hem voert. 'Project uitgesteld' en

@@ -2348,9 +2348,23 @@ async function zetStatus(lead, nieuw){
     return;
   }
   if(!lead || CRM.leadIs(lead.status, nieuw)) return;
+  /* Niet geschikt is het eindstation — zonder reden verdwijnt een lead
+     stilletjes en leer je er nooit iets van (Tjeerd, 6 sep 2026: "goed voor
+     de data"). Vraagt eerst een reden; bij annuleren blijft de status
+     ongewijzigd, dus de kaart (of het bord/de tabel) opnieuw tekenen zodat
+     een <select> die al visueel op 'Niet geschikt' stond weer terugspringt. */
+  if(CRM.leadIs(nieuw, 'Niet geschikt')){
+    return nietGeschiktForm(lead, async reden => {
+      await statusToepassenEnTekenen(lead, nieuw, reden);
+    }, () => { tekenKop(); tekenTabs(); tekenWerk(); if(document.getElementById('drawer')?.classList.contains('on')) openLead(lead.id); });
+  }
+  await statusToepassenEnTekenen(lead, nieuw);
+}
+
+async function statusToepassenEnTekenen(lead, nieuw, notitie){
   const geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
   const poging = belPogingen(lead.id) + 1;
-  const ok = await pasStatusToe(lead, nieuw);
+  const ok = await pasStatusToe(lead, nieuw, notitie);
   if(!ok) return;
   CRM.toast(geenGehoor ? `Belpoging ${poging} genoteerd` : 'Status bijgewerkt', 'ok');
   tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
@@ -2360,6 +2374,40 @@ async function zetStatus(lead, nieuw){
      in de belronde (doorschietForm). */
   if(CRM.leadIs(nieuw, 'Intake ingepland')) return videocallPlannen(lead);
   if(document.getElementById('drawer')?.classList.contains('on')) openLead(lead.id);
+}
+
+/* Kleine modal, alleen voor het eindstation 'Niet geschikt'. `verder` krijgt
+   de samengestelde reden (categorie + optionele toelichting); `bijAnnuleren`
+   herstelt de weergave als de AM alsnog afbreekt. */
+function nietGeschiktForm(lead, verder, bijAnnuleren){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Niet geschikt</div>
+      <p class="sub" style="margin:6px 0 0">${h(leadNaam(lead))} — waarom niet? Dat leren we later van terug.</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="ng_cat">Reden</label>
+        <select id="ng_cat"><option value="">— kies —</option>${
+          CRM.LEAD_NIET_GESCHIKT_CATS.map(c => `<option>${h(c)}</option>`).join('')}</select></div>
+      <div class="f-row"><label for="ng_txt">Toelichting (optioneel)</label>
+        <input type="text" id="ng_txt" placeholder="Korte toelichting — daar leren we van"></div>
+      <div class="note err" id="ng_err" style="display:none"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ng_ok">Niet geschikt maken</button></div>`, {
+    onClose: bijAnnuleren,
+    onOpen(m){
+      CRM.dictee?.hang(m.querySelector('#ng_txt'));
+      m.querySelector('#ng_ok').onclick = () => {
+        const cat = m.querySelector('#ng_cat').value;
+        const txt = m.querySelector('#ng_txt').value.trim();
+        if(!cat){
+          const e = m.querySelector('#ng_err'); e.style.display = ''; e.textContent = 'Kies een reden.';
+          return;
+        }
+        CRM.modal._onClose = null;
+        CRM.modal.close();
+        verder(cat + (txt ? ' — ' + txt : ''));
+      };
+    }});
 }
 
 /* Bij "Intake ingepland": datum/tijd vastleggen en desgewenst meteen in de
