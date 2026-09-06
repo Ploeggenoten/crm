@@ -2345,9 +2345,17 @@ async function pasStatusToe(lead, nieuw, notitie){
   /* extra:{van,naar} (Performance-conceptplan A5): de meting leest de
      statusovergang machinaal uit het jsonb-veld; de tekstregel blijft
      voor mensen. */
+  /* Overruled de AM hier een positief botoordeel? Dat is hét leermateriaal
+     voor de bot (kruistabel 6 sep 2026: 43% van bot-Gekwalificeerd werd
+     Niet geschikt, maar de reden was nergens machinaal terug te vinden).
+     extra.botfeedback maakt die gevallen met één query vindbaar voor de
+     wekelijkse regressieset. */
+  const botPositief = ['Gekwalificeerd','Twijfelgeval'].includes(String(lead.bot_status||'').trim());
+  const overrule = botPositief && CRM.leadIs(nieuw, 'Niet geschikt');
   await CRM.logActiviteit('lead', lead.id, geenGehoor ? 'bel' : 'systeem',
     geenGehoor ? `Gebeld, geen gehoor (poging ${poging})` : `Status: ${CRM.leadNorm(oud) || 'geen status'} → ${nieuw}`,
-    {van: CRM.leadNorm(oud) || '', naar: CRM.leadNorm(nieuw)});
+    Object.assign({van: CRM.leadNorm(oud) || '', naar: CRM.leadNorm(nieuw)},
+      overrule ? {botfeedback:true, oordeel:'overrule', bot_status:String(lead.bot_status).trim(), categorie:cat || '', toelichting:(gestructureerd && notitie.txt) || ''} : {}));
   /* extra.categorie: dezelfde reden nogmaals, maar dan los van de tekst —
      dat is wat het "Top redenen"-blokje in Performance uitleest. */
   if(tekst) await CRM.logActiviteit('lead', lead.id, 'notitie', tekst, cat ? {categorie:cat} : {});
@@ -2403,7 +2411,9 @@ async function statusToepassenEnTekenen(lead, nieuw, notitie){
 function nietGeschiktForm(lead, verder, bijAnnuleren){
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Niet geschikt</div>
-      <p class="sub" style="margin:6px 0 0">${h(leadNaam(lead))} — waarom niet? Dat leren we later van terug.</p></div>
+      <p class="sub" style="margin:6px 0 0">${h(leadNaam(lead))} — waarom niet? Dat leren we later van terug.${
+        ['Gekwalificeerd','Twijfelgeval'].includes(String(lead.bot_status||'').trim())
+          ? ` <b>De bot zei ${h(String(lead.bot_status).trim())}${lead.score!=null?` (score ${h(String(lead.score))})`:''} — jouw reden traint de bot.</b>` : ''}</p></div>
     <div class="modal-b">
       <div class="f-row"><label for="ng_cat">Reden</label>
         <select id="ng_cat"><option value="">— kies —</option>${
