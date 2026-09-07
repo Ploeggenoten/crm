@@ -180,6 +180,11 @@ const kandAlsRij = c => ({
   vacature_id: c.vacatureId || '', binnen_op: c.since,
   eigenaar: c.rec, kandidaat_id: c.id, kwalificatie: c.note || '',
   notities: c.notities, laatst_actie: c.actieDatum || '',
+  /* Kandidaten hebben geen 'opvolgen_op' — hun afspraakdatum heet 'datum'
+     (zelfde kolom als de videocallmodal in kandidaten.js zet). Zonder deze
+     brug leest stilstand() hier altijd niets en blijft de kaart "zonder
+     datum" melden, ook als er allang een afspraak staat. */
+  opvolgen_op: c.datum || '',
   _kand: true
 });
 const leads = () => {
@@ -482,6 +487,12 @@ async function bewaarLead(lead, patch){
     if(patch.klant       !== undefined) p.klant       = patch.klant;
     if(patch.kwalificatie!== undefined) p.note        = patch.kwalificatie;
     if(patch.notities    !== undefined) p.notities    = patch.notities;
+    /* opvolgen_op bestaat niet op candidates — zelfde brug als in
+       kandAlsRij hierboven, nu de andere kant op. Zonder dit slikt deze
+       tak de wijziging stil in (Object.keys(p).length blijft 0), dus lijkt
+       'Opvolgdatum' te werken maar verdwijnt de datum bij de eerstvolgende
+       hertekening weer (Tjeerd, 7 sep 2026). */
+    if(patch.opvolgen_op !== undefined) p.datum       = patch.opvolgen_op || '';
     if(!Object.keys(p).length) return true;   // alleen leadvelden — niets te doen
     if(p.fase !== undefined){
       /* Een fasewissel loopt via bewaarFase: die zet de historie, de datum
