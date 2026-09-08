@@ -42,7 +42,15 @@
 
     const inp = paneel.querySelector('input');
     const box = paneel.querySelector('.zl-opties');
-    const opts = Array.from(sel.options).map(o => ({v:o.value, t:o.textContent}));
+    /* Optgroup-label meenemen (Tjeerd, 8 sep 2026: "vacature koppelen" toont
+       zonder dit alleen functienamen — twee keer "Operator" is dan niet uit
+       elkaar te houden). Het paneel vervangt de native <select> volledig, dus
+       de <optgroup>-groepering (klantnaam) moet hier expliciet mee, anders
+       gaat die context verloren. */
+    const opts = Array.from(sel.options).map(o => ({
+      v:o.value, t:o.textContent,
+      g: o.parentElement && o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : ''
+    }));
     /* Enter direct na openen = huidige keuze bevestigen, niet de eerste optie. */
     let actief = Math.max(0, opts.findIndex(o => o.v === sel.value)), zicht = opts;
 
@@ -52,13 +60,16 @@
       sel.value = v;
       sel.dispatchEvent(new Event('change', {bubbles:true}));
     };
+    const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
     const teken = () => {
       const q = norm(inp.value);
-      zicht = opts.filter(o => !q || norm(o.t).includes(q));
+      /* Zoeken op groep meetellen: typ "whisk" en "Operator" bij Whisk Food
+         moet ook boven komen, niet alleen een treffer in de functienaam. */
+      zicht = opts.filter(o => !q || norm(o.t + ' ' + o.g).includes(q));
       if(actief >= zicht.length) actief = Math.max(0, zicht.length - 1);
       box.innerHTML = zicht.length ? zicht.map((o, j) =>
         `<div class="zl-optie${j===actief?' act':''}${o.v===sel.value?' sel':''}" data-i="${j}">${
-          o.t.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`).join('')
+          esc(o.t)}${o.g ? `<span class="zl-sub"> — ${esc(o.g)}</span>` : ''}</div>`).join('')
         : `<div class="zl-leeg">niets gevonden</div>`;
       const a = box.querySelector('.act');
       if(a) a.scrollIntoView({block:'nearest'});

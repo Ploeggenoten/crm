@@ -11,4 +11,5 @@
    max-height samen tot onleesbare slierten zodra er veel opties zijn. */
 .zoeklijst .zl-optie:hover,.zoeklijst .zl-optie.act{background:var(--well-2,#e3e7d1)}
 .zoeklijst .zl-optie.sel{font-weight:600;color:var(--olive,#3d6400)}
+.zoeklijst .zl-sub{color:var(--muted,#5b6544);font-weight:400}
 .zoeklijst .zl-leeg{flex:none;padding:8px 10px;color:var(--muted,#5b6544)}
