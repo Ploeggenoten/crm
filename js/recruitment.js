@@ -2008,10 +2008,11 @@ async function noteerPoging(lead, sleutel, notitie){
   /* Harde teller mee (alleen als de kolom al bestaat — vóór de migratie zou
      een onbekende kolom de hele schrijfactie laten stranden). */
   if(w.soort === 'bel' && 'belpogingen' in lead) patch.belpogingen = Math.max((lead.belpogingen||0), belPogingen(lead.id)) + 1;
-  /* Zelfde afspraak-wissen als in pasStatusToe: ook een genoteerde belpoging
-     zónder statuswissel handelt de belafspraak van vandaag/verlopen af. */
+  /* Zelfde afspraak-wissen als in pasStatusToe: een genoteerde belpoging
+     handelt de belafspraak af — ook een tóekomstige (Tjeerd, 8 sep 2026:
+     wie al gebeld is en niet opnam moet niet daarna nog "belafspraak —
+     verlopen" tonen; de bot-afspraken uit call_back_at bleven zo hangen). */
   if(w.soort === 'bel' && lead.opvolgen_op
-     && String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO()
      && !CRM.leadIs(lead.status, 'Intake ingepland')){
     patch.opvolgen_op = null; patch.terugbel_om = null;
   }
@@ -2346,8 +2347,12 @@ async function pasStatusToe(lead, nieuw, notitie){
   /* Herontwerp 3 sep 2026 (motorkap-punt 1): een statuswissel handelt de
      belafspraak van vandaag/verlopen áf — anders staat dezelfde lead morgen
      wéér bovenaan de belstapel (zo ontstond de berg van 28 verlopen).
+     Bij 'Geen gehoor' geldt dat ook voor een tóekomstige afspraak (Tjeerd,
+     8 sep 2026): er ís dan gebeld, dus de afspraak — vaak het call_back_at-
+     moment van de bot — is afgehandeld en mag niet later "verlopen" opduiken.
      Uitzondering: Intake ingepland — videocallPlannen zet zo zelf de datum. */
-  if(lead.opvolgen_op && String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO()
+  if(lead.opvolgen_op
+     && (geenGehoor || String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO())
      && !CRM.leadIs(nieuw, 'Intake ingepland')){
     patch.opvolgen_op = null; patch.terugbel_om = null;
   }
