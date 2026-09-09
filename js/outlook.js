@@ -357,6 +357,48 @@ CRM.outlook = {
   /* Is déze gebruiker verbonden? */
   verbonden: () => !!_account,
   accountNaam: () => _account?.username || '',
+
+  /* ── Belafspraak in de eigen agenda (recruitment-akkoord 9 sep 2026) ──
+     Eénrichtingsverkeer: het CRM is de bron van de waarheid, Outlook de
+     weergave. Het event-id bewaart de aanroeper (kolom outlook_event_id op
+     de lead); wijzigingen in Outlook zelf worden bewust nooit teruggelezen.
+     Calendars.ReadWrite zit al in MS_KERN, dus niemand hoeft opnieuw in te
+     loggen. Tijden gaan als UTC naar Graph — Outlook toont ze vanzelf in de
+     tijdzone van de gebruiker. */
+  async belEventMaak({titel, startISO, minuten = 15, htmlBody = ''}){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const start = new Date(startISO);
+    if(isNaN(start)) return null;
+    const eind = new Date(start.getTime() + minuten * 60000);
+    const kort = d => d.toISOString().slice(0,19);
+    const ev = await graph('/me/events', {method:'POST', body:{
+      subject: titel,
+      body: {contentType:'HTML', content: htmlBody},
+      start: {dateTime: kort(start), timeZone:'UTC'},
+      end:   {dateTime: kort(eind),  timeZone:'UTC'},
+      categories: ['CRM'],
+      isReminderOn: true, reminderMinutesBeforeStart: 5
+    }});
+    return ev?.id || null;
+  },
+  async belEventVerzet(id, startISO, minuten = 15){
+    if(!CRM.outlook.beschikbaar() || !_account || !id) return false;
+    const start = new Date(startISO);
+    if(isNaN(start)) return false;
+    const eind = new Date(start.getTime() + minuten * 60000);
+    const kort = d => d.toISOString().slice(0,19);
+    await graph('/me/events/' + encodeURIComponent(id), {method:'PATCH', body:{
+      start:{dateTime:kort(start), timeZone:'UTC'},
+      end:  {dateTime:kort(eind),  timeZone:'UTC'}
+    }});
+    return true;
+  },
+  async belEventWeg(id){
+    if(!CRM.outlook.beschikbaar() || !_account || !id) return false;
+    try{ await graph('/me/events/' + encodeURIComponent(id), {method:'DELETE'}); }
+    catch(e){ if(e.status !== 404) throw e; }   // al weg in Outlook = ook goed
+    return true;
+  },
   /* Zijn er andere Microsoft-accounts bekend in deze browser dan het jouwe?
      Zo ja, dan is het de moeite waard om op het scherm te tonen wélke postbus
      je nu leest — anders is dat onzichtbaar tot je je erin vergist. */

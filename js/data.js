@@ -294,7 +294,10 @@ CRM.LEAD_EIND   = ['Niet geschikt'];
      open status: de v2-belcadans plant poging 2 en 3 zelf, daarna is het
      klaar — behalve voor bot-goud (Gekwalificeerd/Twijfelgeval), dat nooit
      automatisch hier belandt. */
-CRM.RECRUIT_V2 = CRM.demo || new URLSearchParams(location.search).has('v2');
+/* Akkoord Tjeerd 9 sep 2026: de voorvertoning is het ontwerp geworden —
+   de vlag staat vast aan. De RECRUIT_V2-checks in de code blijven staan
+   als markering van wat er in die ronde bij kwam. */
+CRM.RECRUIT_V2 = true;
 if(CRM.RECRUIT_V2){
   CRM.LEAD_STATUS.splice(3, 0, {k:'Info opgevraagd', c:'#7f93b8', ico:'📨'});
   CRM.LEAD_STATUS.push({k:'Onbereikbaar', c:'#8a8f7a', ico:'🔕'});

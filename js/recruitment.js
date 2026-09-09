@@ -506,8 +506,51 @@ async function bewaarLead(lead, patch){
   if(!CRM.demo){
     const {error} = await CRM.sb.from('crm_leads').update(patch).eq('id', lead.id);
     if(error){ CRM.fout('Opslaan mislukt', error); return false; }
+    agendaMee(lead, patch);   // vuurt en vergeet — de agenda is weergave, nooit een rem
   }
   return true;
+}
+
+/* ── Belafspraak → Outlook-agenda (akkoord Tjeerd, 9 sep 2026) ──
+   Op de datalaag, niet aan een knop (advies engineer-agent): elke wijziging
+   van terugbel_om die via bewaarLead loopt — drawer, snelzetter in de
+   ronde, het wissen door de belcadans — maakt, verzet of wist het blok in
+   de persoonlijke agenda van de íngelogde AM. Het event-id staat op de
+   lead (kolom outlook_event_id; ontbreekt die nog, dan gebeurt er stil
+   niets — zie agenda-eventid.sql). Een event dat de AM zelf in Outlook
+   weggooide (404) wordt gewoon opnieuw gemaakt: het CRM is de waarheid. */
+function agendaMee(lead, patch){
+  if(!patch || !('terugbel_om' in patch)) return;
+  if(!('outlook_event_id' in lead)) return;
+  if(!CRM.outlook?.verbonden?.()) return;
+  const zetId = async id => {
+    lead.outlook_event_id = id || '';
+    await CRM.sb.from('crm_leads').update({outlook_event_id: id || ''}).eq('id', lead.id);
+  };
+  const maak = async () => {
+    const v = vacVan(lead);
+    const id = await CRM.outlook.belEventMaak({
+      titel: 'Terugbellen: ' + leadNaam(lead),
+      startISO: patch.terugbel_om,
+      htmlBody: (v ? `${h(v.functie)} · ${h(v.klant)}<br>` : '')
+        + `Tel: ${h(lead.telefoon || '—')}<br>`
+        + `<a href="https://ploeggenoten.github.io/crm/#recruitment/${encodeURIComponent(lead.id)}">Open in het CRM</a>`
+    });
+    if(id){ await zetId(id); CRM.toast('Ook in je Outlook-agenda gezet', 'ok'); }
+  };
+  (async () => {
+    try{
+      const evId = lead.outlook_event_id || '';
+      if(patch.terugbel_om){
+        if(!evId) return await maak();
+        try{ await CRM.outlook.belEventVerzet(evId, patch.terugbel_om); }
+        catch(e){ if(e.status === 404){ await zetId(''); await maak(); } else throw e; }
+      } else if(evId){
+        await CRM.outlook.belEventWeg(evId);
+        await zetId('');
+      }
+    }catch(e){ console.warn('Outlook-agenda bijwerken mislukt', e); }
+  })();
 }
 async function bewaarKand(id, patch){            // patch in DB-kolomnamen
   const rij = CRM.state.cands.find(r => String(r.id) === String(id));
