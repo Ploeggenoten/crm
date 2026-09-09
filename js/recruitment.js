@@ -1155,7 +1155,31 @@ function tekenDoenregel(basis){
       <button class="btn sm" id="rc_belaf">Bel af →</button>
     </div>` : '';
 
-  el.innerHTML = `${belregel}
+  /* v2: het onzichtbare leed zichtbaar (vijf-agentenberaad 9 sep 2026):
+     Geen gehoor-leads zónder geplande vervolgpoging, met de verdeling per
+     pogingstand erbij — zo zie je in één blik wie op 2× staat en wat de
+     cadans nog moet inhalen. Goud (bot-Gekwalificeerd/Twijfelgeval) apart
+     benoemd: die mogen nooit stil wegzakken. */
+  let vervolgRegel = '';
+  if(CRM.RECRUIT_V2){
+    const gg = basis.filter(l => CRM.leadIs(l.status, 'Geen gehoor'));
+    const zonder = gg.filter(l => !l.opvolgen_op);
+    if(zonder.length){
+      const perPog = [0,0,0,0];
+      zonder.forEach(l => perPog[Math.min(belPogingen(l.id), 3)]++);
+      const goud = zonder.filter(belGoud).length;
+      vervolgRegel = `
+        <div class="rc-doen let">
+          <span class="rc-doenzin">⚠ <b class="num">${zonder.length}</b> op Geen gehoor zonder volgende poging
+            <span class="meta num" title="Verdeling naar aantal belpogingen tot nu toe">· 0×: ${perPog[0]} · 1×: ${perPog[1]} · 2×: ${perPog[2]} · 3×+: ${perPog[3]}</span>${
+            goud ? ` · <em class="op">${goud}× goud erbij</em>` : ''}</span>
+          <div class="spacer"></div>
+          <button class="btn sm" id="rc_vervolg">Plan pogingen →</button>
+        </div>`;
+    }
+  }
+
+  el.innerHTML = `${belregel}${vervolgRegel}
     <div class="rc-doen${streep ? ' let' : ''}">
       ${links}
       <div class="spacer"></div>
@@ -1182,6 +1206,10 @@ function tekenDoenregel(basis){
   if(wa) wa.onclick = () => wegwerkModus(status);
   const ba = el.querySelector('#rc_belaf');
   if(ba) ba.onclick = () => wegwerkModus('__bel');
+  /* v2: de zonder-vervolg-stapel wegwerken = gewoon de Geen gehoor-ronde;
+     elke afgehandelde kaart krijgt daar vanzelf zijn cadansdatum. */
+  const vv = el.querySelector('#rc_vervolg');
+  if(vv) vv.onclick = () => wegwerkModus('Geen gehoor');
   const wis = el.querySelector('#rc_filterweg');
   if(wis) wis.onclick = () => { wisFilters(); alles(); };
   const stil = el.querySelector('#rc_stil');
@@ -1999,6 +2027,57 @@ const WW_KEUZES = {
     {t:'4', s:'Niet geschikt',           lbl:'Niet geschikt'}
   ]
 };
+/* v2-voorvertoning (zie CRM.RECRUIT_V2 in js/data.js): 'Info opgevraagd'
+   als uitkomst in de rondes, plus een eigen wegwerkflow. De statuswissel
+   zelf zet automatisch een opvolgdatum (+3 dagen) — een uitstaande vraag
+   zonder deadline is hoe Geen gehoor een kerkhof werd. */
+if(CRM.RECRUIT_V2){
+  WW_KEUZES['Nieuw'].push(      {t:'5', s:'Info opgevraagd', lbl:'Info opgevraagd (cv e.d.)'});
+  WW_KEUZES['Geen gehoor'].push({t:'6', s:'Info opgevraagd', lbl:'Info opgevraagd (cv e.d.)'});
+  WW_KEUZES['Potentieel'].push( {t:'7', s:'Info opgevraagd', lbl:'Info opgevraagd (cv e.d.)'});
+  WW_KEUZES['Info opgevraagd'] = [
+    {t:'1', s:'Potentieel',       lbl:'Ontvangen — Potentieel'},
+    {t:'2', s:'Intake ingepland', lbl:'Intake plannen'},
+    {t:'3', blijf:'bel',          lbl:'Gebeld, geen gehoor'},
+    {t:'4', s:'Niet geschikt',    lbl:'Niet geschikt'},
+    {t:'5', pool:true,            lbl:'→ Talentpool'}
+  ];
+}
+/* Belcadans (v2): na een vergeefse poging plant het systeem de volgende
+   zelf — poging 1 → morgen, poging 2 → +3 dagen. Vanaf de derde: bot-goud
+   (Gekwalificeerd/Twijfelgeval) blijft in de stapel met +5 dagen — die
+   leads zijn betaald én goedgekeurd, die raken we niet kwijt (Tjeerd,
+   9 sep 2026); de rest gaat naar eindstation Onbereikbaar. */
+const belGoud = l => ['Gekwalificeerd','Twijfelgeval'].includes(String((l||{}).bot_status||'').trim());
+function volgendeBeldag(poging){
+  const d = new Date();
+  d.setDate(d.getDate() + (poging <= 1 ? 1 : poging === 2 ? 3 : 5));
+  /* Weekend overslaan: niemand belt kandidaten op zondag. */
+  if(d.getDay() === 6) d.setDate(d.getDate() + 2);
+  if(d.getDay() === 0) d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0,10);
+}
+/* v2: het geen-gehoor-appje — vanuit het eigen WhatsApp van de AM (Tjeerd,
+   9 sep 2026: "echt vanuit de AM zijn telefoonnummer"), dus via wa.me met
+   voorgevulde tekst: WhatsApp (Web) opent met het bericht klaar, de AM
+   drukt alleen op verzenden. Gratis, geen template, geen botsing met het
+   WATI-nummer van de bot. Het CRM logt de actie en zet een opvolgdatum,
+   zodat de lead uit "zonder vervolg" verdwijnt. */
+function geenGehoorAppje(l){
+  const url = waLink(l.telefoon);
+  if(!url) return CRM.toast('Geen telefoonnummer — appen kan niet', 'err');
+  const vn = String(leadNaam(l) || '').trim().split(/\s+/)[0] || '';
+  const am = (CRM.profile && CRM.profile.naam) || CRM.me() || '';
+  const txt = `Hoi${vn ? ' ' + vn : ''}, ik probeerde je net te bellen over je sollicitatie, maar kreeg je niet te pakken. Wanneer kan ik je het beste even bellen? Groet, ${am} van Ploeggenoten`;
+  window.open(url + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
+  (async () => {
+    await CRM.logActiviteit('lead', l.id, 'app', 'Geen-gehoor-appje gestuurd (eigen WhatsApp): "wanneer kan ik je bellen?"');
+    if(!l.opvolgen_op) await bewaarLead(l, {opvolgen_op: volgendeBeldag(2), laatst_actie:new Date().toISOString()});
+    else await bewaarLead(l, {laatst_actie:new Date().toISOString()});
+    CRM.toast('Appje klaargezet in WhatsApp — opvolgdatum staat', 'ok');
+    tekenKop(); tekenLijst();
+  })();
+}
 
 /* Nog een poging noteren zonder de status te veranderen. */
 async function noteerPoging(lead, sleutel, notitie){
@@ -2016,6 +2095,14 @@ async function noteerPoging(lead, sleutel, notitie){
      && !CRM.leadIs(lead.status, 'Intake ingepland')){
     patch.opvolgen_op = null; patch.terugbel_om = null;
   }
+  /* v2-belcadans: de volgende poging meteen plannen (zie volgendeBeldag).
+     Niet-goud op poging 3+ krijgt hier géén datum — de escalatie naar
+     Onbereikbaar volgt hieronder, ná het opslaan. */
+  const v2Cadans = CRM.RECRUIT_V2 && w.soort === 'bel'
+    && !CRM.leadIs(lead.status, 'Intake ingepland');
+  if(v2Cadans && (poging < 3 || belGoud(lead))){
+    patch.opvolgen_op = volgendeBeldag(poging); patch.terugbel_om = null;
+  }
   if(notitie) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
     .concat([{op:new Date().toISOString(), door:CRM.me(), tekst:notitie}]);
   const ok = await bewaarLead(lead, patch);
@@ -2025,6 +2112,18 @@ async function noteerPoging(lead, sleutel, notitie){
   /* De teller-index weet nog niets van deze poging; wissen, anders toont de
      volgende kaart van dezelfde persoon in de ronde een oude stand. */
   wisBelIndex();
+  /* v2: derde vergeefse poging zonder goud = Onbereikbaar (Tjeerd, 9 sep
+     2026: "na 3x op onbereikbaar is goed"). Goud blijft — die kreeg
+     hierboven al een nieuwe beldatum. */
+  if(v2Cadans && poging >= 3){
+    if(belGoud(lead)) CRM.toast(`Poging ${poging} — goud blijft in de stapel, volgende poging gepland`, 'ok');
+    else if(!CRM.leadIn(lead.status, CRM.LEAD_EIND)){
+      await pasStatusToe(lead, 'Onbereikbaar', `${poging}× geprobeerd zonder gehoor`);
+      CRM.toast(`${poging}× geen gehoor — op Onbereikbaar gezet`, 'ok');
+    }
+  } else if(v2Cadans && patch.opvolgen_op){
+    CRM.toast(`Volgende poging gepland: ${CRM.fmtDate(patch.opvolgen_op)}`, 'ok');
+  }
   return true;
 }
 
@@ -2222,7 +2321,8 @@ function wegwerkModus(status){
         <div class="rc-wwbel">
           ${l.telefoon
             ? `<a class="btn" id="ww_bel" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">Bel ${h(l.telefoon)}</a>
-               ${wa ? `<a class="btn ghost" href="${h(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}`
+               ${wa ? `<a class="btn ghost" href="${h(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+               ${CRM.RECRUIT_V2 && wa ? `<button class="btn ghost" id="ww_app" title="Opent WhatsApp met een klaargezet 'ik kreeg je niet te pakken'-bericht vanaf jouw eigen nummer, en zet meteen een opvolgdatum">App: geen gehoor</button>` : ''}`
             : `<span class="note warn" style="margin:0">Geen telefoonnummer — appen of mailen kan wel, bellen niet. Vul het nummer aan op de kaart.</span>`}
           ${l.email ? `<a class="btn ghost" href="mailto:${h(l.email)}">E-mail</a>` : ''}
         </div>
@@ -2289,6 +2389,8 @@ function wegwerkModus(status){
       log.push({type:'status', l, oud});
       gedaan++; i++; wisBelIndex(); teken();
     };
+    const ap = box.querySelector('#ww_app');
+    if(ap) ap.onclick = () => geenGehoorAppje(l);
     const kb = box.querySelector('#ww_koppel');
     /* Koppelen tussendoor: daarna komt dezelfde sollicitant terug (de teller
        loopt niet door), nu mét vacature — of ongewijzigd, als er is geannuleerd. */
@@ -2338,8 +2440,15 @@ async function pasStatusToe(lead, nieuw, notitie){
   const gestructureerd = notitie && typeof notitie === 'object';
   const cat = gestructureerd ? notitie.cat : '';
   const tekst = gestructureerd ? (notitie.cat + (notitie.txt ? ' — ' + notitie.txt : '')) : notitie;
-  const geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
+  let geenGehoor = CRM.leadIs(nieuw, 'Geen gehoor');
   const poging = belPogingen(lead.id) + 1;
+  /* v2: de derde vergeefse poging bij een statuswissel náár Geen gehoor
+     wordt meteen Onbereikbaar — behalve voor bot-goud, dat nooit
+     automatisch het eindstation in gaat (zie belGoud/volgendeBeldag). De
+     poging telt gewoon mee: geenGehoor blijft de teller en de logregel
+     sturen. */
+  const v2Escalatie = CRM.RECRUIT_V2 && geenGehoor && poging >= 3 && !belGoud(lead);
+  if(v2Escalatie) nieuw = 'Onbereikbaar';
   const patch = {status:nieuw, laatst_actie:new Date().toISOString()};
   if(geenGehoor && 'belpogingen' in lead) patch.belpogingen = Math.max((lead.belpogingen||0), poging - 1) + 1;
   if(tekst) patch.notities = (Array.isArray(lead.notities) ? lead.notities : [])
@@ -2355,6 +2464,17 @@ async function pasStatusToe(lead, nieuw, notitie){
      && (geenGehoor || String(lead.opvolgen_op).slice(0,10) <= CRM.todayISO())
      && !CRM.leadIs(nieuw, 'Intake ingepland')){
     patch.opvolgen_op = null; patch.terugbel_om = null;
+  }
+  /* v2-belcadans bij de statuswissel naar Geen gehoor: volgende poging
+     meteen plannen — behalve bij de escalatie naar Onbereikbaar. */
+  if(CRM.RECRUIT_V2 && geenGehoor && !v2Escalatie){
+    patch.opvolgen_op = volgendeBeldag(poging); patch.terugbel_om = null;
+  }
+  /* v2: 'Info opgevraagd' zonder deadline is Geen gehoor 2.0 — er staat
+     een vraag uit, dus er stáát een opvolgdatum (+3 dagen), tenzij de AM
+     er al zelf een zette. */
+  if(CRM.RECRUIT_V2 && CRM.leadIs(nieuw, 'Info opgevraagd') && !patch.opvolgen_op && !lead.opvolgen_op){
+    patch.opvolgen_op = volgendeBeldag(2);
   }
   const ok = await bewaarLead(lead, patch);
   if(!ok) return false;
@@ -2376,6 +2496,11 @@ async function pasStatusToe(lead, nieuw, notitie){
      dat is wat het "Top redenen"-blokje in Performance uitleest. */
   if(tekst) await CRM.logActiviteit('lead', lead.id, 'notitie', tekst, cat ? {categorie:cat} : {});
   if(geenGehoor) wisBelIndex();   // zie noteerPoging
+  /* v2: laten zien wat de cadans deed — anders lijkt de automatische
+     opvolgdatum spookwerk. */
+  if(v2Escalatie) CRM.toast(`${poging}× geen gehoor — op Onbereikbaar gezet`, 'ok');
+  else if(CRM.RECRUIT_V2 && geenGehoor && patch.opvolgen_op)
+    CRM.toast(`Volgende poging gepland: ${CRM.fmtDate(patch.opvolgen_op)}`, 'ok');
   return true;
 }
 
@@ -2730,7 +2855,15 @@ function openLead(id){
       <div class="card" style="margin-top:16px"><div class="card-h"><div class="h2">Opvolging</div></div>
         <div class="card-b">
           <div class="f-grid">
-            <div class="f-row"><label for="rc_opv">Opvolgdatum</label><input type="date" id="rc_opv" value="${h(l.opvolgen_op||'')}"></div>
+            <div class="f-row"><label for="rc_opv">${CRM.RECRUIT_V2 ? 'Belafspraak (datum + tijd)' : 'Opvolgdatum'}</label>
+              <div class="row tight" style="align-items:center">
+                <input type="date" id="rc_opv" value="${h(l.opvolgen_op||'')}" style="width:auto">
+                ${CRM.RECRUIT_V2 ? `<input type="time" id="rc_opvt" value="${(() => {
+                  const t = l.terugbel_om ? new Date(l.terugbel_om) : null;
+                  return t && !isNaN(t) ? t.toTimeString().slice(0,5) : '';
+                })()}" style="width:auto">` : ''}
+              </div>
+              ${CRM.RECRUIT_V2 ? `<span class="hint">Mét tijd wordt het een belafspraak in de bellijst — en straks automatisch een blok in je Outlook-agenda.</span>` : ''}</div>
             <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label>
               ${eigenaarSelectHtml(l.eigenaar)}</div>
           </div>
@@ -2751,6 +2884,7 @@ function openLead(id){
           <div class="row tight">
             <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
             <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
+            ${CRM.RECRUIT_V2 ? `<button class="btn ghost sm" id="rc_app" title="Opent WhatsApp met een klaargezet bericht vanaf jouw eigen nummer">App: geen gehoor</button>` : ''}
           </div>
         </div></div>
 
@@ -2797,14 +2931,30 @@ function openLead(id){
       const door = dr.querySelector('#rc_door');  if(door) door.onclick = () => doorschietForm(l);
       const nk   = dr.querySelector('#rc_naarkand');
       if(nk) nk.onclick = () => { CRM.drawer.close(); CRM.ga('kandidaten',{id:l.kandidaat_id}); };
-      dr.querySelector('#rc_opv').onchange = async e => {
-        await bewaarLead(l, {opvolgen_op:e.target.value || null}); CRM.toast('Opvolgdatum gezet','ok'); tekenKop(); tekenLijst();
+      /* v2: datum + tijd samen opslaan — de tijd maakt er een echte
+         belafspraak van (terugbel_om), zonder tijd blijft het een kale
+         opvolgdatum. Wissen van de datum wist ook de tijd. */
+      const opvOpslaan = async () => {
+        const d = dr.querySelector('#rc_opv').value;
+        const tv = dr.querySelector('#rc_opvt');
+        const t = tv ? tv.value : '';
+        const patch = {opvolgen_op: d || null,
+                       terugbel_om: (CRM.RECRUIT_V2 && d && t) ? new Date(d + 'T' + t + ':00').toISOString()
+                                  : (d ? l.terugbel_om || null : null)};
+        await bewaarLead(l, patch);
+        CRM.toast(d && t && CRM.RECRUIT_V2 ? `Belafspraak gezet: ${CRM.fmtDate(d)} om ${t}` : 'Opvolgdatum gezet', 'ok');
+        tekenKop(); tekenLijst();
       };
+      dr.querySelector('#rc_opv').onchange = opvOpslaan;
+      const opvT = dr.querySelector('#rc_opvt');
+      if(opvT) opvT.onchange = opvOpslaan;
       dr.querySelector('#rc_eig').onchange = async e => {
         await bewaarLead(l, {eigenaar:e.target.value.trim()}); CRM.toast('Eigenaar bijgewerkt','ok'); tekenLijst();
       };
       /* Bellen vanuit de drawer zonder statuswissel was nergens vast te
          leggen (audit 4 sep 2026): geen enkele knop schreef soort 'bel'. */
+      const appBtn = dr.querySelector('#rc_app');
+      if(appBtn) appBtn.onclick = () => geenGehoorAppje(l);
       dr.querySelector('#rc_belpoging').onclick = async () => {
         const t = dr.querySelector('#rc_note').value.trim();
         const p = belPogingen(l.id) + 1;

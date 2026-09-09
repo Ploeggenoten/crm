@@ -284,6 +284,24 @@ CRM.LEAD_OPEN   = ['Nieuw','Geen gehoor','Potentieel','Intake ingepland'];
    krijgt een kandidaat_id en verdwijnt daarmee uit de werklijst. */
 CRM.LEAD_EIND   = ['Niet geschikt'];
 
+/* ─── Recruitment v2-voorvertoning (Tjeerd, 9 sep 2026) ──────────
+   Twee nieuwe statussen, eerst alleen zichtbaar met ?v2 in de URL (of in
+   demo-modus), zodat de eigenaar het ontwerp op echte data kan beoordelen
+   zonder dat het team iets merkt. Na akkoord vervalt de vlag.
+   - 'Info opgevraagd': wíj vroegen iets op (cv, document) en wachten op de
+     kandidaat — een echte fase, want er staat een belofte uit.
+   - 'Onbereikbaar': eindstation na drie vergeefse belpogingen. Bewust géén
+     open status: de v2-belcadans plant poging 2 en 3 zelf, daarna is het
+     klaar — behalve voor bot-goud (Gekwalificeerd/Twijfelgeval), dat nooit
+     automatisch hier belandt. */
+CRM.RECRUIT_V2 = CRM.demo || new URLSearchParams(location.search).has('v2');
+if(CRM.RECRUIT_V2){
+  CRM.LEAD_STATUS.splice(3, 0, {k:'Info opgevraagd', c:'#7f93b8', ico:'📨'});
+  CRM.LEAD_STATUS.push({k:'Onbereikbaar', c:'#8a8f7a', ico:'🔕'});
+  CRM.LEAD_OPEN.splice(3, 0, 'Info opgevraagd');
+  CRM.LEAD_EIND.push('Onbereikbaar');
+}
+
 /* ─── Status-normalisatie (oude waarden blijven werken) ──────────
    Zelfde constructie als CRM.FASE_ALIAS/faseNorm hierboven: in productie
    staan rijen op de oude elf statussen, en die migratie draait pas later.
