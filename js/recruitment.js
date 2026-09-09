@@ -2890,7 +2890,8 @@ function openLead(id){
           <div class="row tight">
             <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
             <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
-            ${CRM.RECRUIT_V2 ? `<button class="btn ghost sm" id="rc_app" title="Opent WhatsApp met een klaargezet bericht vanaf jouw eigen nummer">App: geen gehoor</button>` : ''}
+            ${CRM.RECRUIT_V2 ? `<button class="btn ghost sm" id="rc_app" title="Opent WhatsApp met een klaargezet bericht vanaf jouw eigen nummer">App: geen gehoor</button>
+            <button class="btn ghost sm" id="rc_taak" title="Plan een taak voor jezelf of een collega — die krijgt er een melding van">+ Taak</button>` : ''}
           </div>
         </div></div>
 
@@ -2961,6 +2962,15 @@ function openLead(id){
          leggen (audit 4 sep 2026): geen enkele knop schreef soort 'bel'. */
       const appBtn = dr.querySelector('#rc_app');
       if(appBtn) appBtn.onclick = () => geenGehoorAppje(l);
+      /* v2: taak plannen vanaf de leadkaart (Tjeerd, 9 sep 2026) — hetzelfde
+         gedeelde venster als overal: voor jezelf of een collega, met melding
+         en koppeling terug naar deze sollicitant. */
+      const taakBtn = dr.querySelector('#rc_taak');
+      if(taakBtn) taakBtn.onclick = () => {
+        const vv = vacVan(l);
+        CRM.taakModal({entiteit:'lead', ref:l.id,
+          refLabel: leadNaam(l) + (vv ? ` — ${vv.functie} · ${vv.klant}` : '')});
+      };
       dr.querySelector('#rc_belpoging').onclick = async () => {
         const t = dr.querySelector('#rc_note').value.trim();
         const p = belPogingen(l.id) + 1;
