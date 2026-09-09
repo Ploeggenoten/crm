@@ -755,6 +755,11 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
     return true;
   }).sort((a,b) => belRang(a) - belRang(b)
                 || belMoment(a).localeCompare(belMoment(b))
+                /* Goud eerst binnen dezelfde dag (Tjeerd, 9 sep 2026: een
+                   gekwalificeerde Geen gehoor mag niet tussen de rest
+                   hangen) — kale cadansdatums delen hun belMoment, dus hier
+                   beslist het botoordeel. */
+                || (belGoud(b)?1:0) - (belGoud(a)?1:0)
                 || (versGoud(b)?1:0) - (versGoud(a)?1:0)
                 || prioRang(a) - prioRang(b)
                 || String(b.binnen_op||'').localeCompare(String(a.binnen_op||'')));
@@ -782,7 +787,12 @@ const belRang   = l => {
   if(CRM.RECRUIT_V2 && !l.terugbel_om) return 3;
   return 1;
 };
-const belMoment = l => belRang(l) !== 2 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
+/* De '~' achter een kale datum sorteert ná elk tijdstip van diezelfde dag
+   ('~' > 'T'): een belofte "vandaag 10:00" gaat vóór de cadans-pogingen
+   zonder tijd, en over dagen heen blijft alles gewoon chronologisch. */
+const belMoment = l => belRang(l) !== 2
+  ? String(l.terugbel_om || (l.opvolgen_op ? l.opvolgen_op + '~' : ''))
+  : '';
 /* De chip die dat zichtbaar maakt: alleen als er nú iets te bellen valt —
    geen afspraak, geen chip, en de lijst blijft kaal. */
 function belChipHtml(l){
@@ -2195,6 +2205,10 @@ function wegwerkModus(status){
       : leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status)))
     .sort((a,b) => belRang(a) - belRang(b)
                 || belMoment(a).localeCompare(belMoment(b))
+                /* Zelfde goud-voorrang als in de lijst: binnen de kale
+                   cadansdatums van vandaag gaan Gekwalificeerd/Twijfelgeval
+                   voorop. */
+                || (belGoud(b)?1:0) - (belGoud(a)?1:0)
                 || (versGoud(b)?1:0) - (versGoud(a)?1:0)
                 || String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
   if(!stapel.length) return CRM.toast(belronde ? 'Geen belafspraken voor vandaag' : `Er staat niets op ${status}`,'ok');
