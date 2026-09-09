@@ -566,6 +566,10 @@ CRM.rowToCand = r => ({
   /* Persoonsgegevens met een eigen bewaartermijn: geboortedatum voor de
      verjaardagstaak, foto als PAD in de afgeschermde map crm-docs. */
   geboortedatum:r.geboortedatum||'', foto:r.foto||'',
+  /* Alleen doorgeven als de kolom echt bestaat: de agendakoppeling in
+     js/recruitment.js leest het ontbreken als "migratie nog niet gedraaid"
+     en slaat dan stil over. */
+  ...('outlook_event_id' in r ? {outlook_event_id:r.outlook_event_id||''} : {}),
   geanonimiseerdOp:r.geanonimiseerd_op||null,
   ooId:r.oo_id||null, vervangt:r.vervangt||'', rec:r.rec||'', note:r.note||'',
   telefoon:r.telefoon||'', email:r.email||'', woonplaats:r.woonplaats||'', vacatureId:r.vacature_id||null,
