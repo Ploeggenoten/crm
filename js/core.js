@@ -1198,7 +1198,7 @@ function realtime(){
   if(CRM._rt) return;
   let kanaal = sb.channel('crm');
   Object.keys(TABEL_QUERY).forEach(tabel => {
-    kanaal = kanaal.on('postgres_changes', {event:'*', schema:'public', table:tabel}, () => sync(tabel));
+    kanaal = kanaal.on('postgres_changes', {event:'*', schema:'public', table:tabel}, p => sync(tabel, p));
   });
   CRM._rt = kanaal.subscribe();
 }
@@ -1211,30 +1211,67 @@ function realtime(){
    stilletjes verouderd staan totdat er toevallig nóg een wijziging op
    kwam. */
 const _syncTimer = {}, _syncLater = {};
-function sync(tabel){
+/* Egress-dieet (9 sep 2026, Supabase 183% over de gratis dataverkeer-
+   limiet): elk realtime-event haalde hier de héle tabel opnieuw op — één
+   belpoging betekende dus bij elke open browser ~2 MB (crm_leads +
+   crm_activiteiten integraal). Het event dráágt de gewijzigde rij al, dus
+   die passen we direct toe: van megabytes naar kilobytes per wijziging.
+   Alleen als het event niet op de cache te plakken is (onbekende vorm)
+   valt hij terug op de oude volledige ophaalronde. Prijs: de sortering
+   van een vers-toegevoegde rij kan tot de volgende volledige load een
+   plek afwijken — elke lijst sorteert toch zelf bij het tekenen. */
+function sync(tabel, p){
   clearTimeout(_syncTimer[tabel]);
+  if(p && rijPatch(tabel, p)){
+    navBadges();
+    _syncTimer[tabel] = setTimeout(() => hertekenNaSync(tabel), 700);
+    return;
+  }
   _syncTimer[tabel] = setTimeout(() => syncNu(tabel), 700);
+}
+function rijPatch(tabel, p){
+  const cfg = TABEL_QUERY[tabel]; if(!cfg) return false;
+  const arr = CRM.state[cfg.veld]; if(!Array.isArray(arr)) return false;
+  const type = p.eventType;
+  if(type === 'DELETE'){
+    const id = p.old && p.old.id;
+    if(id == null) return false;
+    const i = arr.findIndex(r => String(r.id) === String(id));
+    if(i >= 0) arr.splice(i, 1);
+    return true;
+  }
+  if((type === 'INSERT' || type === 'UPDATE') && p.new && p.new.id != null){
+    const i = arr.findIndex(r => String(r.id) === String(p.new.id));
+    /* In de bestaande rij schrijven, niet vervangen: open schermen (de
+       drawer!) houden verwijzingen naar dit object vast. */
+    if(i >= 0) Object.assign(arr[i], p.new);
+    else arr.unshift(p.new);
+    return true;
+  }
+  return false;
 }
 async function syncNu(tabel){
   const cfg = TABEL_QUERY[tabel]; if(!cfg) return;
   const d = await (cfg.alles ? veiligAlles(cfg.q, tabel) : veilig(cfg.q(), tabel));
   CRM.state[cfg.veld] = d;
   navBadges();
-  if(CRM.modules[CRM.view]?.herlaadBijSync !== false){
-    /* Niet hertekenen terwijl iemand een veld invult. Elke opslag komt als
-       realtime-echo terug, en de volledige hertekening rukte dan het veld
-       waar je nét in typte onder je handen vandaan ("velden schieten weg",
-       naam: Tjeerd, 5 aug 2026). De data staat al in CRM.state; we proberen
-       het gewoon opnieuw zodra de gebruiker het veld heeft losgelaten. */
-    const a = document.activeElement;
-    const blokOpen = document.querySelector('#viewmount .kd-blokform');
-    if(blokOpen || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount'))){
-      clearTimeout(_syncLater[tabel]);
-      _syncLater[tabel] = setTimeout(() => syncNu(tabel), 2500);
-      return;
-    }
-    CRM.render();
+  hertekenNaSync(tabel);
+}
+function hertekenNaSync(tabel){
+  if(CRM.modules[CRM.view]?.herlaadBijSync === false) return;
+  /* Niet hertekenen terwijl iemand een veld invult. Elke opslag komt als
+     realtime-echo terug, en de volledige hertekening rukte dan het veld
+     waar je nét in typte onder je handen vandaan ("velden schieten weg",
+     naam: Tjeerd, 5 aug 2026). De data staat al in CRM.state; we proberen
+     het gewoon opnieuw zodra de gebruiker het veld heeft losgelaten. */
+  const a = document.activeElement;
+  const blokOpen = document.querySelector('#viewmount .kd-blokform');
+  if(blokOpen || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount'))){
+    clearTimeout(_syncLater[tabel]);
+    _syncLater[tabel] = setTimeout(() => hertekenNaSync(tabel), 2500);
+    return;
   }
+  CRM.render();
 }
 
 /* ─── Auth ────────────────────────────────────────────────────── */
