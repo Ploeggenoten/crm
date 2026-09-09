@@ -2956,7 +2956,7 @@ function openLead(id){
                   return t && !isNaN(t) ? t.toTimeString().slice(0,5) : '';
                 })()}" style="width:auto">` : ''}
               </div>
-              ${CRM.RECRUIT_V2 ? `<span class="hint">Mét tijd wordt het een belafspraak in de bellijst — en straks automatisch een blok in je Outlook-agenda.</span>` : ''}</div>
+              ${CRM.RECRUIT_V2 ? `<span class="hint">Slaat vanzelf op. Mét tijd wordt het een belafspraak: bovenaan de bellijst én meteen een blok in je Outlook-agenda.</span>` : ''}</div>
             <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label>
               ${eigenaarSelectHtml(l.eigenaar)}</div>
           </div>
