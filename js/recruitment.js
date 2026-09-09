@@ -1155,31 +1155,26 @@ function tekenDoenregel(basis){
       <button class="btn sm" id="rc_belaf">Bel af →</button>
     </div>` : '';
 
-  /* v2: het onzichtbare leed zichtbaar (vijf-agentenberaad 9 sep 2026):
-     Geen gehoor-leads zónder geplande vervolgpoging, met de verdeling per
-     pogingstand erbij — zo zie je in één blik wie op 2× staat en wat de
-     cadans nog moet inhalen. Goud (bot-Gekwalificeerd/Twijfelgeval) apart
-     benoemd: die mogen nooit stil wegzakken. */
-  let vervolgRegel = '';
+  /* v2: Geen gehoor-leads zónder geplande vervolgpoging. Eerst een eigen
+     amberkaart in de kop; Tjeerd (9 sep 2026): "te chaotisch" — precies de
+     valkuil uit het beraad. Nu een stil feit-knopje tussen de andere
+     feiten, met de verdeling per pogingstand in de tooltip. */
+  let vervolgFeit = '';
   if(CRM.RECRUIT_V2){
-    const gg = basis.filter(l => CRM.leadIs(l.status, 'Geen gehoor'));
-    const zonder = gg.filter(l => !l.opvolgen_op);
+    const zonder = basis.filter(l => CRM.leadIs(l.status, 'Geen gehoor') && !l.opvolgen_op);
     if(zonder.length){
       const perPog = [0,0,0,0];
       zonder.forEach(l => perPog[Math.min(belPogingen(l.id), 3)]++);
       const goud = zonder.filter(belGoud).length;
-      vervolgRegel = `
-        <div class="rc-doen let">
-          <span class="rc-doenzin">⚠ <b class="num">${zonder.length}</b> op Geen gehoor zonder volgende poging
-            <span class="meta num" title="Verdeling naar aantal belpogingen tot nu toe">· 0×: ${perPog[0]} · 1×: ${perPog[1]} · 2×: ${perPog[2]} · 3×+: ${perPog[3]}</span>${
-            goud ? ` · <em class="op">${goud}× goud erbij</em>` : ''}</span>
-          <div class="spacer"></div>
-          <button class="btn sm" id="rc_vervolg">Plan pogingen →</button>
-        </div>`;
+      vervolgFeit = `<button class="rc-doenfeit" id="rc_vervolg"
+        aria-label="${zonder.length} op Geen gehoor zonder volgende poging — start de ronde"
+        title="Verdeling naar belpogingen: 0×: ${perPog[0]} · 1×: ${perPog[1]} · 2×: ${perPog[2]} · 3×+: ${perPog[3]}${
+          goud ? ` — waarvan ${goud}× bot-goud` : ''}. Klik om de Geen gehoor-ronde te starten; elke kaart krijgt daar zijn volgende beldatum."
+        ><b class="num">${zonder.length}</b> zonder volgende poging</button>`;
     }
   }
 
-  el.innerHTML = `${belregel}${vervolgRegel}
+  el.innerHTML = `${belregel}
     <div class="rc-doen${streep ? ' let' : ''}">
       ${links}
       <div class="spacer"></div>
@@ -1187,6 +1182,7 @@ function tekenDoenregel(basis){
         ${/* Valkuil dicht (motorkap-punt 8): de knop blijft ook staan als het
              filter aanstaat terwijl er 0 blijven liggen — anders is er geen
              uitknop meer en lijkt het scherm onverklaarbaar leeg. */''}
+        ${vervolgFeit}
         ${stilTot || S.l.stil ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
             aria-label="${stilTot} ${stilTot===1?'blijft':'blijven'} liggen — toon alleen die"
             title="${h(stilUitleg)}"><b class="num">${stilTot}</b> ${
