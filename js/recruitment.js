@@ -3128,7 +3128,8 @@ function sollicitantForm(pre){
              op de kaart met 'Fase wijzigen…'. -->
         <div class="f-row"><label for="nsf_fase">Waar staat deze persoon?</label>
           <select id="nsf_fase">${(CRM.INSTROOM||[]).map(f =>
-            `<option value="${h(f.k)}"${f.k==='Nieuw'?' selected':''}>${h(f.k)}</option>`).join('')}</select></div>
+            `<option value="${h(f.k)}"${f.k==='Nieuw'?' selected':''}>${h(f.k)}</option>`).join('')}
+            <option value="Talentpool">Talentpool (bewaren voor later)</option></select></div>
       </div>
       ${pre.cv ? `<div class="note ok" style="margin-top:4px">Het ingelezen CV wordt aan deze sollicitant gekoppeld.</div>` : ''}
       <div class="note err" id="ns_err" style="display:none"></div>
@@ -3205,7 +3206,9 @@ function sollicitantForm(pre){
 async function maakSollicitantRij(gg, fase){
   const vandaag = CRM.todayISO();
   fase = CRM.faseNorm(fase);
-  const f = (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Nieuw';
+  /* Zelfde uitzondering als in maakCvKandidaat: rechtstreeks de Talentpool
+     in mag — zie de toelichting daar. */
+  const f = fase === 'Talentpool' || (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Nieuw';
   /* Zonder vacature en zonder klant: die koppel je op de kaart, met de
      vacaturelijst en de kandidaat naast elkaar in beeld. */
   const cand = {
@@ -3345,8 +3348,9 @@ function sollicitantCvRoute(){
                  'Nieuw', maar er is nog geen afspraak. -->
             <div class="f-row" style="margin-top:12px"><label for="nc_fase">Waar staat deze kandidaat?</label>
               <select id="nc_fase">${(CRM.INSTROOM||[]).map(f =>
-                `<option value="${h(f.k)}"${f.k==='Potentieel'?' selected':''}>${h(f.k)}</option>`).join('')}</select>
-              <span class="hint">Je kunt dit later op de kaart altijd bijstellen.</span></div>
+                `<option value="${h(f.k)}"${f.k==='Potentieel'?' selected':''}>${h(f.k)}</option>`).join('')}
+                <option value="Talentpool">Talentpool (bewaren voor later)</option></select>
+              <span class="hint">Je kunt dit later op de kaart altijd bijstellen. Talentpool = interessant, maar nu geen actief traject — terug te vinden via Sourcing.</span></div>
             ${p
               ? `<p class="meta" style="margin:10px 0 0">Verder gevonden: ${h(cvVangst(p))}. Je kiest zo per gegeven wat je overneemt.</p>`
               : `<div class="note warn" style="margin-top:10px">Er kwam geen tekst uit dit bestand — waarschijnlijk een scan,
@@ -3399,7 +3403,10 @@ function sollicitantCvRoute(){
 async function maakCvKandidaat(naam, fase){
   const vandaag = CRM.todayISO();
   fase = CRM.faseNorm(fase);
-  const f = (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Potentieel';
+  /* Talentpool mag hier ook (Tjeerd, 9 sep 2026): een cv dat binnenkomt van
+     iemand die nergens op past maar wél interessant is, wil je direct in de
+     pool kunnen zetten — niet eerst op een werkfase en dan alsnog verplaatsen. */
+  const f = fase === 'Talentpool' || (CRM.INSTROOM||[]).some(p => p.k === fase) ? fase : 'Potentieel';
   const cand = {
     id:CRM.uid(), naam, telefoon:'', email:'', woonplaats:'', functie:'',
     klant:'', type:'W&S', bron:'Handmatig', fase:f, since:vandaag,
