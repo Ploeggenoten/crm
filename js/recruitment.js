@@ -185,6 +185,14 @@ const kandAlsRij = c => ({
      brug leest stilstand() hier altijd niets en blijft de kaart "zonder
      datum" melden, ook als er allang een afspraak staat. */
   opvolgen_op: c.datum || '',
+  /* Zelfde brug voor het tijdstip (Tjeerd, 9 sep 2026: belafspraak mét tijd
+     moet ook op deze rijen bovenaan komen) — kandidaten bewaren de tijd in
+     hun eigen 'tijd'-veld. */
+  terugbel_om: (() => {
+    if(!c.datum || !c.tijd) return '';
+    const d = new Date(c.datum + 'T' + c.tijd + ':00');
+    return isNaN(d) ? '' : d.toISOString();
+  })(),
   _kand: true
 });
 const leads = () => {
@@ -493,6 +501,12 @@ async function bewaarLead(lead, patch){
        'Opvolgdatum' te werken maar verdwijnt de datum bij de eerstvolgende
        hertekening weer (Tjeerd, 7 sep 2026). */
     if(patch.opvolgen_op !== undefined) p.datum       = patch.opvolgen_op || '';
+    /* Tijd terug naar het 'tijd'-veld van de kandidaat — anders overleeft
+       een belafspraak-met-tijd het herladen niet (zie kandAlsRij). */
+    if(patch.terugbel_om !== undefined){
+      const t = patch.terugbel_om ? new Date(patch.terugbel_om) : null;
+      p.tijd = t && !isNaN(t) ? t.toTimeString().slice(0,5) : '';
+    }
     if(!Object.keys(p).length) return true;   // alleen leadvelden — niets te doen
     if(p.fase !== undefined){
       /* Een fasewissel loopt via bewaarFase: die zet de historie, de datum
