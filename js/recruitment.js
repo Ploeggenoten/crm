@@ -559,14 +559,26 @@ function agendaMee(lead, patch){
   };
   const maak = async () => {
     const v = vacVan(lead);
+    /* Is de eigenaar een ander dan wie de afspraak zet, dan gaat er een
+       agenda-uitnodiging mee — zo landt het blok óók bij die collega
+       (Tjeerd, 9 sep 2026). E-mailadres komt uit het teamprofiel. */
+    const eigMail = (() => {
+      const eig = CRM.naamNorm(lead.eigenaar);
+      if(!eig || eig === CRM.naamNorm(CRM.me())) return '';
+      const prof = (CRM.state.profiles || []).find(x => CRM.naamNorm(x.naam) === eig);
+      return (prof && prof.email) || '';
+    })();
     const id = await CRM.outlook.belEventMaak({
       titel: 'Terugbellen: ' + leadNaam(lead),
       startISO: patch.terugbel_om,
+      deelnemers: eigMail ? [eigMail] : [],
       htmlBody: (v ? `${h(v.functie)} · ${h(v.klant)}<br>` : '')
         + `Tel: ${h(lead.telefoon || '—')}<br>`
         + `<a href="https://ploeggenoten.github.io/crm/#recruitment/${encodeURIComponent(lead.id)}">Open in het CRM</a>`
     });
-    if(id){ await zetId(id); CRM.toast('Ook in je Outlook-agenda gezet', 'ok'); }
+    if(id){ await zetId(id); CRM.toast(eigMail
+      ? `In je agenda gezet én uitnodiging naar ${lead.eigenaar} gestuurd`
+      : 'Ook in je Outlook-agenda gezet', 'ok'); }
   };
   (async () => {
     try{

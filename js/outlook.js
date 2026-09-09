@@ -365,7 +365,7 @@ CRM.outlook = {
      Calendars.ReadWrite zit al in MS_KERN, dus niemand hoeft opnieuw in te
      loggen. Tijden gaan als UTC naar Graph — Outlook toont ze vanzelf in de
      tijdzone van de gebruiker. */
-  async belEventMaak({titel, startISO, minuten = 15, htmlBody = ''}){
+  async belEventMaak({titel, startISO, minuten = 15, htmlBody = '', deelnemers = []}){
     if(!CRM.outlook.beschikbaar() || !_account) return null;
     const start = new Date(startISO);
     if(isNaN(start)) return null;
@@ -377,7 +377,13 @@ CRM.outlook = {
       start: {dateTime: kort(start), timeZone:'UTC'},
       end:   {dateTime: kort(eind),  timeZone:'UTC'},
       categories: ['CRM'],
-      isReminderOn: true, reminderMinutesBeforeStart: 5
+      isReminderOn: true, reminderMinutesBeforeStart: 5,
+      /* Deelnemers = collega's: zet je een belafspraak op de lead van een
+         ander (Tjeerd, 9 sep 2026: "zie niets in Rajesh zijn agenda"), dan
+         gaat er een gewone agenda-uitnodiging uit en landt het blok óók
+         bij de eigenaar — zonder gedeelde-agenda-rechten. */
+      ...(deelnemers.length ? {attendees: deelnemers.map(adres => ({
+        emailAddress:{address:adres}, type:'required'}))} : {})
     }});
     return ev?.id || null;
   },
