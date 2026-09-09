@@ -2,102 +2,106 @@
 
 Voor Tjerk, Rajesh en Bryan. Het CRM (ploeggenoten.github.io/crm → **Recruitment**) is
 dé plek voor alle Meta/WhatsApp-leads. Nieuwe leads stromen automatisch binnen via de
-WhatsApp-bot, de hele dag door. *(Bijgewerkt 3 sep 2026 na het herontwerp.)*
+WhatsApp-bot, de hele dag door. *(Bijgewerkt 9 sep 2026: belcadans, geen-gehoor-appje,
+Info opgevraagd, agendakoppeling.)*
 
 ## De ochtendroutine
 
-1. Open **Recruitment**. Bovenaan staan twee regels: de **belafspraken van vandaag**
-   (amber, met de eerste tijd) en je **stapel op Nieuw**.
-2. Eerst de amber regel: klik **Bel af →**. Je krijgt de belafspraken één voor één,
-   op tijdstip, ongeacht hun status — de keuzeknoppen passen zich per persoon aan.
-3. Daarna **Wegwerken →** voor de rest: sollicitanten één voor één, met belknop, alles
-   wat de bot vroeg en hoorde, en keuzes op de cijfertoetsen. **1 is bijna altijd
-   goed**; bij Geen gehoor en Potentieel is **5 = → Talentpool** (goede kandidaat,
-   nu geen match — kaart wordt bewaard). Foutje? **u** of Backspace haalt de vorige
-   kaart terug en draait de actie terug.
-4. Zegt iemand "bel me maandag": zet in de ronde meteen de **belafspraak** (datum +
-   tijd + "Zet belafspraak & volgende") — dan staat hij maandag vanzelf in de amber
-   regel, in plaats van als losse notitie.
-5. Tweede pogingen: statusfilter op **Geen gehoor** en weer Wegwerken — de knop werkt
-   altijd de stapel weg waar je filter op staat.
+1. Open **Recruitment** en zet **Van mij** aan (of kies je naam in de
+   eigenaren-dropdown). Alles hieronder — tellers, Bel af, Wegwerken — volgt dat
+   filter, dus je werkt alleen jóuw stapels en zit niemand in de weg.
+2. Eerst de amber regel: klik **Bel af →**. Volgorde: eerst de afspraken **mét
+   tijdstip** (beloftes aan kandidaten, op de klok), dan de geplande vervolgpogingen
+   van vandaag — **Gekwalificeerd/Twijfelgeval voorop**. De keuzeknoppen passen zich
+   per persoon aan.
+3. Daarna **Wegwerken →** op Nieuw: elke lead van gisteren/vandaag krijgt dezelfde
+   dag een eerste actie. **1 is bijna altijd goed**; **5 = → Talentpool** (goede
+   kandidaat, nu geen match). Foutje? **u** of Backspace draait de vorige kaart terug.
+4. Zegt iemand "bel me maandag om 2": zet in de ronde de **belafspraak met datum én
+   tijd** ("Zet belafspraak & volgende") — hij komt bovenaan de lijst op die dag
+   **én automatisch als blok in je eigen Outlook-agenda**.
+5. **Einde van de dag, de enige controle die telt:** het knopje **"… zonder volgende
+   poging"** in de kop. Staat dat op 0, dan kan er niemand tussen wal en schip
+   vallen. Staat er een getal, klik erop en werk de stapel weg.
 
-De volgorde is overal hetzelfde (lijst én rondes): **belafspraken op tijd → verse
-Hoog/Gekwalificeerd van vandaag → de rest**. Bovenaan beginnen is genoeg. Komt er
-tijdens de dag een verse topper binnen, dan krijg je een melding met "Nu bellen";
-zit je middenin een ronde, dan hoor je het op het eindscherm.
+## Geen gehoor — het systeem doet het werk
 
-## Lezen van de lijst
+Niet opgenomen? Toets **Geen gehoor** en klik daarna op **App: geen gehoor**. Meer
+is het niet. Wat er dan gebeurt:
 
-Elke rij heeft hoogstens **één gekleurde chip onder de naam** — die zegt waaróm de rij
-daar staat: een belafspraak (rood = verlopen, amber = vandaag), stilstand, of "ligt er
-X dagen". Geen chip = niets aan de hand. De **Agent-chip** ("Gekwalificeerd · 85") is
-het oordeel van de bot mét score in één; alles wat de bot verder vastlegde
-(samenvatting, gespreksfase, letterlijke antwoorden) staat op de kaart en in de
-belronde. Sta je op "Van mij", dan is er geen eigenaar-kolom — alles is van jou.
+- De **belpoging telt** ("1× gebeld" op de rij) en een eventuele belafspraak wordt
+  afgehandeld — ook uit je agenda.
+- **Het appje** opent WhatsApp met het bericht klaar ("ik kreeg je niet te pakken —
+  wanneer kan ik je het beste bellen?"), **vanaf je eigen nummer**; jij drukt alleen
+  op verzenden. Reageert de kandidaat, dan plant hij zichzelf in.
+- De **volgende poging staat automatisch gepland**: poging 1 → morgen, poging 2 →
+  +3 dagen (weekend wordt overgeslagen). Je ziet de melding "Volgende poging
+  gepland: …" en de lead zakt naar onderen — klaar voor vandaag. Op de geplande dag
+  staat hij vanzelf weer in **Bel af →**.
+- **Na de derde vergeefse poging** gaat de lead automatisch naar het eindstation
+  **Onbereikbaar** — behalve **goud** (bot-Gekwalificeerd of Twijfelgeval): die
+  blijft elke 5 dagen terugkomen en verdwijnt nooit stilletjes.
 
-**Filters:** actieve filters staan als groene chips boven de lijst, elk met een
-kruisje. Zie je "niets gevonden", dan vertelt het scherm precies welke filters
-aanstaan, met een knop **Toon alles**. "Zonder vacature" zit in de vacature-dropdown,
-mét teller — in die weergave verschijnen ook de koppelknoppen per rij.
-
-## De vijf statussen
+## De statussen
 
 | Status | Betekent | Zet je wanneer |
 |---|---|---|
 | **Nieuw** | Nog niemand van ons heeft contact gehad | Zet je nooit zelf — hier komt elke lead binnen |
-| **Geen gehoor** | Gebeld, niet bereikt | Na elke mislukte poging (elke poging komt in de tijdlijn) |
+| **Geen gehoor** | Gebeld, niet bereikt — volgende poging staat gepland | Na elke mislukte poging (en stuur het appje mee) |
 | **Potentieel** | Gesproken, kansrijk, maar nog geen intake | Na een goed eerste gesprek |
-| **Intake ingepland** | Videocall staat (de call ís de intake) | Zodra je een datum afspreekt — het CRM vraagt er meteen om (Enter = vastleggen, snelkeuzes "morgen 10:00") |
-| **Niet geschikt** | Eindstation, blijft als historie staan | Als het echt niets is; onbereikbaar na meerdere pogingen mag ook |
+| **Info opgevraagd** | Wíj wachten op iets van de kandidaat (cv, document) | Zodra je iets opvraagt — deadline van +3 dagen staat automatisch |
+| **Intake ingepland** | Videocall staat (de call ís de intake) | Zodra je een datum afspreekt — het CRM vraagt er meteen om |
+| **Niet geschikt** | Eindstation, blijft als historie staan | Als het echt niets is — het scherm vraagt om de reden (traint de bot) |
+| **Onbereikbaar** | Eindstation: 3× geprobeerd + geappt, geen reactie | Zet het systeem meestal zelf; handmatig mag ook |
 
-Onder de vijf statussen staat in elke dropdown ook **→ Talentpool**: geen status maar
-een handeling — er wordt meteen een kandidaatkaart gemaakt (vacature optioneel) en de
-rij verdwijnt uit je werklijst. Voor goede mensen zonder match van vandaag.
+Onder de statussen staat in elke dropdown ook **→ Talentpool**: geen status maar een
+handeling — er wordt meteen een kandidaatkaart gemaakt (vacature optioneel) en de rij
+verdwijnt uit je werklijst. Voor goede mensen zonder match van vandaag. Ook bij
+**+ Sollicitant** (handmatig of CV inlezen) kun je direct voor de Talentpool kiezen.
 
-Een status is geen administratie achteraf — er hangt automatiek aan (zie hieronder).
-Zet hem dus meteen, niet aan het eind van de dag.
+## Lezen van de lijst
 
-## Wat de bot je vertelt
+De volgorde is overal hetzelfde (lijst én rondes): **afspraken mét tijd → geplande
+pogingen van vandaag (goud eerst) → vers goud en de rest → helemaal onderaan de al
+gebelde leads** met hun grijze chip "volgende poging wo 10 sep" — die zijn klaar voor
+vandaag. Elke rij heeft hoogstens één gekleurde chip onder de naam: rood = verlopen
+afspraak, amber = vandaag bellen. Geen chip = niets aan de hand. De **Agent-chip**
+("Gekwalificeerd · 85") is het oordeel van de bot mét score; jouw status blijft leidend.
 
-De botstatus (Gekwalificeerd / Twijfelgeval / Potentieel andere vacature / Niet
-gekwalificeerd / Onvolledig / Dubbel) is een **oordeel van de bot, geen status van
-jou**. Hij verandert jouw lijst niet en jij verandert hem niet. Ook een "Niet
-gekwalificeerd" komt gewoon op Nieuw binnen — jij beslist.
+## Op de leadkaart (drawer)
+
+- **Belafspraak (datum + tijd)** — mét tijd wordt het een echte afspraak: bovenaan
+  de lijst, in de ☎-regel én in je Outlook-agenda. Verzetten of afhandelen werkt
+  het agenda-blok automatisch bij. Verzetten doe je in het CRM, niet in Outlook.
+- **App: geen gehoor** — zelfde één-knops-appje als in de belronde.
+- **+ Taak** — plan een taak voor jezelf of een collega; die krijgt een melding
+  (ook in Teams) met een link terug naar deze kaart.
+- **Belpoging noteren** — gebeld zonder statuswissel? Zo komt hij toch in de teller.
 
 ## Kandidaat maken
 
 Staat iemand op Intake ingepland, dan maak je er een kandidaat van: knop
 **→ Kandidaat maken** op de leadkaart (of toets 1 in de belronde). Het formulier
 staat grotendeels vooringevuld; heeft de bot een cv ontvangen, dan wordt dat
-opgehaald en krijg je een **controlevenster** — jij kiest wat er op de kaart komt.
-De kaart komt op **Klaar om voor te stellen**. Vink je "nog geen volledige intake"
-aan, dan gaat de kaart naar de **Talentpool**.
+opgehaald en kies jij per gegeven wat er op de kaart komt. Vink je "nog geen
+volledige intake" aan, dan gaat de kaart naar de **Talentpool**.
 
 ## Dit gebeurt automatisch
 
-- **Zet je een lead voorbij Geen gehoor**, dan **stoppen de WhatsApp-follow-ups**
-  voor die persoon. Staat iemand nog op Nieuw terwijl je al sprak, dan blijft de
-  bot appen — status meteen zetten dus.
-- **Elke afgehandelde belpoging wist de belafspraak** van vandaag/verlopen — die komt
-  dus nooit als spook terug. Alleen "Intake ingepland" houdt zijn datum (dat is de
-  call zelf).
+- **Zet je een lead voorbij Geen gehoor**, dan stoppen de WhatsApp-follow-ups van
+  de bot voor die persoon. Status dus meteen zetten.
+- **Elke vergeefse belpoging** handelt de belafspraak af (ook in je agenda) én plant
+  de volgende poging. Geen spookafspraken, geen vergeten leads.
+- **Info opgevraagd** krijgt vanzelf een deadline; **Onbereikbaar** komt vanzelf na
+  drie keer; **goud** blijft vanzelf terugkomen.
 - Belafspraken die de kandidaat met de bot maakt komen vanzelf in de amber regel.
-
-## De reactivatie-knop — voorzichtig
-
-Selecteer sollicitanten (vinkjes) en onderin verschijnt **"WhatsApp: nieuwe
-vacature…"**. Dat is een écht WhatsApp-bericht — alleen gericht gebruiken, tekst
-zonder klantnaam, en eerst het aantal in de bevestiging checken. Alleen mensen die
-zelf ooit via WhatsApp reageerden krijgen het; de rest wordt overgeslagen en dat
-meldt het scherm.
 
 ## Waar is de rest?
 
 - **Klaar om voor te stellen** = voorraad, geen belwerk. De teller in de doen-regel
   opent hem.
-- **Talentpool** = bewaarde kandidaten zonder actief traject (ook bemiddelbare
-  uitvallers). Terugvinden via **Sourcing** — eigen pool, met sterren, afstand en
-  de profielscore-meter.
+- **Talentpool** = bewaarde kandidaten zonder actief traject. Terugvinden via
+  **Sourcing** — eigen pool, met sterren, afstand en de profielscore-meter.
 - **ZZP'ers met een lopende klus** staan nergens tussen; loopt de klus af, dan
   komen ze vanzelf terug.
 
@@ -105,11 +109,11 @@ meldt het scherm.
 
 **Instellingen → Botformulieren → vacature** is dé routeringstabel (voor het hele
 team zichtbaar; invullen is Bryans taak). Nieuwe campagne? **Éérst hier het form-ID
-koppelen, dán pas de advertentie aan** — een formulier zonder routering laat leads
-stranden. Koppelen neemt bestaande leads automatisch mee. De botgegevens per
-formulier zijn een stappenformulier (werkplek · salaris & AM · kwalificatievragen
-als vinkjes + eigen extra eisen); onthoud één regel: **de vacaturekaart is wat de
-bot zegt.** "Klaar voor de bot" groen = de bot heeft alles.
+koppelen, dán pas de advertentie aan** — en check na de eerste leads of de bot ook
+écht gesprekken start (botstatus + fase op de rij); "aan" in het CRM betekent dat
+Smits kant het formulier nog moet oppakken. De botgegevens per formulier zijn een
+stappenformulier; onthoud één regel: **de vacaturekaart is wat de bot zegt.**
+"Klaar voor de bot" groen = de bot heeft alles.
 
 ---
 
