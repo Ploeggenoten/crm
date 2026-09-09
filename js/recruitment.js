@@ -729,9 +729,17 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
    onvindbaar tussen de rest. */
 const belRang   = l => {
   if(!(CRM.leadIn(l.status, CRM.LEAD_OPEN) && l.opvolgen_op)) return 2;
-  return String(l.opvolgen_op).slice(0,10) <= CRM.todayISO() ? 0 : 1;
+  if(String(l.opvolgen_op).slice(0,10) <= CRM.todayISO()) return 0;
+  /* v2 (Tjeerd, 9 sep 2026: "komen recent gebelde leads dan onderaan?"):
+     een toekomstige afspraak zónder tijdstip is de parkeerstand van de
+     belcadans — gebeld, volgende poging gepland, vandaag klaar. Die zakt
+     onder de leads zonder afspraak (rang 3), anders hangt de hele gebelde
+     stapel boven het onaangeraakte werk. Mét tijdstip blijft het een
+     belofte aan de kandidaat: chronologisch bovenin (rang 1). */
+  if(CRM.RECRUIT_V2 && !l.terugbel_om) return 3;
+  return 1;
 };
-const belMoment = l => belRang(l) <= 1 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
+const belMoment = l => belRang(l) !== 2 ? String(l.terugbel_om || l.opvolgen_op || '') : '';
 /* De chip die dat zichtbaar maakt: alleen als er nú iets te bellen valt —
    geen afspraak, geen chip, en de lijst blijft kaal. */
 function belChipHtml(l){
@@ -744,11 +752,13 @@ function belChipHtml(l){
   const vandaag = String(l.opvolgen_op).slice(0,10) === CRM.todayISO();
   /* Toekomstige afspraak: neutrale chip met dag+tijd — geen amber, want er
      is nog niets aan de hand; hij moet alleen vindbaar en chronologisch zijn. */
-  if(rang === 1){
-    const lbl = 'belafspraak ' + (t && !isNaN(t)
+  if(rang === 1 || rang === 3){
+    const lbl = (rang === 3 ? 'volgende poging ' : 'belafspraak ') + (t && !isNaN(t)
       ? t.toLocaleString('nl-NL', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})
       : (CRM.fmtDate(l.opvolgen_op) || ''));
-    return `<span class="chip num" title="Met de kandidaat afgesproken belmoment (toekomst)">${h(lbl)}</span>`;
+    return `<span class="chip num" title="${rang === 3
+      ? 'Volgende belpoging, gepland door de belcadans — komt die dag vanzelf in de belronde'
+      : 'Met de kandidaat afgesproken belmoment (toekomst)'}">${h(lbl)}</span>`;
   }
   const lbl = t && vandaag && !isNaN(t) ? 'bel om ' + t.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
             : vandaag ? 'bel vandaag'
