@@ -193,6 +193,9 @@ const kandAlsRij = c => ({
     const d = new Date(c.datum + 'T' + c.tijd + ':00');
     return isNaN(d) ? '' : d.toISOString();
   })(),
+  /* Alleen doorgeven als de kolom echt bestaat — agendaMee gebruikt het
+     ontbreken als teken dat de migratie nog niet is gedraaid. */
+  ...('outlook_event_id' in c ? {outlook_event_id: c.outlook_event_id || ''} : {}),
   _kand: true
 });
 const leads = () => {
@@ -514,7 +517,12 @@ async function bewaarLead(lead, patch){
       const c = CRM.kandidaat(lead.id);
       if(c){ await bewaarFase(c, p.fase, (() => { const r = Object.assign({}, p); delete r.fase; return r; })()); return true; }
     }
-    return await bewaarKand(lead.id, p);
+    const okK = await bewaarKand(lead.id, p);
+    /* Ook de kandidaat-brug krijgt zijn agenda-blok (Tjeerd, 9 sep 2026) —
+       zelfde eenrichtingsverkeer, alleen schrijft het event-id dan naar
+       candidates i.p.v. crm_leads. */
+    if(okK && !CRM.demo) agendaMee(lead, patch);
+    return okK;
   }
   Object.assign(lead, patch);
   if(!CRM.demo){
@@ -537,9 +545,17 @@ function agendaMee(lead, patch){
   if(!patch || !('terugbel_om' in patch)) return;
   if(!('outlook_event_id' in lead)) return;
   if(!CRM.outlook?.verbonden?.()) return;
+  /* Kandidaat-brugrijen schrijven het event-id naar hun eigen tabel, én in
+     de cands-cache — de brugrij zelf wordt bij elke hertekening opnieuw
+     opgebouwd en zou het id anders meteen weer kwijt zijn. */
+  const tabel = lead._kand ? 'candidates' : 'crm_leads';
   const zetId = async id => {
     lead.outlook_event_id = id || '';
-    await CRM.sb.from('crm_leads').update({outlook_event_id: id || ''}).eq('id', lead.id);
+    if(lead._kand){
+      const r = (CRM.state.cands||[]).find(x => String(x.id) === String(lead.id));
+      if(r) r.outlook_event_id = id || '';
+    }
+    await CRM.sb.from(tabel).update({outlook_event_id: id || ''}).eq('id', lead.id);
   };
   const maak = async () => {
     const v = vacVan(lead);
