@@ -1011,7 +1011,13 @@ function kaart(mount, acties, naam){
       CRM.render();
     };
     sel.onchange  = () => sluit(true);
-    sel.onblur    = () => sluit(false);
+    /* Chrome's nieuwe zoekbare select-picker vuurt blur vóór change — met
+       blur=annuleren ging elke keuze verloren en bleef de fase op Lead
+       hangen (Tjeerd, 10 sep 2026). Blur bewaart daarom nu ook, met een
+       korte vertraging zodat een change die er nog aankomt altijd eerst
+       gaat; is er niets gewijzigd, dan valt er niets te bewaren. Escape
+       blijft de echte annuleerknop. */
+    sel.onblur    = () => setTimeout(() => sluit(true), 200);
     sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); sluit(false); } };
   }; };
   bindFaseWissel(mount.querySelector('#gg_fase'));
