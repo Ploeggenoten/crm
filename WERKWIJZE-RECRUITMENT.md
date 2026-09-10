@@ -26,14 +26,18 @@ Info opgevraagd, agendakoppeling.)*
 
 ## Geen gehoor — het systeem doet het werk
 
-Niet opgenomen? Toets **Geen gehoor** en klik daarna op **App: geen gehoor**. Meer
-is het niet. Wat er dan gebeurt:
+**De regel: na élke vergeefse belpoging sturen we een appje na.** Daarom hoeft het
+niet uit je hoofd: kies je "Geen gehoor" (in de ronde óf via de status-dropdown),
+dan opent WhatsApp vanzelf met het bericht klaar — jij drukt alleen op verzenden.
+Wat er verder gebeurt:
 
 - De **belpoging telt** ("1× gebeld" op de rij) en een eventuele belafspraak wordt
   afgehandeld — ook uit je agenda.
-- **Het appje** opent WhatsApp met het bericht klaar ("ik kreeg je niet te pakken —
-  wanneer kan ik je het beste bellen?"), **vanaf je eigen nummer**; jij drukt alleen
-  op verzenden. Reageert de kandidaat, dan plant hij zichzelf in.
+- **Het appje** komt **vanaf je eigen nummer**, met dagdeel-groet, de vacaturetitel
+  (nooit de klantnaam) en — alleen als er nog geen cv is — de vraag om alvast een
+  cv te sturen. Engelstalige kandidaat? Sluit het venster en druk op **EN** op de
+  kaart voor dezelfde tekst in het Engels. Reageert de kandidaat, dan plant hij
+  zichzelf in.
 - De **volgende poging staat automatisch gepland**: poging 1 → morgen, poging 2 →
   +3 dagen (weekend wordt overgeslagen). Je ziet de melding "Volgende poging
   gepland: …" en de lead zakt naar onderen — klaar voor vandaag. Op de geplande dag

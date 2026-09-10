@@ -2164,9 +2164,12 @@ function volgendeBeldag(poging){
    drukt alleen op verzenden. Gratis, geen template, geen botsing met het
    WATI-nummer van de bot. Het CRM logt de actie en zet een opvolgdatum,
    zodat de lead uit "zonder vervolg" verdwijnt. */
-function geenGehoorAppje(l, taal){
+/* opts.stil: aangeroepen als automatisme vanuit de ronde/statuswissel —
+   alleen WhatsApp openen en loggen; opvolgdatum en hertekenen doet de
+   belcadans daar al, en een toast erbovenop is dubbel. */
+function geenGehoorAppje(l, taal, opts = {}){
   const url = waLink(l.telefoon);
-  if(!url) return CRM.toast('Geen telefoonnummer — appen kan niet', 'err');
+  if(!url) return opts.stil ? null : CRM.toast('Geen telefoonnummer — appen kan niet', 'err');
   const en = taal === 'en';
   const vn = String(leadNaam(l) || '').trim().split(/\s+/)[0] || '';
   /* Extern heet Rajesh Bryan — zelfde afspraak als in de botfeed
@@ -2189,6 +2192,7 @@ function geenGehoorAppje(l, taal){
   window.open(url + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
   (async () => {
     await CRM.logActiviteit('lead', l.id, 'app', `Geen-gehoor-appje klaargezet (eigen WhatsApp${en ? ', Engels' : ''})`);
+    if(opts.stil) return;
     if(!l.opvolgen_op) await bewaarLead(l, {opvolgen_op: volgendeBeldag(2), laatst_actie:new Date().toISOString()});
     else await bewaarLead(l, {laatst_actie:new Date().toISOString()});
     CRM.toast('Appje klaargezet in WhatsApp — opvolgdatum staat', 'ok');
@@ -2369,6 +2373,14 @@ function wegwerkModus(status){
       }, hervat));
     }
     const oud = {status:l.status, opvolgen_op:l.opvolgen_op || null, terugbel_om:l.terugbel_om || null};
+    /* Huisregel (Tjeerd, 10 sep 2026): na élke vergeefse belpoging gaat er
+       een appje achteraan. WhatsApp opent hier vanzelf met het bericht
+       klaar (vóór de awaits — anders blokkeert de browser de popup); de AM
+       hoeft alleen op verzenden te drukken. Engels nodig? Sluiten en de
+       EN-knop op de kaart gebruiken. */
+    if(CRM.RECRUIT_V2 && l.telefoon
+       && (keuze.blijf === 'bel' || CRM.leadIs(keuze.s || '', 'Geen gehoor')))
+      geenGehoorAppje(l, undefined, {stil:true});
     const ok = keuze.blijf ? await noteerPoging(l, keuze.blijf, notitie)
                            : await pasStatusToe(l, keuze.s, notitie);
     if(ok){ gedaan++; log.push({type:keuze.blijf ? 'blijf' : 'status', l, oud}); }
@@ -2638,6 +2650,11 @@ async function pasStatusToe(lead, nieuw, notitie){
 }
 
 async function zetStatus(lead, nieuw){
+  /* Huisregel: na elke vergeefse belpoging gaat het appje eruit — ook als
+     de status via de dropdown wordt gezet, niet alleen in de ronde. Vóór
+     de awaits, anders blokkeert de browser de popup. */
+  if(CRM.RECRUIT_V2 && lead && lead.telefoon && CRM.leadIs(nieuw, 'Geen gehoor'))
+    geenGehoorAppje(lead, undefined, {stil:true});
   /* Nogmaals 'Geen gehoor' kiezen bij iemand die er al op staat was een
      stille no-op — terwijl de AM net wél gebeld heeft. Dat is nu een
      genoteerde poging (audit 4 sep 2026): teller omhoog, regel in de
