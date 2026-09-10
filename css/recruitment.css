@@ -232,6 +232,35 @@ kbd{font-family:var(--body);font-size:10.5px;font-weight:700;color:var(--txt-2);
    in de pijplijn zet — anders denk je dat je hem hebt afgehandeld. */
 .rc-wwkeuze button.blijf{border-style:dashed;color:var(--txt-2)}
 
+/* ─── Breed werkblad voor de rondes (10 sep 2026) ─────────────────
+   Tjeerd: "kleine kaart, moet duidelijker en praktischer". Twee kolommen:
+   links alles wat je wilt wéten tijdens het bellen (contact, vacature,
+   botantwoorden open), rechts alles wat je dóét (notitie, belafspraak,
+   uitkomst-knoppen groot onder elkaar). Zelfde ids en toetsen — alleen
+   de vorm is anders. */
+.modal.ww-modal{width:min(1080px,96vw)}
+.ww-b{display:grid;grid-template-columns:1.08fr 1fr;gap:0 28px;align-items:start}
+.ww-links{min-width:0}
+.ww-rechts{min-width:0;border-left:1px solid var(--line);padding-left:28px;
+  display:flex;flex-direction:column;align-self:stretch}
+.ww-rechts .rc-wwkeuze{margin-top:8px}
+.ww-uitkop{margin-top:auto;padding-top:16px;font-size:11px;font-weight:700;
+  letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.ww-modal .rc-wwkeuze{flex-direction:column;flex-wrap:nowrap;gap:8px}
+.ww-modal .rc-wwkeuze button{width:100%;justify-content:flex-start;gap:12px;
+  border-radius:12px;padding:12px 14px;font-size:14px}
+.ww-modal .rc-wwkeuze button kbd{font-size:12px;padding:2px 8px;flex-shrink:0}
+/* Toets 1 = de gewenste uitkomst — die mag net iets meer aanwezig zijn. */
+.ww-modal .rc-wwkeuze button:first-child{border-color:var(--olive-l);background:var(--card-2)}
+.ww-modal .rc-wwqa{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.ww-qascroll{max-height:34vh;overflow-y:auto}
+@media (max-width:900px){
+  .ww-b{grid-template-columns:1fr}
+  .ww-rechts{border-left:none;padding-left:0;margin-top:10px}
+  .ww-uitkop{margin-top:16px}
+  .ww-modal .rc-wwqa[open] .ww-qascroll{max-height:200px}
+}
+
 /* ─── Vacature koppelen: voorgestelde matches ────────────────── */
 .rc-sug{display:flex;flex-direction:column;gap:6px}
 .rc-sug button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;

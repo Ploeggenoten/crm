@@ -2403,7 +2403,8 @@ function wegwerkModus(status){
         </div>
         ${CRM.ui.bar(pct)}
       </div>
-      <div class="modal-b">
+      <div class="modal-b ww-b">
+        <div class="ww-links">
         <div class="rc-wwkop">
           <div>
             <div class="rc-wwnaam">${h(leadNaam(l))}</div>
@@ -2450,10 +2451,12 @@ function wegwerkModus(status){
               ken.kands.map(c => h(eerderTekst(c))).join(' · ')}. Ga na of dit dezelfde persoon is voordat je opnieuw begint.` : ''}</span></div>` : ''}
         </div>
         ${/* Wat de bot allemaal al vroeg (vervoer, ploegen, beschikbaarheid) is
-             precies wat je aan de telefoon wilt kunnen naslaan — maar de ronde
-             moet licht blijven, dus ingeklapt tot je het nodig hebt. */
-          qa ? `<details class="rc-wwqa"><summary>Antwoorden van de WhatsApp-agent</summary>${qa}</details>` : ''}
-        <div class="f-row" style="margin-top:14px"><label for="ww_note">Notitie (optioneel)</label>
+             precies wat je aan de telefoon wilt kunnen naslaan — in het brede
+             werkblad standaard open (Tjeerd, 10 sep 2026), met eigen scroll. */
+          qa ? `<details class="rc-wwqa" open><summary>Antwoorden van de WhatsApp-agent</summary><div class="ww-qascroll">${qa}</div></details>` : ''}
+        </div>
+        <div class="ww-rechts">
+        <div class="f-row"><label for="ww_note">Notitie (optioneel)</label>
           <input type="text" id="ww_note" placeholder="Bijv. belt maandag terug">
           <span class="hint">Terwijl je hier typt werken de cijfertoetsen niet — Enter zet ze weer aan.</span></div>
         ${/* Belafspraak-snelzetter (motorkap-punt 10): "belt maandag terug"
@@ -2465,8 +2468,10 @@ function wegwerkModus(status){
             <input type="time" id="ww_belt" value="10:00" style="width:auto">
             <button class="btn ghost sm" id="ww_belzet">Zet belafspraak &amp; volgende</button>
           </div></div>
+        <div class="ww-uitkop">Uitkomst — cijfertoets of klik</div>
         <div class="rc-wwkeuze">${keuzesNu().map(k =>
           `<button data-t="${h(k.t)}"${k.blijf?' class="blijf" title="De status blijft staan; de poging komt wel in de tijdlijn"':''}><kbd>${k.t}</kbd>${h(k.lbl)}</button>`).join('')}</div>
+        </div>
       </div>
       <div class="modal-f">
         <button class="btn ghost" id="ww_terug" ${log.length ? '' : 'disabled'} title="Vorige kaart terughalen en de actie terugdraaien">‹ Terug <kbd>u</kbd></button>
@@ -2516,6 +2521,10 @@ function wegwerkModus(status){
         tekenKop(); tekenTabs(); tekenWerk(); CRM.navBadges();
       },
       onOpen(m){
+        /* Breed werkblad (Tjeerd, 10 sep 2026: "kleine kaart, moet
+           duidelijker en praktischer") — links weten, rechts doen. */
+        m.classList.add('ww-modal');
+        CRM.modal._onClose = () => m.classList.remove('ww-modal');
         teken();
         /* De modal geeft de focus standaard aan het eerste veld; hier zou dat
            het notitieveld of de bel-link zijn en dan slikken die de
