@@ -1956,6 +1956,13 @@ function leadKaartHtml(l){
   const st = stilstand(l);
   const wa = waLink(l.telefoon);
   const chips = [];
+  /* Wanneer ís de intake? (Tjeerd, 10 sep 2026) — de kolom toonde wel
+     "zonder datum" maar niet de datum zelf. Mét tijd als die er is. */
+  if(CRM.leadIs(l.status, 'Intake ingepland') && l.opvolgen_op){
+    const t = l.terugbel_om ? new Date(l.terugbel_om) : null;
+    chips.push(`<span class="chip num" title="Geplande intake">intake ${h(CRM.fmtDateShort ? CRM.fmtDateShort(l.opvolgen_op) : CRM.fmtDate(l.opvolgen_op))}${
+      t && !isNaN(t) ? ' · ' + t.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : ''}</span>`);
+  }
   if(nieuw && dg != null && dg >= NIEUW_LETOP)
     chips.push(`<span class="chip ${ouderdomKlas(dg)} num" title="Staat sinds ${h(CRM.fmtDate(l.binnen_op)||'?')} op Nieuw">${dg}d op Nieuw</span>`);
   else if(st) chips.push(`<span class="chip ${st.klas} num" title="${h(st.waarom)}">${h(st.label)}</span>`);

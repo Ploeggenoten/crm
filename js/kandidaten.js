@@ -1163,7 +1163,7 @@ function kaart(mount, acties, id){
     <button class="btn ghost sm" id="c_notitie">Notitie</button>
     <button class="btn ghost sm" id="c_taak">Taak</button>
     <button class="btn ghost sm" id="c_profiel">Genereer CV</button>
-    <button class="btn sm" id="c_video">Videocall inplannen</button>`;
+    <button class="btn sm" id="c_video">Intake inplannen</button>`;
   acties.querySelector('#c_terug').onclick   = () => CRM.ga(vanBord ? 'pijplijn' : 'kandidaten');
   /* "Genereer CV" (naam: Tjeerd, 4 aug 2026) — het kandidaatprofiel in
      huisstijl uit js/cv.js, het vel dat naar de klant gaat.
@@ -3726,16 +3726,25 @@ async function nieuweTaak(c, tekst){
 function videocallModal(c){
   if(!(CRM.outlook && CRM.outlook.maakAfspraak)) return CRM.toast('Agenda-koppeling niet geladen','err');
   const naam = String(c.naam||'').trim();
-  const titel = String(c.functie||'').trim()
-    ? `Videocall — ${naam || 'kandidaat'} · ${String(c.functie).trim()}`
-    : `Videocall intake — ${naam || 'kandidaat'}`;
+  /* Niet elke intake is een videocall (Tjeerd, 10 sep 2026: "Corné komt
+     langs op kantoor") — het onderwerp volgt de soortkeuze, tot de AM er
+     zelf in typt. */
+  const fx = String(c.functie||'').trim();
+  const titelVoor = soort => (soort === 'kantoor'
+    ? `Intake op kantoor — ${naam || 'kandidaat'}`
+    : `Videocall — ${naam || 'kandidaat'}`) + (fx ? ` · ${fx}` : '');
   const gekoppeld = agendaGekoppeld();
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Videocall inplannen</div>
-      <p class="sub" style="margin:6px 0 0">${h(naam || 'Deze kandidaat')} — de call komt in jouw agenda en de
-        kandidaat krijgt de uitnodiging met de Teams-link.</p></div>
+    <div class="modal-h"><div class="h2">Intake inplannen</div>
+      <p class="sub" style="margin:6px 0 0">${h(naam || 'Deze kandidaat')} — de afspraak komt in jouw agenda en de
+        kandidaat krijgt de uitnodiging (bij een videocall mét Teams-link).</p></div>
     <div class="modal-b">
-      <div class="f-row"><label>Onderwerp</label><input type="text" id="vc_titel" value="${h(titel)}"></div>
+      <div class="f-row"><label>Soort afspraak</label>
+        <select id="vc_soort">
+          <option value="teams">Videocall (Teams)</option>
+          <option value="kantoor">Op kantoor</option>
+        </select></div>
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="vc_titel" value="${h(titelVoor('teams'))}"></div>
       <div class="f-grid">
         <div class="f-row"><label>Datum</label>
           <input type="date" id="vc_datum" value="${h(String(c.datum||'').slice(0,10)||CRM.todayISO())}"></div>
@@ -3746,7 +3755,6 @@ function videocallModal(c){
           <option value="30" selected>30 minuten</option>
           <option value="45">45 minuten</option></select></div>
       </div>
-      <label class="check kd-vcteams"><input type="checkbox" id="vc_teams" checked> Teams-videocall aanmaken</label>
       <div class="f-row" style="margin-top:12px"><label>Kandidaat ontvangt de uitnodiging op</label>
         <input type="email" id="vc_email" placeholder="naam@voorbeeld.nl" value="${h(c.email||'')}"></div>
       ${c.email ? '' : `<div class="note warn kd-vcgeenmail">
@@ -3760,13 +3768,22 @@ function videocallModal(c){
         Instellingen, dan zet het CRM de videocall er direct in.</p>`}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-      <button class="btn" id="vc_ok">Videocall inplannen</button></div>`, {onOpen(m){
+      <button class="btn" id="vc_ok">Inplannen</button></div>`, {onOpen(m){
     CRM.dictee?.hang(m.querySelector('#vc_body'));
     const naarMail = m.querySelector('#vc_naarmail');
     if(naarMail) naarMail.onclick = () => { CRM.modal.close(); springNaarVeld('email', c); };
+    /* Soortwissel schrijft het onderwerp mee zolang de AM er niet zelf in
+       heeft getypt. */
+    const titelVeld = m.querySelector('#vc_titel');
+    let titelEigen = false;
+    titelVeld.addEventListener('input', () => { titelEigen = true; });
+    m.querySelector('#vc_soort').onchange = e => {
+      if(!titelEigen) titelVeld.value = titelVoor(e.target.value);
+    };
 
     m.querySelector('#vc_ok').onclick = async () => {
-      const teams = m.querySelector('#vc_teams').checked;
+      const soort = m.querySelector('#vc_soort').value;
+      const teams = soort === 'teams';
       const email = m.querySelector('#vc_email').value.trim();
       const d = {
         titel:   m.querySelector('#vc_titel').value.trim(),
@@ -3774,7 +3791,7 @@ function videocallModal(c){
         tijd:    m.querySelector('#vc_tijd').value || '10:00',
         duurMin: Number(m.querySelector('#vc_duur').value) || 30,
         teams,
-        locatie: teams ? 'Microsoft Teams' : '',
+        locatie: teams ? 'Microsoft Teams' : 'Kantoor Ploeggenoten',
         body:    m.querySelector('#vc_body').value.trim(),
         deelnemers: [email].filter(Boolean)
       };
@@ -3791,10 +3808,13 @@ function videocallModal(c){
         const bij = Object.assign({}, c, {datum:d.datum, tijd:d.tijd});
         if(r.online) bij.notities = [{op:new Date().toISOString(), door:CRM.me(),
           tekst:'Teams-link: ' + r.online}].concat(c.notities||[]);
-        if(r.meetingId) bij.intake = Object.assign({}, c.intake||{}, {teamsCallId:r.meetingId});
+        /* De soort gaat mee in de intake, zodat kaart en bord straks
+           "op kantoor" kunnen tonen i.p.v. videocall aan te nemen. */
+        bij.intake = Object.assign({}, c.intake||{}, {soort},
+          r.meetingId ? {teamsCallId:r.meetingId} : {});
         await bewaarKandidaat(bij);
         await CRM.logActiviteit('kandidaat', c.id, 'gesprek',
-          `Videocall ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
+          `${soort === 'kantoor' ? 'Kantoorintake' : 'Videocall'} ingepland: ${d.titel} op ${CRM.fmtDate(d.datum)} ${d.tijd}`);
         CRM.toast(r.via === 'graph'
           ? (r.online ? 'Videocall staat in je agenda — Teams-link toegevoegd'
                       : (d.deelnemers.length ? 'Afspraak staat in je agenda — uitnodiging verstuurd'
