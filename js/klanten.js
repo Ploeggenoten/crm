@@ -956,6 +956,16 @@ function kaart(mount, acties, naam){
     if(nummer) location.href = 'tel:' + String(nummer).replace(/[^\d+]/g,'');
     logVia(k,'bel','Wat is er besproken?');
   };
+  /* WhatsApp: zelfde nummer-terugval als Bellen (klant → hoofdcontact),
+     zelfde ritueel — appen én meteen vastleggen (Tjeerd, 10 sep 2026). */
+  mount.querySelector('#k_app').onclick     = () => {
+    const hoofd = (CRM.state.contacten||[]).filter(x => x.klant === k.naam && x.telefoon)
+      .sort((a,b) => (b.hoofd?1:0) - (a.hoofd?1:0))[0];
+    const wa = CRM.waHref(k.telefoon || (hoofd && hoofd.telefoon) || '');
+    if(wa) window.open(wa, '_blank', 'noopener');
+    else CRM.toast('Geen telefoonnummer bij deze klant of het hoofdcontact', 'err');
+    if(wa) logVia(k,'whatsapp','Wat heb je geappt?');
+  };
   /* Mailen: met Outlook-koppeling schrijf je de mail hier (en wordt hij
      vanzelf gelogd); zonder koppeling leg je vast wat je buiten het CRM
      hebt gemaild. Handmatig loggen blijft in de tab Activiteiten. */
@@ -1054,6 +1064,7 @@ function kopHtml(k, c){
   ].filter(Boolean).join('<span class="kl-sep"> · </span>');
   const contact = [
     k.telefoon ? `<a href="tel:${h(String(k.telefoon).replace(/\s/g,''))}" class="num">${h(k.telefoon)}</a>` : '',
+    k.telefoon && CRM.waHref(k.telefoon) ? `<a href="${h(CRM.waHref(k.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">WhatsApp</a>` : '',
     k.email    ? `<a href="mailto:${h(k.email)}">${h(k.email)}</a>` : '',
     veiligeUrl(k.website) ? `<a href="${h(veiligeUrl(k.website))}" target="_blank" rel="noopener">Website</a>` : ''
   ].filter(Boolean).join('<span class="kl-sep">·</span>');
@@ -1072,6 +1083,7 @@ function kopHtml(k, c){
       </div>
       <div class="row tight kl-snel">
         <button class="btn ghost sm" id="k_bel">Bellen</button>
+        <button class="btn ghost sm" id="k_app" title="Opent WhatsApp (Web) bij de klant of het hoofdcontact, en daarna het logvenster">WhatsApp</button>
         <button class="btn ghost sm" id="k_mail">Mailen</button>
         <button class="btn ghost sm" id="k_plan">Inplannen</button>
         <button class="btn ghost sm" id="k_notitie">Notitie</button>
@@ -2660,7 +2672,8 @@ function contactLijst(el, k){
         <div class="meta">${h(x.functie||'—')}</div>
       </div>
       <div class="kl-ct-links kl-contact">
-        ${x.telefoon?`<a class="num" href="tel:${h(String(x.telefoon).replace(/\s/g,''))}">${h(x.telefoon)}</a>`:''}
+        ${x.telefoon?`<a class="num" href="tel:${h(String(x.telefoon).replace(/\s/g,''))}">${h(x.telefoon)}</a>
+          <span class="kl-sep">·</span><a href="${h(CRM.waHref(x.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>`:''}
         ${x.telefoon&&x.email?'<span class="kl-sep">·</span>':''}
         ${x.email?`<a href="mailto:${h(x.email)}">${h(x.email)}</a>`:''}
         ${!x.telefoon&&!x.email?'<span class="meta">geen gegevens</span>':''}
@@ -2699,6 +2712,7 @@ function contactDrawer(k, ctId){
   const jarigNu = !!jarigOp && mmdd(ct.geboortedatum) === CRM.todayISO().slice(5);
   const links = [
     ct.telefoon ? `<a class="num" href="tel:${h(String(ct.telefoon).replace(/\s/g,''))}">${h(ct.telefoon)}</a>` : '',
+    ct.telefoon && CRM.waHref(ct.telefoon) ? `<a href="${h(CRM.waHref(ct.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">WhatsApp</a>` : '',
     ct.email    ? `<a href="mailto:${h(ct.email)}">${h(ct.email)}</a>` : '',
     veiligeUrl(ct.linkedin) ? `<a href="${h(veiligeUrl(ct.linkedin))}" target="_blank" rel="noopener">LinkedIn</a>` : ''
   ].filter(Boolean).join('<span class="kl-sep">·</span>');

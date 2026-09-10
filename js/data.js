@@ -337,6 +337,17 @@ CRM.leadIn = (s, lijst) => { const x = CRM.leadNorm(s); return (lijst||[]).some(
 CRM.leadKleur   = s => (CRM.LEAD_STATUS.find(x=>x.k===CRM.leadNorm(s))||{}).c || '#8a927c';
 CRM.leadIco     = s => (CRM.LEAD_STATUS.find(x=>x.k===CRM.leadNorm(s))||{}).ico || '•';
 
+/* WhatsApp-link voor overal waar een telefoonnummer staat (Tjeerd, 10 sep
+   2026: "kan de WhatsApp-knop ook vanuit sales- en relatiekaarten?").
+   Zelfde nummerlogica als de losse waLink-helpers in de modules. */
+CRM.waHref = (t, tekst) => {
+  let n = String(t || '').replace(/[^0-9]/g, '');
+  if(n.startsWith('06')) n = '31' + n.slice(1);
+  if(n.startsWith('00')) n = n.slice(2);
+  if(!n) return '';
+  return 'https://wa.me/' + n + (tekst ? '?text=' + encodeURIComponent(tekst) : '');
+};
+
 /* ─── Botstatus: het eigen spoor van de WhatsApp-bot ─────────────
    Tjeerd, 27 aug 2026: de bot krijgt een eigen statusspoor
    (crm_leads.bot_status), los van de AM-status. Regels:

@@ -914,7 +914,9 @@ function tabInhoud(naam){
           cts.length ? cts.map(c=>`<div class="s-ct">
             <div style="flex:1;min-width:0"><b>${h(c.naam)}</b>${c.hoofd?' <span class="chip green">hoofdcontact</span>':''}
               <div class="meta">${h(c.functie||'')}</div></div>
-            <div class="meta num" style="text-align:right">${h(c.telefoon||'')}<br>${h(c.email||'')}</div></div>`).join('')
+            <div class="meta num" style="text-align:right">${c.telefoon
+              ? `<a href="tel:${h(String(c.telefoon).replace(/\s/g,''))}">${h(c.telefoon)}</a> · <a href="${h(CRM.waHref(c.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>`
+              : ''}<br>${h(c.email||'')}</div></div>`).join('')
           : CRM.ui.leeg('Nog geen contactpersoon','Contactpersonen beheer je op de volledige klantkaart.',
               '<button class="btn ghost" data-volledig2>Klantkaart openen →</button>')}</div></div>
 

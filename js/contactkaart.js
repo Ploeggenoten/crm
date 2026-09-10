@@ -396,6 +396,7 @@ function tekenLijst(mount){
           /* Een link, geen platte tekst: tel: opent FaceTime en die zet het
              gesprek door naar de iPhone — zelfde telHref als de rail. */
           c.telefoon ? `<a class="num" href="${h(telHref(c.telefoon))}">${h(c.telefoon)}</a>` : '',
+          c.telefoon && CRM.waHref(c.telefoon) ? `<a href="${h(CRM.waHref(c.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>` : '',
           c.email ? `<span class="trunc">${h(c.email)}</span>` : ''
         ].filter(Boolean).join('') || '<span class="meta">geen gegevens</span>'}</td>
         <td>${stilteHtml(c)}</td>
