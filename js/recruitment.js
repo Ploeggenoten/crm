@@ -2164,15 +2164,31 @@ function volgendeBeldag(poging){
    drukt alleen op verzenden. Gratis, geen template, geen botsing met het
    WATI-nummer van de bot. Het CRM logt de actie en zet een opvolgdatum,
    zodat de lead uit "zonder vervolg" verdwijnt. */
-function geenGehoorAppje(l){
+function geenGehoorAppje(l, taal){
   const url = waLink(l.telefoon);
   if(!url) return CRM.toast('Geen telefoonnummer — appen kan niet', 'err');
+  const en = taal === 'en';
   const vn = String(leadNaam(l) || '').trim().split(/\s+/)[0] || '';
-  const am = (CRM.profile && CRM.profile.naam) || CRM.me() || '';
-  const txt = `Hoi${vn ? ' ' + vn : ''}, ik probeerde je net te bellen over je sollicitatie, maar kreeg je niet te pakken. Wanneer kan ik je het beste even bellen? Groet, ${am} van Ploeggenoten`;
+  /* Extern heet Rajesh Bryan — zelfde afspraak als in de botfeed
+     (lead-inbox-setup.sql) en dus ook hier (Tjeerd, 10 sep 2026). */
+  let am = (CRM.profile && CRM.profile.naam) || CRM.me() || '';
+  if(CRM.naamNorm(am) === CRM.naamNorm('Rajesh')) am = 'Bryan';
+  /* Dagdeel-groet + de vacature erbij (functietitel, nóóit de klantnaam —
+     zelfde regel als de bot: anders lopen kandidaten om ons heen). */
+  const u = new Date().getHours();
+  const groet = en ? (u < 12 ? 'Good morning' : u < 18 ? 'Good afternoon' : 'Good evening')
+                   : (u < 12 ? 'Goedemorgen'  : u < 18 ? 'Goedemiddag'    : 'Goedenavond');
+  const v = vacVan(l);
+  const vac = (v && v.functie) || losFunctie(l) || '';
+  /* Zit er al een cv bij (geldige link van de bot, of ingelezen), dan is
+     de cv-vraag overbodig — die regel valt dan weg. */
+  const heeftCv = !!l.cv || /^https?:/i.test(String(l.cv_url || '').trim());
+  const txt = en
+    ? `${groet}${vn ? ' ' + vn : ''}! You applied for our ${vac ? `"${vac}" ` : ''}vacancy. I'm ${am} from Ploeggenoten and I'm handling this position — I'd like to get in touch with you. I just tried to call you, but couldn't reach you. When would be a good time to call?${heeftCv ? '' : ' And could you already send me your CV?'}`
+    : `${groet}${vn ? ' ' + vn : ''}! Je hebt gesolliciteerd op ${vac ? `de vacature "${vac}"` : 'een van onze vacatures'}. Ik ben ${am} van Ploeggenoten en ik ga over deze vacature — ik kom graag met je in gesprek. Ik probeerde je net te bellen, maar kreeg je helaas niet te pakken. Wanneer kan ik je het beste even bellen?${heeftCv ? '' : ' En zou je alvast je cv kunnen sturen?'}`;
   window.open(url + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
   (async () => {
-    await CRM.logActiviteit('lead', l.id, 'app', 'Geen-gehoor-appje gestuurd (eigen WhatsApp): "wanneer kan ik je bellen?"');
+    await CRM.logActiviteit('lead', l.id, 'app', `Geen-gehoor-appje klaargezet (eigen WhatsApp${en ? ', Engels' : ''})`);
     if(!l.opvolgen_op) await bewaarLead(l, {opvolgen_op: volgendeBeldag(2), laatst_actie:new Date().toISOString()});
     else await bewaarLead(l, {laatst_actie:new Date().toISOString()});
     CRM.toast('Appje klaargezet in WhatsApp — opvolgdatum staat', 'ok');
@@ -2428,7 +2444,8 @@ function wegwerkModus(status){
           ${l.telefoon
             ? `<a class="btn" id="ww_bel" href="tel:${h(String(l.telefoon).replace(/\s/g,''))}">Bel ${h(l.telefoon)}</a>
                ${wa ? `<a class="btn ghost" href="${h(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
-               ${CRM.RECRUIT_V2 && wa ? `<button class="btn ghost" id="ww_app" title="Opent WhatsApp met een klaargezet 'ik kreeg je niet te pakken'-bericht vanaf jouw eigen nummer, en zet meteen een opvolgdatum">App: geen gehoor</button>` : ''}`
+               ${CRM.RECRUIT_V2 && wa ? `<button class="btn ghost" id="ww_app" title="Opent WhatsApp met een klaargezet 'ik kreeg je niet te pakken'-bericht vanaf jouw eigen nummer, en zet meteen een opvolgdatum">App: geen gehoor</button>
+               <button class="btn ghost sm" id="ww_app_en" title="Zelfde bericht in het Engels">EN</button>` : ''}`
             : `<span class="note warn" style="margin:0">Geen telefoonnummer — appen of mailen kan wel, bellen niet. Vul het nummer aan op de kaart.</span>`}
           ${l.email ? `<a class="btn ghost" href="mailto:${h(l.email)}">E-mail</a>` : ''}
         </div>
@@ -2501,6 +2518,8 @@ function wegwerkModus(status){
     };
     const ap = box.querySelector('#ww_app');
     if(ap) ap.onclick = () => geenGehoorAppje(l);
+    const apEn = box.querySelector('#ww_app_en');
+    if(apEn) apEn.onclick = () => geenGehoorAppje(l, 'en');
     const kb = box.querySelector('#ww_koppel');
     /* Koppelen tussendoor: daarna komt dezelfde sollicitant terug (de teller
        loopt niet door), nu mét vacature — of ongewijzigd, als er is geannuleerd. */
@@ -2999,6 +3018,7 @@ function openLead(id){
             <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
             <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
             ${CRM.RECRUIT_V2 ? `<button class="btn ghost sm" id="rc_app" title="Opent WhatsApp met een klaargezet bericht vanaf jouw eigen nummer">App: geen gehoor</button>
+            <button class="btn ghost sm" id="rc_app_en" title="Zelfde bericht in het Engels">EN</button>
             <button class="btn ghost sm" id="rc_taak" title="Plan een taak voor jezelf of een collega — die krijgt er een melding van">+ Taak</button>` : ''}
           </div>
         </div></div>
@@ -3070,6 +3090,8 @@ function openLead(id){
          leggen (audit 4 sep 2026): geen enkele knop schreef soort 'bel'. */
       const appBtn = dr.querySelector('#rc_app');
       if(appBtn) appBtn.onclick = () => geenGehoorAppje(l);
+      const appBtnEn = dr.querySelector('#rc_app_en');
+      if(appBtnEn) appBtnEn.onclick = () => geenGehoorAppje(l, 'en');
       /* v2: taak plannen vanaf de leadkaart (Tjeerd, 9 sep 2026) — hetzelfde
          gedeelde venster als overal: voor jezelf of een collega, met melding
          en koppeling terug naar deze sollicitant. */
