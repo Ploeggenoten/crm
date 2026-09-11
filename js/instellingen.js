@@ -723,8 +723,11 @@ async function vulFormulieren(mount){
   for(const l of (CRM.state.leads||[])){
     const f = String(l.form_id||'').trim();
     if(!f) continue;
-    if(!gezien.has(f)) gezien.set(f, {campagne:String(l.campagne||''), n:0});
-    gezien.get(f).n++;
+    if(!gezien.has(f)) gezien.set(f, {campagne:String(l.campagne||''), n:0, laatste:''});
+    const g = gezien.get(f); g.n++;
+    /* Wanneer kwam de laatste lead binnen? Dat ís in de praktijk "staat de
+       campagne aan" — Meta zelf kunnen we niet zien, de leadstroom wel. */
+    if(String(l.binnen_op||'') > g.laatste) g.laatste = String(l.binnen_op||'');
   }
   for(const [f, info] of gezien)
     if(!rijen.has(f)) rijen.set(f, {form_id:f, vacature_id:'', omschrijving:info.campagne, _nieuw:true});
@@ -862,11 +865,27 @@ async function vulFormulieren(mount){
   };
   const volgorde = [...rijen.values()].sort((a, b) =>
     rang(a) - rang(b) || String(a.omschrijving||'').localeCompare(String(b.omschrijving||'')));
-  el.innerHTML = `<div class="tblwrap"><table class="tbl">
-    <thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th><th>Bot</th></tr></thead>
-    <tbody>${volgorde.map(r => `<tr>
+  /* Leeft deze campagne nog? (Tjeerd, 11 sep 2026: "met kleuren aangeven
+     welke campagnes daadwerkelijk aan en uit staan, en de uitstaande
+     ingeklapt"). Meta-status kennen we niet, de leadstroom wel: groen =
+     leads deze dagen, amber = sluimert, en wie 14+ dagen niets ontving
+     staat ingeklapt onderaan — dat is in de praktijk een uitgezette
+     campagne. */
+  const NU = Date.now();
+  const dagenStil = r => {
+    const l = (gezien.get(String(r.form_id)) || {}).laatste || '';
+    return l ? Math.floor((NU - new Date(l).getTime()) / 864e5) : null;
+  };
+  const actiefChip = r => {
+    const d = dagenStil(r);
+    if(d == null) return `<span class="chip" title="Nog geen leads op dit formulier gezien">nog geen leads</span>`;
+    if(d <= 3)  return `<span class="chip green num" title="Laatste lead ${d===0?'vandaag':d+' dag'+(d===1?'':'en')+' geleden'} — de campagne staat aan">aan · ${d===0?'vandaag':d+'d'}</span>`;
+    if(d <= 14) return `<span class="chip amber num" title="Laatste lead ${d} dagen geleden — de campagne sluimert of is net uitgezet">stil · ${d}d</span>`;
+    return `<span class="chip num" title="Laatste lead ${d} dagen geleden — de campagne staat vermoedelijk uit">uit · ${d}d</span>`;
+  };
+  const rijHtml = r => `<tr>
       <td class="num">${h(String(r.form_id))}</td>
-      <td>${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
+      <td>${actiefChip(r)} ${h(r.omschrijving||'—')}${gezien.has(String(r.form_id))
         ? ` <span class="meta">· <span class="num">${gezien.get(String(r.form_id)).n}</span> lead${gezien.get(String(r.form_id)).n===1?'':'s'}</span>` : ''}${(() => {
           /* Losse leads per formulier zichtbaar maken: kies je hier een
              vacature, dan worden ze automatisch meegekoppeld. */
@@ -882,7 +901,18 @@ async function vulFormulieren(mount){
       </select> ${statusChip(r)}</td>
       <td><label class="check" title="Uit = seniorrol: de lead komt wel binnen en wordt gerouteerd, maar de bot start geen WhatsApp-gesprek">
         <input type="checkbox" data-botform="${h(String(r.form_id))}" ${r.bot_enabled === false ? '' : 'checked'}> aan</label></td>
-    </tr>${botGegevensRij(r)}`).join('')}</tbody></table></div>
+    </tr>${botGegevensRij(r)}`;
+  const kop = `<thead><tr><th>Formulier</th><th>Campagne / omschrijving</th><th>Vacature</th><th>Bot</th></tr></thead>`;
+  const stil   = volgorde.filter(r => { const d = dagenStil(r); return d != null && d > 14; });
+  const levend = volgorde.filter(r => !stil.includes(r));
+  el.innerHTML = `<div class="tblwrap"><table class="tbl">
+    ${kop}
+    <tbody>${levend.map(rijHtml).join('')}</tbody></table></div>
+  ${stil.length ? `<details style="margin-top:8px">
+    <summary class="meta" style="cursor:pointer">Uitgezette campagnes — ${stil.length} formulier${stil.length===1?'':'en'} zonder leads in de laatste 14 dagen</summary>
+    <div class="tblwrap" style="margin-top:6px"><table class="tbl">${kop}
+      <tbody>${stil.map(rijHtml).join('')}</tbody></table></div>
+  </details>` : ''}
   <div class="row tight" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap;gap:8px 12px">
     <label style="display:flex;flex-direction:column;gap:2px"><span class="label">Form-ID uit Meta</span>
       <input id="in_nieuwform" placeholder="bijv. 2003193383627556" style="width:180px"></label>
