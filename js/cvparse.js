@@ -1886,10 +1886,15 @@ async function uploadCv(c, file, cv){
   return true;
 }
 
+/* De foto uit een pdf is altijd een jpeg (canvas.toBlob); een handmatig
+   gekozen bestand (js/kandidaten.js, fotoModal) kan ook png/webp zijn —
+   het type van de blob zelf bepaalt dus de bestandsextensie, met jpg als
+   redelijke terugval. */
 async function uploadFoto(c, blob){
   if(CRM.demo){ CRM.toast('Demo: de foto wordt niet geüpload'); return ''; }
-  const pad = `kandidaten/${String(c.id).replace(/[^\w-]/g,'')}/foto-${Math.random().toString(36).slice(2,8)}.jpg`;
-  const {error} = await CRM.sb.storage.from(CRM.opslag.map).upload(pad, blob, {upsert:false, contentType:'image/jpeg'});
+  const ext = (String(blob.type||'').split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi,'').toLowerCase() || 'jpg';
+  const pad = `kandidaten/${String(c.id).replace(/[^\w-]/g,'')}/foto-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error} = await CRM.sb.storage.from(CRM.opslag.map).upload(pad, blob, {upsert:false, contentType: blob.type || 'image/jpeg'});
   if(error){ CRM.toast(CRM.opslag.foutTekst(error), 'err'); return ''; }
   CRM.opslag.wis(pad);
   return pad;
@@ -1929,7 +1934,7 @@ function bindBestand(mount){
     CRM.opslag.open(b.dataset.cvdl, {download: b.dataset.cvnaam || 'cv.pdf'}));
 }
 
-CRM.cvParse = {leesBestand, parseTekst, open, bestandHtml, bindBestand};
+CRM.cvParse = {leesBestand, parseTekst, open, bestandHtml, bindBestand, uploadFoto};
 
 })();
 

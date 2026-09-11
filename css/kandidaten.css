@@ -55,6 +55,16 @@
 
 /* ─── Kaart: kop ──────────────────────────────────────────────── */
 .kd-hero{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+/* Foto met een klein wijzig/toevoeg-knopje in de hoek — zelfde soort
+   overlay als een avatar-editor elders. De ava zelf toont initialen op
+   kleur zolang er geen foto is (CRM.avaKleur), zodat het knopje nooit op
+   een kaal wit vlak zweeft. */
+.kd-fotowrap{position:relative;flex:0 0 56px}
+.kd-fotowrap .ava{color:#fff;font-weight:700}
+.kd-fotobtn{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;
+  border:2px solid var(--card,#fff);background:var(--olive,#3d6400);color:#fff;font-size:12px;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.kd-fotobtn:hover{filter:brightness(1.1)}
 .kd-contact{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
 .kd-meter{flex:0 0 236px;min-width:200px;border-left:1px solid var(--line);padding-left:18px}
 .kd-meter b{font-size:14px;color:var(--ink);min-width:38px;text-align:right}

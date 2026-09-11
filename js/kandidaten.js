@@ -1276,6 +1276,8 @@ function kaart(mount, acties, id){
   };
   const bemidBtn = mount.querySelector('#c_bemid');
   if(bemidBtn) bemidBtn.onclick = () => openBeschikbaarheidModal(c);
+  const fotoBtn = mount.querySelector('#c_fotobtn');
+  if(fotoBtn) fotoBtn.onclick = () => fotoModal(c);
   /* Twee knoppen, één handeling: de knop in de kop van "CV & ervaring" en de
      knop midden in het lege blok eronder. Wie op een lege kaart kijkt, kijkt
      naar het lege blok en niet naar de kopregel. */
@@ -1799,20 +1801,75 @@ function bindSnelbalk(mount, c){
   ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; };
 }
 
+/* Foto handmatig toevoegen/vervangen — zelfde opzet als CRM.accountModal
+   (js/core.js) voor de eigen profielfoto, nu geschreven naar candidates.foto
+   via bewaarKandidaat i.p.v. profiles.foto_url. De upload zelf loopt via
+   CRM.cvParse.uploadFoto: dezelfde storage-map en padopbouw als de foto die
+   automatisch uit een pdf-cv wordt gehaald, dus beide wegen komen op
+   precies dezelfde plek terecht. */
+function fotoModal(c){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Foto — ${h(c.naam||'kandidaat')}</div></div>
+    <div class="modal-b">
+      <div class="row" style="gap:14px;margin-bottom:14px">
+        <div class="ava lg${c.foto?' foto':''}" id="fm_prev" style="${c.foto?'':`background:${CRM.avaKleur(c.naam||'')}`}">${
+          CRM.opslag.srcNu(c.foto) ? `<img src="${h(CRM.opslag.srcNu(c.foto))}" alt="">` : h(CRM.initialen(c.naam||'?'))}</div>
+        <div class="meta">Verschijnt op de kandidatenkaart en op het gegenereerde cv (uit te zetten per cv onder "Profielfoto").</div>
+      </div>
+      <div class="f-row"><label>Nieuwe foto</label>
+        <input type="file" id="fm_file" accept="image/*">
+        <div class="hint">Vierkante pasfoto werkt het best.</div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-mclose>Sluiten</button>
+      <button class="btn" id="fm_save" disabled>Opslaan</button>
+    </div>`, {onOpen(m){
+      if(c.foto && !CRM.opslag.srcNu(c.foto)) CRM.opslag.vulAfbeeldingen(m);
+      const file = m.querySelector('#fm_file'), save = m.querySelector('#fm_save'), prev = m.querySelector('#fm_prev');
+      let gekozen = null;
+      file.onchange = () => {
+        gekozen = file.files[0] || null; save.disabled = !gekozen;
+        if(gekozen){ prev.classList.add('foto'); prev.style.background = ''; prev.innerHTML = `<img src="${URL.createObjectURL(gekozen)}" alt="">`; }
+      };
+      save.onclick = async () => {
+        if(!gekozen) return;
+        save.disabled = true; save.textContent = 'Bezig…';
+        const herstel = () => { save.disabled = false; save.textContent = 'Opslaan'; };
+        try{
+          const pad = CRM.demo ? URL.createObjectURL(gekozen) : await CRM.cvParse.uploadFoto(c, gekozen);
+          if(!pad){ herstel(); return; }          // uploadFoto toonde zelf al de foutmelding
+          const ok = await bewaarKandidaat(Object.assign({}, c, {foto: pad}));
+          if(!ok){ herstel(); return; }
+          CRM.modal.close(); CRM.toast('Foto opgeslagen','ok');
+          CRM.render();
+        }catch(e){ CRM.fout('Foto opslaan mislukt', e); herstel(); }
+      };
+    }});
+}
+
 function kopHtml(c){
   const anon = geanonimiseerd(c);
   const v = CRM.volledigheid(c);
   const kleur = v.pct < 40 ? 'red' : v.pct < 60 ? 'amber' : 'green';
   const gold = isGolden(c.id);
-  /* Profielfoto: alleen tonen als hij er is (uit het cv gehaald via
-     js/cvparse.js, fotoUitPdf). Zelfde tijdelijke-link-patroon als de eigen
-     profielfoto (CRM.tekenEigenAvatar): staat de ondertekende link al in de
-     sessiecache, dan direct de <img>; anders initialen-vrije lege ava met
-     data-opslagfoto, die CRM.opslag.vulAfbeeldingen() na het tekenen vult. */
+  /* Profielfoto: komt er meestal automatisch in (uit het cv gehaald via
+     js/cvparse.js, fotoUitPdf) — maar een .docx-cv levert nooit een foto
+     en niet elk cv heeft er een op staan, dus ook een eigen knop om er
+     handmatig een toe te voegen (Tjeerd, 11 sep 2026: "kunnen we ook
+     foto's toevoegen bij kandidatenkaart voor op het cv"). Zelfde
+     tijdelijke-link-patroon als de eigen profielfoto (CRM.tekenEigenAvatar):
+     staat de ondertekende link al in de sessiecache, dan direct de <img>;
+     anders een lege ava met data-opslagfoto, die CRM.opslag.vulAfbeeldingen()
+     na het tekenen vult. Geen knop op een geanonimiseerd dossier — daar komt
+     bewust geen nieuw persoonsgegeven meer bij. */
   const fotoNu = c.foto ? CRM.opslag.srcNu(c.foto) : '';
-  const fotoHtml = c.foto
-    ? `<div class="ava lg foto"${fotoNu ? '' : ` data-opslagfoto="${h(c.foto)}"`}>${fotoNu ? `<img src="${h(fotoNu)}" alt="">` : ''}</div>`
-    : '';
+  const fotoHtml = anon ? '' : `<div class="kd-fotowrap">
+    <div class="ava lg${c.foto ? ' foto' : ''}"${c.foto && !fotoNu ? ` data-opslagfoto="${h(c.foto)}"` : ''}
+      style="${c.foto ? '' : `background:${CRM.avaKleur(c.naam||'')}`}">${
+      fotoNu ? `<img src="${h(fotoNu)}" alt="">` : (c.foto ? '' : h(CRM.initialen(c.naam||'?')))}</div>
+    <button type="button" class="kd-fotobtn" id="c_fotobtn" title="${c.foto?'Foto wijzigen':'Foto toevoegen'}">${c.foto?'✎':'+'}</button>
+  </div>`;
   return `<div class="card"><div class="card-b kd-hero">
     ${fotoHtml}
     <div style="min-width:0;flex:1">
