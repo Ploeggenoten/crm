@@ -636,6 +636,8 @@ CRM.registerModule('recruitment', {
     tekenBody();
     tekenActies(acties);
     if(params && params.id && params.id !== 'focus:belafspraken' && leadById(params.id)){ S.tab = 'leads'; openLead(params.id); }
+    /* Stil op de achtergrond; meldt zich alleen als er iets hersteld is. */
+    cvZelfherstel();
   }
 });
 
@@ -2572,6 +2574,47 @@ function wegwerkModus(status){
     });
   }
   start();
+}
+
+/* ─── Zelfherstel kapotte cv-links ────────────────────────────────
+   Tjeerd, 11 sep 2026: "kunnen we de koppeling niet vanuit SharePoint
+   maken? Dat die de namen herkent." De bot levert door een sheet-bug
+   soms letterlijk de knoptekst ("Open CV") als cv_url, terwijl het
+   bestand gewoon in OneDrive/"Cv folder" staat. Eén keer per sessie:
+   alle niet-klikbare cv_url's op naam matchen met de Cv-map (via de
+   Microsoft-koppeling) en stil repareren. Vier handmatige
+   SQL-herstelrondes in vijf dagen was er vier te veel. */
+let _cvHerstelKlaar = false;
+async function cvZelfherstel(){
+  if(_cvHerstelKlaar || CRM.demo || !CRM.outlook?.verbonden?.() || !CRM.outlook.cvIndex) return;
+  _cvHerstelKlaar = true;
+  const kapot = (CRM.state.leads||[]).filter(l => {
+    const u = String(l.cv_url||'').trim();
+    return u && !/^https?:\/\//i.test(u);
+  });
+  if(!kapot.length) return;
+  const index = await CRM.outlook.cvIndex();
+  if(!index || !index.length) return;
+  const norm = s => String(s||'').toLowerCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+  let n = 0;
+  for(const l of kapot){
+    const wie = norm(leadNaam(l));
+    if(!wie) continue;
+    let matches = index.filter(f => norm(f.naam.replace(/\.[^.]+$/,'')) === wie);
+    if(!matches.length) continue;
+    /* Zelfde naam in meerdere vacaturemappen: niet gokken. Binnen één map
+       (bv. een .pdf én een .docx van dezelfde persoon) wint pdf > docx. */
+    if(new Set(matches.map(f => f.map)).size > 1) continue;
+    const rang = f => /\.pdf$/i.test(f.naam) ? 0 : /\.docx?$/i.test(f.naam) ? 1 : 2;
+    matches.sort((a,b) => rang(a) - rang(b));
+    if(await bewaarLead(l, {cv_url: matches[0].webUrl})){
+      await CRM.logActiviteit('lead', l.id, 'systeem',
+        `Cv-link automatisch hersteld uit OneDrive (map: ${matches[0].map})`);
+      n++;
+    }
+  }
+  if(n){ CRM.toast(`${n} cv-link${n===1?'':'s'} automatisch hersteld uit OneDrive`, 'ok'); tekenLijst(); }
 }
 
 /* ─── Status wijzigen ─────────────────────────────────────────────

@@ -405,6 +405,27 @@ CRM.outlook = {
     catch(e){ if(e.status !== 404) throw e; }   // al weg in Outlook = ook goed
     return true;
   },
+
+  /* ── Cv-map-index (11 sep 2026) ── Alle bestanden in OneDrive/"Cv folder",
+     per vacaturemap. Voor het cv-zelfherstel in js/recruitment.js: de bot
+     levert soms de knoptekst i.p.v. de URL, maar het bestand staat er wél —
+     op naam terug te vinden. Eén keer per sessie opgehaald en gecachet. */
+  async cvIndex(){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    if(CRM.outlook._cvIndex) return CRM.outlook._cvIndex;
+    const basis = await graph("/me/drive/root:/Cv folder:/children?$select=name,folder&$top=200", {}, false)
+      .catch(() => null);
+    if(!basis || !Array.isArray(basis.value)) return null;
+    const uit = [];
+    for(const map of basis.value){
+      if(!map.folder) continue;
+      const kids = await graph("/me/drive/root:/Cv folder/" + encodeURIComponent(map.name)
+        + ":/children?$select=name,webUrl,file&$top=500", {}, false).catch(() => null);
+      for(const f of (kids && kids.value) || []) if(f.file) uit.push({map: map.name, naam: f.name, webUrl: f.webUrl});
+    }
+    CRM.outlook._cvIndex = uit;
+    return uit;
+  },
   /* Zijn er andere Microsoft-accounts bekend in deze browser dan het jouwe?
      Zo ja, dan is het de moeite waard om op het scherm te tonen wélke postbus
      je nu leest — anders is dat onzichtbaar tot je je erin vergist. */
