@@ -762,18 +762,30 @@ async function vulFormulieren(mount){
   /* Regels matchen alleen exact (rapport 3, 3 sep 2026): "Rijbewijs B
      aanbevolen" of "Nederlands niet vereist" moet een vrije extra eis
      blijven en mag niet stilletjes in een kaal vinkje veranderen. */
+  /* Toelichting per vaste eis (Tjeerd, 12 sep 2026: "ik wil wel kunnen
+     uitleggen waarom dat zo is" bij Fysiek zwaar werk) — gaat mee op
+     dezelfde regel na een gedachtestreepje, zodat de bot-feed nog steeds
+     één simpele regel per eis ziet (Smits kant ongewijzigd) en de bot de
+     context krijgt om de vraag natuurlijker te stellen i.p.v. kaal
+     "Kun je fysiek zwaar werk aan?". De named group `toe` staat in elke
+     regex op dezelfde plek, zodat eisParse ze allemaal hetzelfde uitleest. */
   const EIS_VAST = [
-    {sleutel:'rijbewijs',  label:'Rijbewijs B',            regel:'Rijbewijs B',            re:/^rijbewijs\s*b?\s*(vereist)?$/i},
-    {sleutel:'nederlands', label:'Nederlands',             regel:'Nederlands',             re:/^nederlands\s*(vereist)?$/i},
-    {sleutel:'direct',     label:'Per direct beschikbaar', regel:'Per direct beschikbaar', re:/^per direct( beschikbaar)?\s*(vereist)?$/i},
-    {sleutel:'fysiek',     label:'Fysiek zwaar werk',      regel:'Fysiek zwaar werk aankunnen', re:/^fysiek zwaar werk( aankunnen)?$/i},
+    {sleutel:'rijbewijs',  label:'Rijbewijs B',            regel:'Rijbewijs B',            re:/^rijbewijs\s*b?\s*(vereist)?(\s*[—-]\s*(?<toe>.+))?$/i},
+    {sleutel:'nederlands', label:'Nederlands',             regel:'Nederlands',             re:/^nederlands\s*(vereist)?(\s*[—-]\s*(?<toe>.+))?$/i},
+    {sleutel:'direct',     label:'Per direct beschikbaar', regel:'Per direct beschikbaar', re:/^per direct( beschikbaar)?\s*(vereist)?(\s*[—-]\s*(?<toe>.+))?$/i},
+    {sleutel:'fysiek',     label:'Fysiek zwaar werk',      regel:'Fysiek zwaar werk aankunnen', re:/^fysiek zwaar werk( aankunnen)?(\s*[—-]\s*(?<toe>.+))?$/i},
   ];
   const eisParse = txt => {
     const o = {ervaring:'', extra:[]};
-    for(const e of EIS_VAST) o[e.sleutel] = false;
+    for(const e of EIS_VAST){ o[e.sleutel] = false; o[e.sleutel + '_toe'] = ''; }
     for(const regel of String(txt||'').split('\n').map(s => s.trim()).filter(Boolean)){
       const vast = EIS_VAST.find(e => e.re.test(regel));
-      if(vast){ o[vast.sleutel] = true; continue; }
+      if(vast){
+        o[vast.sleutel] = true;
+        const m = regel.match(vast.re);
+        if(m?.groups?.toe) o[vast.sleutel + '_toe'] = m.groups.toe.trim();
+        continue;
+      }
       const m = regel.match(/^(?:werk)?ervaring\s*:?\s*(.*)$/i);
       if(m){ o.ervaring = m[1] || 'vereist'; continue; }
       o.extra.push(regel);
@@ -781,7 +793,8 @@ async function vulFormulieren(mount){
     return o;
   };
   const eisBouw = o => [
-    ...EIS_VAST.filter(e => o[e.sleutel]).map(e => e.regel),
+    ...EIS_VAST.filter(e => o[e.sleutel]).map(e =>
+      e.regel + (String(o[e.sleutel + '_toe']||'').trim() ? ' — ' + String(o[e.sleutel + '_toe']).trim() : '')),
     ...(String(o.ervaring||'').trim() ? ['Werkervaring: ' + String(o.ervaring).trim()] : []),
     ...o.extra,
   ].join('\n');
@@ -830,9 +843,14 @@ async function vulFormulieren(mount){
 
         <div class="stap">
           <div class="stap-kop"><span class="stap-nr">3</span> Kwalificatievragen <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:400">— dezelfde stappen als het n8n-formulier; aangevinkt = de bot stelt de vraag</span></div>
-          <div class="row tight" style="flex-wrap:wrap;gap:8px 10px;padding:2px 0">
-            ${EIS_VAST.map(e => `<label class="eis-pil" title="Aangevinkt = de bot stelt deze kwalificatievraag">
-              <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>`).join('')}
+          <div class="stack" style="gap:6px;padding:2px 0">
+            ${EIS_VAST.map(e => `<div class="row tight" style="flex-wrap:wrap;gap:8px 10px;align-items:center">
+              <label class="eis-pil" title="Aangevinkt = de bot stelt deze kwalificatievraag">
+                <input type="checkbox" data-eis="${h(e.sleutel)}" data-vac="${h(String(v.id))}" ${eis[e.sleutel]?'checked':''}> ${h(e.label)}</label>
+              <input type="text" data-eis="${h(e.sleutel + '_toe')}" data-vac="${h(String(v.id))}" value="${h(eis[e.sleutel + '_toe']||'')}"
+                placeholder="Toelichting voor de bot (optioneel) — telt alleen mee als het vinkje aanstaat"
+                title="Bijv. waarom dit hier telt, zodat de bot de vraag kan onderbouwen i.p.v. 'm kaal te stellen"
+                style="flex:1;min-width:260px"></div>`).join('')}
           </div>
           <label style="display:flex;flex-direction:column;gap:3px;max-width:420px" title="Leeg = geen ervaringseis; de bot vraagt er dan niet naar">
             <span class="label">Werkervaring vereist — beschrijf kort, of laat leeg</span>
@@ -967,11 +985,12 @@ async function vulFormulieren(mount){
      laatst gevonden veld won, en een vinkje sprong stilletjes terug. */
   const eisUitScherm = wortel => {
     const o = {ervaring:'', extra:[]};
-    for(const e of EIS_VAST) o[e.sleutel] = false;
+    for(const e of EIS_VAST){ o[e.sleutel] = false; o[e.sleutel + '_toe'] = ''; }
     for(const inp of CRM.$$('[data-eis]', wortel)){
       const s = inp.dataset.eis;
       if(s === 'ervaring') o.ervaring = inp.value.trim();
       else if(s === 'extra') o.extra = inp.value.split('\n').map(x => x.trim()).filter(Boolean);
+      else if(s.endsWith('_toe')) o[s] = inp.value.trim();
       else o[s] = inp.checked;
     }
     return o;
