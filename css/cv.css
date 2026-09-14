@@ -95,6 +95,14 @@
 .cvg-foto img{width:100%;height:100%;object-fit:cover;display:block}
 
 .cvg-top{display:flex;align-items:center;gap:16px}
+/* Staat er een foto, dan moet de pil ("Beschikbaar deze week" e.d.) er
+   niet onder verdwijnen — de pil zit in de normale doorloop (margin-left:
+   auto duwt 'm naar rechts), de foto is position:absolute en trekt zich
+   daar niets van aan. Ruimte reserveren = 26mm foto + 2×2.5mm rand + 11mm
+   afstand tot de rand (zie .cvg-foto), plus een kleine marge. Alleen
+   toegepast als er ook echt een foto is, anders verspringt de pil zonder
+   reden naar links. */
+.cvg-top.heeft-foto{padding-right:44mm}
 .cvg-logo{height:15px;width:auto;display:block}
 .cvg-pil{
   margin-left:auto;background:var(--lime);color:#171d08;border-radius:999px;

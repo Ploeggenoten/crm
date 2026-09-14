@@ -346,7 +346,7 @@ function velHtml(m){
         const nu = CRM.opslag.srcNu(m.fotoPad);
         return `<div class="cvg-foto"${nu ? '' : ` data-opslagfoto="${h(m.fotoPad)}"`}>${nu ? `<img src="${h(nu)}" alt="">` : ''}</div>`;
       })() : ''}
-      <div class="cvg-top">
+      <div class="cvg-top${m.fotoPad ? ' heeft-foto' : ''}">
         <img class="cvg-logo" src="assets/logo-dark.png" alt="Ploeggenoten">
         ${m.pil ? `<span class="cvg-pil">${h(m.pil)}</span>` : ''}
       </div>
