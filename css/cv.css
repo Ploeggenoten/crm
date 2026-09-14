@@ -152,6 +152,11 @@
 .cvg-jt b{flex:1;min-width:0;font-size:15.5px;font-weight:700;color:var(--ink)}
 .cvg-per{flex:0 0 auto;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .cvg-jf{font-size:13px;font-weight:700;color:var(--olive);margin-top:2px}
+/* Meerdere rollen bij dezelfde werkgever: één bedrijfskop, elke rol
+   eronder met eigen periode/taken (zie jobGroep in js/cv.js). */
+.cvg-job-groep .cvg-jt{margin-bottom:6px}
+.cvg-rol + .cvg-rol{margin-top:14px}
+.cvg-rol .cvg-jf{display:flex;align-items:baseline;gap:2px;flex-wrap:wrap}
 .cvg-taken{margin:9px 0 0;padding:0 0 0 18px;list-style:none}
 .cvg-taken li{position:relative;font-size:13px;line-height:1.75;color:var(--txt)}
 .cvg-taken li::before{

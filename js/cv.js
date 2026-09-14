@@ -323,6 +323,37 @@ function velHtml(m){
       ${w.taken.length ? `<ul class="cvg-taken">${w.taken.map(x => `<li>${h(x)}</li>`).join('')}</ul>` : ''}
     </div>
   </article>`;
+  /* Meerdere rollen bij dezelfde werkgever (Tjeerd, 14 sep 2026: "dan staat
+     daar dus 2x een werkgever en jaartallen, dit kan onoverzichtelijk
+     zijn") — één bedrijfskop, elke rol eronder met zijn eigen periode en
+     taken. Alleen AANEENGESLOTEN regels groeperen: m.werk staat al
+     nieuwste-boven gesorteerd, en twee stints bij dezelfde werkgever met
+     iets anders ertussen horen zichtbaar apart te blijven staan. */
+  const groepen = [];
+  for(const w of m.werk){
+    const laatste = groepen[groepen.length - 1];
+    if(laatste && w.bedrijf && laatste.bedrijf === w.bedrijf) laatste.rollen.push(w);
+    else groepen.push({bedrijf: w.bedrijf, rollen: [w]});
+  }
+  const jobGroep = g => {
+    if(g.rollen.length === 1) return job(g.rollen[0]);
+    const jaren = g.rollen.map(r => r.jaar).filter(Boolean);
+    const open = g.rollen.some(r => r.open);
+    const eindJaren = g.rollen.map(r => r.eind).filter(Boolean);
+    const vanJaar = jaren.length ? Math.min(...jaren) : null;
+    const totJaar = !open && eindJaren.length ? Math.max(...eindJaren) : null;
+    const badge = vanJaar ? "'" + String(vanJaar).slice(-2) + '-' + (open ? 'heden' : (totJaar ? "'" + String(totJaar).slice(-2) : '')) : '';
+    return `<article class="cvg-job cvg-job-groep">
+      <div class="cvg-jaar">${h(badge)}</div>
+      <div class="cvg-jc">
+        <div class="cvg-jt"><b>${h(g.bedrijf)}</b></div>
+        ${g.rollen.map(w => `<div class="cvg-rol">
+          <div class="cvg-jf">${h(w.functie || '—')}${w.periode ? ` <span class="cvg-per">· ${h(w.periode)}</span>` : ''}</div>
+          ${w.taken.length ? `<ul class="cvg-taken">${w.taken.map(x => `<li>${h(x)}</li>`).join('')}</ul>` : ''}
+        </div>`).join('')}
+      </div>
+    </article>`;
+  };
 
   const onderBlok = (m.skills.length || m.opl.length || m.regels.length) ? `
     <hr class="cvg-lijn">
@@ -361,7 +392,7 @@ function velHtml(m){
     ${m.werk.length ? `<hr class="cvg-lijn">
       <section class="cvg-werk">
         <h2 class="cvg-sk">Werkervaring</h2>
-        ${m.werk.map(job).join('')}
+        ${groepen.map(jobGroep).join('')}
       </section>` : ''}
 
     ${onderBlok}
