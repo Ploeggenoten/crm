@@ -3181,6 +3181,24 @@ function openLead(id){
         const t0 = dr.querySelector('#rc_note').value.trim(); if(!t0) return;
         const cat = dr.querySelector('#rc_notecat').value;
         const t = cat ? `${cat} — ${t0}` : t0;
+        /* Doorgeschoten = er bestaat al een kandidaatkaart, en die is
+           leidend. Een notitie hier zou anders in het leaddossier
+           verdwijnen en nooit op de kaart verschijnen (Tjeerd, 15 sep
+           2026: "notities die je op de recruitmentkaart maakt, moeten
+           doorkomen naar de kandidatenkaart"). Zelfde volgorde als het
+           notitieveld op de kandidaatkaart zelf: nieuwste bovenaan. */
+        if(doorgeschoten){
+          const cand = CRM.kandidaat(l.kandidaat_id);
+          if(cand){
+            const nieuw = [{op:new Date().toISOString(), door:CRM.me(), tekst:t}]
+              .concat(Array.isArray(cand.notities) ? cand.notities : []);
+            await bewaarKand(cand.id, {notities:nieuw});
+            CRM.verwerkTags(t, 'kandidaat', cand.id);
+            CRM.toast('Notitie opgeslagen op de kandidaatkaart','ok');
+            dr.querySelector('#rc_note').value = '';
+            return;
+          }
+        }
         const lijst = notities.concat([{op:new Date().toISOString(), door:CRM.me(), tekst:t}]);
         await bewaarLead(l, {notities:lijst, laatst_actie:new Date().toISOString()});
         await CRM.logActiviteit('lead', l.id, 'notitie', t, cat ? {categorie:cat} : {});
@@ -3416,11 +3434,15 @@ function doorschietForm(lead, opts){
                            botCv ? cvInlezen : () => intakeForm(cand.id));
         CRM.toast(`${cand.naam} staat klaar om voor te stellen`, 'ok');
         if(botCv) return cvInlezen();
-        /* De intake is wat een kandidaat verkoopbaar maakt. Invullen terwijl
-           het gesprek nog vers is levert een beter verhaal op dan een week
-           later. Wie dat niet wil, gaat naar de volledige kaart. */
+        /* Altijd meteen naar de kaart (Tjeerd, 15 sep 2026: "ik wil dat ik
+           dan mee ga naar de kaart") — eerst navigeren en dán pas eventueel
+           het intakeformulier erbovenop openen, want anders liet annuleren
+           van dat formulier je terug op het (inmiddels lege) recruitmentbord
+           zien in plaats van op de kandidaat. De intake is wat een kandidaat
+           verkoopbaar maakt; invullen terwijl het gesprek nog vers is levert
+           een beter verhaal op dan een week later. */
+        CRM.ga('kandidaten', {id:cand.id});
         if(nuIntake) intakeForm(cand.id);
-        else CRM.ga('kandidaten', {id:cand.id});
       };
     }});
 }

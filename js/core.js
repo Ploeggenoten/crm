@@ -180,7 +180,15 @@ function overlayStapEraf(){
   setTimeout(() => { _popEigen = false; }, 400);
 }
 window.addEventListener('popstate', () => {
-  if(_popEigen){ _popEigen = false; return; }
+  /* NIET hier al op false zetten: history.back() uit overlayStapEraf()
+     kan, als er ondertussen elders al genavigeerd is (CRM.ga), de hash
+     ook nog laten veranderen — en dan vuurt na popstate ook hashchange,
+     die dezelfde _popEigen-vlag moet zien staan om die eigen terugstap
+     niet aan te zien voor een échte navigatie (anders veerde "Kandidaat
+     maken → meteen naar de kaart" terug naar de sollicitant, Tjeerd,
+     15 sep 2026). De setTimeout hieronder in overlayStapEraf() ruimt 'm
+     alsnog op, ook als hashchange om wat voor reden dan ook uitblijft. */
+  if(_popEigen) return;
   if(_overlays <= 0) return;          /* gewone navigatie: hashchange doet de rest */
   _overlays--;
   /* Het venster ligt boven het schuifpaneel, dus dat sluit als eerste. */
@@ -1350,6 +1358,10 @@ window.addEventListener('DOMContentLoaded', () => {
     location.reload();
   };
   window.addEventListener('hashchange', () => {
+    /* Zelfde eigen-terugstap als bij popstate hierboven — zie de
+       toelichting daar. Hashchange vuurt ná popstate, dus die ruimt de
+       vlag hier pas op. */
+    if(_popEigen){ _popEigen = false; return; }
     const hash = (location.hash||'').replace('#','').split('/');
     if(!CRM.modules[hash[0]]) return;
     const nieuwId = hash[1] ? decodeURIComponent(hash[1]) : undefined;
