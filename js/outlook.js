@@ -251,6 +251,22 @@ async function takenLijst(){
 /* OData-string veilig maken: een enkele quote verdubbelen. */
 const odataTekst = s => String(s).replace(/'/g, "''");
 
+/* De ONLINE MEETING achter een join-url opzoeken — een ander ID dan de
+   agenda-afspraak, nodig voor /me/onlineMeetings/{id}/transcripts. Gebruikt
+   op twee momenten: meteen bij het aanmaken (maakAfspraak, waar dit soms
+   nog te vroeg is — Microsoft heeft de meeting dan nog niet geregistreerd)
+   en achteraf als terugvaloptie (CRM.intaketranscript, met de join-url die
+   altijd als notitie bewaard blijft) zodra de afspraak al heeft
+   plaatsgevonden en de opzoeking wél iets oplevert. */
+async function vindOnlineMeetingId(joinUrl){
+  if(!joinUrl) return '';
+  try{
+    const m = await graph('/me/onlineMeetings?$filter=' +
+      encodeURIComponent(`JoinWebUrl eq '${odataTekst(joinUrl)}'`));
+    return m?.value?.[0]?.id || '';
+  }catch(e){ console.warn('online-meeting-id opzoeken', e); return ''; }
+}
+
 /* Bestaand contact vinden: eerst op e-mailadres (uniek genoeg), anders
    op de volledige naam. Geeft het id terug of null. */
 async function zoekContactId(naam, email){
@@ -334,6 +350,9 @@ async function _ververs(reden){
 }
 
 CRM.outlook = {
+  /* Terugvaloptie voor CRM.intaketranscript: het ID van een online meeting
+     alsnog opzoeken via de join-url (zie vindOnlineMeetingId hierboven). */
+  vindOnlineMeetingId,
   /* Meld je aan om bij elke verversing bijgewerkt te worden. Geeft een
      functie terug waarmee je je weer afmeldt (bij het verlaten van een
      scherm), zodat er geen luisteraars blijven hangen na een hertekening. */
@@ -505,16 +524,17 @@ CRM.outlook = {
       /* Voor een transcript heb je later het ID van de ONLINE MEETING nodig
          (/me/onlineMeetings/{id}/transcripts) — dat is een ander ID dan het
          agenda-item en zit niet in het antwoord hierboven. Losse opzoeking
-         op de join-url; mislukt die (bv. nog geen rechten), dan blijft de
-         afspraak gewoon staan, alleen zonder latere transcript-koppeling. */
-      let meetingId = '';
-      if(joinUrl){
-        try{
-          const m = await graph('/me/onlineMeetings?$filter=' +
-            encodeURIComponent(`JoinWebUrl eq '${odataTekst(joinUrl)}'`));
-          meetingId = m?.value?.[0]?.id || '';
-        }catch(e){ console.warn('online-meeting-id opzoeken', e); }
-      }
+         op de join-url, meteen na het aanmaken — en dát is precies het
+         kwetsbare moment: Microsoft heeft de online meeting op dat moment
+         soms nog niet geregistreerd, dus deze opzoeking kan mislukken
+         terwijl de afspraak zelf prima aangemaakt is (Tjeerd, 16 sep 2026 —
+         Gijs Hoekstra's intake: agenda-item en transcript stonden allebei
+         gewoon in Teams/Outlook, maar het CRM had geen teamsCallId
+         onthouden). Mislukt die, dan blijft de afspraak gewoon staan;
+         CRM.intaketranscript probeert de join-url later opnieuw op te
+         zoeken via vindOnlineMeetingId hieronder, met de join-url die we
+         altijd als notitie bewaren (js/kandidaten.js). */
+      const meetingId = joinUrl ? await vindOnlineMeetingId(joinUrl) : '';
       return {via:'graph', link: ev?.webLink || '', online: joinUrl, meetingId};
     }
     window.open(composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers}), '_blank', 'noopener');

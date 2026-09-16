@@ -216,7 +216,24 @@ function open({kandidaat, onKlaar}){
         if(!(CRM.outlook && CRM.outlook.haalTranscript)){
           zetBron('warn', 'De Outlook-koppeling is niet geladen — herlaad de pagina.'); return;
         }
-        const meetingId = (c.intake && c.intake.teamsCallId) || '';
+        let meetingId = (c.intake && c.intake.teamsCallId) || '';
+        if(!meetingId){
+          /* De koppeling kan bij het aanmaken van de afspraak zijn mislukt —
+             Microsoft had de online meeting op dat moment soms nog niet
+             geregistreerd (js/outlook.js, vindOnlineMeetingId). De join-url
+             zelf staat altijd als notitie op de kaart (js/kandidaten.js,
+             videocallModal); probeer die alsnog te herleiden tot een
+             meeting-id voordat we opgeven (Tjeerd, 16 sep 2026 — Gijs
+             Hoekstra's intake stond allang in Teams, alleen het CRM wist
+             het niet meer). */
+          const link = (Array.isArray(c.notities) ? c.notities : [])
+            .map(n => String(n.tekst||'').match(/^Teams-link:\s*(\S+)/))
+            .find(Boolean);
+          if(link && CRM.outlook.vindOnlineMeetingId){
+            zetBron('info', 'Geen opgeslagen koppeling — de Teams-link alsnog opzoeken…');
+            meetingId = await CRM.outlook.vindOnlineMeetingId(link[1]);
+          }
+        }
         if(!meetingId){
           zetBron('warn', 'Van deze kandidaat is geen Teams-call bekend. Plan eerst een videocall met "Teams-videocall aanmaken" aangevinkt.');
           return;
