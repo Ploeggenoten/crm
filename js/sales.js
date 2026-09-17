@@ -160,19 +160,25 @@ async function taakKlaar(id, klaar){
    net als de bestaande wa-knop hierboven: het CRM zet een gepersonaliseerd
    bericht klaar in WhatsApp Web, jij controleert en klikt zelf op
    versturen — geen nieuwe koppeling, geen kosten per bericht. */
-function geenGehoorBericht(contactNaam){
+/* Automatisch persoonlijker (Tjeerd, 17 sep 2026) met wat het CRM toch al
+   weet — geen extra stap via Claude nodig voor iets dat je bij elke gemiste
+   belpoging opnieuw zou moeten doen. Alleen de bedrijfsnaam vlechten we
+   erin: een eigennaam past overal, in tegenstelling tot de branche (te veel
+   risico op een kromme zin — "in de Voedingsmiddelen" leest niet lekker). */
+function geenGehoorBericht(contactNaam, klantNaam){
   const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
   const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
+  const bedrijf = String(klantNaam||'').trim();
   return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten. Wij zijn een recruitmentbureau voor productie, logistiek en industrie, met een sterke focus op social media marketing.
 
-We filmen wervingsvideo's bij jullie op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
+We filmen wervingsvideo's bij${bedrijf?' '+bedrijf:' jullie'} op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
 
 Ik probeerde je net al te bellen. Heb je vandaag tijd om elkaar even te spreken?`;
 }
 async function geenGehoor(naam, contactId){
   const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
   if(!c || !c.telefoon) return;
-  const link = CRM.waHref(c.telefoon, geenGehoorBericht(c.naam));
+  const link = CRM.waHref(c.telefoon, geenGehoorBericht(c.naam, naam));
   if(link) window.open(link, '_blank', 'noopener');
   await CRM.logActiviteit('klant', naam, 'bel', `Gebeld, geen gehoor — WhatsApp-appje klaargezet voor ${c.naam}`);
   await bewaarKlant(naam, {laatst_contact: CRM.todayISO()});
