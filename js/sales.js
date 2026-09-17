@@ -163,7 +163,11 @@ async function taakKlaar(id, klaar){
 function geenGehoorBericht(contactNaam){
   const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
   const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
-  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten — ik probeerde je net te bellen maar kreeg je niet te pakken. Wij zijn een recruitmentbureau gespecialiseerd in productie, logistiek en industrie: wij vinden en leveren de mensen die jullie op de vloer nodig hebben. Bel je terug wanneer het uitkomt, of app gerust even hier!`;
+  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten. Wij zijn een recruitmentbureau voor productie, logistiek en industrie, met een sterke focus op social media marketing.
+
+We filmen wervingsvideo's bij jullie op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
+
+Ik probeerde je net al te bellen. Heb je vandaag tijd om elkaar even te spreken?`;
 }
 async function geenGehoor(naam, contactId){
   const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
