@@ -155,6 +155,28 @@ async function taakKlaar(id, klaar){
   CRM.navBadges();
 }
 
+/* Geen gehoor bij een contactpersoon (Tjeerd, 17 sep 2026: "veel tijd kwijt
+   aan opvolging van appjes... net zoals bij recruitment"). Halfautomatisch,
+   net als de bestaande wa-knop hierboven: het CRM zet een gepersonaliseerd
+   bericht klaar in WhatsApp Web, jij controleert en klikt zelf op
+   versturen — geen nieuwe koppeling, geen kosten per bericht. */
+function geenGehoorBericht(contactNaam){
+  const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
+  const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
+  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten — ik probeerde je net te bellen maar kreeg je niet te pakken. Wij zijn een recruitmentbureau gespecialiseerd in productie, logistiek en industrie: wij vinden en leveren de mensen die jullie op de vloer nodig hebben. Bel je terug wanneer het uitkomt, of app gerust even hier!`;
+}
+async function geenGehoor(naam, contactId){
+  const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
+  if(!c || !c.telefoon) return;
+  const link = CRM.waHref(c.telefoon, geenGehoorBericht(c.naam));
+  if(link) window.open(link, '_blank', 'noopener');
+  await CRM.logActiviteit('klant', naam, 'bel', `Gebeld, geen gehoor — WhatsApp-appje klaargezet voor ${c.naam}`);
+  await bewaarKlant(naam, {laatst_contact: CRM.todayISO()});
+  CRM.toast(`Belpoging vastgelegd — WhatsApp geopend voor ${c.naam}`, 'ok');
+  const dr = CRM.drawer.el();
+  if(dr && dr.classList.contains('on')) tekenDrawer(dr, naam);
+}
+
 /* Activiteit vastleggen + laatst_contact van de klant bijwerken. */
 async function legVast(naam, soort){
   const s = CRM.ACT_SOORTEN[soort] || {lbl:soort};
@@ -915,7 +937,8 @@ function tabInhoud(naam){
             <div style="flex:1;min-width:0"><b>${h(c.naam)}</b>${c.hoofd?' <span class="chip green">hoofdcontact</span>':''}
               <div class="meta">${h(c.functie||'')}</div></div>
             <div class="meta num" style="text-align:right">${c.telefoon
-              ? `<a href="tel:${h(String(c.telefoon).replace(/\s/g,''))}">${h(c.telefoon)}</a> · <a href="${h(CRM.waHref(c.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>`
+              ? `<a href="tel:${h(String(c.telefoon).replace(/\s/g,''))}">${h(c.telefoon)}</a> · <a href="${h(CRM.waHref(c.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>
+                 · <a href="#" data-geengehoor="${h(c.id)}" title="Legt de belpoging vast en zet een WhatsApp-appje klaar">geen gehoor</a>`
               : ''}<br>${h(c.email||'')}</div></div>`).join('')
           : CRM.ui.leeg('Nog geen contactpersoon','Contactpersonen beheer je op de volledige klantkaart.',
               '<button class="btn ghost" data-volledig2>Klantkaart openen →</button>')}</div></div>
@@ -999,6 +1022,7 @@ function tabInhoud(naam){
 function bindTab(body, dr, naam){
   /* Zelfde valkuil als bij [data-volledig] hierboven: niet zelf sluiten. */
   CRM.$$('[data-volledig2]', body).forEach(b=>b.onclick=()=>CRM.ga('klanten',{id:naam}));
+  CRM.$$('[data-geengehoor]', body).forEach(b=>b.onclick=e=>{ e.preventDefault(); geenGehoor(naam, b.dataset.geengehoor); });
   body.querySelectorAll('textarea').forEach(t => CRM.dictee?.hang(t));
 
   const bew = body.querySelector('[data-bewerk]');
