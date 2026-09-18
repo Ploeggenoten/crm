@@ -1130,8 +1130,9 @@ function tekenRail(el, klantnaam){
       <div class="meta">${h(x.functie || '—')}</div>
       <div class="ck-railcontact">
         ${x.telefoon?`<a class="num" href="${h(telHref(x.telefoon))}">${h(x.telefoon)}</a>`:''}
-        ${x.telefoon&&x.email?'<span class="ck-sep">·</span>':''}
-        ${x.email?`<a class="trunc" href="mailto:${h(x.email)}">${h(x.email)}</a>`:''}
+        ${x.telefoon&&CRM.waHref(x.telefoon)?`<span class="ck-sep">·</span><a href="${h(CRM.waHref(x.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>`:''}
+        ${x.telefoon?`<span class="ck-sep">·</span><a href="#" data-geengehoor="${h(x.id)}" title="Legt de belpoging vast en zet een WhatsApp-appje klaar">geen gehoor</a>`:''}
+        ${x.email?`<br><a class="trunc" href="mailto:${h(x.email)}">${h(x.email)}</a>`:''}
         ${!x.telefoon&&!x.email?'<span class="meta">geen gegevens</span>':''}
       </div>
       <span class="meta num ck-raillc${lc.dagen != null && lc.dagen > 90 ? ' lang' : ''}">${h(wanneer)}</span>
@@ -1151,6 +1152,35 @@ function bindRailRijen(el){
   });
   /* Bellen en mailen mogen niet ook de kaart openen. */
   el.querySelectorAll('.ck-railrij a').forEach(a => a.onclick = e => e.stopPropagation());
+  el.querySelectorAll('[data-geengehoor]').forEach(a => a.onclick = e => { e.preventDefault(); e.stopPropagation(); geenGehoor(a.dataset.geengehoor); });
+}
+
+/* "Geen gehoor": zelfde halfautomatische WhatsApp-ritueel als het
+   Verkoop-bord en de relatiekaart (js/sales.js, js/klanten.js) — hier óók,
+   want dit is de plek waar je een contactpersoon meteen belt vanuit de
+   rail. Eigen kopie i.p.v. gedeeld, zelfde opzet als de rest van het CRM. */
+function geenGehoorBericht(contactNaam, klantNaam){
+  const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
+  const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
+  const bedrijf = String(klantNaam||'').trim();
+  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten. Wij zijn een recruitmentbureau voor productie, logistiek en industrie, met een sterke focus op social media marketing.
+
+We filmen wervingsvideo's bij${bedrijf?' '+bedrijf:' jullie'} op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
+
+Ik probeerde je net al te bellen. Heb je vandaag tijd om elkaar even te spreken?`;
+}
+async function geenGehoor(contactId){
+  const x = contactById(contactId);
+  if(!x || !x.telefoon) return;
+  const link = CRM.waHref(x.telefoon, geenGehoorBericht(x.naam, x.klant));
+  if(link) window.open(link, '_blank', 'noopener');
+  await CRM.logActiviteit('klant', x.klant, 'bel', `Gebeld, geen gehoor — WhatsApp-appje klaargezet voor ${x.naam}`);
+  if(CRM.bewaarKlantVeld) await CRM.bewaarKlantVeld(x.klant, {laatst_contact: CRM.todayISO()});
+  CRM.toast(`Belpoging vastgelegd — WhatsApp geopend voor ${x.naam}`, 'ok');
+  /* Volledige herrender (net als klanten.js z'n eigen logVia): de rail
+     alleen bijwerken liet het activiteitenlogboek van de klantkaart
+     achterlopen — dat is precies waar deze actie voor bedoeld is. */
+  CRM.render();
 }
 
 /* Wie is er deze maand jarig bij deze relatie? Dát is het moment waarop een

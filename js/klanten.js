@@ -2605,6 +2605,32 @@ function contactLijstVerversen(k){
   if(el) contactLijst(el, k);
 }
 
+/* "Geen gehoor": zelfde halfautomatische WhatsApp-ritueel als in het
+   Verkoop-bord (js/sales.js) — hier óók, want dit is de pagina waar
+   accountbeheer de belronde daadwerkelijk doet. Bewust dezelfde tekst en
+   logica, niet gedeeld over de modules heen (zelfde opzet als bewaarKlant
+   hierboven, dat ook per module een eigen kopie heeft). */
+function geenGehoorBericht(contactNaam, klantNaam){
+  const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
+  const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
+  const bedrijf = String(klantNaam||'').trim();
+  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten. Wij zijn een recruitmentbureau voor productie, logistiek en industrie, met een sterke focus op social media marketing.
+
+We filmen wervingsvideo's bij${bedrijf?' '+bedrijf:' jullie'} op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
+
+Ik probeerde je net al te bellen. Heb je vandaag tijd om elkaar even te spreken?`;
+}
+async function geenGehoor(k, contactId){
+  const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
+  if(!c || !c.telefoon) return;
+  const link = CRM.waHref(c.telefoon, geenGehoorBericht(c.naam, k.naam));
+  if(link) window.open(link, '_blank', 'noopener');
+  await CRM.logActiviteit('klant', k.naam, 'bel', `Gebeld, geen gehoor — WhatsApp-appje klaargezet voor ${c.naam}`);
+  await bewaarKlant(k.naam, {laatst_contact: CRM.todayISO()});
+  CRM.toast(`Belpoging vastgelegd — WhatsApp geopend voor ${c.naam}`, 'ok');
+  contactLijstVerversen(k);
+}
+
 /* Laatste contactmoment met déze persoon (uit de contact-activiteiten). */
 function laatsteContactPersoon(ct){
   const ops = CRM.activiteitenVoor('contact', ct.id)
@@ -2679,7 +2705,8 @@ function contactLijst(el, k){
       </div>
       <div class="kl-ct-links kl-contact">
         ${x.telefoon?`<a class="num" href="tel:${h(String(x.telefoon).replace(/\s/g,''))}">${h(x.telefoon)}</a>
-          <span class="kl-sep">·</span><a href="${h(CRM.waHref(x.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>`:''}
+          <span class="kl-sep">·</span><a href="${h(CRM.waHref(x.telefoon))}" target="_blank" rel="noopener" title="Open WhatsApp (Web) bij dit nummer">wa</a>
+          <span class="kl-sep">·</span><a href="#" data-geengehoor="${h(x.id)}" title="Legt de belpoging vast en zet een WhatsApp-appje klaar">geen gehoor</a>`:''}
         ${x.telefoon&&x.email?'<span class="kl-sep">·</span>':''}
         ${x.email?`<a href="mailto:${h(x.email)}">${h(x.email)}</a>`:''}
         ${!x.telefoon&&!x.email?'<span class="meta">geen gegevens</span>':''}
@@ -2691,6 +2718,7 @@ function contactLijst(el, k){
   /* Hele rij klikbaar → dossier; telefoon/mail-links blijven gewoon werken. */
   el.querySelectorAll('[data-ct]').forEach(r => r.onclick = () => contactDrawer(k, r.dataset.ct));
   el.querySelectorAll('.kl-ct a').forEach(a => a.onclick = e => e.stopPropagation());
+  el.querySelectorAll('[data-geengehoor]').forEach(a => a.onclick = e => { e.preventDefault(); geenGehoor(k, a.dataset.geengehoor); });
   const alleBtn = el.querySelector('#ct_alle');
   if(alleBtn) alleBtn.onclick = () => { contactAlles = true; contactLijst(el, k); };
 }
