@@ -666,7 +666,14 @@ function ploegvlakHtml(){
 
   return `<div class="pl-ploeg">
     <div class="pl-ploegcijfers">
-      <div class="pl-pc"><span class="pl-pgroot lime num">${werkt.length}</span><span class="pl-plbl">aan het werk</span></div>
+      <div class="pl-pc"><span class="pl-pgroot lime num">${werkt.length}</span><span class="pl-plbl">aan het werk</span>${(() => {
+        /* Uitsplitsing W&S / flex (Tjeerd, 18 sep 2026: "getekende
+           kandidaten en flex kandidaten min de stoppers") — zelfde groep,
+           alleen even laten zien waar hij uit bestaat. */
+        const tel = t => werkt.filter(c => String(c.type||'W&S') === t).length;
+        const ws = tel('W&S'), fx = tel('Flex'), zz = tel('ZZP');
+        return (fx || zz) ? `<span class="pl-plbl num" style="opacity:.75">${ws} W&amp;S · ${fx} flex${zz?` · ${zz} zzp`:''}</span>` : '';
+      })()}</div>
       <div class="pl-pc"><span class="pl-pgroot num">${komt.length}</span><span class="pl-plbl">komen eraan</span></div>
     </div>
     <div class="pl-ploegstart">
