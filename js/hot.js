@@ -1411,8 +1411,11 @@
         `<option value="${h(o)}"${o === oud ? ' selected' : ''}>${o ? h(o) : '—'}</option>`).join('');
     }
     else if(type === 'tekst'){ inp.rows = Math.max(3, oud.split('\n').length + 1); }
-    else inp.type = type === 'getal' ? 'number' : 'text';
-    if(!keuzes && type === 'getal') inp.step = 'any';
+    /* Geen input[type=number] voor geldvelden: "17,50" (zoals iedereen in
+       Nederland typt) is daar ongeldig en verdwijnt stil of geeft een
+       browserfoutmelding (Tjeerd, 19 sep 2026). Gewoon tekst met een
+       decimaal-toetsenbord; de komma vertalen we zelf bij het opslaan. */
+    else { inp.type = 'text'; if(type === 'getal') inp.inputMode = 'decimal'; }
     inp.value = oud;
     inp.className = 'ovd-inline';
     el.replaceChildren(inp);
@@ -1423,7 +1426,12 @@
       if(klaar) return; klaar = true;
       const ruw = inp.value;
       const waarde = (type === 'getal' || keuzeGetal)
-        ? (String(ruw).trim() === '' ? null : Number(ruw)) : ruw.trim();
+        ? (String(ruw).trim() === '' ? null : Number(String(ruw).trim().replace(',', '.')))
+        : ruw.trim();
+      if((type === 'getal' || keuzeGetal) && waarde != null && isNaN(waarde)){
+        CRM.toast('Dat is geen getal — gebruik bijvoorbeeld 17,50', 'err');
+        naKlaar(); return;
+      }
       if(String(waarde == null ? '' : waarde) === oud){ naKlaar(); return; }
       await bewaarVac(v, {[veld]: waarde});
       naKlaar();
