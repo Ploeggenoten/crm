@@ -1434,7 +1434,13 @@
       if(e.key === 'Enter' && (type !== 'tekst' || e.metaKey || e.ctrlKey)){ e.preventDefault(); bewaar(); }
     };
     if(keuzes) inp.onchange = bewaar;      /* kiezen = klaar, niet nog eens wegklikken */
-    inp.onblur = bewaar;
+    /* Chrome's zoekbare select-picker vuurt blur vóór change — met een
+       directe blur-opslag ging de keuze verloren en sprong bv.
+       Dienstverlening altijd terug naar W&S (Tjeerd, 19 sep 2026: "waarom
+       kan ik alleen W&S invullen"). Kleine vertraging zodat een change die
+       er nog aankomt altijd eerst gaat; zelfde fix als de fasewissel op de
+       klantkaart (10 sep). */
+    inp.onblur = () => setTimeout(bewaar, keuzes ? 200 : 0);
   }
 
   /* Vaste keuzelijsten voor de Voorwaarden. Vrije tekst gaf twintig
