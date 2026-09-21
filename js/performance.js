@@ -802,6 +802,124 @@ function blokTrend(){
   </section>`;
 }
 
+/* ═══ 2b. BELLETJES EN INSTROOM PER MAAND ═════════════════════════
+   Los van de trechter (die alleen Meta-leads en het gekozen bereik
+   meet): puur inspanning en aanwas, laatste twaalf kalendermaanden,
+   ongeacht de periodekiezer bovenaan — vraag van Tjeerd (19 sep 2026:
+   "hoeveel belletjes we doen, hoeveel eruit komt, hoeveel leads erin
+   komen, hoeveel vacatures we ophalen"). Zelfde twaalf-maands-kam en
+   staafjes-stijl als de trend hierboven. */
+function maandReeks(n=12){
+  const nu = new Date(), rijen = [];
+  for(let i=n-1;i>=0;i--){
+    const d = new Date(nu.getFullYear(), nu.getMonth()-i, 1);
+    rijen.push({mk:d.toLocaleDateString('sv-SE').slice(0,7),
+      lbl:d.toLocaleDateString('nl-NL',{month:'short'}),
+      lang:d.toLocaleDateString('nl-NL',{month:'long',year:'numeric'})});
+  }
+  return rijen;
+}
+
+/* "Geen gehoor" staat er overal letterlijk in de tekst — dat is de enige
+   plek in het hele CRM waar een belletje zijn uitkomst vastlegt (geen
+   apart veld), dus dat is meteen ook de betrouwbaarste bron. */
+const GEEN_GEHOOR_RE = /geen gehoor/i;
+
+function blokBelletjes(){
+  const maanden = maandReeks(12);
+  const tel = entiteiten => {
+    const idx = new Map(maanden.map(r => [r.mk, {bereikt:0, geen:0}]));
+    for(const a of (CRM.state.activiteiten || [])){
+      if(a.soort !== 'bel' || !entiteiten.has(a.entiteit)) continue;
+      const bak = idx.get(dagVan(a.op).slice(0,7));
+      if(!bak) continue;
+      GEEN_GEHOOR_RE.test(a.tekst) ? bak.geen++ : bak.bereikt++;
+    }
+    return maanden.map(r => Object.assign({}, r, idx.get(r.mk)));
+  };
+  const recruit = tel(new Set(['lead','kandidaat']));
+  const sales   = tel(new Set(['klant','contact']));
+  const H = 120, px = (n,max) => Math.max(n>0?3:0, Math.round(n/max*H));
+
+  const paneel = (titel, rijen) => {
+    const totBereikt = rijen.reduce((s,r)=>s+r.bereikt,0), totGeen = rijen.reduce((s,r)=>s+r.geen,0);
+    if(!totBereikt && !totGeen) return `<div class="card"><div class="card-b">
+      <div class="pf-kop"><span class="label">${h(titel)}</span></div>
+      ${CRM.ui.leeg('Nog geen belletjes gelogd','Zodra "Gebeld" of "geen gehoor" wordt vastgelegd verschijnt hier de trend.')}
+    </div></div>`;
+    const max = Math.max(1, ...rijen.map(r => r.bereikt + r.geen));
+    return `<div class="card"><div class="card-b">
+      <div class="pf-kop"><span class="label">${h(titel)}</span>
+        <span class="pf-leg"><i class="bereikt"></i>bereikt <i class="geen"></i>geen gehoor</span></div>
+      <div class="pf-kols">
+        ${rijen.map(r => `<div class="pf-kol" title="${h(r.lang)}: ${r.bereikt} bereikt, ${r.geen} geen gehoor">
+          <div class="pf-area" style="height:${H}px">
+            <i class="bereikt" style="height:${px(r.bereikt,max)}px"></i>
+            <i class="geen" style="height:${px(r.geen,max)}px"></i>
+          </div>
+          <div class="pf-mnd">${h(r.lbl)}</div>
+        </div>`).join('')}
+      </div>
+      <p class="pf-uitleg meta">${totBereikt+totGeen} belletjes in twaalf maanden · ${totBereikt} bereikt, ${totGeen} geen gehoor.</p>
+    </div></div>`;
+  };
+
+  return `<section class="pf-sec">
+    <div class="pf-kop"><span class="label">Belletjes per maand</span></div>
+    <div class="pf-2kol">
+      ${paneel('Recruitment — naar leads en kandidaten', recruit)}
+      ${paneel('Sales — naar klanten en contactpersonen', sales)}
+    </div>
+  </section>`;
+}
+
+function blokInstroom(){
+  const maanden = maandReeks(12);
+  const leadIdx = new Map(maanden.map(r => [r.mk, 0]));
+  for(const l of (CRM.state.leads || [])){
+    if(String(l.bot_status||'').trim() === 'Dubbel') continue;   // telt al via de eerste aanmelding
+    const mk = dagVan(l.binnen_op).slice(0,7);
+    const bak = leadIdx.get(mk);
+    if(bak != null) leadIdx.set(mk, bak + 1);
+  }
+  const vacIdx = new Map(maanden.map(r => [r.mk, 0]));
+  for(const v of (CRM.state.vacs || [])){
+    const mk = dagVan(v.aangemaakt).slice(0,7);
+    const bak = vacIdx.get(mk);
+    if(bak != null) vacIdx.set(mk, bak + 1);
+  }
+  const leadRijen = maanden.map(r => Object.assign({}, r, {n:leadIdx.get(r.mk)}));
+  const vacRijen  = maanden.map(r => Object.assign({}, r, {n:vacIdx.get(r.mk)}));
+  const H = 120, px = (n,max) => Math.max(n>0?3:0, Math.round(n/max*H));
+
+  const paneel = (titel, rijen, klasse, leegTekst) => {
+    const totaal = rijen.reduce((s,r) => s+r.n, 0);
+    if(!totaal) return `<div class="card"><div class="card-b">
+      <div class="pf-kop"><span class="label">${h(titel)}</span></div>
+      ${CRM.ui.leeg('Nog geen historie', leegTekst)}
+    </div></div>`;
+    const max = Math.max(1, ...rijen.map(r => r.n));
+    return `<div class="card"><div class="card-b">
+      <div class="pf-kop"><span class="label">${h(titel)}</span><span class="meta">${totaal} in twaalf maanden</span></div>
+      <div class="pf-kols">
+        ${rijen.map(r => `<div class="pf-kol" title="${h(r.lang)}: ${r.n}">
+          <div class="pf-area" style="height:${H}px"><i class="${klasse}" style="height:${px(r.n,max)}px"></i></div>
+          <div class="pf-net num">${r.n}</div>
+          <div class="pf-mnd">${h(r.lbl)}</div>
+        </div>`).join('')}
+      </div>
+    </div></div>`;
+  };
+
+  return `<section class="pf-sec">
+    <div class="pf-kop"><span class="label">Instroom per maand</span></div>
+    <div class="pf-2kol">
+      ${paneel('Leads binnengekomen', leadRijen, 'lead', 'Zodra er leads binnenkomen verschijnt hier de trend.')}
+      ${paneel('Vacatures opgehaald', vacRijen, 'vac', 'Zodra vacatures een aanmaakdatum hebben verschijnt hier de trend.')}
+    </div>
+  </section>`;
+}
+
 /* ═══ 3. PER RECRUITER ═══════════════════════════════════════════ */
 function recruiterRijen(p, D){
   /* Groeperen op de genormaliseerde naam (CRM.naamNorm): "bryan", "Bryan" en
@@ -2358,9 +2476,11 @@ function teken(mount, acties){
     ${blokDoel(_fin)}
     ${hKop('pf_h_trechter','Trechter','van campagne-binnenkomst tot plaatsing — wat kost een plaatsing en wat werkt')}
     ${hoofdstukTrechter(p, K)}
-    ${hKop('pf_h_team','Team & maand','plaatsingen, tempo, recruiters en uitval')}
+    ${hKop('pf_h_team','Team & maand','plaatsingen, belletjes, instroom, tempo, recruiters en uitval')}
     ${blokPlaatsingen(p, D)}
     ${blokTrend()}
+    ${blokBelletjes()}
+    ${blokInstroom()}
     ${blokRecruiters(p, D)}
     ${blokUitval(p, D)}
     ${blokLeadRedenen(p)}

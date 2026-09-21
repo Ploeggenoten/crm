@@ -46,6 +46,10 @@
 .pf-area > i{display:block;width:13px;border-radius:3px 3px 0 0}
 .pf-area > i.get{background:var(--olive-l)}
 .pf-area > i.stop{background:var(--red-line)}
+.pf-area > i.bereikt{background:var(--olive-l)}
+.pf-area > i.geen{background:var(--amber)}
+.pf-area > i.lead{background:var(--blue)}
+.pf-area > i.vac{background:var(--purple)}
 .pf-area .pf-tick{position:absolute;left:8%;right:8%;height:0;border-top:1px dashed var(--line-2)}
 .pf-net{font-size:12.5px;font-weight:600;color:var(--txt-2)} /* richting via .pos/.neg (base.css) */
 .pf-mnd{font-size:11px;color:var(--muted);text-transform:capitalize}
@@ -55,7 +59,13 @@
 .pf-leg i:first-child{margin-left:0}
 .pf-leg i.get{background:var(--olive-l)}
 .pf-leg i.stop{background:var(--red-line)}
+.pf-leg i.bereikt{background:var(--olive-l)}
+.pf-leg i.geen{background:var(--amber)}
 .pf-leg i.tick{width:14px;height:0;border-top:1px dashed var(--line-2);border-radius:0}
+
+/* Twee kaarten naast elkaar (belletjes recruitment/sales, leads/vacatures);
+   zelfde patroon als .pf-klantzij hieronder. */
+.pf-2kol{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
 
 /* ─── Tabellen ───────────────────────────────────────────────── */
 .pf-tbl td.pf-balk{width:110px;min-width:90px}
