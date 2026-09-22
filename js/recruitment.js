@@ -4416,7 +4416,7 @@ async function faseWissel(id, fase){
   const feeUitleg = CRM.canSeeMoney() ? 'de automatische fee-berekening' : 'de contract- en factuurgegevens';
   const uitleg = vraagKlant ? 'Aan wie stel je deze kandidaat voor? Zonder klant en vacature telt dit voorstel nergens mee.'
     : vraagStart ? `Startdatum en maandloon zijn verplicht — daar rekenen plaatsingen en ${feeUitleg} mee.`
-    : vraagVerw ? 'Zet de verwachte startdatum erbij — dan rekent de forecast ermee.'
+    : vraagVerw ? 'Weet je de verwachte startdatum al? Dan rekent de forecast ermee. Nog niet? Dan vul je hem later aan.'
     : vraagLoon ? `Het bruto maandloon is nodig voor ${feeUitleg}.`
     : vraagCall ? 'Intake is de videocall-lijst: alleen kandidaten mét geplande call.'
     : 'Zet de afspraak erbij, dan weet iedereen waar de kandidaat aan toe is.';
@@ -4454,7 +4454,7 @@ async function faseWissel(id, fase){
             <input type="date" id="fw_datum" value="${h(c.datum||'')}"></div>
           <div class="f-row"><label for="fw_tijd">Tijd</label><input type="time" id="fw_tijd" value="${h(c.tijd||'10:00')}"></div>
         </div>` : ''}
-      ${vraagVerw ? `<div class="f-row"><label for="fw_start">Verwachte startdatum</label>
+      ${vraagVerw ? `<div class="f-row"><label for="fw_start">Verwachte startdatum (optioneel)</label>
           <input type="date" id="fw_start" value="${h(c.start||'')}"></div>` : ''}
       ${vraagStart ? `<div class="f-row"><label for="fw_start">Startdatum</label>
           <input type="date" id="fw_start" value="${h(c.start||'')}"></div>` : ''}
@@ -4507,8 +4507,7 @@ async function faseWissel(id, fase){
           extra.datum = val('datum'); extra.tijd = val('tijd') || '';
         }
         if(vraagVerw){
-          if(!val('start')) return zeg('De verwachte startdatum is hier verplicht — de forecast rekent ermee.');
-          extra.start = val('start');
+          extra.start = val('start') || '';
         }
         if(vraagStart){
           if(!val('start')) return zeg('Een startdatum is verplicht bij een getekend contract.');
@@ -5110,8 +5109,6 @@ function snelBewerk(id){
           return zeg('Plan eerst de videocall: vul de afspraakdatum in — alleen kandidaten mét call komen in Intake.');
         if(GESPREK_FASES.includes(doel) && !CRM.faseIs(doel, c.fase) && !patch.datum)
           return zeg('Zet de afspraakdatum erbij — zonder datum weten we niet wanneer het gesprek is.');
-        if(doel === 'In de wacht' && !patch.start)
-          return zeg('Zet de verwachte startdatum erbij — dan rekent de forecast ermee.');
         if(CONTRACT_FASES.includes(doel) && !patch.maandloon)
           return zeg('Vul het bruto maandloon in — nodig voor ' +
             (CRM.canSeeMoney() ? 'de automatische fee' : 'de contract- en factuurgegevens') + '.');
