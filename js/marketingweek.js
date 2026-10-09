@@ -23,7 +23,6 @@
    ═══════════════════════════════════════════════════════════════ */
 (function(){
   const h = CRM.h;
-  const BORD = 'https://ploeggenoten.github.io/marketingbord/';
 
   /* ─── Gegevens uit het plan ─────────────────────────────────── */
   const DAGEN = {1:'Maandag', 2:'Dinsdag', 3:'Woensdag', 4:'Donderdag', 5:'Vrijdag'};
@@ -129,7 +128,7 @@
   const M = {
     geladen:false, mount:null, actiesEl:null, demo:false,
     tab:'week', week:null,
-    posts:[], taken:[], blok:new Map(), meta:[], besluiten:[],
+    posts:[], kanalen:[], taken:[], blok:new Map(), meta:[], besluiten:[],
     blokFout:null, takenFout:null, postsFout:null, metaFout:null
   };
   const huidigeWeek = () => maandagVan(CRM.todayISO());
@@ -142,19 +141,24 @@
   async function laad(){
     if(CRM.demo){ demoData(); M.geladen = true; return; }
     const vanaf = plus(huidigeWeek(), -70), meta14 = plus(CRM.todayISO(), -14);
-    const [p, t, b, m, a] = await Promise.all([
-      veilig(CRM.sb.from('mkt_posts').select('id,titel,kanaal,fase,publicatie_datum')),
+    const [p, t, b, m, a, k] = await Promise.all([
+      veilig(CRM.sb.from('mkt_posts').select('*')),
       veilig(CRM.sb.from('mkt_taken').select('*').order('datum').order('created_at')),
       veilig(CRM.sb.from('mkt_blok_klaar').select('*').gte('week', vanaf)),
       veilig(CRM.sb.from('mkt_meta_stats').select('datum,uitgegeven,leads').gte('datum', meta14)),
-      veilig(CRM.sb.from('mkt_ad_besluiten').select('advertentie,besluit,status'))
+      veilig(CRM.sb.from('mkt_ad_besluiten').select('advertentie,besluit,status')),
+      veilig(CRM.sb.from('mkt_kanalen').select('naam').order('volgorde'))
     ]);
-    M.posts = p.rows.map(r => ({id:r.id, titel:r.titel || '', kanaal:r.kanaal || '', fase:r.fase || 'Idee', datum:r.publicatie_datum || ''}));
+    M.kanalen = k.rows.map(r => r.naam).filter(Boolean);
+    M.posts = p.rows.map(rijNaarPost);
     M.postsFout = p.fout; M.taken = t.rows; M.takenFout = t.fout;
     M.blok = new Map(b.rows.map(r => [`${r.blok}|${r.week}`, !!r.klaar])); M.blokFout = b.fout;
     M.meta = m.rows; M.metaFout = m.fout; M.besluiten = a.rows;
     M.geladen = true;
   }
+  const rijNaarPost = r => ({id:r.id, titel:r.titel || '', kanaal:r.kanaal || '', format:r.format || '', doel:r.doel || '',
+    fase:r.fase || 'Idee', hook:r.hook || '', script:r.script || '', datum:r.publicatie_datum || '',
+    link:r.link || '', learnings:r.learnings || ''});
   function demoData(){
     M.demo = true; const mon = huidigeWeek();
     M.posts = [
@@ -283,6 +287,103 @@
       <div class="mw-dagen">${[1,2,3,4,5].map(d => dagKaart(d, mon, blokken)).join('')}</div>`;
   }
 
+  /* ─── Content: van idee tot gepubliceerd ───────────────────────
+     Eén plek voor ideeën, scripts en posts. Dezelfde tabel als het oude
+     marketingbord (mkt_posts), dus niets gaat verloren. Het briefje per
+     video uit het plan zit in het formulier: kanaal, doel, haak, script. */
+  const FASES = ['Idee', 'Script klaar', 'Ingepland', 'Gepubliceerd'];
+  const FORMATEN = ['Video', 'Foto', 'Carrousel', 'Tekst'];
+  const kanaalNamen = () => M.kanalen.length ? M.kanalen : ['LinkedIn', 'Instagram', 'TikTok', 'Meta', 'Website'];
+  const faseKolom = f => f === 'Learnings' ? 'Gepubliceerd' : f;
+
+  function kaartHtml(p){
+    const i = FASES.indexOf(faseKolom(p.fase)), volgende = FASES[i + 1];
+    return `<div class="mw-kaart" data-post="${h(p.id)}">
+      <b>${h(p.titel || 'Zonder titel')}</b>
+      <div class="mw-km">${p.kanaal ? `<span class="chip">${h(p.kanaal)}</span>` : ''}${p.format ? `<span class="chip">${h(p.format)}</span>` : ''}${p.fase === 'Learnings' ? '<span class="chip">Learnings</span>' : ''}${p.datum ? `<span class="meta">${h(kort(p.datum))}</span>` : ''}</div>
+      ${p.hook ? `<div class="meta mw-hook">${h(p.hook.length > 90 ? p.hook.slice(0, 90) + '…' : p.hook)}</div>` : ''}
+      ${volgende ? `<button class="btn ghost sm" data-next="${h(p.id)}" type="button">Naar ${h(volgende)} ›</button>` : ''}</div>`;
+  }
+  function contentHtml(){
+    const kol = f => M.posts.filter(p => faseKolom(p.fase) === f).sort((a, b) =>
+      f === 'Gepubliceerd' ? (b.datum || '').localeCompare(a.datum || '') : (a.datum || '9999').localeCompare(b.datum || '9999'));
+    return `<p class="meta" style="margin:0 0 12px">Elk idee komt hier binnen. Bryan haalt ze op vrijdag door: uitwerken, script schrijven, inplannen. Klik op een kaart om hem te openen.</p>
+      <div class="mw-bord">${FASES.map(f => {
+        const lijst = kol(f), tonen = f === 'Gepubliceerd' ? lijst.slice(0, 8) : lijst;
+        return `<div class="mw-kol"><div class="mw-kh"><b>${h(f)}</b><span class="meta">${lijst.length}</span></div>
+          ${tonen.map(kaartHtml).join('') || '<div class="meta mw-leeg">Niets</div>'}
+          ${lijst.length > tonen.length ? `<div class="meta">En nog ${lijst.length - tonen.length} oudere posts.</div>` : ''}</div>`;
+      }).join('')}</div>`;
+  }
+  async function bewaarPost(p, velden){
+    const rij = {titel:velden.titel, kanaal:velden.kanaal, format:velden.format, doel:velden.doel, fase:velden.fase,
+      hook:velden.hook, script:velden.script, publicatie_datum:velden.datum || null, link:velden.link, learnings:velden.learnings,
+      updated_at:new Date().toISOString()};
+    if(M.demo){
+      if(p) Object.assign(p, velden); else M.posts.push({id:'x' + Date.now(), ...velden});
+      return true;
+    }
+    if(p){
+      const {error} = await CRM.sb.from('mkt_posts').update(rij).eq('id', p.id);
+      if(error){ CRM.toast('Opslaan lukt niet: ' + error.message, 'err'); return false; }
+      Object.assign(p, velden); return true;
+    }
+    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const {error} = await CRM.sb.from('mkt_posts').insert({id, ...rij});
+    if(error){ CRM.toast('Opslaan lukt niet: ' + error.message, 'err'); return false; }
+    M.posts.push({id, ...velden}); return true;
+  }
+  function postModal(p, voorFase){
+    const v = p || {titel:'', kanaal:'', format:'', doel:'', fase:voorFase || 'Idee', hook:'', script:'', datum:'', link:'', learnings:''};
+    const opt = (lijst, nu, leeg) => (leeg ? `<option value="">${h(leeg)}</option>` : '') + lijst.map(x => `<option${x === nu ? ' selected' : ''}>${h(x)}</option>`).join('');
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">${p ? 'Post bewerken' : 'Nieuw idee'}</div></div>
+      <div class="modal-b">
+        <div class="f-row"><label for="mw_titel">Titel</label><input type="text" id="mw_titel" value="${h(v.titel)}" placeholder="Waar gaat het over?"></div>
+        <div class="f-grid">
+          <div class="f-row"><label for="mw_kanaal">Kanaal</label><select id="mw_kanaal">${opt(kanaalNamen(), v.kanaal, 'Kies een kanaal')}</select></div>
+          <div class="f-row"><label for="mw_format">Vorm</label><select id="mw_format">${opt(FORMATEN, v.format, 'Kies een vorm')}</select></div>
+          <div class="f-row"><label for="mw_fase">Fase</label><select id="mw_fase">${opt(FASES.concat(['Learnings']), v.fase)}</select></div>
+          <div class="f-row"><label for="mw_datum">Plaatsdatum</label><input type="date" id="mw_datum" value="${h(v.datum)}"></div>
+        </div>
+        <div class="f-row"><label for="mw_doel">Wat moeten ze doen of denken?</label><input type="text" id="mw_doel" value="${h(v.doel)}"></div>
+        <div class="f-row"><label for="mw_hook">De eerste zin (de haak)</label><input type="text" id="mw_hook" value="${h(v.hook)}"></div>
+        <div class="f-row"><label for="mw_script">Script of tekst</label><textarea id="mw_script" rows="6">${h(v.script)}</textarea></div>
+        <div class="f-row"><label for="mw_link">Link naar de post</label><input type="text" id="mw_link" value="${h(v.link)}" placeholder="Pas invullen als hij live staat"></div>
+        <div class="f-row"><label for="mw_learn">Wat leerden we ervan?</label><textarea id="mw_learn" rows="3">${h(v.learnings)}</textarea></div>
+      </div>
+      <div class="modal-f">
+        ${p ? '<button class="btn ghost" id="mw_wis" type="button" style="margin-right:auto;color:#a4301f">Verwijderen</button>' : ''}
+        <button class="btn ghost" data-mclose type="button">Annuleren</button>
+        <button class="btn" id="mw_opslaan" type="button">Opslaan</button>
+      </div>`, {onOpen(m){
+        const val = id => m.querySelector('#' + id).value.trim();
+        m.querySelector('#mw_opslaan').onclick = async () => {
+          const velden = {titel:val('mw_titel'), kanaal:val('mw_kanaal'), format:val('mw_format'), doel:val('mw_doel'), fase:val('mw_fase'),
+            hook:val('mw_hook'), script:m.querySelector('#mw_script').value, datum:val('mw_datum'), link:val('mw_link'), learnings:m.querySelector('#mw_learn').value};
+          if(!velden.titel){ CRM.toast('Geef het idee een titel', 'err'); return; }
+          if(['Ingepland', 'Gepubliceerd'].includes(velden.fase) && !velden.datum){ CRM.toast('Een ingeplande post heeft een plaatsdatum nodig', 'err'); return; }
+          if(!await bewaarPost(p, velden)) return;
+          CRM.modal.close(); teken();
+        };
+        const wis = m.querySelector('#mw_wis');
+        if(wis) wis.onclick = async () => {
+          if(!confirm('Deze post verwijderen? Dat kan niet ongedaan worden gemaakt.')) return;
+          if(!M.demo){
+            const {error} = await CRM.sb.from('mkt_posts').delete().eq('id', p.id);
+            if(error){ CRM.toast('Verwijderen lukt niet: ' + error.message, 'err'); return; }
+          }
+          M.posts = M.posts.filter(x => x !== p); CRM.modal.close(); teken();
+        };
+        m.querySelector('#mw_titel').focus();
+      }});
+  }
+  async function naarVolgende(p){
+    const i = FASES.indexOf(faseKolom(p.fase)), volgende = FASES[i + 1]; if(!volgende) return;
+    if(volgende === 'Ingepland' && !p.datum){ postModal(p, 'Ingepland'); return; }
+    if(await bewaarPost(p, {...p, fase:volgende})) teken();
+  }
+
   function wekenHtml(){
     const nu = huidigeWeek();
     const rijen = [];
@@ -331,15 +432,16 @@
   /* ─── Tekenen en bedienen ────────────────────────────────── */
   function teken(){
     const mount = M.mount; if(!mount) return;
-    const TABS = [{k:'week', t:'Week'}, {k:'weken', t:'Komende weken'}, {k:'jaar', t:'Jaarplan'}];
-    const body = M.tab === 'weken' ? wekenHtml() : M.tab === 'jaar' ? jaarHtml() : weekHtml();
+    const TABS = [{k:'week', t:'Week'}, {k:'content', t:'Content'}, {k:'weken', t:'Komende weken'}, {k:'jaar', t:'Jaarplan'}];
+    const body = M.tab === 'weken' ? wekenHtml() : M.tab === 'jaar' ? jaarHtml() : M.tab === 'content' ? contentHtml() : weekHtml();
     const fouten = [M.postsFout && 'posts', M.takenFout && 'taken'].filter(Boolean);
     mount.innerHTML = `
       ${M.demo ? '<div class="note info" style="margin-bottom:16px">Demo-data: wat je hier ziet is verzonnen.</div>' : ''}
       ${fouten.length ? `<div class="note err" style="margin-bottom:16px">De ${fouten.join(' en ')} konden niet geladen worden. Herlaad de pagina.</div>` : ''}
       <div class="tabs">${TABS.map(t => `<button class="tab ${M.tab === t.k ? 'on' : ''}" data-tab="${t.k}">${h(t.t)}</button>`).join('')}</div>
       <div class="mw">${body}</div>`;
-    if(M.actiesEl) M.actiesEl.innerHTML = `<a class="btn ghost" href="${BORD}" target="_blank" rel="noopener">Nieuwe content maken ↗</a>`;
+    if(M.actiesEl) M.actiesEl.innerHTML = `<button class="btn" data-nieuwpost type="button">+ Nieuw idee</button>`;
+    CRM.$$('[data-nieuwpost]', M.actiesEl || document).forEach(b => b.onclick = () => postModal(null));
     bind(mount);
   }
 
@@ -355,6 +457,8 @@
     CRM.$$('[data-week]:not(input)', mount).forEach(b => b.onclick = () => {
       const n = +b.dataset.week; M.week = n === 0 ? huidigeWeek() : plus(M.week, n * 7); teken();
     });
+    CRM.$$('[data-next]', mount).forEach(b => b.onclick = e => { e.stopPropagation(); const p = M.posts.find(x => String(x.id) === b.dataset.next); if(p) naarVolgende(p); });
+    CRM.$$('[data-post]', mount).forEach(k => k.onclick = () => { const p = M.posts.find(x => String(x.id) === k.dataset.post); if(p) postModal(p); });
     CRM.$$('[data-open]', mount).forEach(r => r.onclick = () => { M.week = r.dataset.open; M.tab = 'week'; teken(); });
     CRM.$$('[data-ga]', mount).forEach(a => a.onclick = () => CRM.ga(a.dataset.ga));
 
@@ -412,7 +516,7 @@
     navTitle(){ return CRM.isMarketeer() ? 'Mijn week' : 'Marketingweek'; },
     /* Alleen voor de marketeer en de eigenaar (Tjeerd, 9 okt 2026: niet voor iedereen). */
     zichtbaar(){ return CRM.isMarketeer() || CRM.canSeeMoney(); },
-    onderschrift:'De week van de marketeer: blokken, taken, posts en Meta-cijfers',
+    onderschrift:'De week van de marketeer: blokken, taken, content en Meta-cijfers',
     badge(){ try{ return M.geladen ? liggen().length : 0; }catch(e){ return 0; } },
     render
   });
