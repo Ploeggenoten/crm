@@ -61,6 +61,8 @@ CRM.canSeeMoney = () => !!(CRM.user && ADMIN_EMAILS.includes((CRM.user.email||''
 CRM.magOpbrengstZien = () => !!(CRM.user || CRM.demo);
 /* Beheerder van instellingen (mag ook een teamlid zijn met rol admin). */
 CRM.canManage = () => CRM.canSeeMoney() || CRM.profile?.rol === 'admin';
+/* Wie marketing doet (profiel functie = marketeer) krijgt een eigen startscherm: de marketingweek. */
+CRM.isMarketeer = () => CRM.profile?.functie === 'marketeer';
 CRM.me = () => CRM.profile?.naam || CRM.user?.email || '';
 
 /* ─── Kleine helpers ──────────────────────────────────────────── */
@@ -706,7 +708,7 @@ CRM.render = () => {
   document.title = 'Ploeggenoten CRM · ' + m.title;
   const head = document.getElementById('pagehead'), mount = document.getElementById('viewmount');
   head.innerHTML = `<button class="menubtn" id="menubtn">☰</button>
-    <div class="ph-t"><div class="h1">${h(m.title)}</div>${m.onderschrift?`<div class="sub">${h(m.onderschrift)}</div>`:''}</div>
+    <div class="ph-t"><div class="h1">${h(m.navTitle ? m.navTitle() : m.title)}</div>${m.onderschrift?`<div class="sub">${h(m.onderschrift)}</div>`:''}</div>
     <div class="row tight" id="pageacties"></div>`;
   document.getElementById('menubtn').onclick = () => document.querySelector('nav.side').classList.toggle('open');
   mount.className = 'view' + (m.volleBreedte ? ' pad0' : '');
@@ -764,20 +766,31 @@ const NAV_ICONEN = {
   kandidaten:  '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.5-3.6 2.8-5.5 5.5-5.5S14 16.4 14.5 20M15.5 5.5a3.2 3.2 0 1 1 0 5.4M16.5 14.8c2.2.5 3.6 2.3 4 5.2"/>',
   source:      '<path d="M12 21s-6.5-5.6-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.4"/>',
   marketing:   '<path d="M3 11v3l4 1 2 5 2.5-1-1.5-4 10 3V4L7 9.5 3 11z"/>',
+  marketingweek:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3M8 17h6"/>',
   performance: '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
   finance:     '<circle cx="12" cy="12" r="8.5"/><path d="M15 9a4 4 0 1 0 0 6M8.5 11h5M8.5 13.5h5"/>',
   instellingen:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>'
 };
 const navIcoon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICONEN[k]||'<circle cx="12" cy="12" r="8"/>'}</svg>`;
 
+function navGroepen(){
+  /* De marketeer begint bij zijn eigen week en de marketingcijfers; de rest
+     van het CRM blijft bereikbaar, maar staat eronder. Voor de anderen staat
+     de marketingweek bij Groei, zodat het overzicht van de marketeer te zien is. */
+  if(CRM.isMarketeer()) return [
+    {titel:'Overzicht', keys:['marketingweek']},
+    {titel:'Groei', keys:['marketing','performance']},
+    ...NAV_GROEPEN.filter(g => g.titel !== 'Overzicht' && g.titel !== 'Groei')];
+  return NAV_GROEPEN.map(g => g.titel === 'Groei' ? {...g, keys:['marketingweek', ...g.keys]} : g);
+}
 function bouwNav(){
   const wrap = document.getElementById('navscroll');
-  wrap.innerHTML = NAV_GROEPEN.map(g => {
+  wrap.innerHTML = navGroepen().map(g => {
     const items = g.keys.map(k=>CRM.modules[k]).filter(m => m && (!m.adminOnly || CRM.canSeeMoney()));
     if(!items.length) return '';
     return (g.titel?`<div class="navgroup">${h(g.titel)}</div>`:'<div style="height:4px"></div>') +
       items.map(m => `<a class="nav${m.adminOnly?' adm':''}" data-go="${m.key}">
-        ${navIcoon(m.key)}<span>${h(m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
+        ${navIcoon(m.key)}<span>${h(m.navTitle ? m.navTitle() : m.title)}</span><span class="cnt" data-cnt="${m.key}" style="display:none"></span></a>`).join('');
   }).join('');
   CRM.$$('[data-go]', wrap).forEach(a => a.onclick = () => CRM.ga(a.dataset.go));
   navActief(); navBadges();
@@ -1309,7 +1322,7 @@ async function start(user){
   await CRM.load();
   bouwNav();
   const hash = (location.hash||'').replace('#','').split('/');
-  const key = CRM.modules[hash[0]] ? hash[0] : 'dashboard';
+  const key = CRM.modules[hash[0]] ? hash[0] : (CRM.isMarketeer() && CRM.modules.marketingweek ? 'marketingweek' : 'dashboard');
   CRM.ga(key, hash[1] ? {id:decodeURIComponent(hash[1])} : {});
   realtime();
 }
