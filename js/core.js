@@ -679,7 +679,9 @@ CRM.ga = (key, params={}, opts={}) => {
   let m = CRM.modules[key];
   if(!m) return;
   let vervang = !!opts.vervang;
-  if(m.adminOnly && !CRM.canSeeMoney()){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; vervang = true; }
+  /* `zichtbaar` is de fijnere variant van adminOnly: een module kan zelf zeggen
+     voor wie hij is (bijv. de marketingweek: de marketeer en de eigenaar). */
+  if((m.adminOnly && !CRM.canSeeMoney()) || (m.zichtbaar && !m.zichtbaar())){ key = 'dashboard'; m = CRM.modules.dashboard; params = {}; vervang = true; }
   /* Navigeren terwijl er een paneel openstaat: dat paneel hoort weg, want
      de pagina eronder verdwijnt. De bijbehorende geschiedenisstappen laten
      we staan (ze liggen achter ons en een back() hier zou botsen met de
@@ -786,7 +788,7 @@ function navGroepen(){
 function bouwNav(){
   const wrap = document.getElementById('navscroll');
   wrap.innerHTML = navGroepen().map(g => {
-    const items = g.keys.map(k=>CRM.modules[k]).filter(m => m && (!m.adminOnly || CRM.canSeeMoney()));
+    const items = g.keys.map(k=>CRM.modules[k]).filter(m => m && (!m.adminOnly || CRM.canSeeMoney()) && (!m.zichtbaar || m.zichtbaar()));
     if(!items.length) return '';
     return (g.titel?`<div class="navgroup">${h(g.titel)}</div>`:'<div style="height:4px"></div>') +
       items.map(m => `<a class="nav${m.adminOnly?' adm':''}" data-go="${m.key}">

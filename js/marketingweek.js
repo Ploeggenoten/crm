@@ -410,6 +410,8 @@
   CRM.registerModule('marketingweek', {
     title:'Marketingweek', icon:'▦',
     navTitle(){ return CRM.isMarketeer() ? 'Mijn week' : 'Marketingweek'; },
+    /* Alleen voor de marketeer en de eigenaar (Tjeerd, 9 okt 2026: niet voor iedereen). */
+    zichtbaar(){ return CRM.isMarketeer() || CRM.canSeeMoney(); },
     onderschrift:'De week van de marketeer: blokken, taken, posts en Meta-cijfers',
     badge(){ try{ return M.geladen ? liggen().length : 0; }catch(e){ return 0; } },
     render
