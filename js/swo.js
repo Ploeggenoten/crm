@@ -307,6 +307,17 @@ function nieuwStukDelen(){
   return {'2-vervanging-uitzenden':{aan:false}, '2-retainer':{aan:false}};
 }
 
+/* Vestiging van de opdrachtgever uit de klantgegevens: adres, postcode en
+   plaats, en het KvK-nummer. Staat er (nog) geen postcode of plaats bij de
+   klant, dan valt het terug op het losse veld Locatie. Tjeerd, 12 okt 2026:
+   wat al bij de klant staat moet vast in de overeenkomst staan, maar wel
+   aanpasbaar blijven. */
+function vestigingVan(kl){
+  const k = kl || {};
+  const pcplaats = [t(k.postcode), t(k.plaats)].filter(Boolean).join(' ') || t(k.locatie);
+  return {adres:t(k.adres), pcplaats, kvk:t(k.kvk)};
+}
+
 /* Model uit een klant vullen. Alles blijft overschrijfbaar. */
 function vulUitKlant(v, klantNaam){
   const naam = t(klantNaam);
@@ -314,8 +325,11 @@ function vulUitKlant(v, klantNaam){
   const kl = (CRM.klant && CRM.klant(naam)) || (CRM.state.clients || []).find(c => c.naam === naam) || {};
   const cts = (CRM.state.contacten || []).filter(c => c.klant === naam);
   const ct = cts.find(c => c.hoofd) || cts[0] || null;
+  const vest = vestigingVan(kl);
   v.og.naam     = naam;
-  v.og.pcplaats = t(kl.locatie);
+  v.og.adres    = vest.adres;
+  v.og.pcplaats = vest.pcplaats;
+  v.og.kvk      = vest.kvk;
   v.og.contact  = ct ? t(ct.naam) : '';
   v.og.email    = t(ct && ct.email)    || t(kl.email);
   v.og.telefoon = t(ct && ct.telefoon) || t(kl.telefoon);
@@ -1110,6 +1124,20 @@ function open(opts){
     });
 
     koppel('swo_og_naam',    x => v.og.naam = x);
+    /* Typ of kies je de klantnaam pas in de overeenkomst zelf, dan vullen we de
+       nog lege velden (adres, plaats, KvK, contact) alsnog uit de klantkaart.
+       Wat er al staat laten we met rust. */
+    const naamEl = zijEl.querySelector('#swo_og_naam');
+    if(naamEl) naamEl.onchange = () => {
+      const naam = t(naamEl.value).toLowerCase();
+      const kl = (CRM.state.clients || []).find(c => t(c.naam).toLowerCase() === naam);
+      if(!kl) return;
+      const vest = vestigingVan(kl);
+      let gevuld = false;
+      const vul = (veld, waarde) => { if(!t(v.og[veld]) && t(waarde)){ v.og[veld] = waarde; gevuld = true; } };
+      vul('adres', vest.adres); vul('pcplaats', vest.pcplaats); vul('kvk', vest.kvk);
+      if(gevuld){ zijEl.innerHTML = zijHtml(); bindZij(); teken(); }
+    };
     koppel('swo_og_adres',   x => v.og.adres = x);
     koppel('swo_og_pc',      x => v.og.pcplaats = x);
     koppel('swo_og_kvk',     x => v.og.kvk = x);

@@ -2828,8 +2828,10 @@ function uitvalHtml(c){
              af; erbuiten is de plaatsing afgerond en blijft de fee staan
              (naam: Tjeerd, 7 aug 2026). */''}
         ${/* Niet via rij(): die ontsnapt de waarde, en hier hoort opmaak. */''}
-        ${gestopt && c.gestoptOp && !c.vervangt ? `<div class="kd-veld">
-          <span class="label">Target-effect</span><span>${CRM.binnenGarantie(c)
+        ${gestopt && c.gestoptOp && (!c.vervangt || CRM.isFlexKracht(c)) ? `<div class="kd-veld">
+          <span class="label">Target-effect</span><span>${CRM.isFlexKracht(c)
+            ? `<span class="chip red">telt af</span> <span class="meta">flex telt altijd als stopper</span>`
+            : CRM.binnenGarantie(c)
             ? `<span class="chip red">telt af</span> <span class="meta">binnen de garantie${
                 CRM.garantieTot(c) ? ' (t/m ' + h(CRM.fmtDate(CRM.garantieTot(c))) + ')' : ''}</span>`
             : `<span class="chip green">geen effect</span> <span class="meta">gestopt ná de garantie${

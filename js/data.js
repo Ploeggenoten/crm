@@ -180,8 +180,14 @@ CRM.garantieTot = c => {
   d.setMonth(d.getMonth() + mnd);
   return d.toLocaleDateString('sv-SE');     // lokale datum, niet via UTC
 };
+/* Flex en detachering kennen geen garantietermijn: een flexkracht die stopt is
+   altijd een stopper en drukt de flexcijfers (Tjeerd, 23 okt 2026, over Alain
+   Jansen en Artur Freire Brazao: beide Flex, beide na twee maanden gestopt en
+   daardoor ten onrechte niet als stopper geteld). */
+CRM.isFlexKracht = c => !!c && ['Flex', 'Detachering'].includes(String(c.type || ''));
 CRM.binnenGarantie = c => {
   if(!c || !c.gestoptOp) return true;
+  if(CRM.isFlexKracht(c)) return true;
   const tot = CRM.garantieTot(c);
   return !tot || String(c.gestoptOp).slice(0,10) <= tot;
 };
@@ -213,8 +219,10 @@ CRM.teltAlsPlaatsing = c => !!c && !!c.geplaatstOp &&
   (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c));
 
 /* Trekt deze stop van de target af? Alleen binnen de garantietermijn. */
-CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt') && !!c.geplaatstOp
-  && !c.vervangt && CRM.binnenGarantie(c);
+CRM.teltAlsStop = c => !!c && CRM.faseIs(c.fase, 'Gestopt')
+  && (CRM.isFlexKracht(c)
+      ? !!(c.geplaatstOp || c.start)             // flex telt altijd: geen garantie, geen vervangerregel
+      : !!c.geplaatstOp && !c.vervangt && CRM.binnenGarantie(c));
 CRM.loopt = c => !!c && CRM.faseIn(c.fase, CRM.PLACED) && !c.gestoptOp;
 
 CRM.AFVAL_CATS = {
