@@ -8,8 +8,12 @@
    body.glas, die core.js bij elke render zet (CRM.glasAan()).
 
    De kop van elke module is de bestaande paginakop (header.pagehead),
-   in glas. Een module krijgt er hier vier kerncijfers bij; staat een
-   module niet in de lijst, dan blijft het bij titel en knoppen.
+   in glas. Een module krijgt er hier kerncijfers bij; staat een module
+   niet in de lijst, dan blijft het bij titel en knoppen. Sales en
+   Klanttrajecten staan er bewust níet in: die hebben hun eigen, rijkere
+   cijferblok direct onder de kop, en dubbel tonen gaf verwarring
+   (Tjeerd, 27 okt 2026). Plaatsingen toont alleen wat niet al in het
+   ploegvlak staat.
    Geen bedragen: de kop staat ook op het teamscherm. */
 (function(){
   const GLAS_VOOR_IEDEREEN = true;
@@ -23,15 +27,6 @@
   const open = v => (v.status || 'Open') === 'Open';
 
   const K = {
-    sales(){
-      const kl = st().clients || [];
-      return [
-        [kl.filter(k => (CRM.SALES_ACTIEF || []).includes(k.fase)).length, 'klanten in traject'],
-        [(st().kansen || []).filter(k => (k.status || 'open') === 'open').length, 'open kansen'],
-        [kl.filter(k => k.fase === 'Gesprek ingepland').length, 'gesprekken gepland'],
-        [CRM.salesmeter ? CRM.salesmeter.opvolgen().n : 0, 'opvolgen vandaag']
-      ];
-    },
     klanten(){
       const kl = st().clients || [];
       return [
@@ -51,25 +46,13 @@
         [(st().leads || []).filter(l => kort(l.binnen_op || l.created_at) >= ma).length, 'binnen deze week']
       ];
     },
-    pijplijn(){
-      const cs = CRM.kandidaten(), ma = maandagISO();
-      const lopend = cs.filter(c => CRM.isActiefLopend(c) && !CRM.PLACED.includes(c.fase));
-      return [
-        [lopend.length, 'in een traject'],
-        [lopend.filter(c => ['Eerste gesprek', 'Tweede gesprek', 'Meeloopdag', 'Offer', 'Contract ondertekenen'].includes(c.fase)).length, 'in gesprek'],
-        [cs.filter(c => c.voorgesteldOp && kort(c.voorgesteldOp) >= ma).length, 'voorgesteld deze week'],
-        [cs.filter(c => CRM.teltAlsPlaatsing(c) && kort(c.geplaatstOp).slice(0, 7) === maand()).length, 'getekend deze maand']
-      ];
-    },
     plaatsingen(){
       const cs = CRM.kandidaten();
       let pm = null; try{ pm = CRM.plaatsingenMaand && CRM.plaatsingenMaand(); }catch(e){}
       const doel = CRM.maandTarget ? CRM.maandTarget() : null;
       return [
         [pm ? `${pm.netto}<small>/${doel || '–'}</small>` : '–', 'netto deze maand'],
-        [cs.filter(c => CRM.PLACED.includes(c.fase) && !c.gestoptOp).length, 'aan het werk'],
-        [cs.filter(c => CRM.teltAlsStop(c) && kort(c.gestoptOp).slice(0, 7) === maand()).length, 'gestopt deze maand'],
-        [cs.filter(c => c.start && kort(c.start) >= vandaag() && !c.gestoptOp).length, 'starts gepland']
+        [cs.filter(c => CRM.teltAlsStop(c) && kort(c.gestoptOp).slice(0, 7) === maand()).length, 'gestopt deze maand']
       ];
     },
     hot(){
@@ -86,7 +69,6 @@
       return [
         [cs.length, 'kandidaten'],
         [cs.filter(c => CRM.isActiefLopend(c) && !CRM.PLACED.includes(c.fase)).length, 'in een traject'],
-        [cs.filter(c => CRM.PLACED.includes(c.fase) && !c.gestoptOp).length, 'aan het werk'],
         [cs.filter(c => CRM.inTalentpool(c)).length, 'in de talentpool']
       ];
     },
