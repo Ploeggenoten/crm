@@ -108,3 +108,27 @@ body.glas:not([data-view=dashboard]) #viewmount{
   --line:rgba(26,31,10,.08);
   --line-2:rgba(26,31,10,.12);
 }
+
+/* ─── Zijbalk: los glazen paneel dat op de achtergrond zweeft ───
+   (Tjeerd, 26 okt 2026, naar "versie 3".) Alleen op de desktop; op
+   mobiel blijft het uitschuifmenu zoals het was. De achtergrond loopt
+   dan ook onder de zijbalk door, dus die zetten we op de body. */
+@media (min-width:901px){
+  body.glas{background:var(--glas-bg) fixed}
+  body.glas main.content{background:transparent;margin-left:calc(var(--nav-w) + 24px)}
+  body.glas nav.side{top:12px;bottom:12px;left:12px;border-radius:26px;border:none;color:var(--ink);
+    background:linear-gradient(170deg,rgba(255,255,255,.42),rgba(255,255,255,.24));
+    backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);
+    box-shadow:0 24px 60px rgba(60,30,10,.16),inset 0 1.5px 1px #fff,inset 0 -1px 1px rgba(255,255,255,.6)}
+  body.glas nav.side .brand,body.glas nav.side .navfoot{border-color:rgba(26,31,10,.08)}
+  body.glas .side a.nav{color:var(--ink)}
+  body.glas .side a.nav:hover{background:rgba(255,255,255,.5)}
+  body.glas .side a.nav.on{background:#141710;color:#fff}
+  body.glas .side a.nav.on::before{display:none}
+  body.glas .side a.nav .cnt{background:rgba(255,255,255,.6);color:var(--ink)}
+  body.glas .side a.nav.on .cnt{background:var(--lime);color:#171d08}
+  body.glas:not([data-view=dashboard]) header.pagehead{margin:12px 12px 0 0}
+  /* Het dashboard: paneel en team schuiven netjes naast de zwevende balk. */
+  body.glas .dash2.dk{background:transparent}
+  body.glas .dk-team{margin-left:0;clip-path:inset(-200px -200px -400px 0)}
+}
