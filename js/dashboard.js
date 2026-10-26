@@ -1554,6 +1554,31 @@ function meldingenBlok(){
     </div></div></div>`;
 }
 
+/* Dagmelding van de LinkedIn-netwerkroutine (Tjeerd, 26 okt 2026: "zet het
+   in mijn dashboard" i.p.v. een mail). De routine schrijft één melding per
+   dag met entiteit 'linkedin'; in `ref` staat de lijst als JSON
+   ({verzoeken:[{naam,functie,bedrijf,plaats,url}], berichten:[{naam,tekst}]}).
+   Er is geen eigen tabel: alleen tonen, de funnel komt later. */
+function linkedinLijst(id){
+  const m = CRM.state.meldingen.find(x => x.id === id);
+  let d = {};
+  try{ d = JSON.parse(m?.ref || '{}'); }catch(e){}
+  const vz = d.verzoeken || [], br = d.berichten || [];
+  const naam = r => veiligeUrl(r.url)
+    ? `<a href="${h(veiligeUrl(r.url))}" target="_blank" rel="noopener">${h(r.naam)}</a>` : h(r.naam);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">LinkedIn-netwerk</div>
+      <div class="meta" style="margin-top:2px">${h(m?.tekst || '')}</div></div>
+    <div class="modal-b">
+      ${vz.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Naam</th><th>Functie</th><th>Bedrijf</th><th>Plaats</th></tr></thead>
+        <tbody>${vz.map(r => `<tr><td>${naam(r)}</td><td>${h(r.functie||'')}</td><td>${h(r.bedrijf||'')}</td><td>${h(r.plaats||'')}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="meta">Vandaag geen verzoeken verstuurd.</p>'}
+      ${br.length ? `<div class="label" style="margin:16px 0 6px">Bedankberichten</div>
+        ${br.map(b => `<p style="margin:0 0 10px"><b>${h(b.naam)}</b><br>${h(b.tekst)}</p>`).join('')}` : ''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button></div>`);
+}
+
 /* Hot vacatures van deze gebruiker — doellogica identiek aan de Hot-module. */
 const EIND_FASES = ['Afgevallen','Gestopt'];
 const SOORT_WOORD = { voorstellen:['voorstel','voorstellen'], gesprekken:['gesprek','gesprekken'], plaatsingen:['plaatsing','plaatsingen'] };
@@ -1949,6 +1974,7 @@ CRM.registerModule('dashboard', {
         if(ent==='klant') CRM.ga('klanten',{id:ref});
         else if(ent==='kandidaat') CRM.ga('kandidaten',{id:ref});
         else if(ent==='lead') CRM.ga('recruitment',{id:ref});
+        else if(ent==='linkedin') linkedinLijst(r.dataset.meld);
         else{
           /* Meldingen zonder eigen kaart gaan meestal over een taak die een
              collega je heeft gegeven ("Tjerk heeft je een taak gegeven: …").
