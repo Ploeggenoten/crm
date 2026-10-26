@@ -1,0 +1,110 @@
+/* ═══ GLAS — de dashboardstijl door het hele CRM (26 okt 2026) ══════
+   Alleen actief met body.glas (zie js/glas.js: CRM.glasAan). Zonder die
+   klasse doet dit bestand niets, dus uitzetten = één vlag.
+
+   Regels die uit de proeven kwamen:
+   - Glas werkt alleen met iets erachter: de warme studio-achtergrond
+     loopt onder het hele werkvlak door.
+   - Glas kan niet door glas kijken (dan wordt het grijs): binnen een
+     glazen vlak zijn kaarten helder en lichter, geen tweede blur.
+   - Werklijsten blijven leesbaar: rijen en bordkaartjes zijn het witst.
+   - Zwarte pil met lime = actief; oranje = wat je nog moet doen.
+   Het dashboard heeft zijn eigen glas (css/dashboard.css) en wordt hier
+   overgeslagen via [data-view=dashboard]. */
+
+body.glas{
+  --glas-bg:
+    radial-gradient(60% 70% at 18% 20%,#f3b48f 0%,rgba(243,180,143,0) 60%),
+    radial-gradient(50% 60% at 85% 15%,#e2ec9e 0%,rgba(226,236,158,0) 60%),
+    radial-gradient(70% 60% at 60% 90%,#d9b892 0%,rgba(217,184,146,0) 65%),
+    linear-gradient(160deg,#efe6da,#e4d6c4);
+  --glas-vlak: linear-gradient(160deg,rgba(255,255,255,.62),rgba(255,255,255,.42));
+  --glas-rand: inset 0 1.5px 1px #fff,inset 0 -1px 1px rgba(255,255,255,.6);
+  --glas-schaduw: 0 14px 34px rgba(60,30,10,.10);
+}
+body.glas main.content{background:var(--glas-bg) fixed}
+
+/* ─── De kop: de paginakop als glazen band met kerncijfers ─── */
+body.glas:not([data-view=dashboard]) header.pagehead{
+  margin:14px 20px 0;border-radius:24px;border:none;min-height:76px;padding:14px 22px;gap:14px 26px;
+  background:var(--glas-vlak);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  box-shadow:var(--glas-schaduw),var(--glas-rand);top:10px}
+body.glas header.pagehead .ph-t{margin-right:0;padding-right:24px;border-right:1px solid rgba(26,31,10,.10)}
+body.glas header.pagehead .ph-t .h1{color:var(--oranje);font-size:24px}
+.gk-cijfers{display:flex;gap:28px;align-items:center;margin-right:auto;flex-wrap:wrap}
+.gk-k{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gk-k b{font-size:26px;font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--ink)}
+.gk-k b small{font-size:15px;color:rgba(26,31,10,.38);font-weight:600}
+.gk-k > span{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,31,10,.55);white-space:nowrap}
+
+/* ─── Vlakken ─── */
+body.glas:not([data-view=dashboard]) :is(.card,.kpi,.tblwrap,.note,.vlak){
+  background:var(--glas-vlak);border:none;border-radius:20px;
+  backdrop-filter:blur(14px) saturate(1.5);-webkit-backdrop-filter:blur(14px) saturate(1.5);
+  box-shadow:var(--glas-schaduw),var(--glas-rand)}
+/* Geneste vlakken: helder, geen tweede blur. */
+body.glas:not([data-view=dashboard]) :is(.card,.tblwrap,.vlak) :is(.card,.kpi,.tblwrap,.note){
+  backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(255,255,255,.55);box-shadow:var(--glas-rand)}
+body.glas:not([data-view=dashboard]) .note{border-left:3px solid currentColor}
+body.glas :is(.card-h,.card-f){background:transparent;border-color:rgba(26,31,10,.07)}
+body.glas table.tbl :is(th,thead,tr){background:transparent}
+body.glas table.tbl th{border-color:rgba(26,31,10,.08)}
+body.glas table.tbl td{border-color:rgba(26,31,10,.06)}
+body.glas table.tbl tbody tr:hover{background:rgba(255,255,255,.45)}
+
+/* ─── Borden: kolommen licht glas, kaartjes glas met fasekleur ─── */
+body.glas .bcol{background:rgba(255,255,255,.16);border:none;border-radius:20px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:inset 0 1.5px 1px rgba(255,255,255,.9),inset 0 -1px 1px rgba(255,255,255,.5)}
+body.glas .bcard{position:relative;border:none;border-radius:16px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(255,255,255,.62),rgba(255,255,255,.38));
+  box-shadow:0 10px 24px rgba(60,30,10,.10),inset 0 1.5px 1px #fff,inset 0 -1px 1px rgba(255,255,255,.55)}
+body.glas .bcard.bck{border-left:none}
+body.glas .bcard::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--ph,transparent);opacity:.85;pointer-events:none}
+body.glas .bck .bc-kop{background:color-mix(in srgb,var(--ph,#fff) 22%,rgba(255,255,255,.35));border-bottom:1px solid rgba(255,255,255,.55)}
+
+/* ─── Bediening: pillen, zwart met lime voor actief ─── */
+body.glas .tabs{display:inline-flex;gap:4px;border:none;padding:4px;border-radius:99px;margin-bottom:18px;
+  background:rgba(255,255,255,.5);box-shadow:inset 0 1px 2px rgba(60,30,10,.1),inset 0 -1px 1px rgba(255,255,255,.8)}
+body.glas .tabs .tab{border:none;border-radius:99px;padding:7px 14px;margin:0}
+body.glas .tabs .tab.on{background:#141710;color:var(--lime)}
+body.glas .tabs .tab.on .cnt{background:rgba(200,241,53,.18);color:var(--lime)}
+body.glas .seg{background:rgba(255,255,255,.5);border-color:transparent;box-shadow:inset 0 1px 2px rgba(60,30,10,.1)}
+body.glas .seg button.on{background:#141710;color:var(--lime);border-color:#141710}
+body.glas .btn:not(.ghost):not(.sub):not(.danger):not(.dark):not(.whatsapp){background:#141710;border-color:#141710;color:var(--lime)}
+body.glas .btn.ghost{background:rgba(255,255,255,.62);border-color:rgba(255,255,255,.8)}
+body.glas :is(input[type=text],input[type=search],input[type=email],input[type=tel],input[type=number],input[type=date],input[type=time],input[type=url],select,textarea){
+  background-color:rgba(255,255,255,.62);border-color:rgba(255,255,255,.85)}
+body.glas :is(input[type=text],input[type=search],select):not(textarea){border-radius:99px}
+
+/* ─── Vensters: matglas over de pagina ─── */
+body.glas :is(.drawer,.modal){
+  background:linear-gradient(160deg,rgba(255,252,246,.86),rgba(250,244,234,.80));
+  backdrop-filter:blur(26px) saturate(1.5);-webkit-backdrop-filter:blur(26px) saturate(1.5);
+  box-shadow:0 30px 80px rgba(60,30,10,.25),inset 0 1.5px 1px #fff}
+body.glas .modal{border-radius:24px;border:none}
+
+/* Smal: kerncijfers onder de titel, kop zonder zijmarge. */
+@media (max-width:900px){
+  body.glas:not([data-view=dashboard]) header.pagehead{margin:8px 8px 0;border-radius:20px}
+  body.glas header.pagehead .ph-t{border-right:none;padding-right:0}
+  /* Op de telefoon is de kop al vol met filters: kerncijfers weg. */
+  .gk-cijfers{display:none}
+  body.glas .tabs{display:flex;border-radius:20px}
+}
+
+/* ─── Alle overige witte vlakken in één keer ───
+   Modules tekenen hun eigen balken en blokjes met var(--card) en de
+   tinten (--card-2, --well…). Binnen het werkvlak maken we die
+   doorzichtig, zodat ook stroken als de tabbalk van Recruitment en de
+   cijferbalk van Klanttrajecten glas worden zonder per module te
+   sleutelen. Vensters (.drawer, .modal) staan buiten #viewmount en
+   houden hun eigen, dichtere glas. */
+body.glas:not([data-view=dashboard]) #viewmount{
+  --card:rgba(255,255,255,.55);
+  --card-2:rgba(255,255,255,.38);
+  --well:rgba(255,255,255,.26);
+  --well-2:rgba(255,255,255,.20);
+  --line:rgba(26,31,10,.08);
+  --line-2:rgba(26,31,10,.12);
+}

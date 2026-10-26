@@ -712,6 +712,11 @@ CRM.render = () => {
   head.innerHTML = `<button class="menubtn" id="menubtn">☰</button>
     <div class="ph-t"><div class="h1">${h(m.navTitle ? m.navTitle() : m.title)}</div>${m.onderschrift?`<div class="sub">${h(m.onderschrift)}</div>`:''}</div>
     <div class="row tight" id="pageacties"></div>`;
+  /* Glazen stijl (js/glas.js): eerst alleen voor de eigenaar. */
+  const glas = !!(CRM.glasAan && CRM.glasAan());
+  document.body.classList.toggle('glas', glas);
+  document.body.dataset.view = CRM.view;
+  if(glas && CRM.glasKop) CRM.glasKop(CRM.view, head);
   document.getElementById('menubtn').onclick = () => document.querySelector('nav.side').classList.toggle('open');
   mount.className = 'view' + (m.volleBreedte ? ' pad0' : '');
   /* Zachte binnenkomer bij elke paginawissel (rustig, 140ms). */
