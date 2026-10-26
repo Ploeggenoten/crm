@@ -7,9 +7,10 @@
    versie is leidend; de vaste blokken met afvinken (mkt_blok_klaar) zijn
    vervangen door zijn tijdrooster, taken, dagplanning en notities.
 
-   Vier tabbladen:
+   Vijf tabbladen:
      Week             tijdrooster ma–vr, dagplanning, notities, weekbalans
-     Contentplanning  twee banen (IG·FB·TikTok en LinkedIn), maand, ideeën
+     Contentplanning  twee banen (IG·FB·TikTok en LinkedIn), maand
+     Content Creatie  thema van vandaag, afkijken, filmdag, ideeën en scripts
      Komende weken    per week: posts ingepland, taken klaar, uren
      Jaarplan         het thema per maand en de vaste momenten
 
@@ -122,6 +123,62 @@
     '2027-05-06':'Hemelvaart', '2027-05-17':'Tweede pinksterdag', '2027-12-25':'Eerste kerstdag', '2027-12-26':'Tweede kerstdag'};
   const INGEPLAND = ['Ingepland', 'Gepubliceerd', 'Learnings'];
 
+  /* ─── Content Creatie: gegevens uit Bryans bord (bryan-updates) ── */
+  const THEMA_STANDAARD = [
+    'Zondag — rust of vooruitblik op de week',
+    'Werkvloer-maandag — achter de schermen bij een klant of op kantoor',
+    'Team-dinsdag — collega, recruiter of Peter Ploeg uitgelicht',
+    'Wist-je-dat-woensdag — feit of mythe over werken in productie/logistiek',
+    'Verhaal-donderdag — kandidaat of plaatsing in de spotlight',
+    'Vrijdag-win — succes van de week, weekend in',
+    'Zaterdag — luchtig / community (optioneel)',
+  ];
+  const VIDEO_TEMPLATE = `🎬 WERVINGSVIDEO — SHOTLIST
+
+HOOK (0-2 sec, salaris/cijfer in beeld + gesproken):
+"…"
+
+SHOT 1 — werkvloer, echt werk (2-6 sec):
+…
+
+SHOT 2 — de mens: collega/kandidaat aan het woord (6-15 sec):
+…
+
+WAT JE KRIJGT (15-22 sec, tekst in beeld):
+• €… bruto + …% toeslag
+• …
+
+CTA (22-28 sec):
+"Geen cv nodig — stuur ons een appje." (WhatsApp-link in caption)
+
+CAPTION:
+…`;
+    const AFKIJKBANK = [
+    {t:'Jongerentaal-script: de voorman leest voor', v:'Currys (UK) — 1,9 mln views', i:'Jongste collega schrijft de tekst vol internettaal, de oudste leest hem bloedserieus voor tijdens een rondleiding.', h:'Onze voorman (55) legt uit waarom dit magazijn een 10/10 is — in de woorden van onze jongste collega.'},
+    {t:'De baas doet één keer mee met een trend', v:'vanHaren — manager Ferry gaat er steeds mee viraal', i:'Hoe stijver de leidinggevende, hoe beter. Eén take, niet te netjes gefilmd.', h:'We vroegen de ploegbaas of hij héél even mee wilde doen. Hij zei: één keer dan.'},
+    {t:'Welke collega ben jij?', v:'TikTok-klassieker — iedereen herkent zichzelf', i:'Vier tot zes herkenbare types, elk 2-3 seconden in beeld. Mensen sturen hem naar elkaar door.', h:'Elke ploeg heeft ze: de heftruck-koning, de scanner-kwijtraker, de klaarstaander om 14:59. Welke ben jij?'},
+    {t:'We luisteren en we oordelen niet', v:'wereldwijde trend, ook mét de baas erbij', i:'Team op een rij, iedereen bekent om de beurt iets kleins, niemand mag reageren.', h:'We luisteren en we oordelen niet — de nachtploeg-editie.'},
+    {t:'POV: jij op de werkvloer', v:'#warehouseworker zit er vol mee', i:'De camera is de kijker. Eén situatie, één grap, tien seconden.', h:'POV: het is je eerste dag en je weet nog niet dat Henk altijd de goede steekwagen inpikt.'},
+    {t:'Dag uit het leven — mét loon', v:'Werken bij Picnic doet dit structureel', i:'Van wekker tot einde dienst. Het loon noemen is dé reactie-magneet.', h:'Meelopen met Kevin (22), orderpicker. Dit is zijn dinsdag — inclusief wat hij verdient.'},
+    {t:'Expres foute reclame (marktkoopman-stijl)', v:'De Beren deed dit voor vacatures', i:'Schreeuwerig, knipperende teksten, zo fout dat het goed is. Valt op tussen gelikte content.', h:'HEFTRUCKCHAUFFEURS!!! €17 PER UUR!!! VANDAAG BELLEN = MORGEN WERKEN!!!'},
+    {t:'Welk geluid maakt die machine?', v:'trend van nú (juli 2026)', i:'Collega\'s doen vol overtuiging het geluid na, dan hoor je het echte apparaat.', h:'Wij vroegen de ploeg: welk geluid maakt de heftruck als hij achteruit rijdt?'},
+    {t:'Netflix-documentaire over iets kleins', v:'trend van nú (juli 2026)', i:'Interview-opstelling en serieuze muziek, over iets totaal onbenulligs.', h:'AFLEVERING 1: De verdwenen pompwagen. Niemand weet waar pompwagen 3 is gebleven. Tot nu.'},
+    {t:'Trending geluid + jouw werkvloer', v:'de motor achter bijna elke bedrijfsviral', i:'Pak het geluid van deze week en plak er één werksituatie op. Binnen 1-3 dagen posten, anders is de trend voorbij.', h:'Pak het trending geluid van deze week: welke situatie uit ons magazijn past hierop?'},
+    {t:'Voor/na op de beat', v:'werkt al jaren, elke keer weer', i:'Begin van de dienst → einde nachtdienst, precies gecut op de muziek.', h:'06:00 vs 14:30 — wat 8 uur ploegendienst met een mens doet.'},
+    {t:'Bloopers: de mislukte takes', v:'Duits installatiebedrijf haalde er miljoenen views mee', i:'Lachen is besmettelijk en bewijst échte sfeer. Post de nette versie een dag later.', h:'We wilden een serieuze vacaturevideo maken. Dit werd het.'},
+    {t:'Drie ploegen, één dag', v:'trend van nú (juli 2026)', i:'Ochtend-, middag- en nachtploeg maken elk uur één foto; naast elkaar gemonteerd.', h:'Zelfde bedrijf, drie totaal verschillende levens. Welke ploeg past bij jou?'},
+    {t:'Eerlijk over het werk — ook de mindere kanten', v:'grote trend sinds begin 2026', i:'Eerlijkheid over de nadelen maakt de voordelen geloofwaardig.', h:'Drie dingen die niemand je vertelt over magazijnwerk — en waarom ik tóch blijf.'},
+    {t:'Microfoon de ploeg in', v:'"I asked my coworkers" — oneindig herhaalbaar', i:'Eén simpele vraag, vijf tot acht snelle antwoorden. Geldvragen scoren het best.', h:'We vroegen de ploeg: wat deed jij met je allereerste loonstrook?'},
+  ];
+    const SPIEKLIJST = [
+    {w:'TikTok Creative Center', u:'https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag', x:'trending hashtags & geluiden, filter op Nederland — dé wekelijkse check'},
+    {w:'Volg met een kijk-account', u:'https://www.tiktok.com/@werkenbijpicnic', x:'@werkenbijpicnic · @ryanair · @vanharen_schoenen · @postnl — wat zij posten is je gratis formatkalender'},
+    {w:'15 min/week scrollen', u:'https://www.tiktok.com/tag/werkenbij', x:'#magazijn #heftruck #werkenbij #nachtdienst #warehouseworker — bewaar alles met 100k+ views dat jonger is dan 2 weken'},
+    {w:'Maandelijkse trendlijst', u:'https://newengen.com/insights/july-tiktok-trends/', x:'elke maand nieuwe formats uitgelegd met voorbeelden'},
+    {w:'Werf& (NL recruitment-cases)', u:'https://www.werf-en.nl/', x:'welke werken-bij-content in Nederland werkt'},
+  ];
+  const fmtD = s => { const [j, m, d] = String(s).split('-'); return `${d}-${m}-${j.slice(2)}`; };
+
   /* ─── Datums en tijden (lokaal, op de middag tegen zomertijd) ── */
   const dt  = s => new Date(s + 'T12:00:00');
   const iso = d => d.toLocaleDateString('sv-SE');
@@ -176,7 +233,7 @@
     takenV2:true, takenTijd:true, takenOutlook:true, notitiesDB:true,
     dsDatum:null, dsTekst:'', dsGebied:'content', dsDuur:PLANNER.invoerDuur,
     contentWeek:null, contentWeergave:'week', calMaand:null,
-    ntArchief:false, focus:null
+    ntArchief:false, focus:null, afk:[]
   };
   const huidigeWeek = () => maandagVan(CRM.todayISO());
   const kanaalIs = (p, wat) => new RegExp(wat, 'i').test(p.kanaal || '');
@@ -194,7 +251,7 @@
       veilig(CRM.sb.from('mkt_posts').select('*')),
       veilig(CRM.sb.from('mkt_taken').select('*').gte('datum', PLANNER.startdatum).order('datum').order('created_at')),
       veilig(CRM.sb.from('mkt_meta_stats').select('datum,uitgegeven,leads').gte('datum', meta14)),
-      veilig(CRM.sb.from('mkt_ad_besluiten').select('advertentie,besluit,status')),
+      veilig(CRM.sb.from('mkt_ad_besluiten').select('advertentie,besluit,status,note,created_at').order('created_at', {ascending:false})),
       veilig(CRM.sb.from('mkt_kanalen').select('naam').order('volgorde')),
       veilig(CRM.sb.from('mkt_notities').select('*').order('created_at', {ascending:false})),
       /* Peilen per migratie: werkt ook op een lege tabel. */
@@ -215,7 +272,7 @@
   }
   const rijNaarPost = r => ({id:String(r.id), titel:r.titel || '', kanaal:r.kanaal || '', format:r.format || '', doel:r.doel || '',
     fase:r.fase || 'Idee', hook:r.hook || '', script:r.script || '', datum:r.publicatie_datum || '', tijd:r.publicatie_tijd || '',
-    link:r.link || '', learnings:r.learnings || '', media:r.media_url || '', auto:!!r.auto_publish, log:r.publiceer_log || '', created:r.created_at || ''});
+    link:r.link || '', learnings:r.learnings || '', campagne:r.campagne || '', media:r.media_url || '', auto:!!r.auto_publish, log:r.publiceer_log || '', created:r.created_at || ''});
 
   /* Demo: realistische week, nooit naar de database. Met ?demo=1&mwzonder
      doet het scherm alsof de migraties nog niet gedraaid zijn. */
@@ -246,7 +303,7 @@
     ];
     if(CRM.todayISO() > d(0)) M.taken[2].klaar = true;
     const post = (id, titel, kanaal, fase, datum, extra = {}) => ({id, titel, kanaal, format:'', doel:'', fase, hook:'', script:'',
-      datum, tijd:'', link:'', learnings:'', media:'', auto:false, log:'', created:nu, ...extra});
+      datum, tijd:'', link:'', learnings:'', campagne:'', media:'', auto:false, log:'', created:nu, ...extra});
     const social = (basis, titel, fase, datum, extra) => ['Instagram', 'Facebook', 'TikTok']
       .map(k => post(`${basis}-${KAN_SUFFIX[k]}`, titel, k, fase, datum, extra));
     M.posts = [
@@ -259,6 +316,9 @@
       post('dl2', 'Drie lessen uit 90 dagen ploegen bouwen', 'LinkedIn', 'Ingepland', d(2)),
       post('dl3', 'Klantcase: van 4 naar 12 vaste krachten', 'LinkedIn', 'Ingepland', d(4)),
       post('di1', 'Mythe: uitzendbureaus pakken de helft van je loon', 'Instagram', 'Idee', ''),
+      post('di4', 'Klantcase: ploeg compleet bij Koomstra', 'TikTok', 'Idee', '', {doel:'Klanten / leadgen'}),
+      ...[1, 2, 3].map(n => post('df' + n, `Hook ${n}: orderpicker (Le Duc)`, '', 'Script klaar', '', {format:'Video', doel:'Kandidaten werven',
+        campagne:`🎬 Orderpicker @ Le Duc · ${fmtD(plus(CRM.todayISO(), -4))}`, script:n === 1 ? 'Hook: €16,20 per uur, nachtdienst +25%.' : VIDEO_TEMPLATE})),
       post('di2', 'Team-dinsdag: wie zit er achter de telefoon?', 'LinkedIn', 'Idee', ''),
       ...social('di3', 'Hook 1: heftruckchauffeur', 'Script klaar', '', {format:'Video', script:'Hook: €17,50 per uur en je rijdt vanaf dag één.'})
     ];
@@ -270,7 +330,7 @@
       {id:'dn2', datum:plus(CRM.todayISO(), -3), door:mij, tekst:'Hook testen met salaris in de eerste zin\nTikTok-account nalopen', updated_at:nu}
     ];
     M.meta = [{datum:plus(CRM.todayISO(), -1), uitgegeven:140, leads:70}];
-    M.besluiten = [];
+    M.besluiten = [];   // geen eigen thema's: de standaard staat klaar
   }
 
   /* ─── Dagindeling: taken achter elkaar tussen de vaste blokken ──
@@ -757,7 +817,12 @@
     afsprakenOp(vandaag).forEach(a => rijen.push(`<div class="mw-vd"><span class="num mw-vd-t">${h(a.van)}</span><span><b>${h(a.titel)}</b> <span class="meta">${h(a.txt)}</span></span></div>`));
     const vandaagPosts = groepeer(M.posts.filter(p => p.datum === vandaag && INGEPLAND.includes(p.fase)));
     vandaagPosts.forEach(g => rijen.push(`<div class="mw-vd mw-klik" data-post="${h(g[0].id)}"><span class="mw-vd-t">${g.every(PUB) ? '✓' : 'Post'}</span><span>${g.every(PUB) ? 'Gepost' : 'Vandaag posten'}: <b>${h(g[0].titel || 'Zonder titel')}</b> <span class="meta">${h(groepLabel(g) || g[0].kanaal)}</span></span></div>`));
-    if(!vandaagPosts.length) rijen.push(`<div class="mw-vd mw-klik" data-tabnaar="content"><span class="mw-vd-t">Post</span><span>Vandaag staat er nog niets ingepland. <span class="meta">Naar Contentplanning ›</span></span></div>`);
+    if(!vandaagPosts.length) rijen.push(`<div class="mw-vd mw-klik" data-tabnaar="creatie"><span class="mw-vd-t">Post</span><span>Post van vandaag: <b>${h(themaVandaag())}</b> <span class="meta">nog niets ingepland ›</span></span></div>`);
+    else rijen.push(`<div class="mw-vd meta"><span class="mw-vd-t"></span><span>Thema van vandaag: ${h(themaVandaag())}</span></div>`);
+    filmdagen().forEach(([groep, posts]) => {
+      const leeg = posts.filter(scriptLeeg).length;
+      if(leeg) rijen.push(`<div class="mw-vd mw-klik" data-tabnaar="creatie"><span class="mw-vd-t">Film</span><span><b>${h(groep.replace(/^🎬\s*/, ''))}</b>: nog ${leeg} ${leeg > 1 ? 'scripts' : 'script'} in te vullen</span></div>`);
+    });
     const overDatum = groepeer(M.posts.filter(p => p.fase === 'Ingepland' && p.datum && p.datum < vandaag)).map(g => g[0]);
     overDatum.filter(p => p.datum >= mon).forEach(p => rijen.push(`<div class="mw-vd mw-klik mw-rood" data-post="${h(p.id)}"><span class="mw-vd-t num">${h(kort(p.datum))}</span><span>Over datum: <b>${h(p.titel || 'Zonder titel')}</b>. Publiceren of verzetten.</span></div>`));
     M.posts.filter(p => p.log.startsWith('⚠')).forEach(p => rijen.push(`<div class="mw-vd mw-klik mw-rood" data-post="${h(p.id)}"><span class="mw-vd-t">${h(KAN_AFK[p.kanaal] || p.kanaal)}</span><span>Automatisch publiceren mislukt: <b>${h(p.titel || 'Zonder titel')}</b>. ${h(p.log.replace(/^⚠\s*/, '').slice(0, 90))}</span></div>`));
@@ -860,16 +925,150 @@
         ${banen}
       </div></div>`;
     }
-    /* Wat nog geen dag heeft: ideeën en scripts. */
+    const zonderDag = groepeer(M.posts.filter(p => ['Idee', 'Script klaar'].includes(p.fase))).length;
+    return `${kop}${raster}
+      ${zonderDag ? `<p class="meta mw-mt"><a class="mw-tekstlink" data-tabnaar="creatie">${zonderDag} ${zonderDag > 1 ? 'ideeën en scripts' : 'idee of script'} nog zonder dag: naar Content Creatie ›</a></p>` : ''}`;
+  }
+
+  /* ─── Weergave: Content Creatie (uit Bryans bord) ─────────────
+     Thema van vandaag, afkijken bij virale bedrijfscontent, filmdag
+     voorbereiden en de voorraad ideeën en scripts. */
+  function runwayWeken(){
+    const pubs28 = M.posts.filter(p => PUB(p) && (p.datum || '') >= plus(CRM.todayISO(), -28)).length, tempo = pubs28 / 4;
+    const voorraad = M.posts.filter(p => ['Idee', 'Script klaar'].includes(p.fase)).length;
+    const gepland = M.posts.filter(p => p.fase === 'Ingepland' && (p.datum || '') >= CRM.todayISO()).length;
+    return tempo > 0 ? (voorraad + gepland) / tempo : null;
+  }
+  function creatieHtml(){
+    if(!M.afk.length) rolAfkijk();
     const kol = f => groepeer(M.posts.filter(p => p.fase === f)).map(g => g[0]).sort((a, b) => (b.created || '').localeCompare(a.created || ''));
+    const rw = runwayWeken();
     const bord = ['Idee', 'Script klaar'].map(f => {
       const lijst = kol(f);
       return `<div class="mw-kol"><div class="mw-kh"><b>${f === 'Idee' ? 'Ideeën' : 'Script klaar'}</b><span class="meta">${lijst.length}</span></div>
+        ${f === 'Idee' && rw !== null && rw < 2 ? '<div class="note warn">Voorraad bijna droog: minder dan twee weken. Pak iets uit Afkijken.</div>' : ''}
         ${lijst.map(kaartHtml).join('') || '<div class="meta mw-leeg">Niets</div>'}</div>`;
     }).join('');
-    return `${kop}${raster}
-      <div class="mw-sec mw-mt2">Nog zonder dag</div>
+    const fd = filmdagen();
+    return `
+      <div class="card mw-blok"><div class="card-b mw-thema">
+        <div><span class="mw-sec">Thema van vandaag</span><div class="mw-thema-t">${h(themaVandaag())}</div></div>
+        <div class="row tight"><button class="btn ghost sm" data-themas type="button">Thema's aanpassen</button><button class="btn sm" data-nieuwpost type="button">+ Nieuwe post</button></div>
+      </div></div>
+      <div class="card mw-blok"><div class="card-h"><b class="mw-ch">Afkijken: dit gaat nu viraal bij andere bedrijven</b><button class="btn ghost sm" data-afkrol type="button">Andere</button></div>
+        <div class="card-b">
+          <p class="meta mw-hint">De formule achter bijna elke bedrijfsviral: trend van de week × echte collega's × zelfspot. Gewoon op je telefoon gefilmd is juist goed.</p>
+          <div class="mw-afk">${M.afk.map((a, i) => `<div class="mw-afk-k">
+            <b>${h(a.t)}</b><span class="meta">${h(a.v)}</span><span>${h(a.i)}</span><span class="mw-hook meta">"${h(a.h)}"</span>
+            <button class="btn ghost sm" data-afk="${i}" type="button">Gebruiken ›</button></div>`).join('')}</div>
+          <details class="mw-spiek"><summary>Waar spiek je elke week?</summary>
+            ${SPIEKLIJST.map(x => `<div><a href="${h(x.u)}" target="_blank" rel="noopener">${h(x.w)}</a> <span class="meta">${h(x.x)}</span></div>`).join('')}</details>
+        </div></div>
+      <div class="card mw-blok"><div class="card-h"><b class="mw-ch">Filmdag voorbereiden: scripts per functie</b></div>
+        <div class="card-b">
+          <p class="meta mw-hint">Gaan jullie filmen? Zet per functie meerdere hooks klaar, zodat je op de set niets hoeft te verzinnen. Elke hook wordt een scriptkaart bij Script klaar.</p>
+          <div class="row tight mw-fd">
+            <input type="text" id="mw_fdfunctie" placeholder="Functie, bijv. Heftruckchauffeur" aria-label="Functie">
+            <input type="text" id="mw_fdklant" placeholder="Klant of locatie (optioneel)" aria-label="Klant of locatie">
+            <select id="mw_fdn" aria-label="Aantal scripts">${[2, 3, 4, 5, 6].map(n => `<option${n === 4 ? ' selected' : ''}>${n}</option>`).join('')}</select>
+            <button class="btn sm" id="mw_fdmaak" type="button">Scripts klaarzetten</button>
+          </div>
+          ${fd.map(([groep, posts]) => `<div class="mw-fdrij"><span><b>${h(groep.replace(/^🎬\s*/, ''))}</b> <span class="meta">${posts.length} scripts · ${posts.filter(x => !scriptLeeg(x)).length} ingevuld</span></span>
+            <button class="btn sub sm" data-fdai="${h(groep)}" type="button">AI-prompt kopiëren</button><button class="btn sub sm" data-fdprint="${h(groep)}" type="button">Setbundel</button></div>`).join('')}
+        </div></div>
       <div class="mw-bord">${bord}</div>`;
+  }
+
+  /* Weekthema's: zelfde opslag als Bryans bord (config-rij in
+     mkt_ad_besluiten, advertentie '__themas__', nieuwste wint). */
+  function themas(){
+    const c = M.besluiten.find(b => b.advertentie === '__themas__');
+    if(c?.note){ try{ const t = JSON.parse(c.note); if(Array.isArray(t) && t.length === 7) return t; }catch(e){} }
+    return THEMA_STANDAARD;
+  }
+  const themaVandaag = () => themas()[new Date().getDay()];
+  function themasModal(){
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Weekthema's</div></div>
+      <div class="modal-b"><p class="sub" style="margin:0 0 10px">Precies zeven regels: zondag tot en met zaterdag. Geldt voor het hele team.</p>
+        <textarea id="mw_themas" rows="9">${h(themas().join('\n'))}</textarea></div>
+      <div class="modal-f"><button class="btn ghost" data-mclose type="button">Annuleren</button><button class="btn" id="mw_themaok" type="button">Opslaan</button></div>`, {onOpen(m){
+        m.querySelector('#mw_themaok').onclick = async () => {
+          const regels = m.querySelector('#mw_themas').value.split('\n').map(r => r.trim()).filter(Boolean);
+          if(regels.length !== 7){ CRM.toast('Zorg voor precies 7 regels (zondag t/m zaterdag)', 'err'); return; }
+          const rij = {advertentie:'__themas__', campagne:'', besluit:'config', status:'config', door:CRM.me(), note:JSON.stringify(regels)};
+          if(!M.demo){
+            const {error} = await CRM.sb.from('mkt_ad_besluiten').insert(rij);
+            if(error){ CRM.toast('Opslaan lukt niet: ' + error.message, 'err'); return; }
+          }
+          M.besluiten.unshift({...rij, created_at:new Date().toISOString()});
+          CRM.modal.close(); CRM.toast('Weekthema\'s opgeslagen voor het hele team', 'ok'); teken();
+        };
+      }});
+  }
+
+  /* Filmdag: N scriptkaarten met dezelfde campagne. */
+  const scriptLeeg = p => !(p.script || '').trim() || p.script === VIDEO_TEMPLATE;
+  function filmdagen(){
+    const groepen = {};
+    M.posts.filter(p => (p.campagne || '').startsWith('🎬')).forEach(p => { (groepen[p.campagne] ??= []).push(p); });
+    return Object.entries(groepen).sort((a, b) => b[0].localeCompare(a[0]));
+  }
+  async function maakFilmdag(){
+    const functie = (document.getElementById('mw_fdfunctie')?.value || '').trim(), klant = (document.getElementById('mw_fdklant')?.value || '').trim();
+    const n = Math.max(2, Math.min(6, Number(document.getElementById('mw_fdn')?.value) || 4));
+    if(!functie){ CRM.toast('Vul in voor welke functie je gaat filmen', 'err'); return; }
+    const groep = `🎬 ${functie}${klant ? ` @ ${klant}` : ''} · ${fmtD(CRM.todayISO())}`, nu = new Date().toISOString();
+    const rijen = Array.from({length:n}, (_, i) => ({id:'m' + Date.now() + (i + 1) + Math.random().toString(36).slice(2, 5),
+      titel:`Hook ${i + 1}: ${functie}${klant ? ` (${klant})` : ''}`, kanaal:'', format:'Video', doel:'Kandidaten werven', fase:'Script klaar',
+      campagne:groep, hook:'', script:VIDEO_TEMPLATE, publicatie_datum:null, updated_at:nu}));
+    if(!M.demo){
+      const {error} = await CRM.sb.from('mkt_posts').insert(rijen);
+      if(error){ CRM.toast('Klaarzetten lukt niet: ' + error.message, 'err'); return; }
+    }
+    rijen.forEach(r => M.posts.push({id:r.id, titel:r.titel, kanaal:'', format:r.format, doel:r.doel, fase:r.fase, campagne:groep, hook:'', script:VIDEO_TEMPLATE,
+      datum:'', tijd:'', link:'', learnings:'', media:'', auto:false, log:'', created:nu}));
+    CRM.toast(`${n} scriptkaarten klaargezet voor ${functie}`, 'ok'); teken();
+  }
+  function filmdagPrompt(groep){
+    const posts = M.posts.filter(p => p.campagne === groep), functie = groep.replace(/^🎬\s*/, '').split(' · ')[0];
+    const prompt = `Schrijf ${posts.length} verschillende korte wervingsvideo-scripts (hooks) voor de functie ${functie} bij Ploeggenoten, recruitmentbureau voor productie/logistiek. Kernzin: "Wij sturen geen leads of kandidaten. Wij bouwen ploegen."
+
+Elke variant moet een ANDERE invalshoek hebben (bijv. salaris-transparantie, dag-uit-het-leven, mythe doorbreken, collega aan het woord, de machine/werkplek zelf).
+
+Regels per script: hook in de eerste 2 seconden mét salaris of concreet getal; totaal max 30 seconden; gewone-mensen-Nederlands (B1); afsluiten met cv-loze CTA ("stuur ons een appje"); geen "tag iemand"-taal.
+
+Structuur per script:
+${VIDEO_TEMPLATE}
+
+Lever de ${posts.length} scripts genummerd, klaar om op de set te gebruiken.`;
+    navigator.clipboard.writeText(prompt).then(() => CRM.toast('Prompt gekopieerd. Plak hem in Claude en zet de scripts daarna in de kaarten.', 'ok'))
+      .catch(() => CRM.toast('Kopiëren lukte niet', 'err'));
+  }
+  function filmdagBundel(groep){
+    const posts = M.posts.filter(p => p.campagne === groep);
+    const w = window.open('', '_blank');
+    if(!w){ CRM.toast('Pop-up geblokkeerd', 'err'); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${h(groep)}</title>
+      <style>body{font-family:Inter,system-ui,sans-serif;max-width:700px;margin:24px auto;padding:0 18px;color:#1a1f0a}
+      h1{font-size:20px;border-bottom:2px solid #3d6400;padding-bottom:8px}h2{font-size:15px;margin-top:28px}
+      pre{white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.6;border:1px solid #e0e5d2;border-radius:10px;padding:14px}
+      button{padding:8px 16px;border:1px solid #d3dabf;border-radius:999px;background:#fff;cursor:pointer}@media print{button{display:none}}</style></head><body>
+      <h1>${h(groep)}: scriptbundel</h1><button onclick="print()">Afdrukken of PDF</button>
+      ${posts.map(p => `<h2>${h(p.titel)}</h2><pre>${h(scriptLeeg(p) ? 'Script nog leeg' : p.script)}</pre>`).join('')}</body></html>`);
+    w.document.close();
+  }
+  function rolAfkijk(){ M.afk = [...AFKIJKBANK].sort(() => Math.random() - .5).slice(0, 4); }
+
+  /* Kanaalcoach (onderzoek 20 jul 2026): LinkedIn = klanten/B2B (8% van
+     blue-collar werkzoekenden), TikTok/Meta = kandidaten. */
+  function kanaalCoach(g){
+    const p = g[0], kanalen = g.map(x => x.kanaal), doel = String(p.doel || '');
+    if(kanalen.includes('LinkedIn') && /kandidat/i.test(doel))
+      return 'LinkedIn bereikt maar 8% van blue-collar werkzoekenden. Zet deze post op Facebook, Instagram of TikTok, of maak het doel klanten.';
+    if(kanalen.includes('TikTok') && /klant|leadgen/i.test(doel))
+      return 'TikTok is een kandidaat-kanaal. Klantcases en B2B horen op LinkedIn.';
+    return null;
   }
   function maandHtml(){
     const vandaag = CRM.todayISO();
@@ -892,7 +1091,8 @@
     const pl = platformVan(p.kanaal), label = groepLabel(g) || p.kanaal;
     return `<div class="mw-kaart" data-post="${h(p.id)}">
       <b>${h(p.titel || 'Zonder titel')}</b>
-      <div class="mw-km">${label ? `<span class="chip ${pl ? (pl.k === 'social' ? 'mw-chip-social' : 'blue') : ''}">${h(label)}</span>` : ''}${p.format ? `<span class="chip">${h(p.format)}</span>` : ''}</div>
+      <div class="mw-km">${label ? `<span class="chip ${pl ? (pl.k === 'social' ? 'mw-chip-social' : 'blue') : ''}">${h(label)}</span>` : ''}${p.format ? `<span class="chip">${h(p.format)}</span>` : ''}${kanaalCoach(g) ? `<span class="chip amber" title="${h(kanaalCoach(g))}">Kanaal?</span>` : ''}</div>
+      ${kanaalCoach(g) ? `<div class="meta mw-coach">${h(kanaalCoach(g))}</div>` : ''}
       ${p.hook ? `<div class="meta mw-hook">${h(p.hook.length > 90 ? p.hook.slice(0, 90) + '…' : p.hook)}</div>` : ''}
       ${volgende ? `<button class="btn ghost sm" data-next="${h(p.id)}" type="button">${volgende === 'Ingepland' ? 'Inplannen' : 'Naar ' + h(volgende)} ›</button>` : ''}</div>`;
   }
@@ -964,7 +1164,7 @@
   function postModal(p, voor = {}){
     const groep = p ? groepVan(p) : [];
     const isGroep = groep.length > 1;
-    const v = p || {titel:'', kanaal:'', format:'', doel:'', fase:voor.fase || 'Idee', hook:'', script:'', datum:voor.datum || '', link:'', learnings:''};
+    const v = p || {titel:voor.titel || '', kanaal:'', format:'', doel:'', fase:voor.fase || 'Idee', hook:voor.hook || '', script:voor.script || '', datum:voor.datum || '', link:'', learnings:''};
     const opt = (lijst, nu, leeg) => (leeg ? `<option value="">${h(leeg)}</option>` : '') + lijst.map(x => `<option${x === nu ? ' selected' : ''}>${h(x)}</option>`).join('');
     const huidigPlatform = isGroep ? 'social' : p ? p.kanaal : (voor.platform === 'linkedin' ? 'LinkedIn' : voor.platform || '');
     const overig = kanaalNamen().filter(k => !platformVan(k));
@@ -1111,15 +1311,15 @@
     const act = document.activeElement, fok = M.focus || (act && mount.contains(act) ? act.dataset?.fokus : null);
     const sel = !M.focus && fok && act && 'selectionStart' in act ? [act.selectionStart, act.selectionEnd] : null;
     M.focus = null;
-    const TABS = [{k:'week', t:'Week'}, {k:'content', t:'Contentplanning'}, {k:'weken', t:'Komende weken'}, {k:'jaar', t:'Jaarplan'}];
-    const body = M.tab === 'weken' ? wekenHtml() : M.tab === 'jaar' ? jaarHtml() : M.tab === 'content' ? contentHtml() : weekHtml();
+    const TABS = [{k:'week', t:'Week'}, {k:'content', t:'Contentplanning'}, {k:'creatie', t:'Content Creatie'}, {k:'weken', t:'Komende weken'}, {k:'jaar', t:'Jaarplan'}];
+    const body = M.tab === 'weken' ? wekenHtml() : M.tab === 'jaar' ? jaarHtml() : M.tab === 'content' ? contentHtml() : M.tab === 'creatie' ? creatieHtml() : weekHtml();
     mount.innerHTML = `
       ${M.demo ? '<div class="note info mw-mb">Demo-data: wat je hier ziet is verzonnen en wordt nergens opgeslagen.</div>' : ''}
       ${M.postsFout ? '<div class="note err mw-mb">De posts konden niet geladen worden. Herlaad de pagina.</div>' : ''}
       <div class="tabs">${TABS.map(t => `<button class="tab ${M.tab === t.k ? 'on' : ''}" data-tab="${t.k}" type="button">${h(t.t)}</button>`).join('')}</div>
       <div class="mw">${body}</div>`;
     if(M.actiesEl) M.actiesEl.innerHTML = `<button class="btn" data-nieuwpost type="button">+ Nieuwe post</button>`;
-    CRM.$$('[data-nieuwpost]', M.actiesEl || document).forEach(b => b.onclick = () => postModal(null));
+    CRM.$$('[data-nieuwpost]', document).forEach(b => b.onclick = () => postModal(null));
     bind(mount);
     if(fok){
       const el = mount.querySelector(`[data-fokus="${fok}"]`);
@@ -1323,6 +1523,12 @@
       e.stopPropagation(); if(Date.now() - _sleepEind < 400) return;
       const p = M.posts.find(x => x.id === k.dataset.post); if(p) postModal(p);
     });
+    alleen('[data-themas]', b => b.onclick = themasModal);
+    alleen('[data-afkrol]', b => b.onclick = () => { rolAfkijk(); teken(); });
+    alleen('[data-afk]', b => b.onclick = () => { const a = M.afk[+b.dataset.afk]; if(a) postModal(null, {titel:a.t, hook:a.h, fase:'Idee'}); });
+    mount.querySelector('#mw_fdmaak')?.addEventListener('click', maakFilmdag);
+    alleen('[data-fdai]', b => b.onclick = () => filmdagPrompt(b.dataset.fdai));
+    alleen('[data-fdprint]', b => b.onclick = () => filmdagBundel(b.dataset.fdprint));
     alleen('[data-next]', b => b.onclick = e => { e.stopPropagation(); const p = M.posts.find(x => x.id === b.dataset.next); if(p) naarVolgende(p); });
 
     /* Taken */
