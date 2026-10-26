@@ -191,7 +191,8 @@
 .mw-ppost{font-size:11.5px;line-height:1.35;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--pc);border-radius:6px;padding:5px 7px;overflow-wrap:anywhere}
 .mw-ppost.klaar,.mw-mpost.klaar{opacity:.6}
 .mw-ppost.gemist,.mw-mpost.gemist{border-color:var(--red-line);border-left-color:var(--red)}
-.mw-pkan{display:flex;gap:3px;margin-top:4px}
+.mw-pkan{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.mw-pkan i{white-space:nowrap}
 .mw-pkan i{font-style:normal;font-size:9.5px;font-weight:700;border-radius:4px;padding:0 4px;background:var(--card-2);color:var(--line-2)}
 .mw-pkan i.aan{background:var(--pb);color:var(--ink);box-shadow:inset 0 0 0 1px var(--pc)}
 .mw-pkan i.pub{background:var(--green);color:#fff}
@@ -244,3 +245,15 @@
   .mw .card-h,.mw .card-b{padding-left:16px;padding-right:16px}
   .mw-pgrid{grid-template-columns:110px repeat(7,minmax(104px,1fr))}
 }
+
+/* Media en automatisch publiceren (postformulier) */
+.mw-media{border:1px solid var(--line);border-radius:var(--r-s);padding:12px 14px;margin-bottom:14px;background:var(--card-2)}
+.mw-media .check{margin-bottom:8px}
+.mw-mb8{margin-bottom:8px}
+.mw-tijdrij{margin-bottom:6px}
+.mw-tijdrij input{max-width:140px}
+.mw-log{font-size:12px;color:var(--txt-2);padding:4px 0;border-top:1px solid var(--line)}
+.mw-log b{font-weight:600;margin-right:4px}
+.mw-log.fout{color:var(--red)}
+.mw-pkan i.fout{background:var(--red);color:#fff}
+.mw-pkan i.auto{background:var(--card);color:var(--txt-2);box-shadow:inset 0 0 0 1px var(--line-2);font-weight:600}

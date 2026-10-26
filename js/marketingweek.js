@@ -19,7 +19,9 @@
 
    Leest:    mkt_posts, mkt_taken, mkt_notities, mkt_kanalen,
              mkt_meta_stats, mkt_ad_besluiten.
-   Schrijft: mkt_taken, mkt_notities, mkt_posts.
+   Schrijft: mkt_taken, mkt_notities, mkt_posts, Storage-bucket 'media'
+             (upload voor automatisch publiceren; dat doet de
+             publisher-Edge Function zelf bij Ingepland + auto_publish).
    Migraties (uit de marketing-repo, zelfde Supabase): taakgebieden,
    taaktijd, taak-outlook en notities. Ontbreekt er één, dan werkt de rest
    gewoon en staat er een melding bij wat nog niet kan.
@@ -213,7 +215,7 @@
   }
   const rijNaarPost = r => ({id:String(r.id), titel:r.titel || '', kanaal:r.kanaal || '', format:r.format || '', doel:r.doel || '',
     fase:r.fase || 'Idee', hook:r.hook || '', script:r.script || '', datum:r.publicatie_datum || '', tijd:r.publicatie_tijd || '',
-    link:r.link || '', learnings:r.learnings || '', media:r.media_url || '', created:r.created_at || ''});
+    link:r.link || '', learnings:r.learnings || '', media:r.media_url || '', auto:!!r.auto_publish, log:r.publiceer_log || '', created:r.created_at || ''});
 
   /* Demo: realistische week, nooit naar de database. Met ?demo=1&mwzonder
      doet het scherm alsof de migraties nog niet gedraaid zijn. */
@@ -244,13 +246,14 @@
     ];
     if(CRM.todayISO() > d(0)) M.taken[2].klaar = true;
     const post = (id, titel, kanaal, fase, datum, extra = {}) => ({id, titel, kanaal, format:'', doel:'', fase, hook:'', script:'',
-      datum, tijd:'', link:'', learnings:'', media:'', created:nu, ...extra});
+      datum, tijd:'', link:'', learnings:'', media:'', auto:false, log:'', created:nu, ...extra});
     const social = (basis, titel, fase, datum, extra) => ['Instagram', 'Facebook', 'TikTok']
       .map(k => post(`${basis}-${KAN_SUFFIX[k]}`, titel, k, fase, datum, extra));
     M.posts = [
       ...social('dm1', 'Dag uit het leven: orderpicker', 'Gepubliceerd', d(-2)),
-      ...social('dm2', 'Wat verdient een nachtploeg écht?', 'Ingepland', d(1), {format:'Video', hook:'Nachtdienst = 25% toeslag. Reken maar mee.'}),
-      ...social('dm3', 'Le Duc: achter de schermen', 'Ingepland', d(3)),
+      ...social('dm2', 'Wat verdient een nachtploeg écht?', 'Ingepland', d(1), {format:'Video', hook:'Nachtdienst = 25% toeslag. Reken maar mee.',
+        script:'Nachtdienst = 25% toeslag. Reken maar mee. Stuur ons een appje.', media:'demo:reel-nachtploeg.mp4', tijd:'18:30'}),
+      ...social('dm3', 'Le Duc: achter de schermen', 'Ingepland', d(3), {format:'Foto', media:'demo:le-duc-hal.jpg', tijd:'09:00'}),
       ...social('dm4', 'Vrijdag-win: dit maakte onze week', 'Ingepland', d(4), {format:'Tekst'}),
       post('dl1', 'Wat een planner bij ons doet', 'LinkedIn', 'Ingepland', d(0)),
       post('dl2', 'Drie lessen uit 90 dagen ploegen bouwen', 'LinkedIn', 'Ingepland', d(2)),
@@ -259,6 +262,9 @@
       post('di2', 'Team-dinsdag: wie zit er achter de telefoon?', 'LinkedIn', 'Idee', ''),
       ...social('di3', 'Hook 1: heftruckchauffeur', 'Script klaar', '', {format:'Video', script:'Hook: €17,50 per uur en je rijdt vanaf dag één.'})
     ];
+    M.posts.forEach(p => { if(/^dm[23]-(ig|fb)$/.test(p.id)) p.auto = true; });
+    const fout = M.posts.find(p => p.id === 'dm3-ig'); if(fout) fout.log = '⚠ Instagram weigert de foto: beeldverhouding buiten 4:5 tot 1,91:1';
+    const goed = M.posts.find(p => p.id === 'dm1-fb'); if(goed) goed.log = '✓ Gepubliceerd op Facebook';
     M.notities = [
       {id:'dn1', datum:CRM.todayISO(), door:mij, tekst:'Bryan vragen naar filmlocatie\n[x] Budget De Gier checken\nIdee: reel over de eerste werkdag', updated_at:nu},
       {id:'dn2', datum:plus(CRM.todayISO(), -3), door:mij, tekst:'Hook testen met salaris in de eerste zin\nTikTok-account nalopen', updated_at:nu}
@@ -754,6 +760,7 @@
     if(!vandaagPosts.length) rijen.push(`<div class="mw-vd mw-klik" data-tabnaar="content"><span class="mw-vd-t">Post</span><span>Vandaag staat er nog niets ingepland. <span class="meta">Naar Contentplanning ›</span></span></div>`);
     const overDatum = groepeer(M.posts.filter(p => p.fase === 'Ingepland' && p.datum && p.datum < vandaag)).map(g => g[0]);
     overDatum.filter(p => p.datum >= mon).forEach(p => rijen.push(`<div class="mw-vd mw-klik mw-rood" data-post="${h(p.id)}"><span class="mw-vd-t num">${h(kort(p.datum))}</span><span>Over datum: <b>${h(p.titel || 'Zonder titel')}</b>. Publiceren of verzetten.</span></div>`));
+    M.posts.filter(p => p.log.startsWith('⚠')).forEach(p => rijen.push(`<div class="mw-vd mw-klik mw-rood" data-post="${h(p.id)}"><span class="mw-vd-t">${h(KAN_AFK[p.kanaal] || p.kanaal)}</span><span>Automatisch publiceren mislukt: <b>${h(p.titel || 'Zonder titel')}</b>. ${h(p.log.replace(/^⚠\s*/, '').slice(0, 90))}</span></div>`));
     const oud = overDatum.filter(p => p.datum < mon).length;
     if(oud) rijen.push(`<div class="mw-vd meta"><span class="mw-vd-t"></span><span>${oud} oudere ${oud > 1 ? 'posts' : 'post'} nooit afgerond. Opruimen kan in Contentplanning.</span></div>`);
     const liggen = M.taken.filter(t => !t.klaar && t.datum < vandaag);
@@ -838,10 +845,10 @@
             const groepen = groepeer(weekPosts.filter(p => p.datum === d)).sort((a, b) => (a[0].titel || '').localeCompare(b[0].titel || ''));
             return `<div class="mw-cel mw-pl-${pl.k}${d === vandaag ? ' vandaag' : ''}${d < vandaag ? ' voorbij' : ''}" data-cel="${pl.k}|${d}" title="Klik om hier een post in te plannen">
               ${groepen.map(g => {
-                const p = g[0], klaar = g.every(PUB), gemist = g.some(x => x.fase === 'Ingepland') && d < vandaag;
+                const p = g[0], klaar = g.every(PUB), gemist = (g.some(x => x.fase === 'Ingepland') && d < vandaag) || g.some(x => x.log.startsWith('⚠'));
                 return `<div class="mw-ppost mw-pl-${pl.k}${klaar ? ' klaar' : ''}${gemist ? ' gemist' : ''}" data-post="${h(p.id)}" title="${h(p.titel)} · ${h(g.map(x => x.kanaal + ': ' + x.fase).join(' · '))}">
                   ${h(p.titel || 'Zonder titel')}
-                  ${pl.kanalen.length > 1 ? `<span class="mw-pkan">${pl.kanalen.map(k => { const x = g.find(y => y.kanaal === k); return `<i class="${x ? (PUB(x) ? 'pub' : 'aan') : 'uit'}" title="${k}: ${x ? h(x.fase) : 'niet ingepland'}">${KAN_AFK[k]}</i>`; }).join('')}</span>` : ''}
+                  ${pl.kanalen.length > 1 ? `<span class="mw-pkan">${pl.kanalen.map(k => { const x = g.find(y => y.kanaal === k); return `<i class="${x ? (x.log.startsWith('⚠') ? 'fout' : PUB(x) ? 'pub' : 'aan') : 'uit'}" title="${k}: ${x ? h(x.fase) + (x.auto ? ', automatisch' : '') + (x.log ? ' · ' + h(x.log) : '') : 'niet ingepland'}">${KAN_AFK[k]}</i>`; }).join('')}${g.some(x => x.auto) ? '<i class="auto" title="Wordt automatisch gepubliceerd">auto</i>' : ''}</span>` : ''}
                 </div>`;
               }).join('') || '<span class="mw-pleeg">+</span>'}
             </div>`;
@@ -891,32 +898,45 @@
   }
 
   /* Opslaan van een post of een groep (IG·FB·TikTok samen). Alleen de
-     velden van dit formulier gaan mee; media, resultaten en publiceer-log
-     blijven onaangeroerd. */
-  const VELDEN = ['titel', 'format', 'doel', 'fase', 'hook', 'script', 'datum', 'link', 'learnings'];
+     velden van dit formulier gaan mee; resultaten en publiceer_log blijven
+     onaangeroerd (die schrijft de publisher-Edge Function). Automatisch
+     publiceren geldt alleen voor Facebook en Instagram; TikTok en LinkedIn
+     blijven met de hand. */
+  const VELDEN = ['titel', 'format', 'doel', 'fase', 'hook', 'script', 'datum', 'tijd', 'link', 'learnings', 'media', 'auto'];
+  const FBIG = k => ['Facebook', 'Instagram'].includes(k);
+  const opslagFout = error => CRM.toast('Opslaan lukt niet: ' + (/media_url|auto_publish|publicatie_tijd/.test(error.message || '')
+    ? 'de kolommen voor automatisch publiceren ontbreken, draai migratie-publiceren.sql' : error.message), 'err');
   async function bewaarPost(p, invoer, platform){
     const nu = new Date().toISOString(), velden = {};
-    VELDEN.forEach(k => { velden[k] = invoer[k] ?? ''; });
-    const rij = {titel:velden.titel, format:velden.format, doel:velden.doel, fase:velden.fase, hook:velden.hook, script:velden.script,
-      publicatie_datum:velden.datum || null, learnings:velden.learnings, updated_at:nu};
+    VELDEN.forEach(k => { velden[k] = invoer[k] ?? (k === 'auto' ? false : ''); });
+    const basis = {titel:velden.titel, format:velden.format, doel:velden.doel, hook:velden.hook, script:velden.script,
+      publicatie_datum:velden.datum || null, publicatie_tijd:velden.tijd || '', learnings:velden.learnings, media_url:velden.media || '', updated_at:nu};
     if(p){
-      const groep = groepVan(p), ids = groep.map(x => x.id), los = groep.length === 1;
-      if(los){ rij.link = velden.link; if(platform && platform !== 'social') rij.kanaal = platform; }
-      if(!M.demo){
-        const {error} = await CRM.sb.from('mkt_posts').update(rij).in('id', ids);
-        if(error){ CRM.toast('Opslaan lukt niet: ' + error.message, 'err'); return false; }
+      const groep = groepVan(p), los = groep.length === 1;
+      const plan = groep.map(x => {
+        const kan = los && platform && platform !== 'social' ? platform : x.kanaal;
+        const auto = !!velden.auto && FBIG(kan);
+        /* Wat de publisher al live heeft gezet, zakt niet terug naar een eerdere fase. */
+        const fase = x.auto && PUB(x) && !PUB(velden) ? x.fase : velden.fase;
+        const rij = {...basis, fase, auto_publish:auto, ...(los ? {link:velden.link} : {}), ...(kan !== x.kanaal ? {kanaal:kan} : {})};
+        return {x, kan, auto, fase, rij};
+      });
+      if(!M.demo) for(const r of plan){
+        const {error} = await CRM.sb.from('mkt_posts').update(r.rij).eq('id', r.x.id);
+        if(error){ opslagFout(error); return false; }
       }
-      groep.forEach(x => Object.assign(x, velden, los ? {} : {link:x.link}, los && platform && platform !== 'social' ? {kanaal:platform} : {}));
+      plan.forEach(r => Object.assign(r.x, velden, {kanaal:r.kan, auto:r.auto, fase:r.fase, link:los ? velden.link : r.x.link}));
       return true;
     }
-    const basis = 'm' + Date.now() + Math.random().toString(36).slice(2, 6);
+    const id = 'm' + Date.now() + Math.random().toString(36).slice(2, 6);
     const kanalen = platform === 'social' ? PLATFORMS[0].kanalen : [platform || ''];
-    const nieuw = kanalen.map(k => ({id:kanalen.length > 1 ? `${basis}-${KAN_SUFFIX[k]}` : basis, kanaal:k, ...rij, link:velden.link}));   // auto_publish blijft op de standaard (uit)
+    const nieuw = kanalen.map(k => ({id:kanalen.length > 1 ? `${id}-${KAN_SUFFIX[k]}` : id, kanaal:k, ...basis, fase:velden.fase,
+      link:velden.link, auto_publish:!!velden.auto && FBIG(k)}));
     if(!M.demo){
       const {error} = await CRM.sb.from('mkt_posts').insert(nieuw);
-      if(error){ CRM.toast('Opslaan lukt niet: ' + error.message, 'err'); return false; }
+      if(error){ opslagFout(error); return false; }
     }
-    nieuw.forEach(r => M.posts.push({...velden, id:r.id, kanaal:r.kanaal, tijd:'', media:'', created:nu}));
+    nieuw.forEach(r => M.posts.push({...velden, id:r.id, kanaal:r.kanaal, auto:r.auto_publish, log:'', created:nu}));
     return true;
   }
   async function wisPost(p){
@@ -961,11 +981,21 @@
             ${isGroep ? '<span class="hint">Eén post op drie kanalen: alles gaat samen mee.</span>' : ''}</div>
           <div class="f-row"><label for="mw_format">Vorm</label><select id="mw_format">${opt(FORMATEN, v.format, 'Kies een vorm')}</select></div>
           <div class="f-row"><label for="mw_fase">Fase</label><select id="mw_fase">${opt(FASES.concat(['Learnings']), v.fase)}</select></div>
-          <div class="f-row"><label for="mw_datum">Plaatsdatum</label><input type="date" id="mw_datum" value="${h(v.datum)}"><span class="hint">Per dag, zonder tijd. Media is niet nodig om in te plannen.</span></div>
+          <div class="f-row"><label for="mw_datum">Plaatsdatum</label><input type="date" id="mw_datum" value="${h(v.datum)}"><span class="hint">Per dag. Zonder media blijft het een tekstplan.</span></div>
         </div>
         <div class="f-row"><label for="mw_doel">Wat moeten ze doen of denken?</label><input type="text" id="mw_doel" value="${h(v.doel)}"></div>
         <div class="f-row"><label for="mw_hook">De eerste zin (de haak)</label><input type="text" id="mw_hook" value="${h(v.hook)}"></div>
         <div class="f-row"><label for="mw_script">Script of tekst</label><textarea id="mw_script" rows="6">${h(v.script)}</textarea></div>
+        <div class="mw-media">
+          <div class="mw-sec">Media en automatisch publiceren</div>
+          <div class="row tight mw-mb8"><label class="btn ghost sm" for="mw_mediafile">Foto of video kiezen</label>
+            <input type="file" id="mw_mediafile" accept="image/*,video/mp4,video/quicktime" hidden>
+            <span id="mw_mediaout" class="meta"></span></div>
+          <label class="check"><input type="checkbox" id="mw_auto"${v.auto || groep.some(x => x.auto) ? ' checked' : ''}><span>Automatisch publiceren op de plaatsdatum <span class="meta">(alleen Facebook en Instagram)</span></span></label>
+          <div class="f-row mw-tijdrij" id="mw_tijdrij"><label for="mw_tijd">Tijd</label><input type="time" id="mw_tijd" value="${h(String(v.tijd || '').slice(0, 5))}">
+            <span class="hint">De tekst bij Script of tekst wordt het bijschrift. Zonder tijd gaat hij live zodra de dag begint. TikTok post je zelf.</span></div>
+          ${groep.filter(x => x.log).map(x => `<div class="mw-log${x.log.startsWith('⚠') ? ' fout' : ''}"><b>${h(x.kanaal)}</b> ${h(x.log)}</div>`).join('')}
+        </div>
         ${isGroep ? '' : `<div class="f-row"><label for="mw_link">Link naar de post</label><input type="text" id="mw_link" value="${h(v.link)}" placeholder="Pas invullen als hij live staat"></div>`}
         <div class="f-row"><label for="mw_learn">Wat leerden we ervan?</label><textarea id="mw_learn" rows="3">${h(v.learnings)}</textarea></div>
       </div>
@@ -975,13 +1005,45 @@
         <button class="btn" id="mw_opslaan" type="button">Opslaan</button>
       </div>`, {onOpen(m){
         const val = id => (m.querySelector('#' + id)?.value || '').trim();
+        let media = v.media || '';
+        const mediaUit = m.querySelector('#mw_mediaout'), autoIn = m.querySelector('#mw_auto'), tijdRij = m.querySelector('#mw_tijdrij');
+        const toonMedia = () => {
+          const naam = media.startsWith('demo:') ? media.slice(5) + ' (demo, niet geüpload)' : decodeURIComponent(media.split('/').pop() || '').replace(/^\d+_/, '');
+          mediaUit.innerHTML = !media ? 'Geen media: tekstplan' : `${media.startsWith('demo:') ? h(naam) : `<a href="${h(media)}" target="_blank" rel="noopener">${h(naam)}</a>`} <button class="btn sub sm" id="mw_mediaweg" type="button">Weghalen</button>`;
+          const weg = m.querySelector('#mw_mediaweg'); if(weg) weg.onclick = () => { media = ''; toonMedia(); };
+        };
+        toonMedia();
+        const toonTijd = () => { tijdRij.style.display = autoIn.checked ? '' : 'none'; };
+        autoIn.onchange = toonTijd; toonTijd();
+        m.querySelector('#mw_mediafile').onchange = async e => {
+          const file = e.target.files?.[0]; if(!file) return;
+          if(file.size > 300 * 1024 * 1024){ CRM.toast('Bestand te groot (max ongeveer 300 MB)', 'err'); return; }
+          if(CRM.demo){ media = 'demo:' + file.name; toonMedia(); CRM.toast('Demo: het bestand is niet geüpload'); return; }
+          mediaUit.textContent = 'Uploaden…';
+          const pad = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const {error} = await CRM.sb.storage.from('media').upload(pad, file, {upsert:false});
+          if(error){ toonMedia(); CRM.toast('Upload mislukt: ' + error.message, 'err'); return; }
+          media = CRM.sb.storage.from('media').getPublicUrl(pad).data.publicUrl;
+          toonMedia(); CRM.toast('Media geüpload', 'ok');
+          const fmt = m.querySelector('#mw_format');
+          if(!fmt.value) fmt.value = /\.(mp4|mov|m4v|webm)$/i.test(file.name) ? 'Video' : 'Foto';
+        };
         m.querySelector('#mw_opslaan').onclick = async () => {
           const velden = {titel:val('mw_titel'), format:val('mw_format'), doel:val('mw_doel'), fase:val('mw_fase'), hook:val('mw_hook'),
-            script:m.querySelector('#mw_script').value, datum:val('mw_datum'), link:isGroep ? '' : val('mw_link'), learnings:m.querySelector('#mw_learn').value};
+            script:m.querySelector('#mw_script').value, datum:val('mw_datum'), link:isGroep ? '' : val('mw_link'), learnings:m.querySelector('#mw_learn').value,
+            media, auto:autoIn.checked, tijd:autoIn.checked ? val('mw_tijd') : (v.tijd || '')};
           const platform = isGroep ? 'social' : val('mw_platform');
           if(!velden.titel){ CRM.toast('Geef de post een titel', 'err'); return; }
           if(!p && !platform){ CRM.toast('Kies een platform', 'err'); return; }
           if(INGEPLAND.includes(velden.fase) && !velden.datum){ CRM.toast('Een ingeplande post heeft een plaatsdatum nodig', 'err'); return; }
+          if(velden.auto){
+            const kanalen = platform === 'social' ? PLATFORMS[0].kanalen : [platform];
+            if(!kanalen.some(FBIG)){ CRM.toast('Automatisch publiceren kan alleen op Facebook of Instagram', 'err'); return; }
+            if(!velden.datum){ CRM.toast('Automatisch publiceren vergt een plaatsdatum', 'err'); return; }
+            if(kanalen.includes('Instagram') && !media){ CRM.toast('Instagram vereist een foto of video: kies eerst media', 'err'); return; }
+            if(!velden.script.trim() && !media){ CRM.toast('Niets om te publiceren: vul een tekst in of kies media', 'err'); return; }
+            if(velden.fase !== 'Ingepland' && !PUB(velden)){ CRM.toast('Zet de fase op Ingepland, anders publiceert hij niet', 'err'); return; }
+          }
           if(!await bewaarPost(p, velden, platform)) return;
           CRM.modal.close(); CRM.toast(p ? 'Opgeslagen' : velden.datum ? `Ingepland op ${dagLabel(velden.datum)}` : 'Bewaard', 'ok'); teken();
         };
