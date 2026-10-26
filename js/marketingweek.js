@@ -237,7 +237,17 @@ CAPTION:
   };
   const huidigeWeek = () => maandagVan(CRM.todayISO());
   const kanaalIs = (p, wat) => new RegExp(wat, 'i').test(p.kanaal || '');
-  const vanMij = t => !!t && t.door === CRM.me();
+  /* Wiens week staat er? De marketeer ziet zijn eigen week; de eigenaar kijkt
+     mee in precies die week (Tjeerd, 26 okt 2026: "ik wil precies zien wat
+     Bryan ziet"). Meekijken verandert niets aan Bryans werk: geen automatisch
+     doorschuiven, geen Outlook, geen dagafsluiting en notities alleen-lezen. */
+  const weekVan = () => {
+    if(CRM.isMarketeer()) return CRM.me();
+    const m = (CRM.state.profiles || []).find(p => p.functie === 'marketeer');
+    return m?.naam || 'Bryan';
+  };
+  const meekijker = () => !CRM.isMarketeer();
+  const vanMij = t => !!t && t.door === weekVan();
   const nieuweStart = p => p.datum ? p.datum >= PLANNER.startdatum : (p.created || '').slice(0, 10) >= PLANNER.startdatum;
 
   async function veilig(q){
@@ -278,7 +288,7 @@ CAPTION:
      doet het scherm alsof de migraties nog niet gedraaid zijn. */
   function demoData(){
     M.demo = true;
-    const mon = huidigeWeek(), mij = CRM.me(), ander = mij === 'Bryan' ? 'Tjeerd' : 'Bryan', nu = new Date().toISOString();
+    const mon = huidigeWeek(), mij = weekVan(), ander = mij === 'Bryan' ? 'Tjeerd' : 'Bryan', nu = new Date().toISOString();
     const zonder = /mwzonder/.test(location.search);
     M.takenV2 = M.takenTijd = M.takenOutlook = M.notitiesDB = !zonder;
     const d = n => plus(mon, n);
@@ -474,7 +484,7 @@ CAPTION:
      blijven liggen tot die ander ze zelf oppakt. */
   let _doorschuiven = false;
   async function autoDoorschuiven(){
-    if(_doorschuiven || M.takenFout) return;
+    if(_doorschuiven || M.takenFout || meekijker()) return;
     const vandaag = CRM.todayISO();
     const naar = isWerkdag(vandaag) ? vandaag : volgendeWerkdag(vandaag);
     const oud = M.taken.filter(t => !t.klaar && t.datum < vandaag && vanMij(t));
@@ -492,7 +502,7 @@ CAPTION:
      vingerafdruk (outlook_sync), zodat alleen echte wijzigingen gaan. */
   const OL_KEY = 'crm_mw_outlook';
   const olKan = () => !!(CRM.outlook && CRM.outlook.beschikbaar());
-  const olAan = () => olKan() && CRM.outlook.verbonden() && lsGet(OL_KEY) === '1' && M.takenOutlook;
+  const olAan = () => !meekijker() && olKan() && CRM.outlook.verbonden() && lsGet(OL_KEY) === '1' && M.takenOutlook;
   let _olTimer = null, _olBezig = false;
   async function olKoppelen(){
     if(CRM.demo){ CRM.toast('In de demo gaat er niets naar Outlook'); return; }
@@ -554,14 +564,15 @@ CAPTION:
   /* ─── Notities: per dag een lijstje, per persoon ──────────────
      Afgevinkt = "[x] " vooraan de regel. De database is de bron; een kopie
      op deze computer vangt op als de database (nog) niet wil. */
-  const ntSleutel = () => 'crm_mw_notities|' + (CRM.me() || 'ik');
-  const mijnNotitie = n => n.door === CRM.me() || (!n.door && CRM.isMarketeer());
+  const ntSleutel = () => 'crm_mw_notities|' + (weekVan() || 'ik');
+  const mijnNotitie = n => n.door === weekVan() || !n.door;
   const notitieVan = d => M.notities.find(n => n.datum === d && mijnNotitie(n)) || null;
   const ntRegels = n => String(n?.tekst || '').split('\n').filter(r => r.trim()).map(r => ({af:/^\[x\]\s*/i.test(r), tekst:r.replace(/^\[x\]\s*/i, '')}));
   const ntNaarTekst = regels => regels.map(r => (r.af ? '[x] ' : '') + r.tekst).join('\n');
   function ntLokaal(){ try{ return JSON.parse(lsGet(ntSleutel()) || '{}') || {}; }catch(e){ return {}; } }
   function ntLokaalZet(datum, tekst){ const l = ntLokaal(); l[datum] = {tekst, t:new Date().toISOString()}; lsZet(ntSleutel(), JSON.stringify(l)); }
   function ntSamenvoegen(){
+    if(meekijker()) return;
     for(const [datum, v] of Object.entries(ntLokaal())){
       const db = notitieVan(datum);
       if(!db) M.notities.push({id:null, datum, tekst:v.tekst, door:CRM.me(), updated_at:v.t, _teSturen:true});
@@ -576,6 +587,7 @@ CAPTION:
     if(el){ el.textContent = tekst; el.classList.toggle('mw-warn', !!waarschuw); }
   }
   function ntOpslaan(d, tekst, direct){
+    if(meekijker()) return;
     let n = notitieVan(d);
     if(!n){ n = {id:null, datum:d, tekst:'', door:CRM.me()}; M.notities.unshift(n); }
     n.tekst = tekst; n.updated_at = new Date().toISOString();
@@ -843,7 +855,7 @@ CAPTION:
     const noten = [MOMENTEN[mon], ...werkweek.map(d => FEESTDAGEN[d] ? `${FEESTDAGEN[d]} (${kort(d)})` : '')].filter(Boolean);
     if(mon >= TIKTOK_VAN && mon <= TIKTOK_TOT) noten.push('TikTok-pilot: dezelfde video\'s als Instagram, zonder watermerk');
     if(M.takenFout) return `<div class="note err">De takenlijst kon niet geladen worden${/mkt_taken|relation|exist/i.test(M.takenFout.message || '') ? ': de tabel mkt_taken ontbreekt. Draai migratie-taken.sql in Supabase' : '. Herlaad de pagina'}.</div>`;
-    const olKnop = !olKan() && !M.demo ? ''
+    const olKnop = meekijker() || (!olKan() && !M.demo) ? ''
       : olAan() ? `<button class="btn ghost sm" id="mw_olsync" type="button" title="Je eigen taken nu naar je Outlook-agenda sturen">Agenda bijwerken</button><button class="btn sub sm" id="mw_oluit" type="button" title="Taken niet meer naar je agenda sturen">Ontkoppelen</button>`
       : `<button class="btn ghost sm" id="mw_olaan" type="button" title="Zet je eigen taken ook in je Outlook-agenda">Outlook-agenda koppelen</button>`;
     const migraties = [!M.takenV2 && 'migratie-taakgebieden.sql (taakgebied en duur)', !M.takenTijd && 'migratie-taaktijd.sql (vaste tijd en slepen)',
@@ -1314,6 +1326,7 @@ Lever de ${posts.length} scripts genummerd, klaar om op de set te gebruiken.`;
     const TABS = [{k:'week', t:'Week'}, {k:'content', t:'Contentplanning'}, {k:'creatie', t:'Content Creatie'}, {k:'weken', t:'Komende weken'}, {k:'jaar', t:'Jaarplan'}];
     const body = M.tab === 'weken' ? wekenHtml() : M.tab === 'jaar' ? jaarHtml() : M.tab === 'content' ? contentHtml() : M.tab === 'creatie' ? creatieHtml() : weekHtml();
     mount.innerHTML = `
+      ${meekijker() ? `<div class="note info mw-mb">Je kijkt mee in de week van ${h(weekVan())}: je ziet precies wat ${h(weekVan())} ziet. Zijn notities zijn alleen-lezen; een taak die jij toevoegt staat op jouw naam.</div>` : ''}
       ${M.demo ? '<div class="note info mw-mb">Demo-data: wat je hier ziet is verzonnen en wordt nergens opgeslagen.</div>' : ''}
       ${M.postsFout ? '<div class="note err mw-mb">De posts konden niet geladen worden. Herlaad de pagina.</div>' : ''}
       <div class="tabs">${TABS.map(t => `<button class="tab ${M.tab === t.k ? 'on' : ''}" data-tab="${t.k}" type="button">${h(t.t)}</button>`).join('')}</div>
@@ -1624,6 +1637,11 @@ Lever de ${posts.length} scripts genummerd, klaar om op de set te gebruiken.`;
 
   function bindNotities(mount){
     const box = mount.querySelector('#mw_nt'); if(!box) return;
+    if(meekijker()){
+      /* Meekijken: notities van de marketeer lezen, niet wijzigen. Archief en zoeken blijven werken. */
+      CRM.$$('#mw_ntnieuw, #mw_ntalles, [data-ntweg], [data-nttaak]', box).forEach(x => x.remove());
+      CRM.$$('[data-ntregel], [data-ntcheck]', box).forEach(x => { x.disabled = true; });
+    }
     const d = M.dsDatum || CRM.todayISO();
     const regels = () => ntRegels(notitieVan(d));
     const zet = (lijst, focus) => { ntOpslaan(d, ntNaarTekst(lijst), true); M.focus = focus || null; teken(); };
@@ -1664,6 +1682,7 @@ Lever de ${posts.length} scripts genummerd, klaar om op de set te gebruiken.`;
   /* Dagafsluiting: alleen handmatig, via de knop in de dagplanning
      (automatische herinnering bewust weg, Bryan 19 okt 2026). */
   function dagAfsluiten(){
+    if(meekijker()){ CRM.toast(`De dag afsluiten doet ${weekVan()} zelf`); return; }
     const vandaag = CRM.todayISO();
     const open = M.taken.filter(t => t.datum === vandaag && !t.klaar && vanMij(t));
     if(!open.length){ CRM.modal.close(); CRM.toast('Alles van vandaag is af. Mooi werk.', 'ok'); return; }
@@ -1705,7 +1724,7 @@ Lever de ${posts.length} scripts genummerd, klaar om op de set te gebruiken.`;
        opnieuw te laden (en zou je uit een notitie gooien). */
     herlaadBijSync:false,
     /* Zijbalkteller: eigen open taken van vandaag en eerder. */
-    badge(){ try{ return M.geladen ? M.taken.filter(t => !t.klaar && t.datum <= CRM.todayISO() && vanMij(t)).length : 0; }catch(e){ return 0; } },
+    badge(){ try{ return M.geladen && !meekijker() ? M.taken.filter(t => !t.klaar && t.datum <= CRM.todayISO() && vanMij(t)).length : 0; }catch(e){ return 0; } },
     render
   });
 })();
