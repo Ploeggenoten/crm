@@ -305,3 +305,17 @@
 .mw-tr-postlbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pc,var(--gold));margin-right:5px}
 .mw-tr-taak.kort{white-space:nowrap;text-overflow:ellipsis;padding-top:0;padding-bottom:0;line-height:13px;font-size:11px}
 .mw-tr-taak.kort input{width:10px;height:10px;vertical-align:-1px}
+
+/* Bryans eigen kleuren en minder doorzichtig (Tjeerd, 26 okt 2026). Geel en
+   blauw van de contentbanen = exact die uit zijn marketingbord. */
+.mw{--mw-geel:color-mix(in srgb,#e3a800 30%,#fff);--mw-blauw:color-mix(in srgb,#3aa0e8 28%,#fff)}
+.mw-pl-social{--pc:#e3a800;--pb:var(--mw-geel)}
+.mw-pl-linkedin{--pc:#3aa0e8;--pb:var(--mw-blauw)}
+.mw-tr-taak,.mw-tr-taak.vast{background:color-mix(in srgb,var(--gc) 32%,#fff);border-color:color-mix(in srgb,var(--gc) 60%,#fff);border-left-color:var(--gc)}
+.mw-tr-taak:hover{background:color-mix(in srgb,var(--gc) 42%,#fff);border-color:var(--gc)}
+.mw-tr-taak.klaar{opacity:.6}
+.mw-tb-tijd{color:var(--ink);opacity:.75}
+.mw-tr-post{background:color-mix(in srgb,var(--pc,#e3a800) 30%,#fff);border-color:color-mix(in srgb,var(--pc,#e3a800) 60%,#fff)}
+.mw-tr-postlbl{color:var(--ink);opacity:.7}
+.mw-tr-legenda i{background:color-mix(in srgb,var(--gc) 32%,#fff)}
+.mw-tr-legenda .mw-lg-post i{--gc:#e3a800;background:var(--mw-geel)}

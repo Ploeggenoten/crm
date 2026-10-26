@@ -55,13 +55,14 @@
   };
   /* Taakgebieden voor de weekbalans. Volgorde = cyclus bij klikken op het
      chipje; 'overig' moet de laatste blijven (terugval). */
+  /* Kleuren exact zoals in Bryans marketingbord (Tjeerd, 26 okt 2026: "behoud zijn kleuren"). */
   const GEBIEDEN = [
-    {k:'content', n:'Content en social',    kort:'Content', c:'var(--olive-l)'},
-    {k:'ads',     n:'Advertenties (Meta)',  kort:'Ads',     c:'var(--blue)'},
-    {k:'werving', n:'Vacatures en werving', kort:'Werving', c:'var(--gold)'},
-    {k:'web',     n:'Website en SEO',       kort:'Web',     c:'var(--purple)'},
-    {k:'video',   n:'Video editten',        kort:'Video',   c:'var(--oranje)'},
-    {k:'overig',  n:'Overig en overleg',    kort:'Overig',  c:'var(--txt-2)'}
+    {k:'content', n:'Content en social',    kort:'Content', c:'#6fa03c'},
+    {k:'ads',     n:'Advertenties (Meta)',  kort:'Ads',     c:'#2f6fb0'},
+    {k:'werving', n:'Vacatures en werving', kort:'Werving', c:'#c27a1a'},
+    {k:'web',     n:'Website en SEO',       kort:'Web',     c:'#7a4fa3'},
+    {k:'video',   n:'Video editten',        kort:'Video',   c:'#d1497b'},
+    {k:'overig',  n:'Overig en overleg',    kort:'Overig',  c:'#8a917c'}
   ];
   /* Lange links maken een blokje onleesbaar: in het rooster tonen we ze als 🔗 (in het taakvenster staat de volledige tekst). */
   const zonderLinks = s => String(s || '').replace(/https?:\/\/\S+/g, '🔗').replace(/\s+/g, ' ').trim();
