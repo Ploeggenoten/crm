@@ -63,6 +63,14 @@
     drill:new Map(), uitleg:false,
     lbQ:'', lbK:'',                 // zoek + kanaalfilter in de learnings-bibliotheek
     vacAlles:false,                 // Vacatures: ook de vacatures tonen die alles hebben
+    /* Lopende campagnes (overzicht bovenaan Prestatie, zoals Ads Manager).
+       `cpPer` = gekozen periode (sleutel uit CP_PERIODES), `cpVan/cpTot` het
+       eigen bereik, `cpAlleen` = alleen wat aanstaat, `cpCache` de dagregels
+       die voor een eigen bereik buiten het ingelezen venster zijn opgehaald. */
+    campagnes:[], campagnesFout:null,
+    cpPer:'d7', cpVan:'', cpTot:'', cpAlleen:true, cpSort:{k:'besteed', dir:-1},
+    cpCache:new Map(), syncBezig:false,
+    taakTekst:new Map(),            // advies → taaktekst, per render opnieuw gevuld
     badge:0, mount:null, actiesEl:null
   };
 
@@ -220,7 +228,7 @@
          herkent en wegschrijft — één getal per maand, leesbaar voor het hele
          team. De banktransacties zelf (fin_bank_tx en alle andere fin_-tabellen)
          raken we niet aan en mogen we ook niet lezen; die blijven bij Finance. */
-      const [a,b,c,d,e,f,g] = await Promise.all([
+      const [a,b,c,d,e,f,g,k] = await Promise.all([
         veilig(CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000)),
         veilig(CRM.sb.from('mkt_ad_besluiten').select('*').order('created_at',{ascending:false})),
         veilig(CRM.sb.from('mkt_posts').select('*')),
@@ -231,7 +239,11 @@
            matching niet herkent (koppelCampagne in ketenData) — zie
            schema.sql 7f. Ontbreekt de tabel nog (migratie niet gedraaid),
            dan degradeert de app netjes: gewoon geen overschrijvingen. */
-        veilig(CRM.sb.from('mkt_campagne_klant').select('*'))
+        veilig(CRM.sb.from('mkt_campagne_klant').select('*')),
+        /* Status, budget en kant-en-klare periodecijfers per campagne, gevuld
+           door meta-sync (migratie-campagnes.sql). Ontbreekt de tabel, dan
+           telt het campagne-overzicht gewoon op uit de dagregels. */
+        veilig(CRM.sb.from('mkt_meta_campagnes').select('*'))
       ]);
       M.meta = a.rows; M.metaFout = a.fout;
       M.besluiten = b.rows;
@@ -240,6 +252,8 @@
       M.taken = e.rows; M.takenFout = e.fout;
       M.betaald = f.rows; M.betaaldFout = f.fout;
       M.campKlant = g.rows;
+      M.campagnes = k.rows; M.campagnesFout = k.fout;
+      M.cpCache = new Map();
       M.geladen = true;
       telBadge();
     })();
@@ -266,7 +280,7 @@
      vacatureWerk) en te zwak om iemand elke dag een cijfer voor te geven. */
   function telBadge(){
     try{
-      M.badge = adviezen().length + agentAdviezen().length + nagPosts().length
+      M.badge = adviezen().length + agentGroepen().length + nagPosts().length
               + openTaken().length + vacatureWerk().online.length;
     }
     catch(e){ M.badge = 0; }
@@ -294,6 +308,21 @@
   function agentAdviezen(){
     return M.besluiten.filter(b => ['advies','budget'].includes(b.besluit)
       && (b.status||'open') === 'open' && !configRij(b));
+  }
+  /* De agent draait elke dag en schrijft over hetzelfde onderwerp (campagne +
+     set/advertentie + soort) gewoon een nieuw advies bij. Het oudere is dan
+     achterhaald: we tonen per onderwerp alleen het nieuwste en onthouden de
+     oudere in `ouder`, zodat "Gezien" de hele groep in één keer afrondt. */
+  function agentGroepen(){
+    const groepen = new Map();
+    agentAdviezen().slice()
+      .sort((a,b) => String(b.created_at||'').localeCompare(String(a.created_at||'')))
+      .forEach(b => {
+        const k = `${b.campagne||''}|${b.advertentie||''}|${b.besluit}`;
+        if(!groepen.has(k)) groepen.set(k, {...b, ouder:[]});
+        else groepen.get(k).ouder.push(b);
+      });
+    return [...groepen.values()];
   }
 
   /* `rijen` is standaard álles: de badge en het tabblad tellen de adviezen
@@ -508,20 +537,93 @@
   /* Een besluit afronden: hij staat écht uit, of het agent-advies is gelezen.
      Daarmee verdwijnt de regel van de lijst in plaats van dat hij eeuwig
      blijft staan. */
-  async function rondAf(id){
-    const rij = M.besluiten.find(b => String(b.id) === String(id));
-    if(!rij) return;
-    const oud = rij.status; rij.status = 'bevestigd';
+  /* `ids` mag een komma-lijst zijn: "Gezien" bij een agent-advies rondt ook
+     de oudere adviezen over hetzelfde onderwerp af (zie agentGroepen). De id's
+     gaan als de echte waarden uit de rijen naar de database, niet als tekst. */
+  async function rondAf(ids){
+    const lijst = String(ids).split(',');
+    const rijen = M.besluiten.filter(b => lijst.includes(String(b.id)));
+    if(!rijen.length) return;
+    const oud = rijen.map(r => r.status);
+    rijen.forEach(r => { r.status = 'bevestigd'; });
     if(!CRM.demo){
-      const {error} = await CRM.sb.from('mkt_ad_besluiten').update({status:'bevestigd'}).eq('id', rij.id);
+      const {error} = await CRM.sb.from('mkt_ad_besluiten').update({status:'bevestigd'})
+        .in('id', rijen.map(r => r.id));
       if(error){
-        rij.status = oud;
+        rijen.forEach((r,i) => { r.status = oud[i]; });
         CRM.fout('Afronden mislukt — de regel blijft staan', error);
         telBadge(); teken(); return;
       }
     }
-    CRM.toast('Afgerond', 'ok');
+    CRM.toast(rijen.length > 1 ? `Afgerond, samen met ${rijen.length - 1} ouder${rijen.length === 2 ? ' advies' : 'e adviezen'} hierover` : 'Afgerond', 'ok');
     telBadge(); teken();
+  }
+
+  /* ── Advies → taak in "Mijn week" ──
+     Een advies dat je niet meteen afhandelt verdwijnt anders uit beeld. Eén
+     klik zet het als taak in mkt_taken: gebied 'ads', 15 minuten, vandaag (of
+     de eerstvolgende werkdag). Zo staat het in Bryans weekplanner. De kolommen
+     gebied en duur_min bestaan pas na de takenmigratie van het marketingbord;
+     ontbreken ze, dan slaan we de taak kaal op in plaats van niets op te slaan. */
+  function adviesAlsTaak(b){
+    const note = String(b.note||'').replace(/^🤖\s*/, '');
+    const doen = (note.match(/Doen:\s*([^\n]+)/) || [])[1];
+    const kern = (doen || note.split('\n')[0] || b.advertentie || '').trim().replace(/\s+/g, ' ');
+    return `Meta${b.campagne ? ' · ' + b.campagne : ''}: ${kern}`.slice(0, 160);
+  }
+  const waakhondAlsTaak = a =>
+    `Meta${a.campagne ? ' · ' + a.campagne : ''}: ${a.titel}${a.advertentie && a.advertentie !== '(hele campagne)' ? ' — ' + a.advertentie : ''}`.slice(0, 160);
+  const staatAlsTaak = tekst => (M.taken||[]).some(t => !t.klaar && t.tekst === tekst);
+  function werkdagVanaf(){
+    const d = new Date(CRM.todayISO() + 'T12:00');
+    while([0,6].includes(d.getDay())) d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('sv-SE');
+  }
+  async function adviesNaarTaak(tekst){
+    if(!tekst || staatAlsTaak(tekst)){ CRM.toast('Dit advies staat al in Mijn week'); return; }
+    const datum = werkdagVanaf();
+    const basis = {tekst, datum, klaar:false, door:CRM.me()};
+    let rij = {...basis, gebied:'ads', duur_min:15};
+    if(!CRM.demo){
+      let r = await CRM.sb.from('mkt_taken').insert(rij).select().single();
+      if(r.error){
+        /* Waarschijnlijk bestaan gebied/duur_min nog niet: dan kaal opslaan. */
+        r = await CRM.sb.from('mkt_taken').insert(basis).select().single();
+      }
+      if(r.error) return CRM.fout('Taak opslaan mislukt', r.error);
+      rij = r.data || basis;
+    } else rij = {...rij, id:CRM.uid(), created_at:new Date().toISOString()};
+    M.taken = [...(M.taken||[]), rij];
+    CRM.toast(`In Mijn week gezet voor ${datum === CRM.todayISO() ? 'vandaag' : CRM.fmtDay(datum)} · 15 min · Ads`, 'ok');
+    telBadge(); teken();
+  }
+
+  /* ── Meta-sync handmatig starten ──
+     De edge-functie meta-sync draait vanzelf; deze knop is voor als je niet
+     wilt wachten of oude cijfers wilt herstellen (?dagen=90 haalt de laatste
+     negentig dagen opnieuw op, bijvoorbeeld om link_kliks in oude regels te
+     vullen). Daarna lezen we alle marketingtabellen opnieuw in. */
+  async function metaSync(dagen){
+    if(CRM.demo){ CRM.toast('In demo-modus wordt Meta niet aangeroepen — log in om te synchroniseren'); return; }
+    if(M.syncBezig) return;
+    M.syncBezig = true; teken();
+    CRM.toast(dagen ? `Meta-cijfers van de laatste ${dagen} dagen opnieuw ophalen — dat kan een minuut duren`
+                    : 'Meta-cijfers ophalen…');
+    try{
+      const {data, error} = await CRM.sb.functions.invoke(dagen ? `meta-sync?dagen=${dagen}` : 'meta-sync');
+      if(error || data?.error){
+        const msg = (typeof data?.error === 'string' ? data.error : data?.error?.message) || error?.message || 'synchronisatie mislukt';
+        CRM.toast(/secret|ingesteld/i.test(msg) ? 'De Meta-koppeling is nog niet geactiveerd (secrets ontbreken)'
+                                                : `Meta-sync mislukt: ${msg}`, 'err');
+      } else {
+        M.syncBezig = false;
+        M.bezig = null; M.geladen = false;
+        await laad();
+        CRM.toast(`Meta gesynchroniseerd — ${fmtN(data?.regels)} regels${data?.campagnes ? `, ${fmtN(data.campagnes)} campagnes` : ''}`, 'ok');
+      }
+    }catch(e){ CRM.fout('Meta-sync niet bereikbaar', e); }
+    M.syncBezig = false;
+    teken();
   }
 
   /* ═══ 3. RENDEMENT — van advertentiegeld tot plaatsing ═══════════
@@ -914,7 +1016,7 @@
        "Geen content of advertentie" is een afleiding op namen; die zou de
        teller opblazen met werk waarvan we niet zeker zijn. */
     const TABS = [
-      {k:'prestatie', t:'Prestatie', n:adv.length + agentAdviezen().length},
+      {k:'prestatie', t:'Prestatie', n:adv.length + agentGroepen().length},
       {k:'keten',     t:'Rendement', n:0},
       {k:'content',   t:'Content',   n:nag.length + werk.length},
       {k:'kanalen',   t:'Kanalen',   n:0},
@@ -1030,6 +1132,26 @@
       besluit(ad, camp, keuze);
     });
     CRM.$$('[data-afrond]', root).forEach(b => b.onclick = () => rondAf(b.dataset.afrond));
+    CRM.$$('[data-advtaak]', root).forEach(b => b.onclick = () => {
+      b.disabled = true;
+      adviesNaarTaak(M.taakTekst.get(b.dataset.advtaak));
+    });
+
+    /* Lopende campagnes: periode, eigen bereik, actief/alles, sorteren, sync. */
+    const cpPer = root.querySelector('#mkt_cp_per');
+    if(cpPer) cpPer.onchange = () => {
+      if(cpPer.value === 'eigen' && !M.cpVan){ const [v,t] = cpBereik(); M.cpVan = v; M.cpTot = t; }
+      M.cpPer = cpPer.value; teken();
+    };
+    const cpVan = root.querySelector('#mkt_cp_van'), cpTot = root.querySelector('#mkt_cp_tot');
+    if(cpVan) cpVan.onchange = () => { if(!isDatum(cpVan.value)) return;
+      M.cpVan = cpVan.value; if(M.cpTot && M.cpVan > M.cpTot) M.cpTot = M.cpVan; teken(); };
+    if(cpTot) cpTot.onchange = () => { if(!isDatum(cpTot.value)) return;
+      M.cpTot = cpTot.value; if(M.cpVan && M.cpTot < M.cpVan) M.cpVan = M.cpTot; teken(); };
+    CRM.$$('[data-cpalleen]', root).forEach(b => b.onclick = () => { M.cpAlleen = b.dataset.cpalleen === '1'; teken(); });
+    const sync = root.querySelector('#mkt_sync'), herstel = root.querySelector('#mkt_herstel');
+    if(sync) sync.onclick = () => metaSync();
+    if(herstel) herstel.onclick = () => metaSync(90);
     CRM.$$('[data-uit]', root).forEach(r => r.onclick = () => {
       const k = r.dataset.uit;
       M.open.has(k) ? M.open.delete(k) : M.open.add(k);
@@ -1055,6 +1177,7 @@
     });
     sorteer('data-ks', M.kSort);
     sorteer('data-vs', M.vSort);
+    sorteer('data-cps', M.cpSort);      // lopende campagnes
     CRM.$$('[data-koppelcamp]', root).forEach(sel => sel.onchange = () => {
       if(sel.value) campagneKoppel(sel.dataset.koppelcamp, sel.value);
     });
@@ -1105,6 +1228,255 @@
     });
     const vAlles = root.querySelector('#mkt_vacalles');
     if(vAlles) vAlles.onclick = () => { M.vacAlles = !M.vacAlles; teken(); };
+  }
+
+  /* ── 6a0. Lopende campagnes ──
+     Overgezet uit Bryans marketingbord (26 okt 2026). Eén tabel met de
+     kolommen die hij in Ads Manager gewend is, zodat hij voor het dagelijkse
+     beeld niet meer naar Meta hoeft. Twee bronnen, in deze volgorde:
+       1. mkt_meta_campagnes.cijfers — Meta levert de vaste periodes
+          kant-en-klaar, mét uniek bereik en frequentie;
+       2. de dagregels uit mkt_meta_stats — voor een eigen bereik (of zolang
+          de campagnetabel nog leeg is) tellen we zelf op. Bereik en frequentie
+          zijn dan niet op te tellen (iemand die twee dagen keek telt dubbel),
+          dus daar staat dan een streepje.
+     De status is alleen-lezen: aan- en uitzetten gebeurt in Ads Manager. In
+     het marketingbord leek het een schakelaar; hier staat het eerlijk als
+     label. Het klantfilter en venster verderop werken hier bewust niet in
+     door — dit blok heeft zijn eigen periodekeuze, net als Ads Manager.
+
+     Kleuring volgens Bryans beoordelingskader "2·1·5": link-CTR boven 2%,
+     link-CPC onder € 1, kosten per resultaat onder € 5. Pas vanaf 1.000
+     weergaven — daaronder zegt een percentage nog niets. */
+  const CP_PERIODES = {
+    vandaag:{t:'Vandaag', meta:true}, gisteren:{t:'Gisteren', meta:true},
+    d7:{t:'Afgelopen 7 dagen', meta:true}, d14:{t:'Afgelopen 14 dagen', meta:true},
+    d30:{t:'Afgelopen 30 dagen', meta:true}, maand:{t:'Deze maand', meta:true},
+    vorigemaand:{t:'Vorige maand', meta:true}, eigen:{t:'Eigen periode…'}
+  };
+  const KADER = {ctr:0.02, cpc:1, cpl:5, minWeergaven:1000};
+  /* Dezelfde grenzen als Meta's presets: "afgelopen 7 dagen" is t/m gisteren. */
+  function cpBereik(per = M.cpPer){
+    const t = CRM.todayISO(), nu = new Date();
+    const iso = d => d.toLocaleDateString('sv-SE');
+    const eersteDit   = iso(new Date(nu.getFullYear(), nu.getMonth(), 1));
+    const eersteVorig = iso(new Date(nu.getFullYear(), nu.getMonth() - 1, 1));
+    const laatsteVorig= iso(new Date(nu.getFullYear(), nu.getMonth(), 0));
+    return ({vandaag:[t,t], gisteren:[isoT(1),isoT(1)], d7:[isoT(7),isoT(1)], d14:[isoT(14),isoT(1)],
+      d30:[isoT(30),isoT(1)], maand:[eersteDit,t], vorigemaand:[eersteVorig,laatsteVorig],
+      eigen:[M.cpVan || isoT(7), M.cpTot || isoT(1)]})[per] || [isoT(7), isoT(1)];
+  }
+  /* Is het bereik al gedekt door de ingelezen dagregels? laad() leest de
+     nieuwste 3000 regels; zijn dat er minder, dan staat de hele tabel erin.
+     Anders is alleen alles ná de oudste ingelezen dag compleet. */
+  function cpGedekt(van){
+    if(CRM.demo || M.meta.length < 3000) return true;
+    const oudste = M.meta[M.meta.length - 1]?.datum || '';
+    return van > oudste;
+  }
+  /* Ophalen per 1000 (het maximum per verzoek). Bestaat link_kliks nog niet,
+     dan zonder die kolom — de link-cijfers blijven dan leeg. */
+  async function cpLaad(van, tot){
+    const k = van + '|' + tot;
+    if(M.cpCache.has(k)) return;
+    M.cpCache.set(k, 'laden');
+    let velden = 'datum,campagne,uitgegeven,impressies,kliks,link_kliks,leads';
+    const rijen = [];
+    for(let i = 0; i < 20000; i += 1000){
+      const r = await veilig(CRM.sb.from('mkt_meta_stats').select(velden)
+        .gte('datum', van).lte('datum', tot).order('datum').range(i, i + 999));
+      if(r.fout && velden.includes('link_kliks')){ velden = velden.replace(',link_kliks', ''); i -= 1000; continue; }
+      if(r.fout){ M.cpCache.set(k, {fout:r.fout}); if(M.tab === 'prestatie') teken(); return; }
+      rijen.push(...r.rows);
+      if(r.rows.length < 1000) break;
+    }
+    M.cpCache.set(k, rijen);
+    if(M.tab === 'prestatie') teken();
+  }
+
+  function cpData(){
+    const camps = M.campagnes || [];
+    const perNaam = new Map(camps.map(c => [String(c.naam||'').trim(), c]));
+    const basis = (naam, c) => ({naam, id:c?.id || '', status:c?.status || '',
+      aan: c ? (c.aan === true || c.status === 'ACTIVE') : null,
+      budget_dag:c?.budget_dag ?? null, budget_type:c?.budget_type || '', budget_looptijd:c?.budget_looptijd ?? null});
+    const [van, tot] = cpBereik();
+
+    let rijen, bron;
+    if(CP_PERIODES[M.cpPer]?.meta && camps.some(c => c.cijfers && c.cijfers[M.cpPer])){
+      bron = 'meta';
+      rijen = camps.map(c => {
+        const x = c.cijfers?.[M.cpPer] || {};
+        return {...basis(String(c.naam||'').trim() || '(campagne zonder naam)', c),
+          besteed:N(x.besteed), weergaven:N(x.weergaven), link_kliks:N(x.link_kliks), resultaten:N(x.resultaten),
+          bereik: x.bereik != null ? N(x.bereik) : null, frequentie: x.frequentie ? N(x.frequentie) : null};
+      });
+    } else {
+      bron = 'dag';
+      let dag;
+      if(cpGedekt(van)) dag = M.meta.filter(r => (r.datum||'') >= van && (r.datum||'') <= tot);
+      else {
+        const c = M.cpCache.get(van + '|' + tot);
+        if(!c){ cpLaad(van, tot); return {laden:true, rijen:[], van, tot}; }
+        if(c === 'laden') return {laden:true, rijen:[], van, tot};
+        if(c.fout) return {fout:c.fout, rijen:[], van, tot};
+        dag = c;
+      }
+      const per = new Map();
+      for(const r of dag){
+        const naam = campNaam(r);
+        if(!per.has(naam)) per.set(naam, {...basis(naam, perNaam.get(naam)),
+          besteed:0, weergaven:0, link_kliks:0, resultaten:0, bereik:null, frequentie:null});
+        const x = per.get(naam);
+        x.besteed += N(r.uitgegeven); x.weergaven += N(r.impressies);
+        x.link_kliks += N(r.link_kliks); x.resultaten += N(r.leads);
+      }
+      /* Campagnes die aanstaan maar in deze periode niets uitgaven horen er
+         ook in: dat is precies wat je wilt zien. */
+      for(const c of camps){
+        const naam = String(c.naam||'').trim();
+        if(naam && !per.has(naam)) per.set(naam, {...basis(naam, c),
+          besteed:0, weergaven:0, link_kliks:0, resultaten:0, bereik:null, frequentie:null});
+      }
+      rijen = [...per.values()];
+    }
+    rijen.forEach(afgeleid);
+    return {bron, rijen, van, tot};
+  }
+  /* Afgeleide kengetallen. Zonder link-kliks (oude regels, of de kolom
+     ontbreekt) geen link-CTR en -CPC: terugvallen op álle kliks zou het
+     2·1·5-kader stilletjes gunstiger maken dan het is. */
+  function afgeleid(x){
+    x.ctr = x.weergaven && x.link_kliks ? x.link_kliks / x.weergaven : null;
+    x.cpc = x.link_kliks ? x.besteed / x.link_kliks : null;
+    x.cpl = x.resultaten ? x.besteed / x.resultaten : null;
+    x.cpm = x.weergaven ? x.besteed / x.weergaven * 1000 : null;
+    x.geenLink = x.weergaven > 0 && !x.link_kliks;
+    return x;
+  }
+
+  const CP_STATUS = {
+    ACTIVE:['aan','Actief'], PAUSED:['uit','Gepauzeerd'], CAMPAIGN_PAUSED:['uit','Gepauzeerd'],
+    ADSET_PAUSED:['uit','Sets gepauzeerd'], IN_PROCESS:['review','In behandeling'],
+    PENDING_REVIEW:['review','In beoordeling'], WITH_ISSUES:['fout','Probleem'],
+    DISAPPROVED:['fout','Afgekeurd'], PENDING_BILLING_INFO:['fout','Betaalgegevens'],
+    ARCHIVED:['uit','Gearchiveerd'], DELETED:['uit','Verwijderd']
+  };
+  function cpStatus(c){
+    if(c.status || c.aan != null){
+      const [k, t] = CP_STATUS[c.status] || (c.aan ? ['aan','Actief'] : ['uit','Uit']);
+      return `<span class="mkt-cst ${k}" title="Meta-status ${h(c.status || '—')} · aan- en uitzetten doe je in Ads Manager"><span class="dot"></span>${h(t)}</span>`;
+    }
+    /* Geen campagnegegevens: afleiden uit de uitgaven van gisteren en vandaag,
+       en dat er eerlijk bij zeggen. */
+    const recent = M.meta.some(r => campNaam(r) === c.naam && (r.datum||'') >= isoT(1) && N(r.uitgegeven) > 0);
+    return `<span class="mkt-cst ${recent ? 'aan' : 'uit'} afgeleid" title="Afgeleid uit de uitgaven van gisteren en vandaag — de echte status komt met de campagnetabel van meta-sync"><span class="dot"></span>${recent ? 'Gaf uit' : 'Geen uitgaven'}</span>`;
+  }
+
+  function campagnesHtml(){
+    if(!M.meta.length && !(M.campagnes||[]).length) return '';
+    const D = cpData();
+    const zicht = r => r.aan === true || (r.aan == null && r.besteed > 0) || (!M.cpAlleen && r.besteed > 0);
+    const rijen = D.rijen.filter(zicht);
+    const verborgen = D.rijen.filter(r => !zicht(r) && r.besteed > 0);
+    const s = M.cpSort;
+    rijen.sort((a,b) => {
+      if(s.k === 'label') return s.dir * a.naam.localeCompare(b.naam, 'nl');
+      const x = a[s.k], y = b[s.k];
+      if(x == null && y == null) return 0;
+      if(x == null) return 1;                      // lege cijfers altijd onderaan
+      if(y == null) return -1;
+      return s.dir * (x - y);
+    });
+    const tot = afgeleid({
+      besteed:rijen.reduce((t,r) => t + r.besteed, 0), weergaven:rijen.reduce((t,r) => t + r.weergaven, 0),
+      link_kliks:rijen.reduce((t,r) => t + r.link_kliks, 0), resultaten:rijen.reduce((t,r) => t + r.resultaten, 0)});
+    const budgetTot = rijen.filter(r => r.aan).reduce((t,r) => t + N(r.budget_dag), 0);
+
+    const leeg = '<span class="meta">—</span>';
+    const eu = n => n == null ? leeg : CRM.euro(n, 2);
+    const genoeg = r => r.weergaven >= KADER.minWeergaven;
+    /* Goed = olijf, slecht = rood (.pos/.neg); te weinig data = geen kleur. */
+    const kader = (r, w, goed) => w == null || !genoeg(r) ? '' : (goed ? 'pos' : 'neg');
+    const cellen = r => `
+        <td class="n num">${r.budget_dag ? `${CRM.euro(r.budget_dag)}<div class="rowsub">${r.budget_type === 'sets' ? 'per dag · sets' : 'per dag'}</div>`
+          : r.budget_looptijd ? `${CRM.euro(r.budget_looptijd)}<div class="rowsub">looptijd</div>` : leeg}</td>
+        <td class="n num">${CRM.euro(r.besteed, 2)}</td>
+        <td class="n num">${fmtN(r.resultaten)}</td>
+        <td class="n num ${kader(r, r.cpl, r.cpl < KADER.cpl)}">${eu(r.cpl)}</td>
+        <td class="n num ${kader(r, r.ctr, r.ctr > KADER.ctr)}">${r.ctr == null ? leeg : CRM.pct(r.ctr * 100, 2)}</td>
+        <td class="n num ${kader(r, r.cpc, r.cpc < KADER.cpc)}">${eu(r.cpc)}</td>
+        <td class="n num">${eu(r.cpm)}</td>
+        <td class="n num">${r.bereik == null ? leeg : fmtN(r.bereik)}</td>
+        <td class="n num">${r.frequentie ? r.frequentie.toLocaleString('nl-NL', {maximumFractionDigits:2}) : leeg}</td>`;
+    const kop = (k, lbl, cls = 'n') =>
+      `<th class="sortable ${cls}" data-cps="${k}">${h(lbl)}${s.k === k ? (s.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`;
+    const KOL = 11;
+
+    let body;
+    if(D.laden) body = `<tr><td colspan="${KOL}" class="meta" style="text-align:center">Dagregels voor deze periode ophalen…</td></tr>`;
+    else if(D.fout) body = `<tr><td colspan="${KOL}">${foutBlok('De dagregels voor deze periode', D.fout)}</td></tr>`;
+    else if(!rijen.length) body = `<tr><td colspan="${KOL}" style="padding:0">${CRM.ui.leeg('Geen lopende campagnes in deze periode',
+      verborgen.length ? 'Alleen gepauzeerde campagnes gaven hier geld uit — kies "Alles met uitgaven" om ze te zien.'
+                       : 'Er stond in deze periode geen campagne aan en er is niets uitgegeven.')}</td></tr>`;
+    else body = rijen.map(r => `<tr>
+        <td><b>${h(r.naam)}</b></td>
+        <td>${cpStatus(r)}</td>${cellen(r)}</tr>`).join('');
+
+    const [van, tot2] = [D.van, D.tot];
+    const bereikTekst = van === tot2 ? CRM.fmtDateShort(van) : `${CRM.fmtDateShort(van)} t/m ${CRM.fmtDateShort(tot2)}`;
+    const laatst = [...(M.campagnes||[]).map(c => c.synced_at || ''), M.meta[0]?.synced_at || ''].filter(Boolean).sort().pop();
+    const geenLink = rijen.some(r => r.geenLink);
+
+    return `<div class="card mkt-kaart mkt-cp">
+      <div class="card-h"><div class="h2">Lopende campagnes</div>
+        <div class="mkt-cp-kies">
+          <select id="mkt_cp_per" aria-label="Periode">${Object.entries(CP_PERIODES).map(([k,x]) =>
+            `<option value="${k}"${M.cpPer === k ? ' selected' : ''}>${h(x.t)}</option>`).join('')}</select>
+          ${M.cpPer === 'eigen' ? `<input type="date" id="mkt_cp_van" aria-label="Vanaf" value="${h(van)}" max="${h(CRM.todayISO())}">
+            <span class="meta">t/m</span>
+            <input type="date" id="mkt_cp_tot" aria-label="Tot en met" value="${h(tot2)}" max="${h(CRM.todayISO())}">` : ''}
+          <div class="seg" role="group" aria-label="Welke campagnes">
+            <button data-cpalleen="1" class="${M.cpAlleen ? 'on' : ''}">Actief</button>
+            <button data-cpalleen="0" class="${M.cpAlleen ? '' : 'on'}">Alles met uitgaven</button>
+          </div>
+        </div>
+      </div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl mkt-cptbl">
+          <thead><tr>
+            ${kop('label', 'Campagne', '')}<th>Status</th>
+            ${kop('budget_dag', 'Budget')}${kop('besteed', 'Besteed')}${kop('resultaten', 'Resultaten')}
+            ${kop('cpl', 'Kosten per resultaat')}${kop('ctr', 'CTR (link)')}${kop('cpc', 'CPC (link)')}
+            ${kop('cpm', 'CPM')}${kop('bereik', 'Bereik')}${kop('frequentie', 'Frequentie')}
+          </tr></thead>
+          <tbody>${body}</tbody>
+          ${rijen.length && !D.laden ? `<tfoot><tr>
+            <td><b>${rijen.length} campagne${rijen.length === 1 ? '' : 's'}</b></td><td></td>
+            <td class="n num">${budgetTot ? `${CRM.euro(budgetTot)}<div class="rowsub">per dag</div>` : ''}</td>
+            <td class="n num">${CRM.euro(tot.besteed, 2)}</td>
+            <td class="n num">${fmtN(tot.resultaten)}</td>
+            <td class="n num ${kader(tot, tot.cpl, tot.cpl < KADER.cpl)}">${eu(tot.cpl)}</td>
+            <td class="n num ${kader(tot, tot.ctr, tot.ctr > KADER.ctr)}">${tot.ctr == null ? leeg : CRM.pct(tot.ctr * 100, 2)}</td>
+            <td class="n num ${kader(tot, tot.cpc, tot.cpc < KADER.cpc)}">${eu(tot.cpc)}</td>
+            <td class="n num">${eu(tot.cpm)}</td><td></td><td></td>
+          </tr></tfoot>` : ''}
+        </table>
+      </div>
+      <div class="card-f mkt-cp-voet">
+        <span class="meta"><span class="num">${h(bereikTekst)}</span> ·
+          ${D.bron === 'meta' ? 'cijfers zoals Meta ze voor deze periode levert'
+            : 'opgeteld uit de dagregels; bereik en frequentie zijn niet op te tellen'}${
+          verborgen.length ? ` · ${verborgen.length} gepauzeerde campagne${verborgen.length === 1 ? '' : 's'} met uitgaven verborgen` : ''}.
+          Kleur volgens 2·1·5: link-CTR boven 2%, link-CPC onder € 1, kosten per resultaat onder € 5 — vanaf 1.000 weergaven.${
+          geenLink ? ' Een streepje bij CTR/CPC: voor die regels zijn nog geen link-kliks bekend — herstel 90 dagen om ze aan te vullen.' : ''}${
+          laatst ? ` Bijgewerkt ${h(CRM.geleden(laatst))}.` : ''}</span>
+        <div class="row tight">
+          <button class="btn ghost sm" id="mkt_sync"${M.syncBezig ? ' disabled' : ''}>${M.syncBezig ? 'Bezig…' : 'Nu ophalen'}</button>
+          <button class="btn ghost sm" id="mkt_herstel"${M.syncBezig ? ' disabled' : ''} title="Haalt de laatste 90 dagen opnieuw op uit Meta — eenmalig, om oude cijfers te herstellen">90 dagen herstellen</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /* ── 6a. Prestatie ── */
@@ -1175,7 +1547,8 @@
         ${regel('Kliks (alle)', `Optelsom van de kolom ${kolom('kliks')}, gevuld met het Meta-veld ${kolom('clicks')}.
           Dat telt <b>elke</b> klik op de advertentie mee: ook likes, reacties, delen en klikken op de paginanaam.
           Het aantal mensen dat écht naar het formulier of de website ging staat in een ander Meta-veld
-          (${kolom('inline_link_clicks')}) en wordt op dit moment niet opgehaald.`)}
+          (${kolom('inline_link_clicks')}); dat staat sinds oktober 2026 in de kolom ${kolom('link_kliks')} en
+          wordt gebruikt in het overzicht Lopende campagnes bovenaan.`)}
         ${regel('CPC en CTR', `Berekend op diezelfde ${kolom('kliks')}. Omdat daar niet-doorklikken in zitten,
           zijn CPC en CTR hier gunstiger dan de werkelijke kosten per doorklik.`)}
         ${regel('Impressies en bereik', `De kolommen ${kolom('impressies')} en ${kolom('bereik')}, één op één uit de
@@ -1343,12 +1716,13 @@
   }
 
   function prestatieHtml(adv, verborgenAdv){
-    if(!M.meta.length) return M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : leegMeta();
+    if(!M.meta.length) return campagnesHtml() + (M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : leegMeta());
     const rows = zichtbareRijen();
     const s = stat(rows);
     const laatst = M.meta[0]?.synced_at ? CRM.fmtDate(M.meta[0].synced_at) : '';
     const leeg = !rows.length;
     return `
+      ${campagnesHtml()}
       ${filterBalkHtml()}
       ${leeg ? `<div class="card mkt-kaart"><div class="card-b">${CRM.ui.leeg(
           'Geen advertentiecijfers in deze selectie',
@@ -1531,7 +1905,15 @@
 
   function adviesHtml(adv, verborgen){
     if(!M.meta.length) return '';
-    const alleAgent = agentAdviezen();
+    const alleAgent = agentGroepen();
+    M.taakTekst = new Map();
+    /* Knop "Als taak", of de melding dat hij er al staat. De tekst zelf gaat
+       via een sleutel (zelfde patroon als drill), niet als attribuut. */
+    const taakKnop = tekst => {
+      if(staatAlsTaak(tekst)) return `<span class="meta mkt-a-taak">staat in Mijn week</span>`;
+      const k = 't' + M.taakTekst.size; M.taakTekst.set(k, tekst);
+      return `<button class="btn ghost sm" data-advtaak="${k}" title="Als taak in Mijn week zetten (eerstvolgende werkdag, 15 min, Ads)">Als taak</button>`;
+    };
     /* Ook de adviezen van de agent horen bij een campagne, en dus bij een
        klant. Staat er geen campagne bij, dan valt het advies aan niemand toe
        te rekenen en blijft het staan — verbergen zou het onvindbaar maken. */
@@ -1562,10 +1944,13 @@
           <div><b>${b.besluit === 'budget' ? 'Budgetadvies' : 'Advies van de agent'}</b>
             <span class="meta">— ${h(b.advertentie)}${b.campagne?` · ${h(b.campagne)}`:''}</span></div>
           <div class="meta">${h(b.note || 'Geen toelichting meegegeven.')}</div>
-          <div class="meta">${h(b.door || 'agent')} · ${h(CRM.geleden(b.created_at))}</div>
+          <div class="meta">${h(b.door || 'agent')} · ${h(CRM.geleden(b.created_at))}${b.ouder.length
+            ? ` · vervangt ${b.ouder.length} ouder${b.ouder.length === 1 ? ' advies' : 'e adviezen'} hierover` : ''}</div>
         </div>
         <div class="row tight mkt-a-k">
-          <button class="btn ghost sm" data-afrond="${h(b.id)}">Gezien</button>
+          ${taakKnop(adviesAlsTaak(b))}
+          <button class="btn ghost sm" data-afrond="${h([b.id, ...b.ouder.map(o => o.id)].join(','))}"${b.ouder.length
+            ? ` title="Rondt ook de ${b.ouder.length} oudere adviezen over dit onderwerp af"` : ''}>Gezien</button>
         </div>
       </div>`;
     const aantal = adv.length + agent.length;
@@ -1587,6 +1972,7 @@
             ${a.keuzes.includes('negeer')    ? knop(a,'negeer','Prima zo') : ''}
             ${a.keuzes.includes('adsmanager')? `<a class="btn ghost sm" href="${ADSMANAGER}" target="_blank" rel="noopener">Ads Manager ↗</a>` : ''}
             ${a.keuzes.includes('afronden')  ? `<button class="btn ghost sm" data-afrond="${h(a.besluitId)}">Afronden</button>` : ''}
+            ${a.keuzes.length ? taakKnop(waakhondAlsTaak(a)) : ''}
           </div>
         </div>`).join('')}</div>
       <div class="card-f"><span class="meta">Een besluit verbergt het advies 14 dagen. Eén uitzondering: een advertentie
@@ -2686,10 +3072,48 @@
         const leads = Math.max(0, Math.round(basis * (0.7 + 0.6*rnd())));
         rijen.push({id:'m'+d+'_'+i, datum, campagne:x.c, advertentieset:x.s, advertentie:x.a,
           uitgegeven:Math.round(spend*100)/100, impressies:imp, kliks, leads, bereik:ber,
+          /* Doorkliks naar het formulier: een deel van álle kliks. Ruim
+             zeven weken terug ontbreken ze, zoals in productie vóór de
+             link_kliks-migratie — dan zie je hoe het overzicht dat toont. */
+          link_kliks: d > 50 ? 0 : Math.round(kliks * (0.8 + 0.25*rnd())),
           synced_at:new Date(Date.now()-3*3600e3).toISOString()});
       });
     }
     M.meta = rijen.sort((a,b) => b.datum.localeCompare(a.datum));
+
+    /* mkt_meta_campagnes zoals meta-sync hem vult: status, budget en per vaste
+       periode de cijfers die Meta kant-en-klaar levert. We rekenen ze hier uit
+       de demo-dagregels, zodat de periodecijfers en een eigen bereik op elkaar
+       aansluiten. Bereik is uniek per periode, dus lager dan de optelsom. */
+    const CAMPS = [
+      {naam:'Starcuisine — Bodegraven',      id:'120210000000001', status:'ACTIVE', budget_type:'campagne', budget_dag:30, doel:'OUTCOME_LEADS'},
+      {naam:'Proponent — Rotterdam',         id:'120210000000002', status:'ACTIVE', budget_type:'sets',     budget_dag:15, doel:'OUTCOME_LEADS'},
+      {naam:'Whisk Food',                    id:'120210000000003', status:'ACTIVE', budget_type:'campagne', budget_dag:8,  doel:'OUTCOME_LEADS'},
+      {naam:'Good Life Foods',               id:'120210000000004', status:'ACTIVE', budget_type:'campagne', budget_dag:7,  doel:'OUTCOME_LEADS'},
+      {naam:'Regio Zuid-Holland — algemeen', id:'120210000000005', status:'ACTIVE', budget_type:'campagne', budget_dag:11, doel:'OUTCOME_LEADS'},
+      {naam:'Burg Siroop — Procesoperator',  id:'120210000000006', status:'PAUSED', budget_type:'campagne', budget_dag:10, doel:'OUTCOME_LEADS'},
+      {naam:'Van Vliet Zoetwaren',           id:'120210000000007', status:'PENDING_REVIEW', budget_type:'campagne', budget_dag:12, doel:'OUTCOME_LEADS'}
+    ];
+    const gesynct = new Date(Date.now()-40*60e3).toISOString();
+    M.campagnes = CAMPS.map(c => {
+      const cijfers = {};
+      Object.keys(CP_PERIODES).filter(k => CP_PERIODES[k].meta).forEach(per => {
+        const [van, tot] = cpBereik(per);
+        const rr = M.meta.filter(r => r.campagne === c.naam && r.datum >= van && r.datum <= tot);
+        if(!rr.length) return;
+        const x = {besteed:0, weergaven:0, link_kliks:0, resultaten:0, bereikSom:0};
+        rr.forEach(r => { x.besteed += r.uitgegeven; x.weergaven += r.impressies;
+          x.link_kliks += r.link_kliks; x.resultaten += r.leads; x.bereikSom += r.bereik; });
+        const dagen = new Set(rr.map(r => r.datum)).size;
+        const bereik = Math.round(x.bereikSom / Math.max(1, Math.sqrt(dagen)));
+        cijfers[per] = {besteed:Math.round(x.besteed*100)/100, weergaven:x.weergaven, bereik,
+          frequentie: bereik ? x.weergaven / bereik : 0, link_kliks:x.link_kliks, resultaten:x.resultaten,
+          cpm: x.weergaven ? x.besteed / x.weergaven * 1000 : 0,
+          ctr: x.weergaven ? x.link_kliks / x.weergaven : null, cpc: x.link_kliks ? x.besteed / x.link_kliks : null,
+          cpl: x.resultaten ? x.besteed / x.resultaten : null};
+      });
+      return {...c, aan:c.status !== 'PAUSED', budget_looptijd:null, cijfers, synced_at:gesynct};
+    });
     /* Drie besluiten: één genegeerd advies (die advertentie zwijgt nu), één
        stopbesluit waar nog geld doorheen loopt (de bewaking moet aanslaan) en
        één advies van de agent dat nog gelezen moet worden. */
@@ -2702,7 +3126,21 @@
       {id:3, advertentie:'Testimonial — Marek, operator', campagne:'Good Life Foods',
        besluit:'budget', status:'open', door:'Claude-agent',
        note:'Deze set krijgt 60% van het campagnebudget maar levert de duurste leads. Verschuif een deel naar Orderpickers.',
-       created_at:new Date(Date.now()-1*864e5).toISOString()}
+       created_at:new Date(Date.now()-1*864e5).toISOString()},
+      /* Twee oudere adviezen over hetzelfde onderwerp: die vallen onder het
+         nieuwste en worden met "Gezien" in één keer mee afgerond. */
+      {id:4, advertentie:'Testimonial — Marek, operator', campagne:'Good Life Foods',
+       besluit:'budget', status:'open', door:'Claude-agent',
+       note:'Deze set krijgt het grootste deel van het budget; houd de kosten per lead in de gaten.',
+       created_at:new Date(Date.now()-3*864e5).toISOString()},
+      {id:5, advertentie:'Testimonial — Marek, operator', campagne:'Good Life Foods',
+       besluit:'budget', status:'open', door:'Claude-agent',
+       note:'Budgetverdeling scheef binnen de campagne.',
+       created_at:new Date(Date.now()-5*864e5).toISOString()},
+      {id:6, advertentie:'Productiemedewerker', campagne:'Starcuisine — Bodegraven',
+       besluit:'advies', status:'open', door:'Claude-agent',
+       note:'🤖 Link-CTR 2,6% en CPL onder € 5 — deze set zit ruim binnen 2·1·5.\nDoen: zet een tweede hook naast "Video van de werkvloer" in een kleine testset',
+       created_at:new Date(Date.now()-6*3600e3).toISOString()}
     ];
 
     /* Wat er werkelijk aan Meta betaald is, zoals Finance het per maand uit de

@@ -236,3 +236,32 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
   .mkt-kw-l{flex-basis:100%}
   .mkt-kw-n{flex:0 0 auto;margin-left:auto}
 }
+
+/* ─── Lopende campagnes (overzicht bovenaan Prestatie) ───────── */
+/* Periodekeuze en actief/alles rechts in de kaartkop; op een telefoon
+   wikkelen ze onder de titel. */
+.mkt-cp{margin-bottom:18px}
+.mkt-cp-kies{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.mkt-cp-kies select{width:auto;min-width:170px}
+.mkt-cp-kies input[type=date]{width:auto}
+.mkt-cp-kies .seg{flex-wrap:wrap}
+/* Elf kolommen: cijfers niet laten breken, de tabel schuift binnen zijn
+   eigen kader (.tblwrap) en de pagina blijft staan. */
+.mkt-cptbl th,.mkt-cptbl td{white-space:nowrap}
+.mkt-cptbl td:first-child b{white-space:normal;display:inline-block;min-width:150px;max-width:260px}
+/* Status is alleen-lezen: een stip en een woord, geen schakelaar. */
+.mkt-cst{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt-2)}
+.mkt-cst .dot{background:var(--line-2)}
+.mkt-cst.aan{color:var(--ink)}
+.mkt-cst.aan .dot{background:var(--olive)}
+.mkt-cst.review .dot{background:var(--blue)}
+.mkt-cst.fout{color:var(--red)}
+.mkt-cst.fout .dot{background:var(--red)}
+.mkt-cst.afgeleid{font-style:italic}
+.mkt-cp-voet{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mkt-cp-voet > .meta{flex:1 1 320px}
+.mkt-a-taak{align-self:center;white-space:nowrap}
+@media (max-width:640px){
+  .mkt-cp-kies{width:100%}
+  .mkt-cp-kies select{flex:1 1 100%}
+}
