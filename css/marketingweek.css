@@ -277,3 +277,31 @@
 .mw-fdrij{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line);margin-top:10px;font-size:13px}
 .mw-fdrij > span{flex:1 1 200px}
 .mw-coach{font-size:12px;color:#8a5a1a}
+
+/* ─── Rooster leesbaar (26 okt 2026, Tjeerd: "we zien de verschillen niet") ───
+   Taak = vlak in de kleur van zijn gebied; vaste afspraak = gestippeld en
+   kleurloos; post = kanaalkleur met label "Post". Eén blik = wat is wat. */
+.mw-tr-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--txt-2);margin:0 0 8px}
+.mw-tr-legenda span{display:inline-flex;align-items:center;gap:6px}
+.mw-tr-legenda i{width:12px;height:12px;border-radius:3px;background:color-mix(in srgb,var(--gc) 22%,var(--card));border-left:3px solid var(--gc)}
+.mw-tr-legenda .mw-lg-vast i{background:transparent;border:1px dashed var(--line-2)}
+.mw-tr-legenda .mw-lg-post i{--gc:var(--gold);background:var(--mw-geel)}
+.mw-tr-lijn{border-top-color:var(--line-2)}
+.mw-tr-lijn.half{border-top:1px dotted var(--line);opacity:1}
+.mw-tr-uur{border-top-color:var(--line-2);font-weight:600}
+.mw-tr-dag.vandaag{background:color-mix(in srgb,var(--olive-l) 6%,var(--card))}
+.mw-tr-blok{font-size:12px;line-height:1.3;padding:3px 7px;color:var(--ink)}
+.mw-tr-taak{background:color-mix(in srgb,var(--gc) 15%,var(--card));border:1px solid color-mix(in srgb,var(--gc) 38%,var(--card));border-left:4px solid var(--gc);box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.mw-tr-taak:hover{background:color-mix(in srgb,var(--gc) 24%,var(--card));border-color:color-mix(in srgb,var(--gc) 55%,var(--card));border-left-color:var(--gc)}
+.mw-tr-taak.vast{background:color-mix(in srgb,var(--gc) 15%,var(--card))}
+.mw-tr-taak.klaar{opacity:.5}
+.mw-tr-taak.klaar .mw-tb-tt{text-decoration:line-through}
+.mw-tb-tijd{font-size:10.5px;font-weight:700;color:var(--txt-2);margin-right:3px}
+.mw-tb-tt{font-weight:600}
+.mw-tb-door{font-size:10.5px;color:var(--txt-2);font-style:italic}
+.mw-tr-afspraak,.mw-tr-afspraak.ds{background:var(--card);border:1px dashed var(--line-2);color:var(--txt-2);font-style:italic}
+.mw-tr-lunch{background:repeating-linear-gradient(135deg,transparent 0 6px,var(--card-2) 6px 12px);font-size:10.5px;text-align:center;letter-spacing:.04em;text-transform:uppercase}
+.mw-tr-post{font-size:12px;padding:4px 7px;background:color-mix(in srgb,var(--pc,var(--gold)) 13%,var(--card));border:1px solid color-mix(in srgb,var(--pc,var(--gold)) 35%,var(--card));border-left:4px solid var(--pc,var(--gold));color:var(--ink);font-weight:600}
+.mw-tr-postlbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pc,var(--gold));margin-right:5px}
+.mw-tr-taak.kort{white-space:nowrap;text-overflow:ellipsis;padding-top:0;padding-bottom:0;line-height:13px;font-size:11px}
+.mw-tr-taak.kort input{width:10px;height:10px;vertical-align:-1px}

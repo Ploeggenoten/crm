@@ -43,7 +43,7 @@
     werktijd:   {van:'08:30', tot:'17:00', lunch:['12:00', '12:30']},
     rooster:    [8, 18],                 // tijdrooster loopt van 08:00 tot 18:00
     stap:       30,                      // klikken en slepen per half uur
-    uurPx:      52,                      // hoogte van één uur in het rooster
+    uurPx:      64,                      // hoogte van één uur in het rooster
     standaardDuur: 60,                   // taak zonder duur
     invoerDuur:    30,                   // standaard in de dagplanning
     vasteAfspraken: [
@@ -60,9 +60,11 @@
     {k:'ads',     n:'Advertenties (Meta)',  kort:'Ads',     c:'var(--blue)'},
     {k:'werving', n:'Vacatures en werving', kort:'Werving', c:'var(--gold)'},
     {k:'web',     n:'Website en SEO',       kort:'Web',     c:'var(--purple)'},
-    {k:'video',   n:'Video editten',        kort:'Video',   c:'var(--green)'},
+    {k:'video',   n:'Video editten',        kort:'Video',   c:'var(--oranje)'},
     {k:'overig',  n:'Overig en overleg',    kort:'Overig',  c:'var(--txt-2)'}
   ];
+  /* Lange links maken een blokje onleesbaar: in het rooster tonen we ze als 🔗 (in het taakvenster staat de volledige tekst). */
+  const zonderLinks = s => String(s || '').replace(/https?:\/\/\S+/g, '🔗').replace(/\s+/g, ' ').trim();
   const gebied = k => GEBIEDEN.find(g => g.k === k) || GEBIEDEN[GEBIEDEN.length - 1];
   const DUREN = Array.from({length:32}, (_, i) => (i + 1) * 15);   // 15 min t/m 8 uur
 
@@ -681,7 +683,7 @@ CAPTION:
         ${feest ? `<div class="meta">${h(feest)}</div>` : ''}
         <div class="mw-tr-uren${over ? ' vol' : ''}"><i style="width:${vol}%"></i></div>
         <div class="mw-tr-urent${over ? ' vol' : ''}">${min ? `${fmtUren(min)} / ${P.dagUren} uur` : vrij ? 'vrije dag' : 'nog niets gepland'}</div>
-        ${posts.map(g => `<div class="mw-tr-post ${plKlasse(g[0])}${g.every(PUB) ? ' klaar' : ''}" data-post="${h(g[0].id)}" title="Post: ${h(g[0].titel)}">${h(g[0].titel || 'Zonder titel')}${groepLabel(g) ? ` <small>${h(groepLabel(g))}</small>` : ''}</div>`).join('')}
+        ${posts.map(g => `<div class="mw-tr-post ${plKlasse(g[0])}${g.every(PUB) ? ' klaar' : ''}" data-post="${h(g[0].id)}" title="Post: ${h(g[0].titel)}"><span class="mw-tr-postlbl">Post</span>${h(g[0].titel || 'Zonder titel')}${groepLabel(g) ? ` <small>${h(groepLabel(g))}</small>` : ''}</div>`).join('')}
         ${ind.past.map(t => `<div class="mw-tr-past" title="Past niet meer op deze dag">Past niet: ${h(t.tekst)}</div>`).join('')}
       </div>`;
     }).join('');
@@ -700,22 +702,23 @@ CAPTION:
         i = j;
       }
       const pos = b => { const van = Math.max(b.van, R0), tot = Math.min(b.tot, R1);
-        return `top:${rY(van)}px;height:${Math.max(18, (tot - van) / 60 * P.uurPx - 2)}px;left:calc(${b.baan * 100 / b.nBanen}% + 2px);width:calc(${100 / b.nBanen}% - 4px)`; };
+        return `top:${rY(van)}px;height:${Math.max(14, (tot - van) / 60 * P.uurPx - 2)}px;left:calc(${b.baan * 100 / b.nBanen}% + 2px);width:calc(${100 / b.nBanen}% - 4px)`; };
       const lunch = ind.blokken.filter(b => b.soort === 'lunch').map(b => `<div class="mw-tr-lunch" style="top:${rY(b.van)}px;height:${(b.tot - b.van) / 60 * P.uurPx}px">lunch</div>`).join('');
       return `<div class="mw-tr-dag${d === vandaag ? ' vandaag' : ''}${vrij ? ' vrij' : ''}" data-trdag="${d}" style="height:${hoogte}px">
         ${lijnen}${lunch}
         ${blokken.map(b => {
-          if(b.soort === 'afspraak') return `<div class="mw-tr-blok mw-tr-afspraak${b.a.k === 'dagstart' ? ' ds' : ''}" data-afspraak="${h(b.a.k)}" data-dag="${d}" style="${pos(b)}" title="${h(b.a.txt)}"><b class="num">${h(b.a.van)}</b> ${h(b.a.titel)}</div>`;
+          if(b.soort === 'afspraak') return `<div class="mw-tr-blok mw-tr-afspraak${b.a.k === 'dagstart' ? ' ds' : ''}" data-afspraak="${h(b.a.k)}" data-dag="${d}" style="${pos(b)}" title="${h(b.a.txt)}"><span class="mw-tb-tijd num">${h(b.a.van)}</span> ${h(b.a.titel)}</div>`;
           const t = b.t, g = gebied(t.gebied);
-          return `<div class="mw-tr-blok mw-tr-taak${t.klaar ? ' klaar' : ''}${b.vastetijd ? ' vast' : ''}" data-tid="${h(t.id)}" style="${pos(b)};--gc:${g.c}" title="${tStr(b.van)}–${tStr(b.tot)} · ${h(t.tekst)} · ${h(g.n)}${b.vastetijd ? ' · vaste tijd' : ''}${t.door && !vanMij(t) ? ' · van ' + h(t.door) : ''}">
-            <input type="checkbox" data-tgl="${h(t.id)}"${t.klaar ? ' checked' : ''} aria-label="Afvinken"><b class="num">${tStr(b.van)}</b> ${h(t.tekst)}</div>`;
+          return `<div class="mw-tr-blok mw-tr-taak${b.tot - b.van <= 20 ? ' kort' : ''}${t.klaar ? ' klaar' : ''}${b.vastetijd ? ' vast' : ''}" data-tid="${h(t.id)}" style="${pos(b)};--gc:${g.c}" title="${tStr(b.van)}–${tStr(b.tot)} · ${h(t.tekst)} · ${h(g.n)}${b.vastetijd ? ' · vaste tijd' : ''}${t.door && !vanMij(t) ? ' · van ' + h(t.door) : ''}">
+            <input type="checkbox" data-tgl="${h(t.id)}"${t.klaar ? ' checked' : ''} aria-label="Afvinken"><span class="mw-tb-tijd num">${tStr(b.van)}${b.vastetijd ? ' ·vast' : ''}</span> <span class="mw-tb-tt">${h(zonderLinks(t.tekst))}</span>${t.door && !vanMij(t) ? ` <span class="mw-tb-door">${h(t.door)}</span>` : ''}</div>`;
         }).join('')}
         ${d === vandaag && nuMin >= R0 && nuMin <= R1 ? `<div class="mw-tr-nu" style="top:${rY(nuMin)}px"></div>` : ''}
       </div>`;
     }).join('');
     const uren = Array.from({length:P.rooster[1] - P.rooster[0]}, (_, i) => P.rooster[0] + i)
       .map(u => `<div class="mw-tr-uur num" style="top:${rY(u * 60)}px;height:${P.uurPx}px">${u}</div>`).join('');
-    return `<div class="mw-tr" style="--n:${dagen.length}">
+    const legenda = `<div class="mw-tr-legenda">${GEBIEDEN.map(g => `<span style="--gc:${g.c}"><i></i>${h(g.kort)}</span>`).join('')}<span class="mw-lg-vast"><i></i>Vaste afspraak</span><span class="mw-lg-post"><i></i>Post</span></div>`;
+    return `${legenda}<div class="mw-tr" style="--n:${dagen.length}">
       <div class="mw-tr-rij mw-tr-koprij"><div class="mw-tr-hoek"></div>${kop}</div>
       <div class="mw-tr-rij mw-tr-body"><div class="mw-tr-uren-kol" style="height:${hoogte}px">${uren}</div>${kol}</div>
     </div>`;
