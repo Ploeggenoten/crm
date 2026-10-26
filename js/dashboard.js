@@ -1261,8 +1261,23 @@ function cockpitMarketeer(){
   ]);
 }
 
+/* Uitrol in stappen (Tjeerd, 26 okt 2026: "push eerst de versie voor mij
+   alleen"). Zolang ROL_STROOK_AAN uit staat, zien accountmanagers en de
+   marketeer de basisstrook: opvolgen vandaag + het team. Aanzetten = deze
+   vlag op true. */
+const ROL_STROOK_AAN = false;
+function cockpitBasis(){
+  const o = CRM.salesmeter ? CRM.salesmeter.opvolgen() : {n:0, verlopen:0};
+  return strook([`<div class="cp-c"><span class="cp-l">Opvolgen vandaag</span>
+    <span class="cp-rij"><span class="cp-big num">${o.n}</span>
+      ${o.verlopen ? `<span class="cp-pil or">${o.verlopen} verlopen</span>` : ''}</span>
+    <button type="button" class="cp-belronde" data-mod="sales" data-tab="opvolg">${o.n ? '📞 Start belronde' : 'Naar opvolgingen'}</button></div>`,
+    vakTeam()]);
+}
+const rolActief = () => dashRol() === 'eigenaar' || ROL_STROOK_AAN;
 function cockpitHTML(){
   const r = dashRol();
+  if(!rolActief()) return cockpitBasis();
   return r === 'eigenaar' ? cockpitEigenaar() : r === 'marketeer' ? cockpitMarketeer() : cockpitAM();
 }
 /* De posts staan in mkt_posts en worden pas op verzoek gelezen. */
@@ -1877,7 +1892,7 @@ CRM.registerModule('dashboard', {
     const vg = taakVoortgang(T, O);
     _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
-    const rol = ROL_LABEL[dashRol()] || '';
+    const rol = rolActief() ? (ROL_LABEL[dashRol()] || '') : '';
     /* Heeft de rail niets te melden — geen meldingen, geen Outlook, geen
        hot vacatures — dan mag er ook geen lege derde baan staan. Dat wás
        precies het probleem: op het teamscherm bleef rechts een leeg vlak
