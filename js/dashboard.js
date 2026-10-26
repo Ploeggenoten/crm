@@ -1120,8 +1120,8 @@ function maandStand(){
      - Afspraken nieuwe leads: idem.
      - Opvolgen vandaag: iedereen — dezelfde taken als Sales → Opvolgingen.
      - Het team deze maand: iedereen (aantal mensen, geen geld). */
-function meterSVG(n, doel){
-  const ged = doel ? Math.min(1, n / doel) : 0;
+function meterSVG(n, doel, vanTekst){
+  const ged = doel ? Math.max(0, Math.min(1, n / doel)) : 0;
   const N = 48, cx = 90, cy = 86, r1 = 74, r2 = 82;
   let streepjes = '';
   for(let i = 0; i <= N; i++){
@@ -1136,42 +1136,144 @@ function meterSVG(n, doel){
       ${ged > 0 ? `<circle cx="90" cy="86" r="${R}" class="cp-boog" stroke-dasharray="${boog*ged} ${C}"/>` : ''}
     </g>
     <circle cx="${(90+R*Math.cos(ka)).toFixed(1)}" cy="${(86+R*Math.sin(ka)).toFixed(1)}" r="7" class="cp-knop"/>
-    <text x="90" y="80" class="cp-n">${n}</text><text x="90" y="116" class="cp-van">van ${doel}</text>
+    <text x="90" y="80" class="cp-n">${n}</text><text x="90" y="116" class="cp-van">${h(vanTekst || `van ${doel}`)}</text>
   </svg>`;
 }
 
-function cockpitHTML(){
+/* ─── Wie ben je op het dashboard ───────────────────────────────
+   Tjeerd, 26 okt 2026: "iedereen heeft een eigen custom CRM."
+     eigenaar   → overzicht, sales en ondernemerschap (Tjeerd)
+     am         → kandidaten en de eigen klanten (Tjerk, Rajesh; ook recruiter)
+     marketeer  → marketing (Bryan)
+   De eigenaar wordt herkend aan canSeeMoney(), de rest aan profiel.functie
+   (Instellingen → Gebruikers). */
+function dashRol(){
+  if(CRM.canSeeMoney && CRM.canSeeMoney()) return 'eigenaar';
+  return (CRM.profile?.functie || 'am') === 'marketeer' ? 'marketeer' : 'am';
+}
+const ROL_LABEL = {eigenaar:'Ondernemer', am:'Accountmanager', marketeer:'Marketing'};
+
+const strook = vak => `<div class="cp-strook">${vak.filter(Boolean).map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
+const vakGetal = ({label, n, van, pil, pilOr, extra = '', mod, tab, titel}) => {
+  const tag = mod ? 'button' : 'div';
+  return `<${tag}${mod ? ` type="button" data-mod="${h(mod)}"${tab ? ` data-tab="${h(tab)}"` : ''} title="${h(titel||'')}"` : ''} class="cp-c">
+    <span class="cp-l">${h(label)}</span>
+    <span class="cp-rij"><span class="cp-big num">${n}${van != null ? `<small>/${van}</small>` : ''}</span>
+      ${pil ? `<span class="cp-pil${pilOr ? ' or' : ''}">${h(pil)}</span>` : ''}</span>${extra}</${tag}>`;
+};
+const vakMeter = ({n, doel, vanTekst, label, regels, mod, tab, titel}) =>
+  `<button type="button" class="cp-c cp-bel" data-mod="${h(mod)}"${tab ? ` data-tab="${h(tab)}"` : ''} title="${h(titel||'')}">
+    ${meterSVG(n, doel, vanTekst)}
+    <span class="cp-txt"><span class="cp-l">${h(label)}</span>${regels.map(r => `<span class="cp-s">${r}</span>`).join('')}</span>
+  </button>`;
+const balk = pct => `<span class="cp-bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>`;
+
+function vakTeam(){
+  const m = maandStand(); if(!m) return '';
+  const sch = m.teGaan === 0 ? 'gehaald' : m.verschil < 0 ? `${-m.verschil} achter` : m.verschil > 0 ? `${m.verschil} voor` : 'op schema';
+  return vakGetal({label:`Team · ${m.maandNaam}`, n:m.gedaan, van:m.doel, pil:sch, pilOr:m.verschil < 0 && m.teGaan,
+    extra:balk(m.pct), mod:'performance', titel:'Naar Performance'});
+}
+function weekVan(){ return kort(dagPlus(new Date(VANDAAG()+'T12:00:00'), -((new Date(VANDAAG()+'T12:00:00').getDay()+6)%7)).toISOString()); }
+
+/* ── Eigenaar: sales + overzicht ── */
+function cockpitEigenaar(){
   const SM = CRM.salesmeter;
   const t = SM ? SM.tel() : null, d = t && t.doel;
   const o = SM ? SM.opvolgen() : {n:0, verlopen:0};
-  const m = maandStand();
   const vak = [];
   if(d){
-    vak.push(`<button type="button" class="cp-c cp-bel" data-mod="sales" data-tab="radar" title="Naar de Leadradar">
-      ${meterSVG(t.vandaag, d.belDag)}
-      <span class="cp-txt"><span class="cp-l">Koud bellen vandaag</span>
-        <span class="cp-s"><b class="num">${t.gesproken}</b> gesproken${t.vandaag ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / Math.max(1, t.gesproken)))}` : ''}</span>
-        <span class="cp-s"><b class="num">${t.week}</b> / ${d.belDag*5} deze week</span></span>
-    </button>`);
+    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Koud bellen vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
+      regels:[`<b class="num">${t.gesproken}</b> gesproken${t.gesproken ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / t.gesproken))}` : ''}`,
+              `<b class="num">${t.week}</b> / ${d.belDag*5} deze week`]}));
     const nog = Math.max(0, d.afsprWeek - t.afspraken);
-    vak.push(`<div class="cp-c"><span class="cp-l">Afspraken deze week</span>
-      <span class="cp-rij"><span class="cp-big num">${t.afspraken}<small>/${d.afsprWeek}</small></span>
-        <span class="cp-pil">${nog ? `nog ${nog} vóór vr` : 'doel gehaald'}</span></span>
-      <span class="cp-dots">${Array.from({length:d.afsprWeek}, (_, i) => `<i class="${i < t.afspraken ? 'v' : ''}"></i>`).join('')}</span></div>`);
+    vak.push(vakGetal({label:'Afspraken nieuwe leads', n:t.afspraken, van:d.afsprWeek, pil:nog ? `nog ${nog} vóór vr` : 'doel gehaald',
+      extra:`<span class="cp-dots">${Array.from({length:d.afsprWeek}, (_, i) => `<i class="${i < t.afspraken ? 'v' : ''}"></i>`).join('')}</span>`}));
   }
   vak.push(`<div class="cp-c"><span class="cp-l">Opvolgen vandaag</span>
     <span class="cp-rij"><span class="cp-big num">${o.n}</span>
       ${o.verlopen ? `<span class="cp-pil or">${o.verlopen} verlopen</span>` : ''}</span>
     <button type="button" class="cp-belronde" data-mod="sales" data-tab="opvolg">${o.n ? '📞 Start belronde' : 'Naar opvolgingen'}</button></div>`);
-  if(m){
-    const sch = m.teGaan === 0 ? 'gehaald' : m.verschil < 0 ? `${-m.verschil} achter` : m.verschil > 0 ? `${m.verschil} voor` : 'op schema';
-    vak.push(`<button type="button" class="cp-c" data-mod="performance" title="Naar Performance">
-      <span class="cp-l">Team · ${h(m.maandNaam)}</span>
-      <span class="cp-rij"><span class="cp-big num">${m.gedaan}<small>/${m.doel}</small></span>
-        <span class="cp-pil${m.verschil < 0 && m.teGaan ? ' or' : ''}">${h(sch)}</span></span>
-      <span class="cp-bar"><i style="width:${m.pct}%"></i></span></button>`);
-  }
-  return `<div class="cp-strook">${vak.map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
+  /* Ondernemerschap: hoe vol is de commerciële pijplijn. Klanten in een
+     actief traject, en wat er deze week bij kwam. Geen bedragen (teamscherm). */
+  const ma = weekVan();
+  const traject = (CRM.state.clients||[]).filter(k => (CRM.SALES_ACTIEF||[]).includes(k.fase)).length;
+  const nieuw = (CRM.state.clients||[]).filter(k => k.aangemaakt && kort(k.aangemaakt) >= ma).length;
+  vak.push(vakGetal({label:'Pijplijn', n:traject, pil:nieuw ? `+${nieuw} deze week` : 'niets nieuws', pilOr:!nieuw,
+    extra:`<span class="cp-s">klanten in traject</span>`, mod:'sales', tab:'pijplijn', titel:'Naar de klantpijplijn'}));
+  vak.push(vakTeam());
+  return strook(vak);
+}
+
+/* ── Accountmanager: kandidaten en eigen klanten ── */
+function cockpitAM(){
+  const mij = CRM.me(), mk = VANDAAG().slice(0,7), ma = weekVan(), cs = CRM.kandidaten();
+  const mijn = cs.filter(c => c.rec === mij);
+  const get  = mijn.filter(c => kort(c.geplaatstOp).slice(0,7) === mk && CRM.teltAlsPlaatsing(c)).length;
+  const stop = mijn.filter(c => CRM.teltAlsStop(c) && kort(c.gestoptOp).slice(0,7) === mk).length;
+  const ams = (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
+  const aandeel = Math.max(1, Math.round((CRM.maandTarget ? CRM.maandTarget() : 8) / ams * 10) / 10);
+  const netto = get - stop;
+
+  const inProces = mijn.filter(c => CRM.isActiefLopend(c) && !CRM.PLACED.includes(c.fase));
+  const gesprek = inProces.filter(c => ['Eerste gesprek','Tweede gesprek','Meeloopdag','Offer','Contract ondertekenen'].includes(c.fase)).length;
+  const voorgesteld = mijn.filter(c => c.voorgesteldOp && kort(c.voorgesteldOp) >= ma).length;
+  const belLeads = (CRM.state.leads||[]).filter(l => l.eigenaar === mij && !l.kandidaat_id && CRM.leadIn(l.status, ['Nieuw','Geen gehoor'])).length;
+  const mijnKlanten = new Set((CRM.state.clients||[]).filter(k => k.eigenaar === mij).map(k => k.naam));
+  const vacs = (CRM.state.vacs||[]).filter(v => mijnKlanten.has(v.klant) && (v.status||'Open') === 'Open');
+  const posities = vacs.reduce((n, v) => n + (Number(v.aantal)||1), 0);
+
+  return strook([
+    vakMeter({n:netto, doel:aandeel, vanTekst:`van ${String(aandeel).replace('.', ',')}`, label:'Jouw plaatsingen · maand', mod:'performance', titel:'Naar Performance',
+      regels:[`<b class="num">${get}</b> getekend${stop ? ` · <b class="num">${stop}</b> gestopt` : ''}`, 'jouw aandeel van het teamdoel']}),
+    vakGetal({label:'Kandidaten in proces', n:inProces.length, pil:gesprek ? `${gesprek} in gesprek` : 'niemand in gesprek', pilOr:!gesprek,
+      extra:`<span class="cp-s">jouw kandidaten in een traject</span>`, mod:'kandidaten', titel:'Naar Kandidaten'}),
+    vakGetal({label:'Voorgesteld deze week', n:voorgesteld, pil:voorgesteld ? 'goed bezig' : 'nog niemand', pilOr:!voorgesteld, mod:'pijplijn', titel:'Naar Klanttrajecten'}),
+    `<div class="cp-c"><span class="cp-l">Sollicitanten bellen</span>
+      <span class="cp-rij"><span class="cp-big num">${belLeads}</span>${belLeads ? '<span class="cp-pil or">wachten op je</span>' : ''}</span>
+      <button type="button" class="cp-belronde" data-mod="recruitment">${belLeads ? '📞 Start belronde' : 'Naar recruitment'}</button></div>`,
+    vakGetal({label:'Jouw klanten', n:vacs.length, pil:`${posities} posities`, extra:`<span class="cp-s">open vacatures</span>`, mod:'hot', titel:'Naar Vacatures'})
+  ]);
+}
+
+/* ── Marketeer: leads, opvolging en content ── */
+function cockpitMarketeer(){
+  const ma = weekVan(), vorigeMa = kort(dagPlus(new Date(ma+'T12:00:00'), -7).toISOString());
+  const leads = CRM.state.leads||[];
+  const binnen = l => kort(l.binnen_op || l.created_at);
+  const dezeWeek = leads.filter(l => binnen(l) >= ma).length;
+  const vorige = leads.filter(l => binnen(l) >= vorigeMa && binnen(l) < ma).length;
+  const verschil = dezeWeek - vorige;
+  const liggen = leads.filter(l => CRM.leadIs(l.status, 'Nieuw') && !l.kandidaat_id && CRM.dagenGeleden(binnen(l)) >= 1).length;
+  const maand = leads.filter(l => binnen(l).slice(0,7) === VANDAAG().slice(0,7));
+  const intake = maand.filter(l => CRM.leadIs(l.status, 'Intake ingepland') || l.kandidaat_id).length;
+  const conv = maand.length ? Math.round(intake / maand.length * 100) : 0;
+  return strook([
+    vakMeter({n:dezeWeek, doel:Math.max(vorige, dezeWeek, 1), vanTekst:`vorige wk ${vorige}`, label:'Leads deze week', mod:'marketing', titel:'Naar Marketing',
+      regels:[verschil === 0 ? 'gelijk aan vorige week' : `<b class="num">${verschil > 0 ? '+' : ''}${verschil}</b> t.o.v. vorige week`, 'Meta, Indeed en WhatsApp samen']}),
+    vakGetal({label:'Blijven liggen', n:liggen, pil:liggen ? 'langer dan een dag' : 'alles opgepakt', pilOr:!!liggen,
+      extra:`<span class="cp-s">nieuwe leads nog niet gebeld</span>`, mod:'recruitment', titel:'Naar Recruitment'}),
+    vakGetal({label:'Lead → intake · maand', n:conv + '<small>%</small>', pil:`${intake} van ${maand.length}`, extra:balk(conv), mod:'performance', titel:'Naar Performance'}),
+    `<div class="cp-c" id="cp_posts"><span class="cp-l">Content vandaag</span>
+      <span class="cp-rij"><span class="cp-big num">…</span></span>
+      <button type="button" class="cp-belronde" data-mod="marketingweek">Naar mijn week</button></div>`,
+    vakTeam()
+  ]);
+}
+
+function cockpitHTML(){
+  const r = dashRol();
+  return r === 'eigenaar' ? cockpitEigenaar() : r === 'marketeer' ? cockpitMarketeer() : cockpitAM();
+}
+/* De posts staan in mkt_posts en worden pas op verzoek gelezen. */
+async function cockpitPosts(mount){
+  const el = mount.querySelector('#cp_posts'); if(!el) return;
+  const m = await mktPostenLezen();
+  if(!document.body.contains(el)) return;
+  const n = m && m.ok ? m.posts.length : null;
+  const te = m && m.ok ? m.posts.filter(p => p.datum < VANDAAG()).length : 0;
+  el.querySelector('.cp-rij').innerHTML = n == null ? '<span class="cp-s">niet te lezen</span>'
+    : `<span class="cp-big num">${n}</span>${te ? `<span class="cp-pil or">${te} te laat</span>` : n ? '<span class="cp-pil">klaarzetten</span>' : '<span class="cp-pil">niets gepland</span>'}`;
 }
 
 /* De vijf uitsneden, op volgorde van links naar rechts. Tjeerd (doos)
@@ -1775,7 +1877,7 @@ CRM.registerModule('dashboard', {
     const vg = taakVoortgang(T, O);
     _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
-    const rol = CRM.salesmeter && CRM.salesmeter.doel() ? 'Sales' : '';
+    const rol = ROL_LABEL[dashRol()] || '';
     /* Heeft de rail niets te melden — geen meldingen, geen Outlook, geen
        hot vacatures — dan mag er ook geen lege derde baan staan. Dat wás
        precies het probleem: op het teamscherm bleef rechts een leeg vlak
@@ -1866,6 +1968,7 @@ CRM.registerModule('dashboard', {
 
     /* Glas: lichtbreking op het paneel zodra het zijn maat heeft, en
        opnieuw als de agenda of mail later inhoud bijlaadt. */
+    cockpitPosts(mount);
     const paneel = document.getElementById('dk_paneel');
     if(paneel && window.ResizeObserver){
       const ro = new ResizeObserver(() => { if(!document.body.contains(paneel)) return ro.disconnect(); lensOpPaneel(paneel); });
