@@ -1570,8 +1570,9 @@ function linkedinLijst(id){
     <div class="modal-h"><div class="h2">LinkedIn-netwerk</div>
       <div class="meta" style="margin-top:2px">${h(m?.tekst || '')}</div></div>
     <div class="modal-b">
-      ${vz.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Naam</th><th>Functie</th><th>Bedrijf</th><th>Plaats</th></tr></thead>
-        <tbody>${vz.map(r => `<tr><td>${naam(r)}</td><td>${h(r.functie||'')}</td><td>${h(r.bedrijf||'')}</td><td>${h(r.plaats||'')}</td></tr>`).join('')}</tbody></table></div>`
+      ${vz.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Naam</th><th>Bedrijf</th></tr></thead>
+        <tbody>${vz.map(r => `<tr><td>${naam(r)}<div class="rowsub">${h(r.functie||'')}</div></td>
+          <td>${h(r.bedrijf||'')}<div class="rowsub">${h(r.plaats||'')}</div></td></tr>`).join('')}</tbody></table></div>`
         : '<p class="meta">Vandaag geen verzoeken verstuurd.</p>'}
       ${br.length ? `<div class="label" style="margin:16px 0 6px">Bedankberichten</div>
         ${br.map(b => `<p style="margin:0 0 10px"><b>${h(b.naam)}</b><br>${h(b.tekst)}</p>`).join('')}` : ''}
