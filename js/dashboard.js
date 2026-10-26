@@ -1151,7 +1151,6 @@ function dashRol(){
   if(CRM.canSeeMoney && CRM.canSeeMoney()) return 'eigenaar';
   return (CRM.profile?.functie || 'am') === 'marketeer' ? 'marketeer' : 'am';
 }
-const ROL_LABEL = {eigenaar:'Ondernemer', am:'Accountmanager', marketeer:'Marketing'};
 
 const strook = vak => `<div class="cp-strook">${vak.filter(Boolean).map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
 const vakGetal = ({label, n, van, pil, pilOr, extra = '', mod, tab, titel}) => {
@@ -1892,7 +1891,6 @@ CRM.registerModule('dashboard', {
     const vg = taakVoortgang(T, O);
     _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
-    const rol = rolActief() ? (ROL_LABEL[dashRol()] || '') : '';
     /* Heeft de rail niets te melden — geen meldingen, geen Outlook, geen
        hot vacatures — dan mag er ook geen lege derde baan staan. Dat wás
        precies het probleem: op het teamscherm bleef rechts een leeg vlak
@@ -1901,8 +1899,10 @@ CRM.registerModule('dashboard', {
 
     /* De paginakop houdt alleen nog Vernieuwen over; het teamcijfer staat
        in de cockpitstrook, zie cockpitHTML(). */
-    if(acties) acties.innerHTML =
-      `<button class="btn ghost sm" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>`;
+    /* Op de desktop verbergt dashboard.css de paginakop (Tjeerd, 26 okt:
+       "deze balk mag weg"); Vernieuwen staat daarom ook rechts in de kop van
+       het paneel. Op mobiel blijft de paginakop staan voor de menuknop. */
+    if(acties) acties.innerHTML = '';
 
     /* De indeling: begroeting met de pijplijnstand ernaast (dat vulde eerst
        niets op de rechterhelft van de kopregel), daaronder drie banen.
@@ -1913,8 +1913,9 @@ CRM.registerModule('dashboard', {
         ${teamHTML()}
         <section class="dk-paneel" id="dk_paneel">
         <div class="dk-kop">
-          <span class="dk-naam">${h(naam||groet())}${rol?` <em>· ${h(rol)}</em>`:''}</span>
+          <span class="dk-naam">${h(naam||groet())}</span>
           <span class="dk-datum num">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'}))}</span>
+          <button class="btn ghost sm dk-ver" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>
         </div>
         ${cockpitHTML()}
         <div class="dash2-grid${agendaOpen()?'':' dicht'}${rechts?'':' geenrail'}">
