@@ -1264,7 +1264,7 @@ function cockpitMarketeer(){
    alleen"). Zolang ROL_STROOK_AAN uit staat, zien accountmanagers en de
    marketeer de basisstrook: opvolgen vandaag + het team. Aanzetten = deze
    vlag op true. */
-const ROL_STROOK_AAN = false;
+const ROL_STROOK_AAN = true;
 function cockpitBasis(){
   const o = CRM.salesmeter ? CRM.salesmeter.opvolgen() : {n:0, verlopen:0};
   return strook([`<div class="cp-c"><span class="cp-l">Opvolgen vandaag</span>

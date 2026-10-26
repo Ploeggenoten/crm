@@ -12,7 +12,7 @@
    module niet in de lijst, dan blijft het bij titel en knoppen.
    Geen bedragen: de kop staat ook op het teamscherm. */
 (function(){
-  const GLAS_VOOR_IEDEREEN = false;
+  const GLAS_VOOR_IEDEREEN = true;
   CRM.glasAan = () => GLAS_VOOR_IEDEREEN || !!(CRM.canSeeMoney && CRM.canSeeMoney());
 
   const vandaag = () => CRM.todayISO();
