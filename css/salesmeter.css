@@ -1,0 +1,12 @@
+/* Het "Hoe ging het?"-menu van js/salesmeter.js. Zes grote knoppen: na een
+   belletje wil je in één klik verder, niet zoeken. */
+.sm-menu{display:flex;flex-direction:column;gap:6px;min-width:min(380px,80vw)}
+.sm-o{display:grid;grid-template-columns:24px minmax(0,1fr);gap:2px 10px;align-items:start;text-align:left;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--card);cursor:pointer;font-family:var(--body);color:var(--ink)}
+.sm-o:hover{background:var(--card-2);border-color:var(--olive-l)}
+.sm-o:focus-visible{outline:2px solid var(--olive-l);outline-offset:2px}
+.sm-o b{font-size:13.5px}
+.sm-o .meta{grid-column:2}
+.sm-o.hoofd{border-color:var(--olive);background:#f3f7ea}
+.sm-ico{font-size:16px;line-height:1.2}
+.sm-teller{text-align:center;padding-top:6px}

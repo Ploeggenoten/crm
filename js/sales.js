@@ -730,9 +730,16 @@ function opvolgHTML(){
       </div>
       <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}"${
         t.contactId ? ` data-opcontact="${h(t.contactId)}"` : ''}>${h(t.klantNaam)}</button>
+      ${CRM.salesmeter ? `<button class="btn sm" data-opbel="${h(t.id)}" title="Leg de uitkomst vast; deze opvolging gaat dicht en de volgende stap komt erin">📞 Gebeld</button>` : ''}
     </div>`).join('')}`).join('')}</div></div>`;
 }
 function bindOpvolg(){
+  CRM.$$('[data-opbel]', mountEl).forEach(b => b.onclick = () => {
+    const t = openOpvolgingen().find(x => x.id === b.dataset.opbel); if(!t) return;
+    const c = t.contactId ? (CRM.state.contacten||[]).find(x => String(x.id) === t.contactId) : null;
+    CRM.salesmeter.gebeld({naam: c ? `${c.naam} · ${t.klantNaam}` : t.klantNaam, klant:t.klantNaam,
+      contactId:t.contactId, contactNaam:c ? c.naam : '', taakId:t.id}, () => tekenInhoud());
+  });
   CRM.$$('[data-opvink]', mountEl).forEach(c => c.onchange = async () => {
     await taakKlaar(c.dataset.opvink, c.checked);
     tekenInhoud();
@@ -1429,7 +1436,8 @@ function radarTabelHTML(rijen, zelf, totaal){
           ${r.laatst_gezien && r.laatst_gezien!==r.gevonden_op?`<div class="rowsub">gezien ${h(CRM.geleden(r.laatst_gezien))}</div>`:''}</td>
         <td>${
           st==='nieuw' ? `<div class="row tight r-acties">
-              <button class="btn sm" data-rlead="${h(r.id)}">→ Lead</button>
+              <button class="btn sm" data-rbel="${h(r.id)}" title="Leg de uitkomst vast; de opvolging komt vanzelf in Opvolgingen">📞 Gebeld</button>
+              <button class="btn sm ghost" data-rlead="${h(r.id)}">→ Lead</button>
               <button class="btn sm sub" data-rneg="${h(r.id)}">Negeren</button></div>`
           : st==='toegevoegd' ? `<div class="row tight r-acties">
               <span class="chip green">toegevoegd</span>
@@ -1526,8 +1534,8 @@ async function radarContactNaarKlant(r, klantNaam){
    doorschiet, dan wil ik direct op de relatiekaart komen. Nu moet ik de lead
    helemaal opzoeken." Doorschieten is geen eindpunt maar het begin van het
    belwerk, dus de kaart hoort open te staan. */
-async function radarNaarLead(id){
-  const r = radar.find(x=>x.id===id); if(!r) return;
+async function radarNaarLead(id, opts={}){
+  const r = radar.find(x=>x.id===id); if(!r) return null;
   const bestaand = CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, r.bedrijf));
   if(bestaand){
     await zetRadarStatus(id, 'toegevoegd', 'Stond al in de pijplijn ('+faseVan(bestaand)+')');
@@ -1536,6 +1544,7 @@ async function radarNaarLead(id){
     const ct = await radarContactNaarKlant(r, bestaand.naam);
     if(ct) CRM.logActiviteit('klant', bestaand.naam, 'systeem',
       `Contactpersoon ${ct.naam}${ct.functie ? ` (${ct.functie})` : ''} overgenomen uit de Leadradar`);
+    if(opts.stil) return bestaand.naam;
     CRM.toast(`${bestaand.naam} stond al in de pijplijn (${faseVan(bestaand)})${
       ct ? ` — ${ct.naam} erbij gezet` : ''}`);
     return CRM.ga('klanten', {id: bestaand.naam});
@@ -1557,7 +1566,7 @@ async function radarNaarLead(id){
       const zonder = Object.assign({}, rij); delete zonder.aangemaakt;
       ({error} = await CRM.sb.from('clients').upsert(zonder, {onConflict:'naam'}));
     }
-    if(error){ CRM.state.clients.pop(); return CRM.fout('Lead opslaan mislukt', error); }
+    if(error){ CRM.state.clients.pop(); CRM.fout('Lead opslaan mislukt', error); return null; }
   }
   CRM.logActiviteit('klant', r.bedrijf, 'systeem',
     `Gevonden via Leadradar: ${nVac} vacature${nVac===1?'':'s'} voor ${r.functies||'onbekende functies'}`);
@@ -1565,6 +1574,7 @@ async function radarNaarLead(id){
   if(ct) CRM.logActiviteit('klant', r.bedrijf, 'systeem',
     `Contactpersoon ${ct.naam}${ct.functie ? ` (${ct.functie})` : ''} overgenomen uit de Leadradar`);
   await zetRadarStatus(id, 'toegevoegd');
+  if(opts.stil) return r.bedrijf;
   CRM.toast(`${r.bedrijf} staat nu als lead${ct ? ` — met ${ct.naam} als contactpersoon` : ''}`, 'ok');
   CRM.ga('klanten', {id: r.bedrijf});
 }
@@ -2391,6 +2401,15 @@ function bindRadar(){
               gelukt ? 'ok' : 'err');
   });
   CRM.$$('[data-rlead]', mountEl).forEach(b=>b.onclick=()=>radarNaarLead(b.dataset.rlead));
+  /* Gebeld vanuit de radar: zie js/salesmeter.js. Alles behalve "geen
+     interesse" maakt er een lead van — zonder naar de klantkaart te springen,
+     want je wilt door met de volgende op de lijst. */
+  CRM.$$('[data-rbel]', mountEl).forEach(b=>b.onclick=()=>{
+    const r = radar.find(x=>x.id===b.dataset.rbel); if(!r || !CRM.salesmeter) return;
+    CRM.salesmeter.gebeld({naam:r.bedrijf, radar:{id:r.id,
+      naarKlant:()=>radarNaarLead(r.id, {stil:true}),
+      negeer:reden=>zetRadarStatus(r.id, 'genegeerd', reden)}}, ()=>tekenInhoud());
+  });
   CRM.$$('[data-rneg]',  mountEl).forEach(b=>b.onclick=()=>radarNegeren(b.dataset.rneg));
   CRM.$$('[data-rher]',  mountEl).forEach(b=>b.onclick=()=>zetRadarStatus(b.dataset.rher,'nieuw',''));
   CRM.$$('[data-rpijp]', mountEl).forEach(b=>b.onclick=()=>{
@@ -2413,6 +2432,9 @@ CRM.registerModule('sales', {
   },
   render(mount, acties, params){
     mountEl = mount; actiesEl = acties;
+    /* Van buitenaf een tabblad openen, bijv. de belronde-knop op het
+       dashboard: CRM.ga('sales', {tab:'opvolg'}). */
+    if(params && ['pijplijn','opvolg','activiteit','radar','vondsten'].includes(params.tab)){ tab = params.tab; V.zet('tab', tab); }
     tekenActies();
     tekenInhoud();
     /* Radar alvast laden zodat de tab-badge meteen klopt, ook als je

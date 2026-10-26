@@ -64,9 +64,8 @@ function maandag(off=0){
   const d = new Date(); d.setHours(0,0,0,0);
   return dagPlus(d, -((d.getDay()+6)%7) + off*7);
 }
-/* Let op: zónder argument altijd de HUIDIGE week. looptRegel() telt hiermee
-   "leads deze week"; dat getal mag niet meebewegen als je in de agenda
-   vooruitbladert. */
+/* Let op: zónder argument altijd de HUIDIGE week. Tellingen als "deze
+   week" mogen niet meebewegen als je in de agenda vooruitbladert. */
 function weekBereik(off=0){
   const ma = maandag(off);
   return { van:dISO(ma), tot:dISO(dagPlus(ma,6)) };
@@ -167,103 +166,6 @@ function sparkline(waarden){
    hier boven de dagbaan. Verwijderd (rust, jul 2026): ze duwden de dag naar
    beneden en dezelfde richting staat al in Performance én — voor jezelf —
    in het blok "Jouw maand". Eén sparkline per scherm is genoeg. */
-
-/* ═══ MOTIVATIEZIN ══════════════════════════════════════════════
-   Echte quotes van echte mensen over werken en volhouden (wens Tjeerd,
-   31 jul 2026). Hiervoor stonden hier zelfbedachte recruitmentspreuken;
-   die lazen als een poster in een kantine.
-
-   Met naam erbij, en dat is geen opsmuk: een zin zonder afzender is een
-   spreuk, een zin mét afzender is iemand die iets heeft meegemaakt.
-   Nederlands en Engels door elkaar, want dat is ook hoe er gepraat wordt.
-
-   Bewust weggelaten: quotes waarvan de herkomst omstreden is, hoe mooi
-   ook. "The harder I work, the more luck I have" staat overal op naam van
-   Jefferson maar komt van Coleman Cox; "Discipline is choosing between
-   what you want now and what you want most" wordt aan Lincoln toegeschreven
-   zonder enige bron. Een verkeerde naam onder een goede zin is erger dan
-   geen zin.                                                              */
-const ZINNEN = [
-  {t:'Hard work beats talent when talent doesn\'t work hard.', van:'Tim Notke'},
-  {t:'Genius is one percent inspiration and ninety-nine percent perspiration.', van:'Thomas Edison'},
-  {t:'Opportunity is missed by most people because it is dressed in overalls and looks like work.', van:'Thomas Edison'},
-  {t:'Nothing will work unless you do.', van:'Maya Angelou'},
-  {t:'It always seems impossible until it\'s done.', van:'Nelson Mandela'},
-  {t:'Amateurs sit and wait for inspiration. The rest of us just get up and go to work.', van:'Stephen King'},
-  {t:'Inspiration exists, but it has to find you working.', van:'Pablo Picasso'},
-  {t:'The harder I practice, the luckier I get.', van:'Gary Player'},
-  {t:'There are no traffic jams along the extra mile.', van:'Roger Staubach'},
-  {t:'Well done is better than well said.', van:'Benjamin Franklin'},
-  {t:'Energy and persistence conquer all things.', van:'Benjamin Franklin'},
-  {t:'Little strokes fell great oaks.', van:'Benjamin Franklin'},
-  {t:'Don\'t watch the clock; do what it does. Keep going.', van:'Sam Levenson'},
-  {t:'You miss 100% of the shots you don\'t take.', van:'Wayne Gretzky'},
-  {t:'Perseverance is not a long race; it is many short races one after another.', van:'Walter Elliot'},
-  {t:'Success is the sum of small efforts, repeated day in and day out.', van:'Robert Collier'},
-  {t:'Do the hard jobs first. The easy jobs will take care of themselves.', van:'Dale Carnegie'},
-  {t:'The difference between ordinary and extraordinary is that little extra.', van:'Jimmy Johnson'},
-  {t:'Motivation is what gets you started. Habit is what keeps you going.', van:'Jim Ryun'},
-  {t:'I hated every minute of training. But I said: suffer now, and live the rest of your life as a champion.', van:'Muhammad Ali'},
-  {t:'Je gaat het pas zien als je het doorhebt.', van:'Johan Cruijff'},
-  {t:'Elk nadeel heb z\'n voordeel.', van:'Johan Cruijff'},
-  {t:'Als je niet kunt winnen, moet je zorgen dat je niet verliest.', van:'Johan Cruijff'},
-  {t:'Wie het kleine niet eert, is het grote niet weerd.', van:'Nederlands spreekwoord'},
-  {t:'Zeven keer vallen, acht keer opstaan.', van:'Japans spreekwoord'}
-];
-/* Eén spreuk per keer dat je de app opent (wens Tjeerd). Vandaar
-   sessionStorage: die leeft precies zolang als dit tabblad, dus binnen een
-   sessie blijft de zin staan — hij springt niet bij elke hertekening — en de
-   volgende keer dat je inlogt krijg je een nieuwe. De teller in localStorage
-   loopt de lijst netjes af, zodat je niet drie keer achter elkaar dezelfde
-   zin trekt zoals bij puur toeval wel zou gebeuren. */
-const MOT_ZIN    = 'crm_mot_zin';      // sessionStorage: de zin van deze sessie
-const MOT_WEG    = 'crm_mot_weg';      // sessionStorage: weggeklikt deze sessie
-const MOT_TELLER = 'crm_mot_teller';   // localStorage: hoever we in de lijst zijn
-const MOT_WIE    = 'crm_mot_wie';      // sessionStorage: voor wie de zin is
-
-function motivatieHTML(){
-  /* We bewaren de POSITIE in de lijst, niet de zin zelf. Sloeg je de tekst
-     op, dan bleef een oude zin in sessionStorage hangen nadat de lijst was
-     vervangen — en de naam eronder was er dan niet meer bij te vinden. */
-  let zin = null;
-  try{
-    if(sessionStorage.getItem(MOT_WEG)) return '';
-    /* Logt er in hetzelfde tabblad iemand anders in, dan hoort daar ook een
-       nieuwe zin bij — anders kijkt de een naar de spreuk van de ander. */
-    const wie = String(CRM.user?.id || CRM.me() || '');
-    if(sessionStorage.getItem(MOT_WIE) !== wie){
-      sessionStorage.removeItem(MOT_ZIN);
-      sessionStorage.setItem(MOT_WIE, wie);
-    }
-    /* De zin ververst elk uur. Hij stond in sessionStorage zonder tijdstip,
-       dus wie zijn tabblad de hele dag open houdt — en dat doet iedereen —
-       keek naar dezelfde spreuk tot hij opnieuw inlogde. Bij het bewaarde
-       nummer staat nu het tijdstip; is dat ouder dan een uur, dan schuift de
-       teller door. (Tjeerd, 3 aug 2026: "zorg dat de quote om het uur
-       vernieuwd".) */
-    const UUR = 3600000;
-    const [nrTxt, opTxt] = String(sessionStorage.getItem(MOT_ZIN) || '').split('|');
-    const bewaard = Number(nrTxt);
-    const op = Number(opTxt);
-    const versGenoeg = Number.isFinite(op) && (Date.now() - op) < UUR;
-    if(versGenoeg && Number.isInteger(bewaard) && ZINNEN[bewaard]) zin = ZINNEN[bewaard];
-    if(!zin){
-      const vorige = Number(localStorage.getItem(MOT_TELLER));
-      const i = ((Number.isFinite(vorige) ? vorige : -1) + 1) % ZINNEN.length;
-      localStorage.setItem(MOT_TELLER, String(i));
-      zin = ZINNEN[i];
-      sessionStorage.setItem(MOT_ZIN, i + '|' + Date.now());
-    }
-  }catch(e){
-    /* Privémodus of geblokkeerde opslag: liever een vaste zin dan geen dashboard. */
-    zin = zin || ZINNEN[0];
-  }
-  return `<div class="mot" id="dash_mot">
-    <span class="hand mot-zin">${h(zin.t)}</span>
-    <span class="mot-van">${h(zin.van)}</span>
-    <button type="button" class="mot-x" id="mot_x" title="Verbergen tot je opnieuw inlogt">✕</button>
-  </div>`;
-}
 
 /* ═══ DE DAG OPBOUWEN — ALLEEN AFSPRAKEN ═════════════════════════
    Hier stonden vroeger óók de taken, de leads, de acties over datum en
@@ -1174,28 +1076,15 @@ function bindTaken(mount){
   };
 }
 
-/* ═══ HET MAANDDOEL — de band boven het dashboard ═════════════════
-   Wens Tjeerd (31 jul 2026): "Het doel in het dashboard moet altijd
-   maandelijks zijn. Het jaarlijkse doel van 75 voor 31 december moet in
-   Performance staan."
-
-   Hier stond eerst het jaardoel. Dat klopt ook: het dashboard is je
-   werkdag, en een teller die pas over vijf maanden afloopt stuurt geen
-   dag aan. De maand doet dat wel — die is kort genoeg om vandaag nog iets
-   aan te veranderen. Het jaardoel staat in Performance, waar je naar
-   cijfers kijkt in plaats van naar werk.
-
-   DRIE DOELEN WAREN ER ÉÉN TE VEEL en dat blijft zo. "Jouw maand" in de
-   rechterkolom blijft staan: dat is een andere vraag (jij, netto) dan
-   deze band (het team, netto). Ze staan daarom op een andere plek.
-
+/* ═══ HET MAANDDOEL — netto plaatsingen van het team ══════════════
+   Eén cijfer voor het hele team, in de cockpitstrook (zie cockpitHTML).
    Geen bedragen: het is een aantal mensen, dus iedereen mag het zien. */
-function maandBandHTML(){
-  if(!CRM.plaatsingenMaand || !CRM.maandTarget) return '';
+function maandStand(){
+  if(!CRM.plaatsingenMaand || !CRM.maandTarget) return null;
   let pm, doel;
   try{ pm = CRM.plaatsingenMaand(); doel = CRM.maandTarget(); }
-  catch(e){ console.warn('maanddoel', e); return ''; }
-  if(!pm || !doel) return '';
+  catch(e){ console.warn('maanddoel', e); return null; }
+  if(!pm || !doel) return null;
 
   const gedaan = pm.netto;
   const teGaan = Math.max(0, doel - gedaan);
@@ -1211,39 +1100,136 @@ function maandBandHTML(){
     const w = d.getDay();
     if(w !== 0 && w !== 6) werkdagen++;
   }
-
   /* Waar zou je nu moeten staan als je de maand gelijkmatig verdeelt?
-     Een balk op 40% zegt niets zonder de datum erbij: op de 5e is dat
-     ruim voor, op de 28e ver achter. */
-  const dagInMaand = nu.getDate(), dagenInMaand = laatste.getDate();
-  const verwacht = Math.round(doel * (dagInMaand / dagenInMaand));
-  const verschil = gedaan - verwacht;
+     Een balk op 40% zegt niets zonder de datum erbij. */
+  const verwacht = Math.round(doel * (nu.getDate() / laatste.getDate()));
+  return {gedaan, doel, teGaan, pct, werkdagen, verschil: gedaan - verwacht,
+    maandNaam: nu.toLocaleDateString('nl-NL', {month:'long'})};
+}
 
-  const restZin = !teGaan
-    ? 'Doel gehaald — alles hierna is winst.'
-    : `${teGaan} te gaan · nog ${werkdagen} ${werkdagen === 1 ? 'werkdag' : 'werkdagen'} deze maand`;
+/* ═══ DE KOP — team, glas en de cockpitstrook ═════════════════════
+   Tjeerd, 25–26 okt 2026, na een rij proeven: het dashboard opent met het
+   team (de vijf uitsneden uit assets/team/, met Peter Ploeg in het midden)
+   op een warme studio-achtergrond, en daaroverheen één groot glazen paneel
+   waarin álles staat: naam, de cockpitstrook en de werkbanen. Zo is het
+   één geheel in plaats van een banner met een dashboard eronder.
 
-  /* Het woord zegt al welke kant het op gaat, dus zonder plus- of minteken:
-     "−3 achter op schema" leest als een dubbele ontkenning. De kleur draagt
-     de lading, zoals de huisstijl voorschrijft voor cijfers met richting. */
-  const schemaZin = !teGaan ? ''
-    : verschil === 0 ? 'Precies op schema'
-    : verschil > 0 ? `<span class="num pos">${verschil} vóór op schema</span> — je zou nu op <span class="num">${verwacht}</span> staan`
-    : `<span class="num neg">${-verschil} achter op schema</span> — je zou nu op <span class="num">${verwacht}</span> staan`;
+   De cockpitstrook ("optie A") is bewust één dunne regel: vier cijfers met
+   hun voortgang, geen vier grote vlakken met weinig erin.
+     - Koud bellen: alleen wie een beldoel heeft (CRM.salesmeter.doel).
+     - Afspraken nieuwe leads: idem.
+     - Opvolgen vandaag: iedereen — dezelfde taken als Sales → Opvolgingen.
+     - Het team deze maand: iedereen (aantal mensen, geen geld). */
+function meterSVG(n, doel){
+  const ged = doel ? Math.min(1, n / doel) : 0;
+  const N = 48, cx = 90, cy = 86, r1 = 74, r2 = 82;
+  let streepjes = '';
+  for(let i = 0; i <= N; i++){
+    const a = (135 + 270 * i / N) * Math.PI / 180, lang = i % 8 === 0, rr = lang ? r1 - 5 : r1;
+    streepjes += `<line x1="${(cx+rr*Math.cos(a)).toFixed(1)}" y1="${(cy+rr*Math.sin(a)).toFixed(1)}" x2="${(cx+r2*Math.cos(a)).toFixed(1)}" y2="${(cy+r2*Math.sin(a)).toFixed(1)}" class="${i/N <= ged && ged > 0 ? 'aan' : ''}" stroke-width="${lang?2.2:1.5}"/>`;
+  }
+  const R = 60, C = 2 * Math.PI * R, boog = C * .75, ka = (135 + 270 * ged) * Math.PI / 180;
+  return `<svg class="cp-meter" viewBox="0 0 180 168" aria-hidden="true">
+    <g class="cp-streep">${streepjes}</g>
+    <g transform="rotate(135 90 86)">
+      <circle cx="90" cy="86" r="${R}" class="cp-boog-bg" stroke-dasharray="${boog} ${C}"/>
+      ${ged > 0 ? `<circle cx="90" cy="86" r="${R}" class="cp-boog" stroke-dasharray="${boog*ged} ${C}"/>` : ''}
+    </g>
+    <circle cx="${(90+R*Math.cos(ka)).toFixed(1)}" cy="${(86+R*Math.sin(ka)).toFixed(1)}" r="7" class="cp-knop"/>
+    <text x="90" y="80" class="cp-n">${n}</text><text x="90" y="116" class="cp-van">van ${doel}</text>
+  </svg>`;
+}
 
-  const maandNaam = nu.toLocaleDateString('nl-NL', {month:'long'});
+function cockpitHTML(){
+  const SM = CRM.salesmeter;
+  const t = SM ? SM.tel() : null, d = t && t.doel;
+  const o = SM ? SM.opvolgen() : {n:0, verlopen:0};
+  const m = maandStand();
+  const vak = [];
+  if(d){
+    vak.push(`<button type="button" class="cp-c cp-bel" data-mod="sales" data-tab="radar" title="Naar de Leadradar">
+      ${meterSVG(t.vandaag, d.belDag)}
+      <span class="cp-txt"><span class="cp-l">Koud bellen vandaag</span>
+        <span class="cp-s"><b class="num">${t.gesproken}</b> gesproken${t.vandaag ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / Math.max(1, t.gesproken)))}` : ''}</span>
+        <span class="cp-s"><b class="num">${t.week}</b> / ${d.belDag*5} deze week</span></span>
+    </button>`);
+    const nog = Math.max(0, d.afsprWeek - t.afspraken);
+    vak.push(`<div class="cp-c"><span class="cp-l">Afspraken deze week</span>
+      <span class="cp-rij"><span class="cp-big num">${t.afspraken}<small>/${d.afsprWeek}</small></span>
+        <span class="cp-pil">${nog ? `nog ${nog} vóór vr` : 'doel gehaald'}</span></span>
+      <span class="cp-dots">${Array.from({length:d.afsprWeek}, (_, i) => `<i class="${i < t.afspraken ? 'v' : ''}"></i>`).join('')}</span></div>`);
+  }
+  vak.push(`<div class="cp-c"><span class="cp-l">Opvolgen vandaag</span>
+    <span class="cp-rij"><span class="cp-big num">${o.n}</span>
+      ${o.verlopen ? `<span class="cp-pil or">${o.verlopen} verlopen</span>` : ''}</span>
+    <button type="button" class="cp-belronde" data-mod="sales" data-tab="opvolg">${o.n ? '📞 Start belronde' : 'Naar opvolgingen'}</button></div>`);
+  if(m){
+    const sch = m.teGaan === 0 ? 'gehaald' : m.verschil < 0 ? `${-m.verschil} achter` : m.verschil > 0 ? `${m.verschil} voor` : 'op schema';
+    vak.push(`<button type="button" class="cp-c" data-mod="performance" title="Naar Performance">
+      <span class="cp-l">Team · ${h(m.maandNaam)}</span>
+      <span class="cp-rij"><span class="cp-big num">${m.gedaan}<small>/${m.doel}</small></span>
+        <span class="cp-pil${m.verschil < 0 && m.teGaan ? ' or' : ''}">${h(sch)}</span></span>
+      <span class="cp-bar"><i style="width:${m.pct}%"></i></span></button>`);
+  }
+  return `<div class="cp-strook">${vak.map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
+}
 
-  return `<button type="button" class="card jaar" id="dash_jaar" title="Naar Performance">
-    <div class="jaar-cijfer">
-      <span class="big">${gedaan}</span><span class="jaar-van num">/ ${doel}</span>
-    </div>
-    <div class="jaar-mid">
-      <div class="label jaar-kop">Het team in ${h(maandNaam)}</div>
-      <div class="bar jaar-bar"><i class="${pct>=100?'green':''}" style="width:${pct}%"></i></div>
-      <div class="meta jaar-schema">${schemaZin || 'Netto: getekend min gestopt, zoals op het bord.'}</div>
-    </div>
-    <div class="jaar-rest meta">${h(restZin)}</div>
-  </button>`;
+/* De vijf uitsneden, op volgorde van links naar rechts. Tjeerd (doos)
+   staat tegen de linkerrand zodat de afgesneden doos aansluit, Tjerk
+   (haarnetje) helemaal rechts, Peter Ploeg in het midden. */
+function teamHTML(){
+  return `<div class="dk-team" aria-hidden="true">
+    <img class="t-doos" src="assets/team/doos.webp" alt="">
+    <img class="t-helm" src="assets/team/helm.webp" alt="">
+    <img class="t-peter" src="assets/team/peter.webp" alt="">
+    <img class="t-hamer" src="assets/team/hamer.webp" alt="">
+    <img class="t-food" src="assets/team/food.webp" alt="">
+  </div>`;
+}
+
+/* Lichtbreking langs de rand van het glazen paneel: een SVG-verplaatsings-
+   kaart als backdrop-filter. Werkt alleen in Chromium (het hele team werkt
+   in Chrome); elders blijft het gewone matglas uit dashboard.css staan.
+   Eén keer per paneelmaat — bij elke hertekening opnieuw meten. */
+let _lensMaat = '';
+function lensOpPaneel(el){
+  if(!el || !/Chrome/.test(navigator.userAgent)) return;
+  const b = el.getBoundingClientRect(), w = Math.round(b.width), hh = Math.round(b.height);
+  if(w < 50 || hh < 50) return;
+  const NS = 'http://www.w3.org/2000/svg';
+  let defs = document.getElementById('dk_lensdefs');
+  if(!defs){
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', 0); svg.setAttribute('height', 0); svg.style.position = 'absolute';
+    defs = document.createElementNS(NS, 'defs'); defs.id = 'dk_lensdefs'; svg.appendChild(defs); document.body.appendChild(svg);
+  }
+  const maat = w + 'x' + hh;
+  if(maat !== _lensMaat){
+    _lensMaat = maat;
+    const r = Math.min(30, hh / 2, w / 2), band = 30;
+    const c = document.createElement('canvas'); c.width = w; c.height = hh;
+    const x = c.getContext('2d'), img = x.createImageData(w, hh), dd = img.data;
+    for(let j = 0; j < hh; j++) for(let i = 0; i < w; i++){
+      const k = (j * w + i) * 4; dd[k+2] = 128; dd[k+3] = 255;
+      const px = i + .5 - w/2, py = j + .5 - hh/2;
+      const qx = Math.abs(px) - (w/2 - r), qy = Math.abs(py) - (hh/2 - r);
+      const ox = Math.max(qx, 0), oy = Math.max(qy, 0);
+      const sd = Math.hypot(ox, oy) + Math.min(Math.max(qx, qy), 0) - r;
+      const t = Math.min(1, Math.max(0, 1 + sd / band));
+      if(!t){ dd[k] = 128; dd[k+1] = 128; continue; }
+      let nx = 0, ny = 0;
+      if(qx > 0 && qy > 0){ const l = Math.hypot(ox, oy) || 1; nx = ox/l*Math.sign(px); ny = oy/l*Math.sign(py); }
+      else if(qx > qy) nx = Math.sign(px); else ny = Math.sign(py);
+      const m = t * t * t;
+      dd[k] = 128 - nx * m * 127; dd[k+1] = 128 - ny * m * 127;
+    }
+    x.putImageData(img, 0, 0);
+    defs.innerHTML = `<filter id="dk_lens" x="0" y="0" width="${w}" height="${hh}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feImage href="${c.toDataURL()}" x="0" y="0" width="${w}" height="${hh}" result="map"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="zacht"/>
+      <feDisplacementMap in="zacht" in2="map" scale="120" xChannelSelector="R" yChannelSelector="G"/></filter>`;
+  }
+  el.style.setProperty('backdrop-filter', 'url(#dk_lens) saturate(1.7) brightness(1.05)', 'important');
 }
 
 /* ═══ GEEN GELD OP HET DASHBOARD ═════════════════════════════════
@@ -1674,10 +1660,6 @@ function maandBlok(){
     </div></div></div>`;
 }
 
-/* Het blok "Signaal — de instroom is laag" was een hele kaart voor één zin.
-   Ingedikt (rust, jul 2026) tot een oranje segment op de onderregel, waar de
-   andere pijplijn-cijfers ook staan. Zie looptRegel(). */
-
 /* ─── Marketeer-variant: vandaag posten + waakhond ────────────── */
 let _mkt = null;
 async function mktPostenLezen(){
@@ -1766,43 +1748,6 @@ function kolomOnderAgenda(){
   return (CRM.profile?.functie||'am') === 'marketeer' ? waakhondBlok() : maandBlok();
 }
 
-/* ═══ WAT LOOPT ER — één rustige regel onderaan ═════════════════
-   Deze regel nam de tellingen over van de losse metaregel bóven de
-   dagbaan (die stond er dubbel) en van het kaartje "Signaal". */
-function looptRegel(){
-  const cs = CRM.kandidaten(), wk = weekBereik();
-  const kansen  = (CRM.state.kansen||[]).filter(k => (k.status||'open')==='open').length;
-  const traject = (CRM.state.clients||[]).filter(k => CRM.SALES_ACTIEF.includes(k.fase)).length;
-  const openLeads = (CRM.state.leads||[]).filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !l.kandidaat_id).length;
-  /* Twee pijplijnen, dus twee tellingen. De sollicitanten staan in de
-     recruitmentpijplijn (crm_leads); wie op een klanttraject loopt is een
-     kandidaat mét bordpositie. Die twee stonden in één zin onder de kop
-     "Recruitment" en linkten allebei naar Recruitment — waar je de
-     klanttrajecten niet vindt. Zelfde definitie als inPijplijn() in
-     js/performance.js, zodat beide schermen hetzelfde getal noemen. */
-  const klantTraject = cs.filter(c => CRM.faseIdx(c.fase) >= 0 && !CRM.faseIn(c.fase, CRM.DONE)).length;
-  const vacs = (CRM.state.vacs||[]).filter(v => (v.status||'Open')==='Open');
-  const posities = vacs.reduce((s,v)=>s+(Number(v.aantal)||1),0);
-  const leadsWeek = (CRM.state.leads||[]).filter(l => inBereik(l.binnen_op, wk.van, wk.tot)).length;
-  /* faseIn i.p.v. includes: de eerste fase heet sinds 30 jul 2026 'Intake',
-     en kandidaten die nog op de oude waarde 'Voorselectie' staan moeten hier
-     gewoon meetellen — anders meldt het dashboard een lage instroom die er
-     niet is. CRM.faseIn normaliseert beide kanten. */
-  const vroeg = cs.filter(c => CRM.faseIn(c.fase, ['Intake','Voorgesteld'])).length;
-  const seg = (mod, txt, kl='') => `<button type="button" class="loopt-i${kl}" data-mod="${h(mod)}">${h(txt)} →</button>`;
-  return `<div class="loopt meta">
-    ${seg('sales', `Sales: ${kansen} open kansen, ${traject} klanten in traject`)}
-    ${seg('recruitment', `Recruitment: ${openLeads} sollicitanten`)}
-    ${seg('pijplijn', `Klanttrajecten: ${klantTraject} lopend`)}
-    ${seg('hot', `Vacatures: ${vacs.length} open (${posities} posities)`)}
-    ${seg('marketing', `Marketing: ${leadsWeek} leads deze week`)}
-    ${/* 'voorselectie' bestaat niet meer als fase; het zijn intake en
-          voorgesteld. En dit signaal telt kándidaten, dus het hoort naar
-          Kandidaten te wijzen en niet naar de leads in Recruitment. */''}
-    ${vroeg < 3 ? seg('kandidaten', `Let op: maar ${vroeg} met intake of voorgesteld`, ' sig') : ''}
-  </div>`;
-}
-
 /* ═══ REGISTRATIE ════════════════════════════════════════════════ */
 CRM.registerModule('dashboard', {
   title:'Dashboard', icon:'◧', onderschrift:'Jouw werkdag in één baan',
@@ -1830,14 +1775,15 @@ CRM.registerModule('dashboard', {
     const vg = taakVoortgang(T, O);
     _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';
+    const rol = CRM.salesmeter && CRM.salesmeter.doel() ? 'Sales' : '';
     /* Heeft de rail niets te melden — geen meldingen, geen Outlook, geen
        hot vacatures — dan mag er ook geen lege derde baan staan. Dat wás
        precies het probleem: op het teamscherm bleef rechts een leeg vlak
        over. Zonder inhoud vallen we terug op twee banen. */
     const rechts = kolomRechts();
 
-    /* De paginakop houdt alleen nog Vernieuwen over: de teamchip is
-       vervangen door de jaardoelband, zie maandBandHTML(). */
+    /* De paginakop houdt alleen nog Vernieuwen over; het teamcijfer staat
+       in de cockpitstrook, zie cockpitHTML(). */
     if(acties) acties.innerHTML =
       `<button class="btn ghost sm" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>`;
 
@@ -1846,16 +1792,14 @@ CRM.registerModule('dashboard', {
        Welke kolom hoe breed wordt, en wat er gebeurt als de agenda dicht
        staat, regelt css/dashboard.css — daar staat ook waaróm. */
     mount.innerHTML = `
-      <div class="dash2">
-        <section class="dash-hero">
-          <div class="dash-hero-t">
-            <div class="meta num dash-datum">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div>
-            <div class="h1">${h(groet())}${naam?', '+h(naam):''}</div>
-            ${motivatieHTML()}
-          </div>
-          ${looptRegel()}
-        </section>
-        ${maandBandHTML()}
+      <div class="dash2 dk">
+        ${teamHTML()}
+        <section class="dk-paneel" id="dk_paneel">
+        <div class="dk-kop">
+          <span class="dk-naam">${h(naam||groet())}${rol?` <em>· ${h(rol)}</em>`:''}</span>
+          <span class="dk-datum num">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'}))}</span>
+        </div>
+        ${cockpitHTML()}
         <div class="dash2-grid${agendaOpen()?'':' dicht'}${rechts?'':' geenrail'}">
           <div class="dash-links">
             <div class="dash-agenda">${tijdlijnKaart(P, W)}</div>
@@ -1864,6 +1808,7 @@ CRM.registerModule('dashboard', {
           <div class="dash-taken" id="dash_taken">${takenPaneelHTML(T, O)}</div>
           <div class="dash-rail zij">${rechts}</div>
         </div>
+        </section>
       </div>`;
 
     /* Doorklikken — gedelegeerd, zodat ook later toegevoegde blokken werken. */
@@ -1885,21 +1830,13 @@ CRM.registerModule('dashboard', {
         if(k) return CRM.opvolging.actie(k, key, () => CRM.render());
       }
       const el = e.target.closest('[data-mod]');
-      if(el) CRM.ga(el.dataset.mod, el.dataset.id ? {id:el.dataset.id} : {});
+      if(el){
+        /* De belronde-knop opent Sales meteen op het tabblad Opvolgingen. */
+        CRM.ga(el.dataset.mod, el.dataset.id ? {id:el.dataset.id} : el.dataset.tab ? {tab:el.dataset.tab} : {});
+      }
     };
 
-    /* Motivatiezin wegklikken: tot je opnieuw inlogt. */
-    const mx = document.getElementById('mot_x');
-    if(mx) mx.onclick = e => {
-      e.stopPropagation();
-      try{ sessionStorage.setItem(MOT_WEG, '1'); }catch(err){}
-      document.getElementById('dash_mot')?.remove();
-    };
 
-    /* De jaardoelband is één grote knop naar Performance: daar staat de
-       onderbouwing (per maand, per persoon, per klant). */
-    const jb = document.getElementById('dash_jaar');
-    if(jb) jb.onclick = () => CRM.ga('performance');
     /* Vernieuwen haalt alle tabellen opnieuw op — op een matige verbinding
        duurt dat seconden. Zonder terugkoppeling leek het scherm bevroren en
        drukten mensen nog een paar keer, wat de aanroep gewoon herhaalde.
@@ -1926,6 +1863,14 @@ CRM.registerModule('dashboard', {
 
     /* Het takenpaneel: afvinken, prioriteit, verzetten, toevoegen. */
     bindTaken(mount);
+
+    /* Glas: lichtbreking op het paneel zodra het zijn maat heeft, en
+       opnieuw als de agenda of mail later inhoud bijlaadt. */
+    const paneel = document.getElementById('dk_paneel');
+    if(paneel && window.ResizeObserver){
+      const ro = new ResizeObserver(() => { if(!document.body.contains(paneel)) return ro.disconnect(); lensOpPaneel(paneel); });
+      ro.observe(paneel);
+    }
 
     /* De agenda in- en uitklappen. De stand blijft bewaard. */
     CRM.$$('#tl2_klap, #tl2_klap2', mount).forEach(b => b.onclick = e => {

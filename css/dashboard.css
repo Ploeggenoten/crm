@@ -3,61 +3,6 @@
 
 .dash2{display:flex;flex-direction:column;gap:18px;max-width:1240px}
 
-/* ─── Begroeting + motivatiezin ──────────────────────────────────
-   De kopregel was op een breed scherm één zin links en verder niets.
-   "Wat loopt er" (de pijplijntellingen) stond helemaal onderaan de
-   pagina, waar niemand keek. Die twee vullen elkaar aan: links wie je
-   bent en welke dag het is, rechts hoe de pijplijn ervoor staat. */
-.dash-hero{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 32px;padding:2px 2px 0}
-.dash-hero-t{flex:1 1 460px;min-width:0}
-.dash-hero .dash-datum{margin-bottom:8px;letter-spacing:.01em}
-/* Alleen de eerste letter met een hoofdletter — capitalize zou ook "Juli" doen. */
-.dash-hero .dash-datum::first-letter{text-transform:uppercase}
-.dash-hero .h1{font-size:27px}
-
-/* De motivatiezin is het enige speelse element: groot Caveat, verder rust. */
-.mot{display:flex;align-items:flex-start;gap:10px;margin-top:10px}
-.mot .mot-zin{font-size:28px;line-height:1.15;transform:rotate(-1.2deg)}
-/* De naam eronder: klein, rustig en op de basislijn van de zin, zodat hij
-   leest als een ondertekening en niet als een tweede zin. */
-.mot-van{align-self:flex-end;padding-bottom:4px;font-size:12px;font-weight:600;
-  letter-spacing:.02em;color:var(--muted);white-space:nowrap}
-.mot-van::before{content:'— '}
-.mot-x{
-  background:none;border:none;padding:2px 6px;margin-top:4px;cursor:pointer;
-  color:var(--muted);font-size:12px;line-height:1;border-radius:999px;
-}
-.mot-x:hover{color:var(--ink);background:var(--card-2)}
-
-/* ─── Jaardoel — de band boven het dashboard ─────────────────────
-   Vervangt de teamtarget-chip die in de paginakop stond. Eén brede band
-   in plaats van een pilletje: dit is het cijfer waar het hele team naar
-   kijkt, en op het teamscherm vult het meteen de volle breedte.
-   Het is een <button> (naar Performance) en moet dus expliciet zijn
-   knopstijl kwijt — anders erft hij het lettertype van de browser. */
-.card.jaar{
-  display:flex;align-items:center;gap:14px 28px;flex-wrap:wrap;
-  padding:14px 24px;width:100%;text-align:left;cursor:pointer;
-  font-family:var(--body);color:inherit;border-color:var(--line-2);
-  border-left:2px solid var(--olive);transition:border-color .12s;
-}
-.card.jaar:hover{border-color:var(--olive-l);border-left-color:var(--olive)}
-.jaar-cijfer{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
-.jaar-cijfer .big{font-size:38px;line-height:1}
-.jaar-van{font-size:17px;color:var(--muted);font-weight:500}
-/* Het middenstuk krijgt de rek: op een breed scherm wordt de balk lang,
-   op een laptop klapt de band netjes om. */
-.jaar-mid{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:6px}
-.jaar-kop{color:var(--txt-2)}
-.bar.jaar-bar{height:6px}
-.jaar-schema{line-height:1.4}
-.jaar-rest{flex:0 0 auto;text-align:right;line-height:1.5;max-width:34ch}
-@media (max-width:700px){
-  .card.jaar{padding:12px 16px;gap:10px 16px}
-  .jaar-cijfer .big{font-size:30px}
-  .jaar-rest{text-align:left;flex:1 1 100%}
-}
-
 /* De stijl voor de oude "cockpitregel" (omzet, omzetdoel, banksaldo) is
    weg. Geld hoort niet op het dashboard — zie de toelichting in
    js/dashboard.js. Zet hier dus geen .cockpit-stijl terug. */
@@ -473,28 +418,6 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
 }
 .mail-meerknop:hover{color:var(--olive)}
 
-/* ─── Wat loopt er — naast de begroeting ─────────────────────────
-   Stond onderaan de pagina, onder alles wat je moest scrollen. Nu vult
-   het de rechterhelft van de kopregel, waar op een breed scherm niets
-   stond. Op smal valt het onder de begroeting, met een lijn erboven. */
-.loopt{display:flex;gap:6px 22px;flex-wrap:wrap;align-items:center;
-  padding:14px 2px 0;border-top:1px solid var(--line);flex:1 1 340px}
-.loopt-i{
-  background:none;border:none;padding:0;margin:0;cursor:pointer;text-align:left;
-  font-family:var(--body);font-size:12px;color:var(--muted);
-}
-.loopt-i:hover{color:var(--olive)}
-/* Het enige gekleurde segment: het signaal dat de instroom opdroogt. */
-.loopt-i.sig{color:var(--oranje);font-weight:600}
-@media (min-width:1100px){
-  /* Naast de begroeting: geen lijn erboven (die zou de kop doorsnijden),
-     rechts uitgelijnd en met een leesmaat, zodat het geen tweede kolom
-     tekst wordt maar een rustig blokje cijfers. */
-  .loopt{border-top:none;padding-top:0;flex:0 1 auto;max-width:520px;
-    justify-content:flex-end;gap:4px 20px;margin-left:auto}
-  .loopt-i{text-align:right}
-}
-
 /* ─── Sparkline — dun olijflijntje, richting zonder woorden ──────
    Geen assen, geen raster, geen tooltip: het is richting, geen grafiek.
    Nog één plek over: "Jouw maand" in de rechterkolom. */
@@ -506,12 +429,6 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
    onderdelen die op 375px niet passen vallen weg of worden smaller.
    Niets krijgt een vaste breedte, dus er ontstaat geen paginascroll. */
 @media (max-width:700px){
-  .dash-hero .h1{font-size:23px}
-  .mot .mot-zin{font-size:23px}
-  /* Op een telefoon past de naam niet meer naast een lange quote:
-     laten afbreken in plaats van de zin wegduwen. */
-  .mot{flex-wrap:wrap}
-  .mot-van{align-self:flex-start;padding-bottom:0;flex-basis:100%}
   .bar.tk-vgbar{display:none}
   .tl2-tijd{width:38px;flex:0 0 38px}
   .tl2-nulijn{left:-50px}
@@ -586,4 +503,125 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
   .ovk-top .btn{margin-left:auto}
   .ovk-kop{flex-wrap:wrap;gap:8px}
   .ovk-kop .bar{max-width:none;flex:1 0 100%}
+}
+
+/* ═══ DE KOP — team, glas en cockpitstrook (26 okt 2026) ═══════════
+   Gekozen na een reeks proeven ("optie 2, warme studio" + "optie A"):
+   - Achtergrond: zachte studio in zand en perzik met een vleugje lime.
+     Geen olijfgroen: daarop zag je het glas niet.
+   - Bovenaan het team (assets/team/), gecentreerd en scherp.
+   - Daaroverheen één groot licht glazen paneel waarin álles staat. Je ziet
+     de hesjes en Peter Ploeg er wazig doorheen; dát maakt het glas.
+   - Kaarten ín het paneel zijn géén tweede laag matglas: glas kan niet door
+     glas heen kijken, dan wordt het grijs. Ze zijn helder wit met een
+     lichtrand.
+   - Zwarte pil met lime = actief/positief (lime mag op donker). Oranje =
+     wat je nog moet doen. */
+#viewmount:has(> .dash2.dk){padding:0}
+.dash2.dk{position:relative;max-width:none;gap:0;padding:0 26px 40px;isolation:isolate;
+  background:
+    radial-gradient(60% 70% at 18% 20%,#f3b48f 0%,rgba(243,180,143,0) 60%),
+    radial-gradient(50% 60% at 85% 15%,#e2ec9e 0%,rgba(226,236,158,0) 60%),
+    radial-gradient(70% 60% at 60% 90%,#d9b892 0%,rgba(217,184,146,0) 65%),
+    linear-gradient(160deg,#efe6da,#e4d6c4);
+  min-height:100%}
+
+/* Team: vijf losse uitsneden, absoluut geplaatst over de volle breedte. */
+.dk-team{position:relative;height:300px;margin:0 -26px;pointer-events:none}
+.dk-team img{position:absolute;bottom:-210px;height:490px;width:auto;filter:drop-shadow(0 16px 30px rgba(0,0,0,.22))}
+.dk-team .t-doos{left:0;z-index:1}
+.dk-team .t-helm{left:24%;height:480px;z-index:2}
+.dk-team .t-peter{left:50%;transform:translateX(-50%);height:400px;bottom:-150px;z-index:4}
+.dk-team .t-hamer{right:21%;height:480px;z-index:2}
+.dk-team .t-food{right:0;height:500px;z-index:1}
+
+/* Het paneel. De lichtbreking langs de rand zet js/dashboard.js erbij
+   (lensOpPaneel); dit is het matglas waar het op terugvalt. */
+.dk-paneel{position:relative;z-index:5;border-radius:30px;padding:22px 22px 24px;display:flex;flex-direction:column;gap:18px;
+  background:linear-gradient(170deg,rgba(255,252,246,.18),rgba(255,250,240,.08));
+  backdrop-filter:blur(9px) saturate(1.7) brightness(1.05);-webkit-backdrop-filter:blur(9px) saturate(1.7) brightness(1.05);
+  box-shadow:0 40px 90px rgba(60,30,10,.22),0 2px 6px rgba(60,30,10,.06),
+    inset 0 2px 1px #fff,inset 0 -2px 2px rgba(255,255,255,.55),
+    inset 2px 0 2px rgba(255,255,255,.45),inset -2px 0 2px rgba(255,255,255,.45),inset 0 0 40px rgba(255,255,255,.22)}
+.dk-paneel::before,.cp-strook::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.5px;pointer-events:none;
+  background:linear-gradient(135deg,#fff,rgba(255,255,255,.25) 30%,rgba(255,255,255,.05) 55%,rgba(255,255,255,.35) 80%,#fff);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.dk-paneel > *{position:relative;z-index:1}
+
+.dk-kop{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:2px 4px}
+.dk-naam{font-family:var(--disp);font-size:26px;text-transform:uppercase;letter-spacing:.3px;color:var(--ink);line-height:1}
+.dk-naam em{font-style:normal;color:var(--oranje)}
+.dk-datum{font-size:12px;font-weight:600;color:var(--ink);padding:4px 11px;border-radius:99px;
+  background:rgba(255,255,255,.55);box-shadow:inset 0 1px 1px #fff}
+.dk-datum::first-letter{text-transform:uppercase}
+
+/* ─── Cockpitstrook ─── */
+.cp-strook{position:relative;display:flex;align-items:center;gap:0 24px;padding:14px 22px;border-radius:20px;
+  background:linear-gradient(160deg,rgba(255,255,255,.62),rgba(255,255,255,.40));
+  box-shadow:0 14px 34px rgba(60,30,10,.12),inset 0 1.5px 1px #fff,inset 0 -1px 1px rgba(255,255,255,.6)}
+.cp-strook > *{position:relative}
+.cp-sep{width:1px;align-self:stretch;margin:6px 0;background:rgba(26,31,10,.10);flex:0 0 1px}
+.cp-c{all:unset;box-sizing:border-box;flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:7px;font-family:var(--body)}
+button.cp-c{cursor:pointer;border-radius:14px}
+button.cp-c:focus-visible{outline:2px solid var(--olive-l);outline-offset:4px}
+.cp-bel{flex:1.5 1 0;flex-direction:row;align-items:center;gap:14px}
+.cp-meter{width:128px;height:120px;flex:0 0 128px;margin:-10px 0}
+.cp-streep line{stroke:rgba(26,31,10,.16);stroke-linecap:round}
+.cp-streep line.aan{stroke:rgba(26,31,10,.82)}
+.cp-boog-bg{fill:none;stroke:rgba(26,31,10,.08);stroke-width:6;stroke-linecap:round}
+.cp-boog{fill:none;stroke:var(--ink);stroke-width:6;stroke-linecap:round}
+.cp-knop{fill:var(--oranje);stroke:#fff;stroke-width:2.5}
+.cp-n{font:700 44px var(--body);letter-spacing:-.03em;fill:var(--ink);text-anchor:middle;dominant-baseline:middle}
+.cp-van{font:600 11px var(--body);fill:rgba(26,31,10,.5);text-anchor:middle}
+.cp-txt{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cp-l{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,31,10,.55)}
+.cp-s{font-size:12px;color:rgba(26,31,10,.6)} .cp-s b{color:var(--ink)}
+.cp-rij{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cp-big{font-weight:700;font-size:30px;letter-spacing:-.03em;line-height:1;color:var(--ink)}
+.cp-big small{font-size:18px;font-weight:600;color:rgba(26,31,10,.38)}
+.cp-pil{display:inline-flex;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:99px;background:#141710;color:var(--lime);white-space:nowrap}
+.cp-pil.or{background:rgba(212,82,42,.14);color:#c4461f}
+.cp-dots{display:flex;gap:6px}
+.cp-dots i{width:22px;height:8px;border-radius:99px;background:rgba(26,31,10,.12)}
+.cp-dots i.v{background:var(--ink)}
+.cp-bar{display:block;height:6px;border-radius:99px;background:rgba(26,31,10,.10);overflow:hidden}
+.cp-bar i{display:block;height:100%;background:var(--ink);border-radius:99px}
+.cp-belronde{align-self:flex-start;font:700 12.5px var(--body);color:#fff;padding:8px 16px;border-radius:99px;border:none;cursor:pointer;
+  background:var(--oranje);box-shadow:0 8px 18px rgba(212,82,42,.32),inset 0 1.5px 1px rgba(255,220,200,.9),inset 0 -2px 4px rgba(120,30,0,.25)}
+.cp-belronde:hover{filter:brightness(1.06)}
+
+/* ─── De werkbanen in het paneel: helder glas in plaats van papier ─── */
+.dk-paneel .dash2-grid{gap:16px}
+.dk-paneel .card{background:linear-gradient(160deg,rgba(255,255,255,.66),rgba(255,255,255,.48));border:none;border-radius:20px;
+  box-shadow:0 14px 34px rgba(60,30,10,.10),inset 0 1.5px 1px #fff,inset 0 -1px 1px rgba(255,255,255,.6)}
+.dk-paneel .card-h{background:transparent;border-bottom:1px solid rgba(26,31,10,.07)}
+.dk-paneel .seg{background:rgba(255,255,255,.5);border-color:transparent}
+.dk-paneel .seg button.on{background:#141710;color:var(--lime)}
+.dk-paneel .sec-kop{color:rgba(26,31,10,.6)}
+
+/* Laptop: iets kleiner en dichter naar de randen, anders schuift
+   Peter Ploeg over de hamer heen. */
+@media (max-width:1600px){
+  .dk-team .t-doos,.dk-team .t-helm,.dk-team .t-hamer{height:430px;bottom:-180px}
+  .dk-team .t-food{height:440px;bottom:-180px}
+  .dk-team .t-helm{left:22%}
+  .dk-team .t-hamer{right:17%}
+  .dk-team .t-peter{height:330px;bottom:-110px}
+}
+/* Smal: team kleiner, cockpitstrook onder elkaar. */
+@media (max-width:1200px){
+  .dk-team{height:220px}
+  .dk-team .t-doos,.dk-team .t-helm,.dk-team .t-hamer,.dk-team .t-food{height:360px;bottom:-150px}
+  .dk-team .t-peter{height:270px;bottom:-100px}
+  .cp-strook{flex-wrap:wrap;gap:16px 24px}
+  .cp-sep{display:none}
+  .cp-c{flex:1 1 220px}
+}
+@media (max-width:700px){
+  .dash2.dk{padding:0 12px 24px}
+  .dk-team{height:150px;margin:0 -12px}
+  .dk-team .t-doos,.dk-team .t-food{height:230px;bottom:-90px}
+  .dk-team .t-helm,.dk-team .t-hamer{display:none}
+  .dk-team .t-peter{height:190px;bottom:-70px}
+  .dk-paneel{padding:14px;border-radius:22px}
 }
