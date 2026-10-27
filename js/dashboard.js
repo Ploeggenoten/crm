@@ -1915,6 +1915,7 @@ CRM.registerModule('dashboard', {
         <div class="dk-kop">
           <span class="dk-naam">${h(naam||groet())}</span>
           <span class="dk-datum num">${h(new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'}))}</span>
+          ${CRM.salesmeter && CRM.salesmeter.doel() ? `<button class="btn ghost sm dk-bel" id="dash_bel" title="Bedrijf dat nog niet in het CRM staat? Het wordt een Lead zodra het gesprek iets oplevert.">📞 Nieuw belletje</button>` : ''}
           <button class="btn ghost sm dk-ver" id="dash_ver" title="Alles nu ophalen. Je agenda en mail verversen ook vanzelf.">Vernieuwen</button>
         </div>
         ${cockpitHTML()}
@@ -1964,6 +1965,8 @@ CRM.registerModule('dashboard', {
        ververst vanzelf (zie de aanmelding onderaan deze render).
        nuVerversen() negeert de ondergrens van een minuut — dat is precies
        waarvoor die functie er is. */
+    const nb = document.getElementById('dash_bel');
+    if(nb) nb.onclick = () => CRM.salesmeter.belNieuw(() => CRM.render());
     const ver = document.getElementById('dash_ver');
     if(ver) ver.onclick = async () => {
       if(ver.disabled) return;

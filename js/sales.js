@@ -2271,7 +2271,8 @@ function tekenInhoud(){
       <div class="row tight s-acts">${tab==='vondsten'
         ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>`
         : tab==='radar'
-        ? `<button class="btn ghost" data-rhand>Handmatig toevoegen</button>
+        ? `<button class="btn ghost" data-belnieuw>📞 Nieuw belletje</button>
+           <button class="btn ghost" data-rhand>Handmatig toevoegen</button>
            <button class="btn" data-rzoek${rZoeken?' disabled':''}>${rZoeken?'Bezig met zoeken…':'↻ Nu zoeken'}</button>`
         /* Op Activiteit kijk je naar wat er al gebeurd is; daar hoort geen
            knop die iets nieuws maakt. */
@@ -2282,7 +2283,8 @@ function tekenInhoud(){
            contactpersoon is en waar het over ging (naam: Tjeerd, 7 aug
            2026: "dit gebeurt vanuit de kaarten, niet de algehele
            salespijplijn"). */
-        : `<button class="btn" data-nieuwerelatie>+ Relatie</button>`}
+        : `<button class="btn ghost" data-belnieuw title="Bedrijf dat nog niet in het CRM staat? Het wordt een Lead zodra het gesprek iets oplevert.">📞 Nieuw belletje</button>
+           <button class="btn" data-nieuwerelatie>+ Relatie</button>`}
       </div>
     </div>`;
 
@@ -2337,6 +2339,9 @@ function bindInhoud(){
       CRM.klantInplannen(b.dataset.plan, {titel:'Kennismaking ' + b.dataset.plan});
     else CRM.ga('klanten', {id: b.dataset.plan});
   });
+  /* Nieuw belletje: bedrijf dat nog niet in het CRM staat → Lead zodra het
+     gesprek iets oplevert (js/salesmeter.js). Op elk tabblad met de knop. */
+  CRM.$$('[data-belnieuw]', mountEl).forEach(b=>b.onclick=()=>CRM.salesmeter && CRM.salesmeter.belNieuw(()=>tekenInhoud()));
   CRM.$$('[data-nieuwerelatie]', mountEl).forEach(b => b.onclick = () => {
     if(CRM.nieuweRelatie) CRM.nieuweRelatie();
     else CRM.ga('klanten');

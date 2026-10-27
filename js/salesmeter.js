@@ -185,7 +185,12 @@
                de klantnaam terug; negeer(reden) voor "geen interesse".
      - taakId: de opvolging waar je vandaan belt; die gaat vanzelf dicht. */
   async function gebeld(ctx, klaar){
-    const uk = await kies(ctx.naam || ctx.klant || '');
+    const uk = ctx.uitkomst || await kies(ctx.naam || ctx.klant || '');
+    /* Een venster dat net dicht ging, haalt zijn stap uit de geschiedenis met
+       history.back(); dat loopt asynchroon. Opent het volgende venster in
+       dezelfde tik, dan sluit die late terugstap het nieuwe venster weer
+       (of verlaat de app als er geen eerdere pagina was). Even wachten. */
+    const rust = () => new Promise(r => setTimeout(r, 450));
     if(!uk) return;
     const u = UITKOMST[uk];
 
@@ -196,17 +201,19 @@
 
     let extraInfo = null;
     if(uk === 'receptie'){
+      await rust();
       extraInfo = await CRM.vraag('Wie is de beslisser?', {knop:'Vastleggen', placeholder:'Naam en functie (mag leeg)'});
     }
     let afspraak = null;
     if(uk === 'later' || uk === 'afspraak'){
+      await rust();
       afspraak = await kiesDatum(uk === 'afspraak' ? 'Wanneer is de kennismaking?' : 'Wanneer terugbellen?',
         uk === 'afspraak' ? 'Het bedrijf gaat naar "Gesprek ingepland" en de afspraak telt mee voor je weekdoel.' : '',
         werkdagenErbij(uk === 'afspraak' ? 3 : 1));
       if(!afspraak) return;
     }
     let reden = '';
-    if(uk === 'geen_interesse') reden = await CRM.vraag('Geen interesse — reden?', {knop:'Vastleggen', placeholder:'Bijv. werken al met een bureau (mag leeg)'}) || '';
+    if(uk === 'geen_interesse'){ await rust(); reden = await CRM.vraag('Geen interesse — reden?', {knop:'Vastleggen', placeholder:'Bijv. werken al met een bureau (mag leeg)'}) || ''; }
 
     /* Leadradar: alles behalve "geen interesse" maakt er een lead van, zodat
        de opvolging op één plek staat. */
@@ -219,6 +226,7 @@
       }
       klant = await ctx.radar.naarKlant();
       if(!klant) return;
+      if(ctx.naContact && ctx.naContact()) ctx.contactId = ctx.naContact();
     }
     if(!klant) return CRM.toast('Geen bedrijf gevonden om dit belletje aan te hangen', 'err');
 
@@ -276,5 +284,90 @@
     if(klaar) klaar();
   }
 
-  CRM.salesmeter = {doel, tel, opvolgen, gebeld, UITKOMST, KOUDE_FASES};
+
+  /* ─── Nieuw belletje: een bedrijf dat nog nergens in het CRM staat ───
+     Tjeerd, 27 okt 2026: "als ik iemand bel en het is interessant, moet hij
+     altijd als lead in het CRM komen." Vanuit de Leadradar gebeurde dat al;
+     dit is voor alles daarbuiten (eigen lijst, LinkedIn, Lemlist, een tip).
+     Staat het bedrijf er al, dan hangt het belletje gewoon aan die relatie.
+     Zo niet, dan wordt het bij elke uitkomst behalve "geen interesse" een
+     Lead — mét contactpersoon als je die invult. Geen interesse telt wél
+     mee als belletje, maar maakt geen relatie aan. */
+  function vraagBedrijf(){
+    return new Promise(res => {
+      CRM.modal.open(`
+        <div class="modal-h"><div class="h2">Nieuw belletje</div></div>
+        <div class="modal-b"><p class="sub" style="margin:0 0 10px">Wie bel je? Staat het bedrijf al in het CRM, dan komt het belletje daar. Zo niet, dan wordt het een Lead zodra het gesprek iets oplevert.</p>
+          <div class="f-grid">
+            <input type="text" id="nb_bedrijf" placeholder="Bedrijf (verplicht)" autocomplete="off">
+            <input type="text" id="nb_plaats" placeholder="Plaats">
+            <input type="text" id="nb_naam" placeholder="Contactpersoon">
+            <input type="text" id="nb_functie" placeholder="Functie">
+            <input type="tel" id="nb_tel" placeholder="Telefoon">
+          </div>
+          <div class="meta" id="nb_al" style="margin-top:8px"></div>
+          <div class="label" style="margin:16px 0 8px">Hoe ging het?</div>
+          <div class="sm-menu">${UITKOMSTEN.map(u => `<button type="button" class="sm-o${u.hoofd?' hoofd':''}" data-nbuk="${u.k}">
+            <span class="sm-ico">${u.ico}</span><b>${h(u.lbl)}</b><span class="meta">${h(u.hint)}</span></button>`).join('')}</div></div>
+        <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button></div>`, {
+        onClose(){ res(null); },
+        onOpen(m){
+          const v = id => m.querySelector(id).value.trim();
+          const inp = m.querySelector('#nb_bedrijf'); setTimeout(() => inp.focus(), 60);
+          inp.oninput = () => {
+            const k = (CRM.state.clients || []).find(c => CRM.zelfdeKlant(c.naam, inp.value));
+            m.querySelector('#nb_al').textContent = k ? `Staat al in het CRM: ${k.naam} (${k.fase || 'Lead'}) — het belletje komt daar.` : '';
+          };
+          const sluit = x => { CRM.modal._onClose = null; CRM.modal.close(); res(x); };
+          CRM.$$('[data-nbuk]', m).forEach(b => b.onclick = () => {
+            if(!v('#nb_bedrijf')){ inp.focus(); inp.placeholder = 'Vul eerst het bedrijf in'; return; }
+            sluit({bedrijf:v('#nb_bedrijf'), plaats:v('#nb_plaats'), naam:v('#nb_naam'), functie:v('#nb_functie'), telefoon:v('#nb_tel'), uk:b.dataset.nbuk});
+          });
+          m.querySelector('[data-mclose]').onclick = () => sluit(null);
+        }});
+    });
+  }
+  async function maakLead(g){
+    const vandaag = CRM.todayISO();
+    const rij = {naam:g.bedrijf, fase:'Lead', eigenaar:CRM.me(), branche:'', locatie:g.plaats || '',
+      aangemaakt:vandaag, fase_sinds:vandaag, laatst_contact:null, telefoon:g.naam ? '' : (g.telefoon || ''),
+      email:'', website:'', note:'Aangemaakt na een koud belletje (Nieuw belletje).'};
+    CRM.state.clients.push(rij);
+    if(!CRM.demo){
+      let {error} = await CRM.sb.from('clients').upsert(rij, {onConflict:'naam'});
+      if(error && /aangemaakt/i.test(error.message || '')){
+        const zonder = Object.assign({}, rij); delete zonder.aangemaakt;
+        ({error} = await CRM.sb.from('clients').upsert(zonder, {onConflict:'naam'}));
+      }
+      if(error){ CRM.state.clients.pop(); CRM.fout('Lead opslaan mislukt', error); return null; }
+    }
+    CRM.logActiviteit('klant', g.bedrijf, 'systeem', 'Als lead aangemaakt na een koud belletje');
+    let contactId = '';
+    if(g.naam){
+      const c = {id:CRM.uid(), klant:g.bedrijf, naam:g.naam, functie:g.functie || '', telefoon:g.telefoon || '',
+        email:'', linkedin:'', hoofd:true, note:'Gesproken bij een koud belletje'};
+      CRM.state.contacten = CRM.state.contacten || [];
+      CRM.state.contacten.unshift(c);
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('crm_contacten').insert(c);
+        if(error){ CRM.state.contacten.shift(); CRM.fout('Contactpersoon opslaan mislukt', error); }
+        else contactId = c.id;
+      } else contactId = c.id;
+    }
+    return {klant:g.bedrijf, contactId};
+  }
+  async function belNieuw(klaar){
+    const g = await vraagBedrijf();
+    if(!g) return;
+    const bestaand = (CRM.state.clients || []).find(c => CRM.zelfdeKlant(c.naam, g.bedrijf));
+    if(bestaand) return gebeld({naam:bestaand.naam, klant:bestaand.naam, contactNaam:g.naam, uitkomst:g.uk}, klaar);
+    let gemaakt = null;
+    return gebeld({naam:g.bedrijf, contactNaam:g.naam, uitkomst:g.uk, radar:{
+      id:'nieuw:' + g.bedrijf,
+      naarKlant: async () => { gemaakt = await maakLead(g); return gemaakt && gemaakt.klant; },
+      negeer: async () => true
+    }, naContact: () => gemaakt && gemaakt.contactId}, klaar);
+  }
+
+  CRM.salesmeter = {doel, tel, opvolgen, gebeld, belNieuw, UITKOMST, KOUDE_FASES};
 })();
