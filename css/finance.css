@@ -221,3 +221,8 @@ tr.fin-ac-keuze input[type=date]{width:150px;height:28px;font-size:12.5px;displa
 .fin-pm .tbl th:nth-child(7), .fin-pm .tbl td:nth-child(7){width:190px}
 .fin-pm .tbl th:nth-child(8), .fin-pm .tbl td:nth-child(8){width:150px}
 .fin-ac-tbl td .chip, .fin-pm .tbl td .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+
+/* Maand voor maand: prognoseregels rustiger dan de werkelijke maanden. */
+.tbl tr.fin-prog td{background:var(--card-2)}
+.tbl tr.fin-prog td b{font-weight:600}
+.tbl tr.fin-scheiding td{padding:0;height:6px;background:var(--line)}

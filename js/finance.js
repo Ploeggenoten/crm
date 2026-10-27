@@ -1934,7 +1934,8 @@ const TODO_KNOP = {
   saldo:        ['Bijwerken', 'saldo'],
   flex:         ['Naar Flex', 'flex'],
   zzp_factuur:  ['Gefactureerd ✓', 'zzp'],
-  afronden_groep: ['Naar Plaatsingen', 'plaatsingen']
+  afronden_groep: ['Naar Plaatsingen', 'plaatsingen'],
+  kosten:       ['Bekijken', 'geld']
 };
 
 function tabVandaag(el, f){
@@ -1954,6 +1955,14 @@ function tabVandaag(el, f){
        {soort:'afronden_groep', urg:1, txt:`${afTeRonden.length} plaatsingen af te ronden`,
         sub: afTeRonden.slice(0,3).map(a => tekst(a.c.naam)).join(', ') + (afTeRonden.length > 3 ? ' …' : '')}]
     : ruw;
+  /* Kosten gestegen t.o.v. de maanden ervoor: daar wil je bewust van zijn. */
+  const kb = kostenBewaking(f);
+  if(kb && (kb.dVast >= 250 || kb.stijgers.length)){
+    const top = kb.stijgers.slice(0, 2).map(p => `${p.n || p.c} +${eur(p.delta)}`).join(', ');
+    lijst.push({soort:'kosten', urg: kb.dVast >= 250 ? 2 : 1,
+      txt: `Kosten ${mkLabel(kb.laatst.mk7 + '-01')}: vast ${kb.dVast >= 0 ? '+' : '−'}${eur(Math.abs(kb.dVast))}, variabel ${kb.dVar >= 0 ? '+' : '−'}${eur(Math.abs(kb.dVar))} t.o.v. gemiddeld`,
+      sub: top ? 'Gestegen: ' + top : ''});
+  }
   const nTeLaat = lijst.filter(a => a.soort === 'te_laat').length;
   const concepten = new Set(f.placements.filter(p => p.concept).map(p => p.id));
   const teFactNu = f.installments.filter(i => i.status === 'te_factureren' && !concepten.has(i.placement_id)
@@ -2014,6 +2023,7 @@ function tabVandaag(el, f){
     if(doe === 'saldo') return saldoVenster(f, herteken);
     if(doe === 'flex'){ _tab = 'flex'; return CRM.render(); }
     if(doe === 'plaatsingen'){ _tab = 'plaatsingen'; return CRM.render(); }
+    if(doe === 'geld'){ _tab = 'geld'; return CRM.render(); }
     if(doe === 'zzp'){
       /* De klus leeft in crm_klussen (CRM-data, team-RLS), niet in fin_*. */
       return finDoe(b, async () => {
@@ -3268,12 +3278,30 @@ function tabFlex(el, f){
     return kaart('Per week', tabel(kop, rijen), {plat:true, acties: knopInlezen});
   };
 
+  /* Flex-marge naast wat het bedrijf kost (Tjeerd, 27 okt 2026: "wat
+     we per maand binnenkrijgen en wat eruit gaat, zodat ik kan sturen").
+     Kosten = Nmbrs waar bekend, anders de begroting voor die maand. */
+  const kostenVan = mk7 => { const n = nmbrsMaanden(f).find(x => x.mk7 === mk7 && !x.lopend);
+    return n ? {b: n.kosten, bron: 'Nmbrs'} : {b: budgetVoorMaand(f, mk7 + '-01'), bron: 'begroting'}; };
+  const kostenNu = kostenVan(String(addMonths(monthKey(todayISO()), 1)).slice(0,7)).b || budgetVoorMaand(f, monthKey(todayISO()));
+  const dekt = kostenNu ? fx.maandRunRate / kostenNu : null;
+  const perKracht = margePerFlexkracht(f);
+  const tekortFlex = Math.max(0, kostenNu - fx.maandRunRate);
+  const maanden = [5,4,3,2,1,0].map(i => String(addMonths(monthKey(todayISO()), -i)).slice(0,7));
+  const maandRijen = maanden.map(mk7 => {
+    const marge = flexMaand(f, mk7), k = kostenVan(mk7), lopendM = mk7 === todayISO().slice(0,7);
+    return `<tr><td><b>${H(mkLabel(mk7 + '-01'))}</b>${lopendM ? ' <span class="meta">loopt</span>' : ''}</td>
+      <td class="n num pos">${eur(marge)}</td>
+      <td class="n num">${eur(k.b)} <span class="meta">${k.bron}</span></td>
+      <td class="n"><b class="num">${k.b ? pct0(marge / k.b) : '—'}</b></td></tr>`;
+  }).join('');
+
   el.innerHTML = `
     ${strip([
       ['Flex per maand', eur(fx.maandRunRate), 'gem. laatste 4 weken × 52 ÷ 12'],
-      ['Laatste week', fx.laatste ? eur(getal(fx.laatste.bedrag)) : '—', fx.laatste ? 'week van ' + H(dKort(fx.laatste.week)) : 'nog niets ingelezen'],
-      ['Flexkrachten', `<span class="num">${st.nActief}</span>`, st.nConcept ? `${st.nConcept} nog aan te vullen` : 'actief via Pronkert'],
-      ['Dit jaar', eur(fx.ytd), 'flex-marge sinds 1 januari']
+      ['Dekt van je kosten', dekt == null ? '—' : pct0(dekt), `van ${eur(kostenNu)} per maand`],
+      ['Flexkrachten', `<span class="num">${st.nActief}</span>`, `≈ ${eur(perKracht)} marge per kracht per maand`],
+      ['Om alles met flex te dekken', tekortFlex ? `+${Math.ceil(tekortFlex / perKracht)}` : '✓', tekortFlex ? 'flexkrachten erbij' : 'flex dekt al je kosten']
     ])}
     ${bijnaOver.length ? `<div class="note warn" style="margin-bottom:14px"><b>Bijna kosteloos over te nemen:</b>
       ${bijnaOver.map(r => `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} (nog ${Math.round(r.resterendUren)} u)`).join(' · ')}.
@@ -3284,6 +3312,8 @@ function tabFlex(el, f){
             st.rows.map(rij).join(''))
         : CRM.ui.leeg('Geen actieve flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
         {plat: !!st.rows.length})}
+      ${kaart('Flex-marge naast je kosten', tabel('<th>Maand</th><th class="n">Flex-marge</th><th class="n">Kosten bedrijf</th><th class="n">Flex dekt</th>', maandRijen),
+        {plat:true, voet:`Flex-marge = wat Pronkert uitbetaalt. Dit jaar tot nu: ${eur(fx.ytd)}.`})}
       ${perWeek()}
     </div>`;
 
@@ -3646,6 +3676,185 @@ function metaRijenVoorTeam(an){
   }));
 }
 
+/* ═══ NMBRS: MAAND VOOR MAAND ═══════════════════════════════════
+   "Ik wil de kosten inzichtelijker, zodat we exact weten waar we naartoe
+   gaan en wat we moeten plaatsen … telkens live in Nmbrs kijken" (Tjeerd,
+   27 okt 2026). De koppeling (supabase/functions/yuki-sync, v3) zet de
+   hele winst-en-verliesrekening per post per maand in fin_settings
+   (yuki_pl_maanden). Hier wordt dat:
+   • werkelijk per maand: omzet, vaste en variabele kosten, resultaat;
+   • vooruit (prognose): W&S-termijnen die gepland staan + flex-gemiddelde
+     − begrote kosten, met "wat moet je erbij plaatsen";
+   • kostenbewaking: welke post steeg t.o.v. de maanden ervoor.
+   Vast/variabel wordt op de naam van de post bepaald (zie POST_VAST).   */
+const POST_VAST = /salaris|loon|lonen|premie|sociale|ziekengeld|verzuim|vakantiegeld|pensioen|management|outsourc|zzp|huur|huisvesting|gas|water|elektra|energie|verzeker|lease|wegenbelasting|contribut|abonnement|automatiser|software|administratie|accountant|bank|rente|telefoon|internet|afschrijving/i;
+const postSoort = (code, naam) => String(code||'').startsWith('8') ? 'omzet' : (POST_VAST.test(String(naam||'')) ? 'vast' : 'variabel');
+
+/* Werkelijke maanden uit Nmbrs, oud → nieuw. */
+function nmbrsMaanden(f){
+  const pl = S(f, 'yuki_pl_maanden', null);
+  if(!pl || typeof pl !== 'object') return [];
+  const t = todayISO();
+  return Object.keys(pl).sort().map(mk7 => {
+    const posten = (pl[mk7] || []).map(r => ({c: r.c, n: r.n, b: getal(r.b), soort: postSoort(r.c, r.n)}));
+    const som = s => posten.filter(p => p.soort === s).reduce((a,p) => a + p.b, 0);
+    const omzet = -som('omzet'), vast = som('vast'), variabel = som('variabel');
+    return {mk7, posten, omzet, vast, variabel, kosten: vast + variabel, resultaat: omzet - vast - variabel,
+            lopend: mk7 === t.slice(0,7)};
+  });
+}
+
+/* Flex-marge in een maand (uit de margefacturen van Pronkert). */
+const flexMaand = (f, mk7) => f.flexWeken.filter(w => String(w.week||'').slice(0,7) === mk7)
+  .reduce((s,w) => s + getal(w.bedrag), 0);
+
+/* Wat levert één flexkracht gemiddeld per maand op? Uit de lopende
+   flexplaatsingen; zonder gegevens een voorzichtige €1.400. */
+function margePerFlexkracht(f){
+  const st = flexPlStats(f);
+  return (st.nCompleet && st.margePerMaand) ? st.margePerMaand / st.nCompleet : 1400;
+}
+
+/* Prognose voor een toekomstige maand: wat ligt er al vast? */
+function prognoseMaand(f, mk7){
+  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
+  const ws = f.installments.filter(i => i.status === 'te_factureren' && String(i.geplande_datum||'').slice(0,7) === mk7
+      && plById[i.placement_id] && !plById[i.placement_id].concept && !opHold(f, i.placement_id))
+    .reduce((s,i) => s + bedragVan(i), 0);
+  const flex = flexStats(f).maandRunRate;
+  const posten = f.budget.filter(b => String(b.vanaf_maand||'').slice(0,7) <= mk7
+    && (!b.tot_maand || String(b.tot_maand).slice(0,7) >= mk7));
+  const vast = posten.filter(b => postSoort('', b.categorie) === 'vast').reduce((s,b) => s + getal(b.bedrag_pm), 0);
+  const variabel = posten.filter(b => postSoort('', b.categorie) !== 'vast').reduce((s,b) => s + getal(b.bedrag_pm), 0);
+  return {mk7, ws, flex, omzet: ws + flex, vast, variabel, kosten: vast + variabel, resultaat: ws + flex - vast - variabel, prognose: true};
+}
+
+/* Kostenbewaking: de laatste afgesloten maand per post naast het gemiddelde
+   van de drie maanden ervoor. Signaal bij +15% én minstens €150, of een
+   nieuwe post van €150+. Vaste lasten krijgen voorrang in de lijst. */
+function kostenBewaking(f){
+  const mnd = nmbrsMaanden(f).filter(m => !m.lopend);
+  if(mnd.length < 2) return null;
+  const laatst = mnd[mnd.length - 1], ervoor = mnd.slice(-4, -1);
+  const gem = (code) => ervoor.reduce((s,m) => s + ((m.posten.find(p => p.c === code) || {}).b || 0), 0) / ervoor.length;
+  const stijgers = laatst.posten.filter(p => p.soort !== 'omzet').map(p => {
+    const g = gem(p.c), d = p.b - g;
+    return {...p, gem: g, delta: d, pct: g > 0 ? d / g : null};
+  }).filter(p => p.delta >= 150 && (p.pct == null || p.pct >= 0.15))
+    .sort((a,b) => (a.soort === 'vast' ? 0 : 1) - (b.soort === 'vast' ? 0 : 1) || b.delta - a.delta);
+  const gemVast = ervoor.reduce((s,m) => s + m.vast, 0) / ervoor.length;
+  const gemVar  = ervoor.reduce((s,m) => s + m.variabel, 0) / ervoor.length;
+  return {laatst, ervoor, stijgers, gemVast, gemVar,
+          dVast: laatst.vast - gemVast, dVar: laatst.variabel - gemVar};
+}
+
+/* ─── Nmbrs live: verversen bij openen ─────────────────────────────
+   De koppeling draaide alleen als de oude finance-app openstond. Nu:
+   opent Tjeerd Finance en is de laatste stand ouder dan een uur, dan
+   haalt het CRM op de achtergrond de verse cijfers op. Lukt dat niet,
+   dan hoogstens één nieuwe poging per tien minuten.                  */
+let _syncBezig = false, _syncPoging = 0;
+async function nmbrsSync(stil){
+  if(_syncBezig || CRM.demo || CRM._finMock || !CRM.sb) return false;
+  _syncBezig = true; _syncPoging = Date.now();
+  try{
+    const {data, error} = await CRM.sb.functions.invoke('yuki-sync');
+    if(error) throw error;
+    if(data && data.error) throw new Error(data.error);
+    _fin = null;
+    if(!stil) CRM.toast('Nmbrs bijgewerkt', 'ok');
+    if(String(location.hash).includes('finance')) CRM.render();
+    return true;
+  }catch(e){
+    if(stil) console.warn('Nmbrs-sync', e); else CRM.fout('Nmbrs bijwerken mislukt', e);
+    return false;
+  }finally{ _syncBezig = false; }
+}
+function nmbrsVers(f){
+  const ts = S(f, 'yuki_synced_at', null);
+  const oud = !ts || (Date.now() - new Date(ts).getTime()) > 3600e3;
+  if(oud && Date.now() - _syncPoging > 600e3) nmbrsSync(true);
+}
+const nmbrsStand = f => {
+  const ts = S(f, 'yuki_synced_at', null);
+  if(!ts) return 'nog niet opgehaald';
+  const d = new Date(ts);
+  return (String(ts).slice(0,10) === todayISO() ? 'vandaag ' : dKort(String(ts).slice(0,10)) + ' ')
+    + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+};
+
+/* ─── Kaart: maand voor maand ─────────────────────────────────────── */
+let _alleMaanden = false;
+function maandKaart(f){
+  const t = todayISO(), jaar = t.slice(0,4);
+  const echtAlle = nmbrsMaanden(f).filter(m => m.mk7.slice(0,4) === jaar);
+  /* Standaard de laatste vier maanden + zes vooruit; de rest op verzoek. */
+  const echt = _alleMaanden ? echtAlle : echtAlle.slice(-4);
+  const fee = kpis(f).gemFee || 8500, perKracht = margePerFlexkracht(f);
+  const vooruit = [1,2,3,4,5,6].map(i => String(addMonths(monthKey(t), i)).slice(0,7)).map(mk7 => prognoseMaand(f, mk7));
+  const nodig = r => {
+    if(r.resultaat >= 0) return '<span class="meta">gedekt</span>';
+    const gat = -r.resultaat;
+    return `<span class="neg num">${eurN(r.resultaat)}</span><div class="rowsub">≈ ${Math.ceil(gat / fee)} W&amp;S of ${Math.ceil(gat / perKracht)} flex erbij</div>`;
+  };
+  const rij = (m, isProg) => {
+    const flex = isProg ? m.flex : flexMaand(f, m.mk7);
+    const ws = isProg ? m.ws : Math.max(0, m.omzet - flex);
+    const dekt = m.kosten ? flex / m.kosten : null;
+    return `<tr${isProg ? ' class="fin-prog"' : ''}>
+      <td><b>${H(mkLabel(m.mk7 + '-01'))}</b>${m.lopend ? ` <span class="meta">t/m ${H(dKort(t))}</span>` : ''}${isProg ? ' <span class="meta">prognose</span>' : ''}</td>
+      <td class="n num">${eur(ws)}</td>
+      <td class="n num">${eur(flex)}</td>
+      <td class="n num">${eur(m.vast)}</td>
+      <td class="n num">${eur(m.variabel)}</td>
+      <td class="n"><b class="num ${m.resultaat < 0 ? 'neg' : 'pos'}">${eurN(m.resultaat)}</b></td>
+      <td class="n num">${dekt == null ? '—' : pct0(dekt)}</td>
+      <td class="n">${isProg ? nodig(m) : ''}</td></tr>`;
+  };
+  const heeftPL = echt.length > 0;
+  const body = heeftPL
+    ? tabel('<th>Maand</th><th class="n">W&amp;S</th><th class="n">Flex</th><th class="n">Vaste kosten</th><th class="n">Variabele kosten</th><th class="n">Resultaat</th><th class="n">Flex dekt</th><th class="n">Om kosten te dekken</th>',
+        (echtAlle.length > 4 ? `<tr><td colspan="8"><button type="button" class="lnk" id="fin_allemaanden">${
+          _alleMaanden ? 'Alleen de laatste maanden' : `Eerdere maanden (${echtAlle.length - 4})`}</button></td></tr>` : '')
+        + echt.map(m => rij(m, false)).join('') + `<tr class="fin-scheiding"><td colspan="8"></td></tr>` + vooruit.map(m => rij(m, true)).join(''))
+    : `<div style="padding:16px 20px"><div class="note info">Nog geen cijfers per post uit Nmbrs. De koppeling moet één keer vernieuwd worden
+        in Supabase; daarna staan hier elke maand je omzet, vaste en variabele kosten en je resultaat.</div></div>`
+      + tabel('<th>Maand</th><th class="n">W&amp;S</th><th class="n">Flex</th><th class="n">Vaste kosten</th><th class="n">Variabele kosten</th><th class="n">Resultaat</th><th class="n">Flex dekt</th><th class="n">Om kosten te dekken</th>',
+        vooruit.map(m => rij(m, true)).join(''));
+  return kaart('Maand voor maand', body, {plat:true,
+    acties:`<span class="meta">Nmbrs ${H(nmbrsStand(f))}</span> <button class="btn ghost sm" id="fin_nmbrs">↻ Nmbrs</button>`,
+    voet:`Werkelijk = Nmbrs (excl. btw). Prognose = W&S-termijnen die gepland staan + flex-gemiddelde − je begrote vaste lasten. "Om kosten te dekken" rekent met je gemiddelde fee (${eur(fee)}) en ${eur(perKracht)} marge per flexkracht per maand.`});
+}
+
+/* ─── Kaart: kostenbewaking ───────────────────────────────────────── */
+let _allePosten = false;
+function bewakingKaart(f){
+  const kb = kostenBewaking(f);
+  if(!kb) return '';
+  const lbl = mkLabel(kb.laatst.mk7 + '-01');
+  const verschil = (d) => `<span class="num ${d > 0 ? 'neg' : 'pos'}">${d > 0 ? '+' : '−'}${eur(Math.abs(d))}</span>`;
+  const kop = `<div class="fin-pot"><span>Vaste kosten ${H(lbl)}</span><b>${eur(kb.laatst.vast)} ${verschil(kb.dVast)}</b></div>
+    <div class="fin-pot"><span>Variabele kosten ${H(lbl)}</span><b>${eur(kb.laatst.variabel)} ${verschil(kb.dVar)}</b></div>`;
+  const stijg = kb.stijgers.length
+    ? kb.stijgers.slice(0, 6).map(p => `<div class="fin-todo urg"><div class="t"><b>${H(p.n || p.c)}</b>
+        <div class="w">${p.soort === 'vast' ? 'vaste last' : 'variabel'} · gemiddeld ${eur(p.gem)}</div></div>
+        <div class="bd">${eur(p.b)} ${verschil(p.delta)}</div></div>`).join('')
+    : `<div class="fin-todo"><div class="t meta">Geen post duidelijk gestegen t.o.v. de drie maanden ervoor.</div></div>`;
+  /* Alle posten: laatste vier afgesloten maanden naast elkaar. */
+  const mnd = [...kb.ervoor, kb.laatst];
+  const codes = [...new Set(mnd.flatMap(m => m.posten.filter(p => p.soort !== 'omzet').map(p => p.c)))];
+  const naam = c => (mnd.flatMap(m => m.posten).find(p => p.c === c) || {}).n || c;
+  const alle = _allePosten ? tabel('<th>Post</th>' + mnd.map(m => `<th class="n">${H(mkLabel(m.mk7 + '-01'))}</th>`).join(''),
+    codes.map(c => ({c, n: naam(c), soort: postSoort(c, naam(c)), laatst: (kb.laatst.posten.find(p => p.c === c) || {}).b || 0}))
+      .sort((a,b) => (a.soort === 'vast' ? 0 : 1) - (b.soort === 'vast' ? 0 : 1) || b.laatst - a.laatst)
+      .map(r => `<tr><td>${H(r.n)} <span class="meta">${r.soort === 'vast' ? 'vast' : 'variabel'}</span></td>${
+        mnd.map(m => { const p = m.posten.find(x => x.c === r.c); return `<td class="n num">${p ? eur(p.b) : '—'}</td>`; }).join('')}</tr>`).join('')) : '';
+  return kaart(`Kosten — ${lbl} t.o.v. de drie maanden ervoor`,
+    `<div style="padding:12px 18px 4px">${kop}</div>${stijg}${alle}
+     <div class="fin-werkelijk"><button type="button" class="lnk" id="fin_alleposten">${_allePosten ? 'Minder tonen' : 'Alle posten per maand'}</button></div>`,
+    {plat:true});
+}
+
 /* ═══ TAB: GELD ════════════════════════════════════════════════
    Cashflow, kosten en het jaardoel op één scherm: hoe staat de bank er
    de komende 13 weken voor, ligt het jaardoel op koers, en wat kost het
@@ -3658,18 +3867,24 @@ function metaRijenVoorTeam(an){
    • conceptplaatsingen (fee nog niet bevestigd) tellen niet mee.        */
 function tabGeld(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen geldgegevens in demo',
-    'Hier zie je normaal je kaspositie voor de komende 13 weken, het jaardoel en je vaste lasten.'); return; }
+    'Hier zie je normaal je maanden uit Nmbrs, de prognose, je kosten en wat je moet plaatsen.'); return; }
 
   const t = todayISO(), jaar = t.slice(0,4), m = +t.slice(5,7), d = +t.slice(8,10), mk = monthKey(t);
   const saldo = f.saldi[0];
   const wp = weekProjectie(f, 13);
   const fx = flexStats(f), od = omzetDoel(f), k = kpis(f);
+  const echt = nmbrsMaanden(f).filter(x => !x.lopend);
+  const vorige = echt[echt.length - 1] || null;
+  const kb = kostenBewaking(f);
 
   /* ── jaardoel ── */
   const concepten = new Set(f.placements.filter(p => p.concept).map(p => p.id));
-  const gerealiseerd = od.omzetYtd + (Sn(f,'yuki_omzet_ytd',0) > 0 ? 0 : fx.ytd);   // Yuki-omzet bevat flex al
+  /* Omzet dit jaar: de som van de Nmbrs-maanden als die er zijn (bevat flex al). */
+  const nmJaar = nmbrsMaanden(f).filter(x => x.mk7.slice(0,4) === jaar);
+  const gerealiseerd = nmJaar.length ? nmJaar.reduce((s,x) => s + x.omzet, 0)
+    : od.omzetYtd + (Sn(f,'yuki_omzet_ytd',0) > 0 ? 0 : fx.ytd);
   const nogDitJaar = f.installments.filter(i => i.status === 'te_factureren' && !concepten.has(i.placement_id)
-    && String(i.geplande_datum||'').slice(0,4) === jaar).reduce((s,i) => s + bedragVan(i), 0);
+    && !opHold(f, i.placement_id) && String(i.geplande_datum||'').slice(0,4) === jaar).reduce((s,i) => s + bedragVan(i), 0);
   const restMnd = Math.max(0, 12 - m + 1 - d/30);
   const flexRest = fx.maandRunRate * restMnd;
   const doel = od.doel;
@@ -3680,7 +3895,7 @@ function tabGeld(el, f){
   const doelHtml = `
     <div class="fin-doelbar" title="gefactureerd · gepland · flex rest van het jaar">
       <i style="width:${pctW(gerealiseerd)}%"></i><i class="b" style="width:${pctW(nogDitJaar)}%"></i><i class="c" style="width:${pctW(flexRest)}%"></i></div>
-    <div class="fin-pot"><span><span class="fin-dot a"></span>Gefactureerd dit jaar${Sn(f,'yuki_omzet_ytd',0) > 0 ? ' (Yuki)' : ''}</span><b>${eur(gerealiseerd)}</b></div>
+    <div class="fin-pot"><span><span class="fin-dot a"></span>Omzet dit jaar${nmJaar.length || Sn(f,'yuki_omzet_ytd',0) > 0 ? ' (Nmbrs)' : ''}</span><b>${eur(gerealiseerd)}</b></div>
     <div class="fin-pot"><span><span class="fin-dot b"></span>Nog te factureren dit jaar</span><b>${eur(nogDitJaar)}</b></div>
     <div class="fin-pot"><span><span class="fin-dot c"></span>Flex rest van het jaar (verwacht)</span><b>${eur(flexRest)}</b></div>
     <div class="fin-pot"><span><b>${tekort > 0 ? 'Nog nodig' : 'Doel gehaald met wat er ligt'}</b></span>
@@ -3695,9 +3910,9 @@ function tabGeld(el, f){
     <td class="n num">${w.uit ? eur(w.uit) : '—'}</td>
     <td class="n"><b class="num${w.saldo < 0 ? ' neg' : ''}">${eurN(w.saldo)}</b></td></tr>`).join('');
 
-  /* ── vaste lasten ── */
+  /* ── begroting (vaste lasten) ── */
   const lopend = f.budget.filter(b => !b.tot_maand || String(b.tot_maand).slice(0,7) >= mk.slice(0,7))
-    .sort((a,b) => getal(b.bedrag_pm) - getal(a.bedrag_pm));
+    .sort((a,b) => String(a.vanaf_maand||'').localeCompare(String(b.vanaf_maand||'')) || getal(b.bedrag_pm) - getal(a.bedrag_pm));
   const budgetNu = budgetVoorMaand(f, mk);
   const periode = b => {
     const van = String(b.vanaf_maand||'').slice(0,7), tot = b.tot_maand ? String(b.tot_maand).slice(0,7) : '';
@@ -3705,30 +3920,35 @@ function tabGeld(el, f){
     return tot ? 't/m ' + mkLabel(tot + '-01') : '';
   };
   const lastRijen = lopend.map(b => `<tr class="clickable" data-budget="${H(b.id)}">
-    <td><b>${H(tekst(b.categorie))}</b>${b.note ? `<div class="rowsub">${H(b.note)}</div>` : ''}</td>
+    <td><b>${H(tekst(b.categorie))}</b> <span class="meta">${postSoort('', b.categorie) === 'vast' ? 'vast' : 'variabel'}</span>${b.note ? `<div class="rowsub">${H(b.note)}</div>` : ''}</td>
     <td class="meta">${H(periode(b))}</td>
     <td class="n num">${eur(getal(b.bedrag_pm))}</td></tr>`).join('');
-  const werkelijk = [3,2,1].map(i => addMonths(mk, -i)).map(mm => {
-    const a = actueelInfo(f, mm);
-    return `<span>${H(mkLabel(mm))}: <b class="num">${a ? eur(a.bedrag) : '—'}</b></span>`;
-  }).join(' · ');
+  const voorstelKlaar = f.budget.some(b => String(b.categorie||'') === BEGROTING_NOV[0].categorie && String(b.vanaf_maand||'').slice(0,7) === BEGROTING_VANAF.slice(0,7));
 
   el.innerHTML = `
     ${strip([
       ['Banksaldo', saldo ? eur(getal(saldo.saldo)) : '—', saldo ? 'stand ' + H(dKort(saldo.datum)) : 'nog niet ingevuld'],
-      ['Krapste week', `<span class="${wp.laagste.saldo < 0 ? 'neg' : ''}">${eurN(wp.laagste.saldo)}</span>`, 'week van ' + H(dKort(wp.laagste.start))],
-      ['Vaste lasten', eur(budgetNu), 'per maand (budget)'],
+      vorige ? ['Resultaat ' + mkLabel(vorige.mk7 + '-01'), `<span class="${vorige.resultaat < 0 ? 'neg' : ''}">${eurN(vorige.resultaat)}</span>`,
+        `omzet ${eur(vorige.omzet)} · kosten ${eur(vorige.kosten)}`] : ['Resultaat', '—', 'wacht op Nmbrs'],
+      kb ? ['Kosten ' + mkLabel(kb.laatst.mk7 + '-01'), eur(kb.laatst.kosten),
+        `${(kb.dVast + kb.dVar) > 0 ? '<span class="neg">+' : '<span class="pos">−'}${eur(Math.abs(kb.dVast + kb.dVar))}</span> t.o.v. gemiddeld`]
+        : ['Begrote kosten', eur(budgetNu), 'per maand'],
       ['Jaardoel', pct0(doel ? gerealiseerd / doel : 0), `${eur(gerealiseerd)} van ${eur(doel)}`]
     ])}
-    <div class="grid c2 fin-geld">
-      ${kaart('Kas komende 13 weken', tabel('<th>Week van</th><th class="n">In</th><th class="n">Uit</th><th class="n">Saldo</th>', kasRijen),
-        {plat:true, voet:'Incl. btw. Alleen wat vastligt: termijnen, flex-gemiddelde, vaste lasten, btw-afdracht en aflossing — nieuwe plaatsingen zitten er nog niet in.'})}
-      <div class="stack">
-        ${kaart(`Jaardoel ${jaar}`, doelHtml)}
-        ${kaart('Vaste lasten', (lastRijen ? tabel('<th>Post</th><th></th><th class="n">Per maand</th>', lastRijen)
-            : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen vaste lasten','Voeg je maandelijkse kosten toe.')}</div>`)
-          + `<div class="fin-werkelijk meta">Werkelijk (Yuki) ${werkelijk}</div>`,
-          {plat:true, acties:'<button class="btn ghost sm" id="fin_budget_nieuw">+ Post</button>'})}
+    <div class="stack">
+      ${maandKaart(f)}
+      ${bewakingKaart(f)}
+      <div class="grid c2 fin-geld">
+        ${kaart('Kas komende 13 weken', tabel('<th>Week van</th><th class="n">In</th><th class="n">Uit</th><th class="n">Saldo</th>', kasRijen),
+          {plat:true, voet:'Incl. btw. Alleen wat vastligt: termijnen, flex-gemiddelde, vaste lasten, btw-afdracht en aflossing.'})}
+        <div class="stack">
+          ${kaart(`Jaardoel ${jaar}`, doelHtml)}
+          ${kaart('Begroting per maand', (lastRijen ? tabel('<th>Post</th><th></th><th class="n">Per maand</th>', lastRijen)
+              : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen begroting','Voeg je maandelijkse kosten toe.')}</div>`)
+            + (voorstelKlaar ? '' : `<div class="fin-werkelijk"><button type="button" class="btn sm" id="fin_begroting_nov">Nieuwe begroting vanaf ${H(mkLabel(BEGROTING_VANAF))} klaarzetten…</button></div>`),
+            {plat:true, acties:'<button class="btn ghost sm" id="fin_budget_nieuw">+ Post</button>',
+             voet:'Dit is wat je verwacht uit te geven; de prognose rekent hiermee. Wat je écht uitgeeft komt uit Nmbrs (Kosten, hierboven).'})}
+        </div>
       </div>
     </div>
     <div id="fin_meta_blok" style="margin-top:16px">${CRM.ui.laden('Betalingen aan Meta ophalen…')}</div>`;
@@ -3738,7 +3958,56 @@ function tabGeld(el, f){
   el.querySelector('#fin_budget_nieuw').onclick = () => budgetVenster(f, null, herteken);
   el.querySelectorAll('[data-budget]').forEach(tr => tr.onclick = () =>
     budgetVenster(f, f.budget.find(b => String(b.id) === tr.dataset.budget), herteken));
+  const nm = el.querySelector('#fin_nmbrs'); if(nm) nm.onclick = () => nmbrsSync(false);
+  const ap = el.querySelector('#fin_alleposten'); if(ap) ap.onclick = () => { _allePosten = !_allePosten; herteken(); };
+  const am = el.querySelector('#fin_allemaanden'); if(am) am.onclick = () => { _alleMaanden = !_alleMaanden; herteken(); };
+  const bn = el.querySelector('#fin_begroting_nov'); if(bn) bn.onclick = () => begrotingVoorstel(f, herteken);
   metaBlok(el, f);
+}
+
+/* ─── Nieuwe begroting vanaf november 2026 ──────────────────────────
+   Uit de loonstroken van oktober en de Nmbrs-vergelijking per maand
+   (27 okt 2026): Rajesh volledig in dienst (€3.390), Daan van Elk als ZZP
+   (€4.500), lonen incl. 8% vakantiegeld en ±21,5% werkgeverslasten.
+   Eén klik: lopende posten stoppen eind oktober, deze gaan in per
+   november. Daarna gewoon per post aan te passen.                    */
+const BEGROTING_VANAF = '2026-11-01';
+const BEGROTING_NOV = [
+  {categorie:'Lonen (Bryan, Tjerk, Rajesh)', bedrag_pm:11580, note:'€8.940 bruto + 8% vakantiegeld + ±21,5% werkgeverslasten'},
+  {categorie:'Management fee TVE', bedrag_pm:6000, note:null},
+  {categorie:'Daan van Elk (ZZP)', bedrag_pm:4500, note:null},
+  {categorie:'Huisvesting (huur, energie)', bedrag_pm:930, note:null},
+  {categorie:'Auto\'s (verzekering, brandstof)', bedrag_pm:1200, note:'gemiddelde apr–okt'},
+  {categorie:'Ziekteverzuimverzekering', bedrag_pm:211, note:null},
+  {categorie:'Marketing en advertenties', bedrag_pm:8230, note:'gemiddelde laatste 3 maanden'},
+  {categorie:'Kantoor en overig', bedrag_pm:1700, note:'kantoor, IT, administratie, lunches'}
+];
+function begrotingVoorstel(f, klaar){
+  const stoppen = f.budget.filter(b => !b.tot_maand || String(b.tot_maand).slice(0,7) >= BEGROTING_VANAF.slice(0,7));
+  const eindOud = addDays(BEGROTING_VANAF, -1).slice(0,7) + '-01';
+  const tot = BEGROTING_NOV.reduce((s,b) => s + b.bedrag_pm, 0);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Nieuwe begroting vanaf ${H(mkLabel(BEGROTING_VANAF))}</div>
+      <p class="sub" style="margin:6px 0 0">Uit je loonstroken van oktober en de Nmbrs-cijfers per maand.</p></div>
+    <div class="modal-b">
+      ${BEGROTING_NOV.map(b => `<div class="fin-pot"><span>${H(b.categorie)}${b.note ? `<div class="meta" style="font-size:12px">${H(b.note)}</div>` : ''}</span><b>${eur(b.bedrag_pm)}</b></div>`).join('')}
+      <div class="fin-pot"><span><b>Totaal per maand</b></span><b>${eur(tot)}</b></div>
+      ${stoppen.length ? `<p class="meta" style="margin:12px 0 0">${stoppen.length} huidige post${stoppen.length === 1 ? '' : 'en'} stop${stoppen.length === 1 ? 't' : 'pen'} eind oktober
+        (${H(stoppen.map(b => b.categorie).join(', '))}); de geschiedenis blijft bewaard.</p>` : ''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button><button class="btn" id="bg_ok">Klaarzetten</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      m.querySelector('#bg_ok').onclick = () => finDoe(m.querySelector('#bg_ok'), async () => {
+        for(const b of stoppen){
+          await finSchrijf('fin_costs_budget', q => q.update({tot_maand: eindOud}).eq('id', b.id));
+          b.tot_maand = eindOud;
+        }
+        const rijen = BEGROTING_NOV.map(b => Object.assign({vanaf_maand: BEGROTING_VANAF, tot_maand: null}, b));
+        const data = await finSchrijf('fin_costs_budget', q => q.insert(rijen).select());
+        f.budget.push(...(data || rijen.map(r => Object.assign({id: ++_mockId}, r))));
+      }, 'Begroting vanaf november staat klaar', ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar(); } });
+    }});
 }
 
 /* ─── Venster: vaste last ───────────────────────────────────────── */
@@ -3826,8 +4095,7 @@ function instellingenPaneel(f){
         : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen flex-afspraken','')}</div>`,
         {plat:true, acties:'<button class="btn ghost sm" id="in_fa_nieuw">+ Afspraak</button>'})}</div>
       <p class="meta" style="margin:14px 2px 0">W&amp;S-fees leg je per klant vast onder Commerciële afspraken op de klantkaart.
-        De Yuki-sync draait nog in de finance-app (<a href="${FIN_APP}" target="_blank" rel="noopener">openen ↗</a>) — open die af en toe
-        zodat werkelijke kosten en banksaldo uit Yuki binnenkomen.</p>
+        Nmbrs (banksaldo, kosten per post, omzet) ververst vanzelf zodra je Finance opent — laatst: ${H(nmbrsStand(f))}.</p>
     </div>`, {onOpen(dr){
     const opnieuw = () => instellingenPaneel(f);
     dr.querySelector('#in_ok').onclick = () => {
@@ -4375,6 +4643,7 @@ CRM.registerModule('finance', {
       </div>
       <div id="fin_body"></div>`;
 
+    if(!f.demo) nmbrsVers(f);
     const iBtn = document.getElementById('fin_inst');
     if(iBtn) iBtn.onclick = () => instellingenPaneel(f);
     const opnieuw = mount.querySelector('#fin_opnieuw');
