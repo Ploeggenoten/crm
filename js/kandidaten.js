@@ -3583,19 +3583,27 @@ function flexRegel(c){
     return '<span class="meta">Uurloon en uren staan erin; de finance-app rekent de marge uit.</span>'
       + (c.uren ? `<div class="kd-flexuit">kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand</div>` : '');
 
-  let a = null, factor = null, overname = null;
+  let a = null, factor = null, overname = null, factorFout = '';
   try{
     a = afspraakVan(c);
     factor = CRM.fee.pctVoor(c, a).pct;
     overname = a && a.overname_uren != null ? Number(a.overname_uren) : null;
   }catch(e){}
+  /* Een factor ligt tussen 1,2 en 4. Stond er bij de afspraak Uitzenden een
+     fee-percentage (23), dan werd dat als factor 23 doorgerekend — Lucindy
+     kwam zo op een marge van bijna €400 per uur (27 okt 2026). */
+  if(factor != null && !(Number(factor) >= 1.2 && Number(factor) <= 4)){
+    factorFout = `<div class="note warn kd-flexwarn">De afspraak Uitzenden van ${h(c.klant||'deze klant')} noemt ${h(String(factor).replace('.', ','))} als factor —
+      dat is geen omrekenfactor (die ligt tussen 1,2 en 4) maar lijkt een fee-percentage. Corrigeer de afspraak op de klantkaart.</div>`;
+    factor = null;
+  }
 
   /* Het factuurtarief wint van de factor: dat is wat er werkelijk in
      rekening wordt gebracht. Staat het er niet, dan leiden we het af. */
   const uitFactuur = c.tarief != null && c.tarief !== '';
   const tarief = uitFactuur ? Number(c.tarief) : (factor != null ? c.uurloon * factor : null);
   if(tarief == null)
-    return `<span class="meta">Vul het factuurtarief in, of leg een omrekenfactor voor deze functie vast
+    return factorFout + `<span class="meta">Vul het factuurtarief in, of leg een omrekenfactor voor deze functie vast
       bij ${h(c.klant||'deze klant')} op de klantkaart — dan rekent de kaart de marge zelf uit.</span>`
       + (c.uren ? `<div class="kd-flexuit">kandidaat verdient ≈ ${CRM.euro(Math.round(c.uurloon * c.uren * 52/12))} bruto per maand (${c.uren} u/wk)</div>` : '');
 
@@ -3643,7 +3651,7 @@ function flexRegel(c){
       <span class="meta">bij ${overname} uur${c.uren ? ` — ongeveer ${Math.round(overname / c.uren)} weken` : ''}</span>
     </div>` : '';
 
-  return `${overnameHtml}
+  return `${factorFout}${overnameHtml}
     <div>Klanttarief <b class="num">${uur(tarief)}</b> per uur
     <span class="meta">${h(bron)}</span></div>
     <div class="kd-flexuit">${regels.join('<span class="kd-flexpunt">·</span>')}</div>

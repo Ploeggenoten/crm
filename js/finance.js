@@ -3389,7 +3389,8 @@ function tabFlex(el, f, compact){
           los.map(k => `<div class="fin-todo urg"><div class="t"><b>${H(k.naam)}</b> <span class="meta">· ${H(k.klant || '')}</span>
               <div class="w">Werkt volgens de margefactuur (laatst week van ${H(dKort(k.laatste))}, ${eur2(k.margePerUur)}/u), maar staat niet in je portefeuille — zet hem op het bord als Flex (Contract getekend of Gestart).</div></div></div>`).join('')
           + afw.map(r => `<div class="fin-todo urg"><div class="t"><b>${H(r.naam)}</b> <span class="meta">· ${H(klantLabel(r.klant))}</span>
-              <div class="w">Wijkt af van de factuur: ${H(r.afwijking.join(' · '))}. Controleer uurloon en factor.</div></div>
+              <div class="w">${H(r.afwijking.join(' · '))}. Controleer uurloon, factuurtarief en de afspraak Uitzenden.</div></div>
+              ${r.mist.some(m => m.waar === 'klant') || r.afwijking.some(x => /afspraak|percentage/.test(x)) ? `<button class="btn ghost sm" data-naarklant="${H(r.klantId)}">Klantkaart</button>` : ''}
               ${r.cid ? `<button class="btn ghost sm" data-naarkand="${H(r.cid)}">Kandidaatkaart</button>` : ''}</div>`).join(''),
           {plat:true});
       })()}
@@ -3925,14 +3926,24 @@ function flexWaarde(f, fp, c, alleenVoorspelling){
   const fa = flexAfspraakVoor(f, klant);
   const fiKlant = inkoopUitFacturen(f, klant);
 
-  /* klantfactor */
-  let klantfactor = (fp && getalOfNull(fp.klantfactor)) || null, klantfactorBron = '';
+  /* klantfactor — een factor ligt tussen 1,2 en 4. Daarbuiten is het geen
+     factor maar bijv. een W&S-percentage (23) dat bij de afspraak Uitzenden
+     terechtkwam: Lucindy rekende zo €398,85 marge per uur (27 okt 2026).
+     Zo'n waarde wordt geweigerd en gemeld, nooit doorgerekend. */
+  let klantfactor = null, klantfactorBron = '';
+  const geweigerd = [];
+  const probeer = (x, bron) => {
+    if(klantfactor || x == null || !isFinite(x) || x <= 0) return;
+    if(x >= 1.2 && x <= 4){ klantfactor = x; klantfactorBron = bron; }
+    else geweigerd.push(`${num(x, 2)} uit ${bron}`);
+  };
+  probeer(fp && getalOfNull(fp.klantfactor), 'flexplaatsing');
   const tarief = c && getalOfNull(c.tarief);
-  if(!klantfactor && tarief && uurloon){ klantfactor = tarief / uurloon; klantfactorBron = 'factuurtarief kandidaatkaart'; }
-  if(!klantfactor && ruw){ const pv = CRM.fee.pctVoor(c ? feeKand(c) : {functie: (fp && fp.functie) || ''}, ruw);
-    if(pv && pv.pct){ klantfactor = Number(pv.pct); klantfactorBron = 'afspraak Uitzenden'; } }
-  if(!klantfactor && fa && getalOfNull(fa.factor)){ klantfactor = getalOfNull(fa.factor); klantfactorBron = 'flex-afspraak'; }
-  if(!klantfactor && fiKlant && fiKlant.klantfactor){ klantfactor = fiKlant.klantfactor; klantfactorBron = 'margefactuur ' + fiKlant.naam; }
+  if(tarief && uurloon) probeer(tarief / uurloon, 'factuurtarief kandidaatkaart');
+  if(ruw){ const pv = CRM.fee.pctVoor(c ? feeKand(c) : {functie: (fp && fp.functie) || ''}, ruw);
+    if(pv && pv.pct) probeer(Number(pv.pct), 'afspraak Uitzenden'); }
+  if(fa) probeer(getalOfNull(fa.factor), 'flex-afspraak');
+  if(fiKlant) probeer(fiKlant.klantfactor, 'margefactuur ' + fiKlant.naam);
 
   /* inkoopfactor */
   let inkoop = null, inkoopBron = '';
@@ -3961,6 +3972,7 @@ function flexWaarde(f, fp, c, alleenVoorspelling){
   if(!echt){
     if(!uurloon) mist.push({wat:'bruto uurloon (of maandloon)', waar:'kandidaat'});
     if(!klantfactor) mist.push({wat:'klantfactor (afspraak Uitzenden of factuurtarief)', waar:'klant'});
+    geweigerd.forEach(g => mist.push({wat:`klantfactor ${g} is geen factor (een factor ligt tussen 1,2 en 4 — staat hier een fee-percentage?)`, waar:'klant'}));
     if(!inkoop && uurloon) mist.push({wat:'inkoopfactor (CAO bij de klant, of vastleggen onder ⚙)', waar:'klant'});
   }
   if(!overname) mist.push({wat:'overname-uren', waar:'klant'});
@@ -3975,6 +3987,7 @@ function flexWaarde(f, fp, c, alleenVoorspelling){
   const afwijking = (!echt && fiKlant && klantfactor && fiKlant.klantfactor && klantfactorBron !== 'margefactuur ' + fiKlant.naam
       && Math.abs(klantfactor - fiKlant.klantfactor) > 0.05)
     ? [`klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}`] : [];
+  geweigerd.forEach(g => afwijking.push(`klantfactor ${g} is geen factor (tussen 1,2 en 4) — staat daar een fee-percentage? Niet meegerekend`));
   return {uurloon, uurloonBron, klantfactor, klantfactorBron, inkoop, inkoopBron, afwijking, overname, urenPw, gewerkt, restUren,
           margeUur, margeVoorspeld, echt: !!echt, compleet, mist, klantId: kl ? kl.naam : klant,
           totaal: compleet ? margeUur * overname : null,
