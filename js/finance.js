@@ -5,9 +5,10 @@
    Facturatie, Flex, Cashflow, Winst & doelen en Kosten.
 
    Het REKENWERK is 1-op-1 overgenomen uit js/calc.js van de finance-app
-   (zie de kopjes "bron: calc.js"). Bewerken (facturen afvinken, fees
-   bevestigen, instellingen) blijft in de finance-app — dit is een
-   leesscherm dat exact dezelfde getallen laat zien.
+   (zie de kopjes "bron: calc.js"). Sinds 27 okt 2026 verhuist ook het
+   BEWERKEN hierheen, stap voor stap: plaatsingen afronden, termijnen
+   afvinken/verzetten, fee bevestigen en stoppen kan al hier (zie
+   "BEWERKEN"). Cashflow, kosten en instellingen volgen.
 
    Privacy: de fin_*-tabellen hebben RLS waardoor alleen Tjeerd ze kan
    lezen. Deze module is bovendien adminOnly én iedere query zit achter
@@ -285,9 +286,13 @@ function boardTarget(mk7){
 const instOf = (f, pid) => f.installments.filter(i => i.placement_id === pid)
   .slice().sort((a,b) => (a.termijn_nr||0) - (b.termijn_nr||0));
 
-/* bron: calc.js vervaldatum() — factuurdatum (of geplande datum) + betaaltermijn */
+/* bron: calc.js vervaldatum() — factuurdatum (of geplande datum) + betaaltermijn.
+   De factuurdatum telt alleen als de termijn écht gefactureerd is: een
+   achtergebleven datum op een termijn die terug op "te factureren" staat
+   trok de verwachte betaling naar voren (Torin, 27 okt 2026). */
 function vervaldatum(inst, p){
-  const basis = inst.factuurdatum || inst.geplande_datum;
+  const echt = inst.status === 'gefactureerd' || inst.status === 'betaald';
+  const basis = (echt && inst.factuurdatum) || inst.geplande_datum;
   return basis ? addDays(basis, getal(p && p.betaaltermijn_dgn) || 14) : null;
 }
 
@@ -1879,7 +1884,6 @@ let _tab = 'vandaag', _zoek = '', _filter = 'alle';
 let _factStatus = 'actueel', _factKlant = '', _factGroep = 'maand';
 let _cfScenario = 'pijplijn', _ketStap = '';
 let _sd = null;                       // netto-calculator salaris vs. dividend
-const _open = new Set();              // uitgeklapte plaatsingen
 
 const TABS = [
   {k:'vandaag',     lbl:'Vandaag'},
@@ -1974,7 +1978,7 @@ function tabVandaag(el, f){
         + lijst.filter(a => a.soort === 'zzp_factuur' && a.zzp.gewerkt != null && a.zzp.gewerkt !== '' && a.zzp.marge != null)
             .map(a => `<div class="fin-pot"><span>ZZP-marge ${H((CRM.kandidaat(a.zzp.kandidaat_id)||{}).naam||'?')} · ${H(a.zzp.klant||'—')}</span>
               <button type="button" class="btn ghost sm" data-zzpfact="${H(String(a.zzp.id))}">✓ Gefactureerd</button></div>`).join(''),
-        {acties: lijst.length ? finLink('vandaag','Afhandelen in de finance-app') : ''})}
+        {acties: lijst.length ? `<button class="btn ghost sm" data-gatab="plaatsingen">Afhandelen →</button>` : ''})}
       <div class="stack">
         ${kaart('Belastingpotjes', potHtml, {voet:'Btw = ontvangen btw dit kwartaal − voorbelasting. Vpb = percentage over de winst YTD (waar mogelijk verankerd op Yuki). Doorgeefgeld: reserveer het apart.'})}
         ${kaart('Risico’s', risicoHtml)}
@@ -1990,13 +1994,15 @@ function tabVandaag(el, f){
     </div>
 
     <div class="note info" style="margin-top:18px">
-      Alle cijfers hier komen uit dezelfde formules als de finance-app. Bewerken —
-      facturen afvinken, fee bevestigen, instellingen — doe je in de finance-app.
+      Plaatsingen afronden, termijnen afvinken en fees bevestigen doe je nu hier, op de tabbladen
+      Plaatsingen &amp; termijnen en Facturatie. Saldo, kosten en instellingen nog even in de finance-app.
     </div>`;
 
   /* ZZP-klus als gefactureerd afvinken — dit is de ene bewerking die hier
      wél mag: de klus leeft in crm_klussen (CRM-data, team-RLS), niet in de
      fin_*-tabellen van de finance-app. */
+  /* Afhandelen gebeurt sinds stap 1 van de overzet hier in het CRM. */
+  el.querySelectorAll('[data-gatab]').forEach(b => b.onclick = () => { _tab = b.dataset.gatab; CRM.render(); });
   el.querySelectorAll('[data-zzpfact]').forEach(b => b.onclick = async () => {
     const kz = (CRM.state.klussen||[]).find(x => String(x.id) === b.dataset.zzpfact);
     if(!kz) return;
@@ -2030,6 +2036,539 @@ function maandGetekendHtml(f){
       exact zoals het pijplijnbord en de finance-app het rekenen.</p>`;
 }
 
+/* ═══ BEWERKEN — plaatsingen en termijnen ═══════════════════════
+   Stap 1 van het overzetten van de finance-app naar het CRM (Tjeerd,
+   27 okt 2026: "akkoord voor het overzetten … alleen voor mij"). Het CRM
+   rekent de fee vóór (maandloon + commerciële afspraak); wat hier wordt
+   vastgelegd in fin_placements / fin_installments is de officiële fee en
+   het officiële factuurschema.
+
+   Elke schrijfactie gaat eerst naar de database en past daarna de al
+   geladen gegevens (f) ter plekke aan — het scherm klopt dan meteen,
+   zonder alles opnieuw op te halen. Mislukt de database, dan blijft f
+   ongemoeid. Met CRM._finMock (de testhaak uit finLaad) blijft alles in
+   het geheugen: er gaat dan niets naar de database.                   */
+let _mockId = 900000;
+async function finSchrijf(tabel, bouw){
+  if(CRM._finMock) return null;
+  const {data, error} = await bouw(CRM.sb.from(tabel));
+  if(error) throw error;
+  return data;
+}
+async function instWijzig(inst, patch){
+  await finSchrijf('fin_installments', q => q.update(patch).eq('id', inst.id));
+  Object.assign(inst, patch);
+}
+async function instErbij(f, rows){
+  if(!rows.length) return [];
+  const data = await finSchrijf('fin_installments', q => q.insert(rows).select());
+  const nieuw = data || rows.map(r => Object.assign({id: ++_mockId}, r));
+  f.installments.push(...nieuw);
+  return nieuw;
+}
+async function instWeg(f, ids){
+  if(!ids.length) return;
+  await finSchrijf('fin_installments', q => q.delete().in('id', ids));
+  const weg = new Set(ids);
+  f.installments = f.installments.filter(i => !weg.has(i.id));
+}
+async function plWijzig(p, patch){
+  patch = Object.assign({updated_at: new Date().toISOString()}, patch);
+  await finSchrijf('fin_placements', q => q.update(patch).eq('id', p.id));
+  Object.assign(p, patch);
+}
+
+/* Gefactureerd / betaald afvinken — zelfde regels als de ✓-knoppen in de
+   finance-app: de datum is vandaag, en wie direct op betaald springt
+   krijgt de geplande datum als factuurdatum. */
+async function markeer(inst, status){
+  const patch = {status};
+  if(status === 'gefactureerd') patch.factuurdatum = todayISO();
+  if(status === 'betaald'){
+    patch.betaaldatum = todayISO();
+    if(!inst.factuurdatum) patch.factuurdatum = inst.geplande_datum || todayISO();
+  }
+  if(status === 'te_factureren' || status === 'vervallen'){ patch.factuurdatum = null; patch.betaaldatum = null; }
+  await instWijzig(inst, patch);
+}
+
+/* bron: plaatsingen.js genSchema() — de afrondingscent gaat naar de laatste termijn. */
+function genSchema(preset, fee, start, o={}){
+  const rows = [], n = o.n || 1, tussen = o.tussen || 1;
+  const r2 = x => Math.round(x * 100) / 100;
+  if(preset === '1x') rows.push({nr:1, bedrag:r2(fee), datum:start});
+  else if(preset === 'nx'){
+    const per = r2(fee / n);
+    for(let i = 0; i < n; i++)
+      rows.push({nr:i+1, bedrag: i === n-1 ? r2(fee - per*(n-1)) : per, datum: addMonths(start, i*tussen)});
+  }else if(preset === '5050'){
+    const helft = r2(fee / 2);
+    rows.push({nr:1, bedrag:helft, datum:start});
+    rows.push({nr:2, bedrag:r2(fee - helft), datum: addMonths(start, o.naMnd || 3)});
+  }
+  return rows;
+}
+
+/* Hele schema opnieuw zetten — alleen zolang er nog niets gefactureerd is.
+   Start: de gekozen datum, anders waar termijn 1 nú staat (niet de bij
+   aanmaken opgeslagen eerste_factuurdatum — daardoor sprong Torins schema
+   terug naar de contractdatum, 27 okt 2026). Lukt het invoegen niet, dan
+   zetten we het oude schema terug in plaats van een plaatsing zonder
+   termijnen achter te laten. */
+async function zetSchema(f, p, preset, o){
+  const oud = instOf(f, p.id);
+  if(oud.some(i => i.status === 'gefactureerd' || i.status === 'betaald'))
+    throw new Error('Er is al gefactureerd op deze plaatsing — pas losse termijnen aan met ✎.');
+  const start = o.start || (oud[0] && oud[0].geplande_datum) || p.eerste_factuurdatum || p.contract_datum || todayISO();
+  const schema = genSchema(preset, getal(p.fee_excl), start, o);
+  const rij = r => ({placement_id:p.id, termijn_nr:r.nr, bedrag_excl:r.bedrag, geplande_datum:r.datum, status:'te_factureren'});
+  await instWeg(f, oud.map(i => i.id));
+  try{ await instErbij(f, schema.map(rij)); }
+  catch(e){
+    await instErbij(f, oud.map(({id, ...rest}) => rest)).catch(() => {});
+    throw e;
+  }
+  await plWijzig(p, {aantal_termijnen: schema.length, maanden_tussen: o.tussen || o.naMnd || 1, eerste_factuurdatum: start});
+}
+
+/* Wat er nog niet gefactureerd is, gelijk verdelen over de open termijnen
+   (fee − al gefactureerd/betaald). De afrondingscent naar de laatste. */
+async function verdeelOpen(f, p){
+  const ins = instOf(f, p.id);
+  const vast = ins.filter(i => i.status === 'gefactureerd' || i.status === 'betaald')
+    .reduce((s,i) => s + bedragVan(i), 0);
+  const rest = Math.max(0, getal(p.fee_excl) - vast);
+  const slots = ins.filter(i => i.status === 'te_factureren')
+    .sort((a,b) => String(a.geplande_datum||'').localeCompare(String(b.geplande_datum||'')));
+  if(!slots.length) return 0;
+  const deel = Math.floor(rest / slots.length * 100) / 100;
+  for(let k = 0; k < slots.length; k++){
+    const bedrag = k === slots.length - 1 ? Math.round((rest - deel*(slots.length-1)) * 100) / 100 : deel;
+    if(bedrag !== bedragVan(slots[k])) await instWijzig(slots[k], {bedrag_excl: bedrag});
+  }
+  return slots.length;
+}
+
+const volgPlId = f => {
+  const nums = f.placements.map(x => parseInt(String(x.id||'').replace(/\D/g,''), 10)).filter(n => !isNaN(n));
+  return 'P' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+};
+
+/* Eén plek voor "doe iets en teken opnieuw". De knop gaat op slot zolang
+   de database bezig is: een dubbelklik op "+ termijn" gaf in de
+   finance-app twee termijnen met hetzelfde nummer. */
+async function finDoe(knop, werk, okTekst, daarna){
+  if(knop){ if(knop.disabled) return; knop.disabled = true; }
+  let gelukt = false;
+  try{ await werk(); gelukt = true; if(okTekst) CRM.toast(okTekst, 'ok'); }
+  catch(e){ CRM.fout('Opslaan mislukt', e); }
+  finally{ if(knop) knop.disabled = false; if(daarna) daarna(gelukt); }
+}
+
+/* ─── Paneel: één plaatsing beheren ─────────────────────────────── */
+function plPaneel(f, pid, herteken){
+  const p = f.placements.find(x => x.id === pid);
+  if(!p) return CRM.toast('Deze plaatsing bestaat niet meer', 'err');
+  const st = placementStats(f, p), g = garantie(f, p);
+  const btw = 1 + Sn(f,'btw_pct',0.21), t = todayISO();
+  const opnieuw = () => { herteken && herteken(); plPaneel(f, pid, herteken); };
+
+  /* Wat het CRM zelf zou rekenen, naast wat er vastligt — "met het CRM
+     weten we altijd wat het maandloon en de fee-berekening is; wat ik in
+     finance zet is officieel" (Tjeerd, 27 okt 2026). */
+  const c = p.pipeline_candidate_id ? cands().find(x => x.id === p.pipeline_candidate_id) : null;
+  const vs = c ? feeBerekening(f, c) : null;
+  const verschil = vs && vs.fee ? vs.fee - getal(p.fee_excl) : 0;
+  const voorstelHtml = !c ? '' : vs
+    ? `<div class="fin-pot"><span>CRM rekent voor${vs.zeker ? '' : ' (schatting)'}</span><b>${eur(vs.fee)}</b></div>
+       ${Math.abs(verschil) >= 1 ? `<p class="meta" style="margin:6px 0 0">${verschil > 0 ? 'Vastgelegd is ' + eur(verschil) + ' lager' : 'Vastgelegd is ' + eur(-verschil) + ' hoger'}
+         dan wat maandloon en afspraak opleveren. ${H(vs.uitleg || '')}</p>` : ''}`
+    : `<p class="meta" style="margin:6px 0 0">Geen maandloon op de kandidaatkaart — vul het daar in, dan rekent het CRM de fee voor.</p>`;
+
+  const rijen = st.ins.map(i => {
+    const vv = vervaldatum(i, p);
+    const laat = i.status === 'gefactureerd' && vv && vv < t ? daysBetween(vv, t) : 0;
+    const gemist = i.status === 'te_factureren' && i.geplande_datum && i.geplande_datum < t;
+    const k = [];
+    if(i.status === 'te_factureren') k.push(`<button class="btn sm" data-ia="fact" data-iid="${H(i.id)}">Gefactureerd ✓</button>`);
+    if(i.status === 'gefactureerd')  k.push(`<button class="btn sm" data-ia="paid" data-iid="${H(i.id)}">Betaald ✓</button>`);
+    if(i.status === 'vervallen'){
+      k.push(`<button class="btn ghost sm" data-ia="herstel" data-iid="${H(i.id)}" title="Terug naar te factureren">↺ Herstel</button>`);
+      k.push(`<button class="btn ghost sm" data-ia="weg" data-iid="${H(i.id)}" title="Termijn verwijderen">Verwijder</button>`);
+    }else{
+      k.push(`<button class="btn ghost sm" data-ia="edit" data-iid="${H(i.id)}" title="Bedrag, datum of status aanpassen">✎</button>`);
+      if(i.status !== 'betaald') k.push(`<button class="btn ghost sm" data-ia="verval" data-iid="${H(i.id)}" title="Laten vervallen">✕</button>`);
+    }
+    return `<tr${i.status === 'vervallen' ? ' style="opacity:.55"' : ''}>
+      <td class="num">${H(tekst(i.termijn_nr, '?'))}</td>
+      <td class="num">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</td>
+      <td class="n"><span class="num">${eur2(bedragVan(i))}</span><div class="rowsub num">${eur2(bedragVan(i)*btw)} incl.</div></td>
+      <td>${stChip(i.status)}${gemist ? ' ' + chip('gemist','red') : ''}${laat ? ' ' + chip(laat + ' dgn te laat','red') : ''}</td>
+      <td class="num meta">${i.factuurdatum && i.status !== 'te_factureren' ? 'gefact. ' + H(dKort(i.factuurdatum)) : ''}${
+        i.betaaldatum && i.status === 'betaald' ? '<br>betaald ' + H(dKort(i.betaaldatum)) : ''}${
+        vv && i.status === 'gefactureerd' ? 'vervalt ' + H(dKort(vv)) : ''}</td>
+      <td class="n" style="white-space:nowrap">${k.join(' ')}</td></tr>`;
+  }).join('');
+
+  const startVoor = (st.ins[0] && st.ins[0].geplande_datum) || p.eerste_factuurdatum || p.contract_datum || t;
+  const nNu = st.ins.length;
+  const schemaKaart = !p.concept ? '' : `
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--amber)">
+      <div class="card-h"><div class="h2">Hoe factureer je deze plaatsing?</div>
+        <span class="meta">afspraak met ${H(tekst(p.klant))}</span></div>
+      <div class="card-b">
+        <div class="row tight" style="flex-wrap:wrap;gap:10px;align-items:center">
+          <select id="fd_preset" style="width:auto">
+            <option value="1x">100% ineens</option>
+            <option value="5050">50% bij tekenen · 50% na X mnd</option>
+            <option value="nx">In N termijnen, elke X mnd</option>
+          </select>
+          <span id="fd_50">2e helft na <input id="fd_namnd" type="number" min="1" max="12" value="3" style="width:64px"> mnd</span>
+          <span id="fd_nx"><input id="fd_n" type="number" min="2" value="${nNu > 2 ? nNu : 7}" style="width:64px"> × om de
+            <input id="fd_tussen" type="number" min="1" value="1" style="width:64px"> mnd</span>
+          <span>vanaf <input id="fd_start" type="date" value="${H(startVoor)}" style="width:auto"></span>
+          <button class="btn sm" id="fd_zet">Termijnen zetten</button>
+        </div>
+        <p class="meta" style="margin:10px 0 0">Verdeelt de fee (${eur2(getalOfNull(p.fee_excl))} excl.) over nieuwe termijnen.
+          Stopt de kandidaat vóór een termijn, dan vervalt die vanzelf — je factureert alleen wat verdiend is.</p>
+      </div></div>`;
+
+  CRM.drawer.open(`
+    <div class="drawer-h">
+      <div style="min-width:0;flex:1">
+        <div class="h2" style="font-size:17px">${H(tekst(p.kandidaat))} <span class="meta">· ${H(p.id)}</span></div>
+        <div class="meta" style="margin-top:3px">${H([p.functie, p.klant].filter(Boolean).join(' · '))}</div>
+      </div>
+      <button class="btn ghost sm x" data-close>Sluiten</button>
+    </div>
+    <div class="drawer-b">
+      <div class="row tight" style="flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        ${p.concept ? chip('concept — fee nog bevestigen','amber') : ''}
+        ${chip(st.status, st.kleur)}
+        ${p.gestopt_op ? chip('gestopt ' + dKort(p.gestopt_op), 'red') : ''}
+        ${g.actief ? chip('garantie t/m ' + dKort(g.tot), 'purple') : ''}
+        ${g.vervangingNodig ? chip('vervanging leveren', 'red') : ''}
+        ${p.vervangen_door ? chip('vervangen door ' + p.vervangen_door, 'green') : ''}
+      </div>
+      <div class="grid c4">
+        ${CRM.ui.kpi('Fee (vastgelegd)', eur(getalOfNull(p.fee_excl)), 'excl. btw', 'accent')}
+        ${CRM.ui.kpi('Gefactureerd', eur(st.gefact), 'excl. btw')}
+        ${CRM.ui.kpi('Openstaand', eur(st.open), 'verstuurd, niet betaald')}
+        ${CRM.ui.kpi('Nog te factureren', eur(st.nog), st.vervallen ? eur(st.vervallen) + ' vervallen' : 'excl. btw')}
+      </div>
+      ${voorstelHtml ? `<div style="margin-top:12px">${voorstelHtml}</div>` : ''}
+      ${schemaKaart}
+      <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="h2">Termijnen</div><span class="spacer"></span>
+          <button class="btn ghost sm" id="fd_plus" title="Termijn toevoegen en de rest van de fee gelijk verdelen">+ termijn</button></div>
+        <div class="card-b" style="padding:0">${rijen
+          ? `<div class="tblwrap" style="border:none"><table class="tbl"><thead><tr><th>#</th><th>Gepland</th>
+              <th class="n">Bedrag</th><th>Status</th><th>Datums</th><th></th></tr></thead><tbody>${rijen}</tbody></table></div>`
+          : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen factuurschema', p.concept ? 'Kies hierboven hoe je factureert.' : 'Voeg een termijn toe.')}</div>`}</div>
+      </div>
+      <p class="meta" style="margin:12px 2px 0">Contract ${H(dOf(p.contract_datum))} · betaaltermijn ${H(getal(p.betaaltermijn_dgn) || 14)} dagen${
+        p.garantie_mnd ? ` · garantie ${H(num(getal(p.garantie_mnd), 0))} mnd` : ''}${p.note ? ` · ${H(p.note)}` : ''}</p>
+    </div>
+    <div class="drawer-f">
+      <button class="btn ghost sm" id="fd_del">Verwijderen</button>
+      <span class="spacer"></span>
+      <button class="btn ghost sm" id="fd_edit">Bewerken</button>
+      ${g.vervangingNodig ? `<button class="btn ghost sm" id="fd_verv">Vervanging geleverd…</button>` : ''}
+      ${!p.gestopt_op ? `<button class="btn ghost sm" id="fd_stop">Kandidaat gestopt…</button>` : ''}
+      ${p.concept ? `<button class="btn" id="fd_ok">✓ Fee klopt — bevestigen</button>` : ''}
+    </div>`, {onOpen(dr){
+    const q = s => dr.querySelector(s);
+    const instVan = b => f.installments.find(i => String(i.id) === b.dataset.iid);
+
+    dr.querySelectorAll('[data-ia]').forEach(b => b.onclick = async () => {
+      const inst = instVan(b); if(!inst) return;
+      const a = b.dataset.ia;
+      if(a === 'edit') return termijnBewerken(f, p, inst, opnieuw);
+      if(a === 'weg' && !await CRM.bevestig(`Termijn ${inst.termijn_nr} verwijderen?`,
+        'Hij verdwijnt helemaal uit het schema.', {gevaarlijk:true})) return opnieuw();
+      finDoe(b, async () => {
+        if(a === 'fact')    await markeer(inst, 'gefactureerd');
+        if(a === 'paid')    await markeer(inst, 'betaald');
+        if(a === 'verval')  await markeer(inst, 'vervallen');
+        if(a === 'herstel') await markeer(inst, 'te_factureren');
+        if(a === 'weg')     await instWeg(f, [inst.id]);
+      }, {fact:`Termijn ${inst.termijn_nr} gefactureerd`, paid:`Termijn ${inst.termijn_nr} betaald`,
+          verval:`Termijn ${inst.termijn_nr} vervallen`, herstel:'Termijn hersteld', weg:'Termijn verwijderd'}[a], opnieuw);
+    });
+
+    if(q('#fd_preset')){
+      const sel = q('#fd_preset');
+      sel.value = nNu === 2 ? '5050' : nNu > 2 ? 'nx' : '1x';
+      const sync = () => { q('#fd_50').hidden = sel.value !== '5050'; q('#fd_nx').hidden = sel.value !== 'nx'; };
+      sel.onchange = sync; sync();
+      q('#fd_zet').onclick = () => {
+        const o = sel.value === '5050' ? {naMnd: getal(q('#fd_namnd').value) || 3}
+                : sel.value === 'nx'   ? {n: Math.max(2, getal(q('#fd_n').value) || 2), tussen: getal(q('#fd_tussen').value) || 1}
+                : {};
+        o.start = q('#fd_start').value || null;
+        finDoe(q('#fd_zet'), () => zetSchema(f, p, sel.value, o), 'Factuurschema gezet', opnieuw);
+      };
+    }
+    q('#fd_plus').onclick = () => finDoe(q('#fd_plus'), async () => {
+      const open = instOf(f, p.id).filter(i => i.status === 'te_factureren');
+      if(!open.some(i => bedragVan(i) === 0)){
+        const laatste = open.filter(i => i.geplande_datum).sort((a,b) => a.geplande_datum.localeCompare(b.geplande_datum)).pop();
+        const nr = Math.max(0, ...instOf(f, p.id).map(i => getal(i.termijn_nr))) + 1;
+        await instErbij(f, [{placement_id:p.id, termijn_nr:nr, bedrag_excl:0, status:'te_factureren',
+          geplande_datum: laatste ? addMonths(laatste.geplande_datum, 1) : todayISO()}]);
+      }
+      const n = await verdeelOpen(f, p);
+      CRM.toast(`Fee gelijk verdeeld over ${n} open termijn${n === 1 ? '' : 'en'}`, 'ok');
+    }, '', opnieuw);
+    if(q('#fd_ok')) q('#fd_ok').onclick = () => finDoe(q('#fd_ok'),
+      () => plWijzig(p, {concept:false}), `${p.id} bevestigd — dit is nu de officiële fee`, opnieuw);
+    q('#fd_edit').onclick = () => plFormulier(f, {p}, opnieuw);
+    if(q('#fd_stop')) q('#fd_stop').onclick = () => stopVenster(f, p, opnieuw);
+    if(q('#fd_verv')) q('#fd_verv').onclick = async () => {
+      const wie = await CRM.vraag('Wie is de vervanger?', {hint:'Naam of plaatsingsnummer van de kosteloze vervanging.', knop:'Vastleggen'});
+      if(!wie) return opnieuw();
+      finDoe(null, () => plWijzig(p, {vervangen_door: wie}), 'Vervanging vastgelegd', opnieuw);
+    };
+    q('#fd_del').onclick = async () => {
+      if(!await CRM.bevestig(`${p.id} verwijderen?`,
+        `De plaatsing van ${tekst(p.kandidaat)} én al haar termijnen verdwijnen uit Finance.`, {gevaarlijk:true})) return opnieuw();
+      finDoe(null, async () => {
+        await instWeg(f, instOf(f, p.id).map(i => i.id));
+        await finSchrijf('fin_placements', q2 => q2.delete().eq('id', p.id));
+        f.placements = f.placements.filter(x => x.id !== p.id);
+        /* Anders maakt de inbox hem meteen weer aan als af te ronden. */
+        if(p.pipeline_candidate_id) await niemandFactureren(f, p.pipeline_candidate_id);
+      }, 'Plaatsing verwijderd', ok => { if(ok){ CRM.drawer.close(); herteken && herteken(); } else opnieuw(); });
+    };
+  }});
+}
+
+async function niemandFactureren(f, candId){
+  await finSchrijf('fin_dismissed_candidates', q => q.upsert({candidate_id: candId}));
+  if(!f.dismissed.some(d => d.candidate_id === candId)) f.dismissed.push({candidate_id: candId});
+}
+
+/* ─── Venster: één termijn bewerken ────────────────────────────────
+   Met "latere termijnen meeschuiven": een gespreid schema is gepland
+   vanaf de eerste factuur — verzet je die, dan gaan de rest mee. */
+function termijnBewerken(f, p, inst, klaar){
+  const latere = instOf(f, p.id).filter(i => getal(i.termijn_nr) > getal(inst.termijn_nr) && i.status === 'te_factureren');
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Termijn ${H(tekst(inst.termijn_nr,'?'))} bewerken</div>
+      <p class="sub" style="margin:6px 0 0">${H(tekst(p.kandidaat))} · ${H(tekst(p.klant))}</p></div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label for="te_bedrag">Bedrag excl. btw</label>
+          <input type="number" id="te_bedrag" step="0.01" value="${H(bedragVan(inst))}"></div>
+        <div class="f-row"><label for="te_datum">Geplande datum</label>
+          <input type="date" id="te_datum" value="${H(inst.geplande_datum || '')}"></div>
+        <div class="f-row"><label for="te_status">Status</label>
+          <select id="te_status">${Object.keys(TERMIJN_ST).map(s =>
+            `<option value="${s}"${s === inst.status ? ' selected' : ''}>${H(TERMIJN_ST[s].lbl)}</option>`).join('')}</select></div>
+        <div class="f-row" id="te_factrij"><label for="te_fact">Factuurdatum</label>
+          <input type="date" id="te_fact" value="${H(inst.factuurdatum || '')}"></div>
+        <div class="f-row" id="te_paidrij"><label for="te_paid">Betaaldatum</label>
+          <input type="date" id="te_paid" value="${H(inst.betaaldatum || '')}"></div>
+      </div>
+      ${latere.length ? `<label class="check" style="margin-top:6px"><input type="checkbox" id="te_schuif" checked>
+        De ${latere.length} latere open termijn${latere.length === 1 ? '' : 'en'} maandelijks laten meeschuiven vanaf deze datum
+        <span class="meta">(termijn ${H(latere.map(i => i.termijn_nr).join(', '))} — gefactureerd of betaald blijft staan)</span></label>` : ''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="te_ok">Opslaan</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      const q = s => m.querySelector(s);
+      /* Alleen de datumvelden tonen die bij de status horen: een factuur-
+         datum op een termijn die nog "te factureren" is, verschoof de
+         verwachte betaling in de cashflow (Torin, 27 okt 2026). */
+      const sync = () => {
+        const s = q('#te_status').value;
+        /* style.display, niet hidden: .f-row zet display:flex en wint dan van [hidden]. */
+        q('#te_factrij').style.display = (s === 'gefactureerd' || s === 'betaald') ? '' : 'none';
+        q('#te_paidrij').style.display = s === 'betaald' ? '' : 'none';
+      };
+      q('#te_status').onchange = sync; sync();
+      q('#te_ok').onclick = () => {
+        const status = q('#te_status').value, datum = q('#te_datum').value || null;
+        const gefact = status === 'gefactureerd' || status === 'betaald';
+        const patch = {
+          bedrag_excl: getal(q('#te_bedrag').value), geplande_datum: datum, status,
+          factuurdatum: gefact ? (q('#te_fact').value || inst.factuurdatum || todayISO()) : null,
+          betaaldatum: status === 'betaald' ? (q('#te_paid').value || inst.betaaldatum || todayISO()) : null
+        };
+        const schuif = q('#te_schuif') && q('#te_schuif').checked && datum && datum !== inst.geplande_datum;
+        const wasDatum = inst.geplande_datum;
+        finDoe(q('#te_ok'), async () => {
+          await instWijzig(inst, patch);
+          if(schuif) for(const i of latere)
+            await instWijzig(i, {geplande_datum: addMonths(datum, getal(i.termijn_nr) - getal(inst.termijn_nr))});
+          if(getal(inst.termijn_nr) === 1 && datum && datum !== wasDatum)
+            await plWijzig(p, {eerste_factuurdatum: datum});
+        }, schuif ? `Opgeslagen — ${latere.length} termijn${latere.length === 1 ? '' : 'en'} meegeschoven` : 'Termijn opgeslagen',
+        ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar(); } });
+      };
+    }});
+}
+
+/* ─── Venster: kandidaat gestopt ─────────────────────────────────── */
+function stopVenster(f, p, klaar){
+  const g = garantie(f, p), mnd = Sn(f,'stop_achterstand_mnd',1);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Kandidaat gestopt · ${H(tekst(p.kandidaat))}</div></div>
+    <div class="modal-b">
+      <div class="f-row"><label for="sv_datum">Gestopt op</label>
+        <input type="date" id="sv_datum" value="${H(todayISO())}"></div>
+      <p class="meta" style="margin:4px 0 0">${g.tot ? `Garantie loopt t/m ${H(dOf(g.tot))} — stopt hij daarvoor, dan lever je een kosteloze vervanging.`
+        : 'Geen garantie op deze plaatsing.'} Open termijnen ná de stopdatum + ${H(mnd)} maand vervallen.</p>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn danger" id="sv_ok">Verwerken</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      m.querySelector('#sv_ok').onclick = () => {
+        const datum = m.querySelector('#sv_datum').value;
+        if(!datum) return CRM.toast('Kies de stopdatum', 'err');
+        let n = 0;
+        finDoe(m.querySelector('#sv_ok'), async () => {
+          await plWijzig(p, {gestopt_op: datum});
+          const weg = stopImpact(f, p);
+          for(const i of weg) await markeer(i, 'vervallen');
+          n = weg.length;
+        }, null, ok => {
+          if(!ok) return;
+          CRM.toast(`${tekst(p.kandidaat)} gestopt — ${n} termijn${n === 1 ? '' : 'en'} vervallen`, 'ok');
+          CRM.modal._onClose = null; CRM.modal.close(); klaar();
+        });
+      };
+    }});
+}
+
+/* ─── Venster: plaatsing afronden (vanuit het bord), nieuw of bewerken ──
+   Bij afronden staat de fee die het CRM uitrekent (maandloon × afspraak)
+   al ingevuld, met de uitleg erbij. Wat je opslaat is officieel. */
+function plFormulier(f, {c = null, p = null} = {}, klaar){
+  const bewerk = !!p;
+  const ruw = c ? CRM.fee.voorKlant(c.klant, c.geplaatst_op || c.start || null) : null;
+  const af = ruw ? CRM.fee.normaliseer(ruw) : null;
+  const vs = c ? feeBerekening(f, c) : null;
+  const startVoorstel = c ? ((af && af.factuurmoment === 'start' && c.start) ? c.start : (c.geplaatst_op || c.start || todayISO())) : todayISO();
+  const klanten = [...new Set([...f.placements.map(x => x.klant), ...((CRM.state && CRM.state.clients) || []).map(k => k.naam)]
+    .filter(Boolean))].sort((a,b) => a.localeCompare(b, 'nl'));
+  const w = (v, alt='') => H(v == null || v === '' ? alt : v);
+
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${bewerk ? 'Plaatsing bewerken · ' + H(p.id) : c ? 'Plaatsing afronden' : 'Nieuwe plaatsing'}</div>
+      ${c ? `<p class="sub" style="margin:6px 0 0">Vanuit het bord: <b>${H(tekst(c.naam))}</b> · ${H(faseVan(c) || '')}${
+        c.geplaatst_op ? ' · getekend ' + H(dOf(c.geplaatst_op)) : ''}</p>` : ''}</div>
+    <div class="modal-b">
+      <div class="f-grid">
+        <div class="f-row"><label for="pf_id">Nummer</label>
+          <input id="pf_id" value="${w(p && p.id, volgPlId(f))}"${bewerk ? ' disabled' : ''}></div>
+        <div class="f-row"><label for="pf_klant">Klant</label>
+          <input id="pf_klant" list="pf_klanten" value="${w(p ? p.klant : c && c.klant)}">
+          <datalist id="pf_klanten">${klanten.map(k => `<option value="${H(k)}">`).join('')}</datalist></div>
+        <div class="f-row"><label for="pf_kand">Kandidaat</label>
+          <input id="pf_kand" value="${w(p ? p.kandidaat : c && c.naam)}"></div>
+        <div class="f-row"><label for="pf_functie">Functie</label>
+          <input id="pf_functie" value="${w(p ? p.functie : c && c.functie)}"></div>
+        <div class="f-row"><label for="pf_fee">Fee excl. btw</label>
+          <input id="pf_fee" type="number" step="0.01" value="${w(p ? getalOfNull(p.fee_excl) : vs && vs.fee)}">
+          ${vs ? `<span class="hint">CRM rekent ${H(eur(vs.fee))}${vs.zeker ? '' : ' — schatting'}: ${H(vs.uitleg || '')}</span>`
+            : c ? `<span class="hint">Geen maandloon op de kandidaatkaart — de fee kan het CRM dan niet voorrekenen.</span>` : ''}</div>
+        <div class="f-row"><label for="pf_contract">Contract getekend</label>
+          <input id="pf_contract" type="date" value="${w(p ? p.contract_datum : c && c.geplaatst_op, todayISO())}"></div>
+        <div class="f-row"><label for="pf_betaal">Betaaltermijn (dagen)</label>
+          <input id="pf_betaal" type="number" value="${w(p ? p.betaaltermijn_dgn : af && af.betaaltermijn, Sn(f,'default_betaaltermijn',14))}"></div>
+        <div class="f-row"><label for="pf_gar">Garantie (maanden)</label>
+          <input id="pf_gar" type="number" value="${w(p ? p.garantie_mnd : af && af.garantie_soort !== 'geen' ? af.garantie_mnd : c && c.garantie_mnd, 0)}"></div>
+      </div>
+      <div class="f-row"><label for="pf_note">Notitie</label><input id="pf_note" value="${w(p && p.note)}"></div>
+      ${bewerk ? '' : `
+      <div class="h2" style="font-size:14px;margin:14px 0 8px">Factuurschema</div>
+      <div class="f-grid">
+        <div class="f-row"><label for="pf_preset">Verdeling</label>
+          <select id="pf_preset"><option value="1x">100% ineens</option>
+            <option value="nx">N termijnen, elke X mnd</option><option value="5050">50% · 50% na X mnd</option></select></div>
+        <div class="f-row"><label for="pf_start">1e factuurdatum</label>
+          <input id="pf_start" type="date" value="${H(startVoorstel)}">
+          ${af ? `<span class="hint">Afspraak: factureren ${af.factuurmoment === 'start' ? 'bij start' : 'bij contract getekend'}</span>` : ''}</div>
+        <div class="f-row" id="pf_nxrij"><label>Aantal × om de (mnd)</label>
+          <div class="row tight"><input id="pf_n" type="number" min="2" value="7" style="width:80px">
+            <input id="pf_tussen" type="number" min="1" value="1" style="width:80px"></div></div>
+        <div class="f-row" id="pf_50rij"><label for="pf_namnd">2e helft na (mnd)</label>
+          <input id="pf_namnd" type="number" min="1" value="3"></div>
+      </div>
+      <div id="pf_voorbeeld"></div>`}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="pf_ok">${bewerk ? 'Opslaan' : 'Plaatsing vastleggen'}</button></div>`, {
+    onClose(){ klaar && klaar(); },
+    onOpen(m){
+      const q = s => m.querySelector(s);
+      let schema = [];
+      const opties = () => ({n: Math.max(2, getal(q('#pf_n').value) || 2), tussen: getal(q('#pf_tussen').value) || 1,
+                             naMnd: getal(q('#pf_namnd').value) || 3});
+      const voorbeeld = () => {
+        if(bewerk) return;
+        const pr = q('#pf_preset').value;
+        q('#pf_nxrij').style.display = pr === 'nx' ? '' : 'none';      // f-row: hidden werkt daar niet
+        q('#pf_50rij').style.display = pr === '5050' ? '' : 'none';
+        schema = genSchema(pr, getal(q('#pf_fee').value), q('#pf_start').value || todayISO(), opties());
+        q('#pf_voorbeeld').innerHTML = schema.length && getal(q('#pf_fee').value)
+          ? `<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>#</th><th>Datum</th><th class="n">Excl. btw</th></tr></thead><tbody>${
+              schema.map(r => `<tr><td class="num">${r.nr}</td><td class="num">${H(dKort(r.datum))}</td><td class="n num">${eur2(r.bedrag)}</td></tr>`).join('')}</tbody></table></div>`
+          : '';
+      };
+      if(!bewerk){
+        ['#pf_preset','#pf_fee','#pf_start','#pf_n','#pf_tussen','#pf_namnd'].forEach(s => q(s).addEventListener('input', voorbeeld));
+        q('#pf_preset').addEventListener('change', voorbeeld);
+        voorbeeld();
+      }
+      q('#pf_ok').onclick = () => {
+        const rij = {
+          klant: q('#pf_klant').value.trim(), kandidaat: q('#pf_kand').value.trim(),
+          functie: q('#pf_functie').value.trim(), fee_excl: getal(q('#pf_fee').value),
+          contract_datum: q('#pf_contract').value || null,
+          betaaltermijn_dgn: getal(q('#pf_betaal').value) || 14,
+          garantie_mnd: getal(q('#pf_gar').value), note: q('#pf_note').value.trim() || null
+        };
+        const id = bewerk ? p.id : q('#pf_id').value.trim();
+        if(!id || !rij.klant) return CRM.toast('Nummer en klant zijn verplicht', 'err');
+        if(!rij.fee_excl) return CRM.toast('Vul de fee in', 'err');
+        if(!bewerk && f.placements.some(x => x.id === id)) return CRM.toast(`${id} bestaat al — kies een ander nummer`, 'err');
+        finDoe(q('#pf_ok'), async () => {
+          if(bewerk){
+            const oudeFee = getal(p.fee_excl);
+            await plWijzig(p, rij);
+            /* Fee aangepast: wat nog open staat opnieuw verdelen, met de
+               al gefactureerde termijnen ervan af — anders liep het totaal
+               boven de fee uit. */
+            if(oudeFee !== rij.fee_excl) await verdeelOpen(f, p);
+            return;
+          }
+          const nieuw = Object.assign({id}, rij, {
+            aantal_termijnen: schema.length || 1, eerste_factuurdatum: (schema[0] && schema[0].datum) || null,
+            bron: c ? 'pipeline' : 'app', pipeline_candidate_id: (c && c.id) || null, concept: false,
+            updated_at: new Date().toISOString()});
+          await finSchrijf('fin_placements', q2 => q2.insert(nieuw));
+          f.placements.push(nieuw);
+          /* Termijnen lukken niet? Dan de plaatsing ook terugdraaien —
+             een plaatsing zonder schema valt overal stil uit de cijfers. */
+          try{
+            await instErbij(f, schema.map(r => ({placement_id:id, termijn_nr:r.nr, bedrag_excl:r.bedrag,
+              geplande_datum:r.datum, status:'te_factureren'})));
+          }catch(e){
+            await finSchrijf('fin_placements', q2 => q2.delete().eq('id', id)).catch(() => {});
+            f.placements = f.placements.filter(x => x.id !== id);
+            throw e;
+          }
+        }, bewerk ? 'Plaatsing opgeslagen' : `${id} vastgelegd — dit is de officiële fee`,
+        ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar && klaar(); } });
+      };
+    }});
+}
+
 /* ═══ TAB: PLAATSINGEN & TERMIJNEN ═════════════════════════════ */
 function tabPlaatsingen(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen plaatsingen in demo',
@@ -2046,6 +2585,21 @@ function tabPlaatsingen(el, f){
     netto:t.netto+r.netto, w:t.w+(r.winstIndicatie||0)
   }), {n:0,fee:0,gefact:0,betaald:0,open:0,nog:0,vervallen:0,netto:0,w:0});
 
+  /* Getekend op het bord, nog niet in Finance: hier rond je ze af. De fee
+     die het CRM voorrekent staat er al naast. */
+  const inbox = inboxCandidates(f);
+  const inboxHtml = inbox.length ? kaart(`Af te ronden vanuit het bord (${inbox.length})`, tabel(
+    '<th>Kandidaat</th><th>Fase</th><th class="n">CRM rekent</th><th></th>',
+    inbox.map(c => { const vs = feeBerekening(f, c); return `<tr>
+      <td><b>${H(tekst(c.naam))}</b><div class="rowsub">${H([c.functie, c.klant].filter(Boolean).join(' · '))}${
+        c.geplaatst_op ? ' · getekend ' + H(dKort(c.geplaatst_op)) : ''}</div></td>
+      <td>${chip(faseVan(c) || '—', '')}</td>
+      <td class="n">${vs ? `<span class="num">${eur(vs.fee)}</span>${vs.zeker ? '' : '<div class="rowsub">schatting</div>'}`
+                         : '<span class="meta">geen maandloon</span>'}</td>
+      <td class="n" style="white-space:nowrap"><button class="btn sm" data-afronden="${H(c.id)}">Afronden</button>
+        <button class="btn ghost sm" data-nietfact="${H(c.id)}" title="Hier wordt niet voor gefactureerd">Niet factureren</button></td>
+    </tr>`; }).join('')), {plat:true}) : '';
+
   el.innerHTML = `
     <div class="grid c4" style="margin-bottom:18px">
       ${CRM.ui.kpi('Pipeline aan open termijnen', eur(k.nogTeFactureren), 'nog te factureren (excl. btw)')}
@@ -2055,6 +2609,7 @@ function tabPlaatsingen(el, f){
     </div>
 
     <div class="stack">
+      ${inboxHtml}
       ${kaart('Per klant',
         klantRows.length ? tabel(
           '<th>Klant</th><th class="n">Plaats.</th><th class="n">Fee totaal</th><th class="n">Gefactureerd</th>'
@@ -2094,7 +2649,7 @@ function tabPlaatsingen(el, f){
             <option value="vervallen">Met vervallen termijnen</option>
             <option value="gestopt">Gestopt</option>
           </select>
-          ${finLink('plaatsingen','Openen in finance-app')}
+          <button class="btn sub sm" id="fin_pl_nieuw">+ Plaatsing</button>
         </div>
         <div class="card-b" style="padding:0"><div id="fin_pl_tbl"></div></div>
       </div>
@@ -2105,6 +2660,18 @@ function tabPlaatsingen(el, f){
     _zoek = e.target.value; tekenPlTabel(el, f);
   }, 200));
   el.querySelector('#fin_pl_filter').onchange = e => { _filter = e.target.value; tekenPlTabel(el, f); };
+  const herteken = () => tabPlaatsingen(el, f);
+  el.querySelector('#fin_pl_nieuw').onclick = () => plFormulier(f, {}, herteken);
+  el.querySelectorAll('[data-afronden]').forEach(b => b.onclick = () => {
+    const c = cands().find(x => String(x.id) === b.dataset.afronden);
+    if(c) plFormulier(f, {c}, herteken);
+  });
+  el.querySelectorAll('[data-nietfact]').forEach(b => b.onclick = async () => {
+    const c = cands().find(x => String(x.id) === b.dataset.nietfact); if(!c) return;
+    if(!await CRM.bevestig(`${tekst(c.naam)} niet factureren?`,
+      'Hij verdwijnt uit deze lijst en wordt geen plaatsing in Finance.', {knop:'Niet factureren'})) return;
+    finDoe(b, () => niemandFactureren(f, c.id), `${tekst(c.naam)} staat op niet factureren`, herteken);
+  });
   tekenPlTabel(el, f);
 }
 
@@ -2129,7 +2696,6 @@ function tekenPlTabel(el, f){
     return;
   }
 
-  const btw = 1 + Sn(f,'btw_pct',0.21);
   wrap.innerHTML = `<div class="tblwrap" style="border:none;border-radius:0 0 var(--r-l) var(--r-l)">
     <table class="tbl">
       <thead><tr><th style="width:26px"></th><th>Kandidaat</th><th class="n">Fee excl.</th>
@@ -2143,11 +2709,10 @@ function tekenPlTabel(el, f){
         const act = ins.filter(i => i.status!=='vervallen');
         const nGef = act.filter(i => i.status==='gefactureerd' || i.status==='betaald').length;
         const next = ins.find(i => i.status==='te_factureren');
-        const open = _open.has(p.id);
         const rand = plRand(f, p, ins);
         return `
         <tr${CRM.ui.frand(rand.kleur, 'clickable fin-plrow', rand.let_)} data-pid="${H(p.id)}">
-          <td class="num" style="color:var(--muted)">${open?'▾':'▸'}</td>
+          <td class="num" style="color:var(--muted)">›</td>
           <td><b>${H(tekst(p.kandidaat))}</b>
             <div class="rowsub">${H([p.functie, p.klant].filter(Boolean).join(' · '))}${
               p.gestopt_op ? ` · <span style="color:var(--red)">gestopt ${H(dKort(p.gestopt_op))}</span>` : ''}</div></td>
@@ -2158,38 +2723,14 @@ function tekenPlTabel(el, f){
           <td class="n">${ps.open ? `<span class="num" style="color:var(--amber)">${eur(ps.open)}</span>` : '<span class="meta">—</span>'}</td>
           <td class="n">${next ? `<span class="num">${eur(bedragVan(next))}</span><div class="rowsub num">${H(dKort(next.geplande_datum))}</div>`
                                : '<span class="meta">—</span>'}</td>
-        </tr>
-        ${open ? `<tr class="fin-plsub"><td></td><td colspan="6">
-          ${ins.length ? `<table class="tbl fin-termijnen"><thead>
-            <tr><th>#</th><th class="n">Excl. btw</th><th class="n">Incl. btw</th><th class="n">Gepland</th>
-              <th>Status</th><th class="n">Gefactureerd</th><th class="n">Vervalt</th><th class="n">Betaald</th></tr></thead><tbody>
-            ${ins.map(i => {
-              const vv = vervaldatum(i, p);
-              const laat = i.status==='gefactureerd' && vv && vv < todayISO() ? daysBetween(vv, todayISO()) : 0;
-              return `<tr>
-              <td class="num">${H(tekst(i.termijn_nr, '?'))}</td>
-              <td class="n num">${eur(bedragVan(i))}</td>
-              <td class="n num meta">${eur(bedragVan(i)*btw)}</td>
-              <td class="n num">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</td>
-              <td>${stChip(i.status)}${laat ? ' ' + chip(laat + ' dgn te laat','red') : ''}</td>
-              <td class="n num">${i.factuurdatum ? H(dKort(i.factuurdatum)) : '—'}</td>
-              <td class="n num">${vv && i.status!=='betaald' && i.status!=='vervallen' ? H(dKort(vv)) : '—'}</td>
-              <td class="n num">${i.betaaldatum ? H(dKort(i.betaaldatum)) : '—'}</td>
-            </tr>`; }).join('')}</tbody></table>`
-            : `<div class="meta" style="padding:8px 0">Nog geen factuurschema — ${p.concept ? 'bevestig de fee in de finance-app.' : 'geen termijnen gevonden.'}</div>`}
-          <div class="meta" style="margin-top:10px">Betaaltermijn ${H(getal(p.betaaltermijn_dgn)||14)} dagen${
-            p.garantie_mnd ? ` · garantie ${H(num(getal(p.garantie_mnd), 0))} mnd` : ''}${
-            p.note ? ` · ${H(p.note)}` : ''}</div>
-          <div style="margin:10px 0 4px">${finLink('plaatsingen','Deze plaatsing openen in de finance-app')}</div>
-        </td></tr>` : ''}`;
+        </tr>`;
       }).join('')}
       </tbody></table></div>`;
 
-  wrap.querySelectorAll('.fin-plrow').forEach(tr => tr.onclick = () => {
-    const id = tr.dataset.pid;
-    if(_open.has(id)) _open.delete(id); else _open.add(id);
-    tekenPlTabel(el, f);
-  });
+  /* Klik = het beheerpaneel: termijnen afvinken, schema zetten, fee
+     bevestigen, stoppen. Het oude uitklappen toonde alleen. */
+  wrap.querySelectorAll('.fin-plrow').forEach(tr => tr.onclick = () =>
+    plPaneel(f, tr.dataset.pid, () => tabPlaatsingen(el, f)));
 }
 
 /* ═══ TAB: FACTURATIE ══════════════════════════════════════════
@@ -2251,18 +2792,20 @@ function tabFacturatie(el, f){
         betaald:       chip('betaald','green'),
         vervallen:     chip('vervallen','red')
       }[i.status] || chip(i.status || '—');
-      return `<tr${i.status==='vervallen' ? ' style="opacity:.55"' : ''}>
+      const knop = i.status==='te_factureren' ? `<button class="btn sm" data-fa="fact" data-iid="${H(i.id)}">Gefactureerd ✓</button>`
+                 : i.status==='gefactureerd'  ? `<button class="btn sm" data-fa="paid" data-iid="${H(i.id)}">Betaald ✓</button>` : '';
+      return `<tr class="clickable" data-pid="${H(p.id)}"${i.status==='vervallen' ? ' style="opacity:.55"' : ''}>
         <td class="num">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</td>
         <td><b>${H(tekst(p.id))}</b> <span class="meta">t${H(tekst(i.termijn_nr, '?'))}</span></td>
         <td>${H(tekst(p.kandidaat))}${_factGroep === 'klant' ? '' : `<div class="rowsub">${H(klantLabel(p.klant))}</div>`}</td>
         <td class="n num">${eur(bedragVan(i))}</td>
         <td class="n num meta">${eur(bedragVan(i)*btw)}</td>
         <td class="n num">${vv && i.status!=='betaald' && i.status!=='vervallen' ? H(dKort(vv)) : '—'}</td>
-        <td>${st}</td></tr>`;
+        <td>${st}</td><td class="n" style="white-space:nowrap">${knop}</td></tr>`;
     }).join('');
     return kaart(titel, tabel(
       '<th class="n">Gepland</th><th>Termijn</th><th>Kandidaat</th><th class="n">Excl. btw</th>'
-      + '<th class="n">Incl. btw</th><th class="n">Vervalt</th><th>Status</th>', rows),
+      + '<th class="n">Incl. btw</th><th class="n">Vervalt</th><th>Status</th><th></th>', rows),
       {plat:true, acties:`<span class="meta">${xs.length} termijn(en) · ${eur(totExcl)} excl. · ${eur(totExcl*btw)} incl. btw</span>`});
   }).join('');
 
@@ -2297,7 +2840,6 @@ function tabFacturatie(el, f){
           <option value="">Alle klanten</option>
           ${klanten.map(kl => `<option value="${H(kl)}">${H(kl)}</option>`).join('')}
         </select>
-        ${finLink('facturatie','Afvinken in de finance-app')}
       </div>
       <div class="card-f"><span class="meta">${items.length} termijn(en) in beeld ·
         totaal ${eur(items.reduce((s,x) => s + bedragVan(x.i), 0))} excl. btw.
@@ -2314,6 +2856,18 @@ function tabFacturatie(el, f){
   el.querySelectorAll('#fin_fact_groep button').forEach(b => b.onclick = () => {
     _factGroep = b.dataset.g; tabFacturatie(el, f);
   });
+  /* Afvinken kan hier rechtstreeks; een klik op de rij zelf opent de
+     plaatsing. De knop houdt zijn klik voor zichzelf (stopPropagation op de
+     knop zelf — niet op de cel, dat was precies de fout in de finance-app
+     waardoor deze knoppen daar niets deden). */
+  const herteken = () => tabFacturatie(el, f);
+  el.querySelectorAll('[data-fa]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const inst = f.installments.find(i => String(i.id) === b.dataset.iid); if(!inst) return;
+    finDoe(b, () => markeer(inst, b.dataset.fa === 'fact' ? 'gefactureerd' : 'betaald'),
+      b.dataset.fa === 'fact' ? `Termijn ${inst.termijn_nr} gefactureerd` : `Termijn ${inst.termijn_nr} betaald`, herteken);
+  });
+  el.querySelectorAll('tr[data-pid]').forEach(tr => tr.onclick = () => plPaneel(f, tr.dataset.pid, herteken));
 }
 
 /* ═══ TAB: FLEX ════════════════════════════════════════════════ */
