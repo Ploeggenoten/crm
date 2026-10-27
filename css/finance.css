@@ -226,3 +226,10 @@ tr.fin-ac-keuze input[type=date]{width:150px;height:28px;font-size:12.5px;displa
 .tbl tr.fin-prog td{background:var(--card-2)}
 .tbl tr.fin-prog td b{font-weight:600}
 .tbl tr.fin-scheiding td{padding:0;height:6px;background:var(--line)}
+
+/* Waardebalk (getekende waarde vs nodig, flex-uren vs overname) */
+.fin-waardebar{height:6px;border-radius:4px;background:var(--well);overflow:hidden;min-width:60px}
+.fin-waardebar i{display:block;height:100%;background:var(--olive-l);opacity:.7}
+.fin-waardebar.ok i{background:var(--olive);opacity:1}
+.tbl tr.fin-nu td{background:var(--card-2)}
+.tbl tr.fin-nu td:first-child{box-shadow:inset 3px 0 0 var(--olive)}

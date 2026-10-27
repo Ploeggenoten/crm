@@ -3287,9 +3287,12 @@ function tabFlex(el, f){
   const dekt = kostenNu ? fx.maandRunRate / kostenNu : null;
   const perKracht = margePerFlexkracht(f);
   const tekortFlex = Math.max(0, kostenNu - fx.maandRunRate);
+  const pf = flexPortefeuille(f);
+  const nogTe = pf.reduce((s2,r) => s2 + r.rest, 0);
+  const laatsteEinde = pf.reduce((m2,r) => r.einde > m2 ? r.einde : m2, '');
   const maanden = [5,4,3,2,1,0].map(i => String(addMonths(monthKey(todayISO()), -i)).slice(0,7));
   const maandRijen = maanden.map(mk7 => {
-    const marge = flexMaand(f, mk7), k = kostenVan(mk7), lopendM = mk7 === todayISO().slice(0,7);
+    const marge = binnenMaand(f, mk7).flexEcht, k = kostenVan(mk7), lopendM = mk7 === todayISO().slice(0,7);
     return `<tr><td><b>${H(mkLabel(mk7 + '-01'))}</b>${lopendM ? ' <span class="meta">loopt</span>' : ''}</td>
       <td class="n num pos">${eur(marge)}</td>
       <td class="n num">${eur(k.b)} <span class="meta">${k.bron}</span></td>
@@ -3300,20 +3303,26 @@ function tabFlex(el, f){
     ${strip([
       ['Flex per maand', eur(fx.maandRunRate), 'gem. laatste 4 weken × 52 ÷ 12'],
       ['Dekt van je kosten', dekt == null ? '—' : pct0(dekt), `van ${eur(kostenNu)} per maand`],
-      ['Flexkrachten', `<span class="num">${st.nActief}</span>`, `≈ ${eur(perKracht)} marge per kracht per maand`],
-      ['Om alles met flex te dekken', tekortFlex ? `+${Math.ceil(tekortFlex / perKracht)}` : '✓', tekortFlex ? 'flexkrachten erbij' : 'flex dekt al je kosten']
+      ['Flexkrachten', `<span class="num">${pf.length}</span>`, `≈ ${eur(perKracht)} marge per kracht per maand`],
+      ['Nog te verdienen', eur(nogTe), pf.length ? `potentieel, t/m de overnames (${H(mkLabel(laatsteEinde))})` : 'geen lopende flexkrachten']
     ])}
     ${bijnaOver.length ? `<div class="note warn" style="margin-bottom:14px"><b>Bijna kosteloos over te nemen:</b>
       ${bijnaOver.map(r => `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} (nog ${Math.round(r.resterendUren)} u)`).join(' · ')}.
       Nu is het moment voor een vervolgafspraak.</div>` : ''}
     <div class="stack">
-      ${kaart('Flexkrachten', st.rows.length
-        ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt</th><th class="n">Verdiend</th><th class="n">Tot overname</th>',
-            st.rows.map(rij).join(''))
-        : CRM.ui.leeg('Geen actieve flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
-        {plat: !!st.rows.length})}
-      ${kaart('Flex-marge naast je kosten', tabel('<th>Maand</th><th class="n">Flex-marge</th><th class="n">Kosten bedrijf</th><th class="n">Flex dekt</th>', maandRijen),
-        {plat:true, voet:`Flex-marge = wat Pronkert uitbetaalt. Dit jaar tot nu: ${eur(fx.ytd)}.`})}
+      ${kaart(`Flex-portefeuille · ${pf.length} flexkracht${pf.length === 1 ? '' : 'en'}`, pf.length
+        ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt / overname</th><th class="n">Nog te verdienen</th><th class="n">Overname ±</th>',
+            pf.map(r => `<tr><td><b>${H(r.naam)}</b><div class="rowsub">${H(klantLabel(r.klant))}${r.nieuw ? ' · net getekend' : ''}${
+                r.bron === 'streefwaarde' ? ' · <span title="Uurloon of klantafspraak ontbreekt — gerekend met de streefwaarde">geschat</span>' : ''}</div></td>
+              <td class="n num">${eur2(r.margeUur)}</td>
+              <td class="n num">${Math.round(r.gewerkt)} / ${Math.round(r.overname)} u
+                <div class="fin-waardebar" style="margin-top:4px"><i style="width:${Math.min(100, r.gewerkt / r.overname * 100)}%"></i></div></td>
+              <td class="n"><b class="num">${eur(r.rest)}</b></td>
+              <td class="n num">${H(dKort(r.einde))}</td></tr>`).join(''))
+        : CRM.ui.leeg('Geen lopende flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
+        {plat: !!pf.length, voet:'Potentieel, niet binnen: marge per uur × de uren tot de kosteloze overname. Na de overname rekenen we niets meer. Uitbetaling door Pronkert volgt telkens een maand na het werk.'})}
+      ${kaart('Flex binnen naast je kosten', tabel('<th>Maand</th><th class="n">Uitbetaald door Pronkert</th><th class="n">Kosten bedrijf</th><th class="n">Flex dekt</th>', maandRijen),
+        {plat:true, voet:`Wat Pronkert in die maand uitbetaalt = de marge van het werk in de maand ervoor. Verdiend dit jaar (werkweken): ${eur(fx.ytd)}.`})}
       ${perWeek()}
     </div>`;
 
@@ -3715,20 +3724,6 @@ function margePerFlexkracht(f){
   return (st.nCompleet && st.margePerMaand) ? st.margePerMaand / st.nCompleet : 1400;
 }
 
-/* Prognose voor een toekomstige maand: wat ligt er al vast? */
-function prognoseMaand(f, mk7){
-  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
-  const ws = f.installments.filter(i => i.status === 'te_factureren' && String(i.geplande_datum||'').slice(0,7) === mk7
-      && plById[i.placement_id] && !plById[i.placement_id].concept && !opHold(f, i.placement_id))
-    .reduce((s,i) => s + bedragVan(i), 0);
-  const flex = flexStats(f).maandRunRate;
-  const posten = f.budget.filter(b => String(b.vanaf_maand||'').slice(0,7) <= mk7
-    && (!b.tot_maand || String(b.tot_maand).slice(0,7) >= mk7));
-  const vast = posten.filter(b => postSoort('', b.categorie) === 'vast').reduce((s,b) => s + getal(b.bedrag_pm), 0);
-  const variabel = posten.filter(b => postSoort('', b.categorie) !== 'vast').reduce((s,b) => s + getal(b.bedrag_pm), 0);
-  return {mk7, ws, flex, omzet: ws + flex, vast, variabel, kosten: vast + variabel, resultaat: ws + flex - vast - variabel, prognose: true};
-}
-
 /* Kostenbewaking: de laatste afgesloten maand per post naast het gemiddelde
    van de drie maanden ervoor. Signaal bij +15% én minstens €150, of een
    nieuwe post van €150+. Vaste lasten krijgen voorrang in de lijst. */
@@ -3783,47 +3778,227 @@ const nmbrsStand = f => {
     + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 };
 
-/* ─── Kaart: maand voor maand ─────────────────────────────────────── */
+/* ═══ FLEX-WAARDE EN GETEKENDE WAARDE ═══════════════════════════
+   "We focussen heel erg op plaatsingen, maar dat geeft weinig grip: nu
+   lijkt het alsof we een slechte maand hebben gedraaid, terwijl we veel
+   flex hebben gedraaid — en die mensen lopen 1560 of 1040 uur" (Tjeerd,
+   27 okt 2026). Daarom sturen op GETEKENDE WAARDE: W&S-fee + wat een
+   flexkracht oplevert tot de kosteloze overname. Zijn keuzes:
+   • flex-waarde = uurloon × (klantfactor − inkoopfactor) × overname-uren;
+     ontbreekt iets, dan de streefwaarde (€12.000);
+   • na de overname stopt de marge (voorzichtig).                     */
+const streefFlex = f => Sn(f,'streef_waarde_flex',12000) || 12000;
+
+/* Waarde van één flexkracht. Bron in volgorde: de flexplaatsing in Finance
+   (bijgewerkt door de Pronkert-facturen), de kandidaatkaart + afspraak met
+   de klant, de streefwaarde. */
+function flexWaarde(f, fp, c){
+  let uurloon = null, klantfactor = null, inkoop = null, overname = null, urenPw = null, gewerkt = null;
+  if(fp){
+    const b = flexPlBerekening(f, fp);
+    uurloon = b.uurloon; klantfactor = b.klantfactor; overname = b.overnameUren; gewerkt = b.gewerkteUren;
+    inkoop = getalOfNull(fp.inkoop_factor); urenPw = getalOfNull(fp.uren_pw);
+  }
+  if(c){
+    uurloon = uurloon || getalOfNull(c.uurloon);
+    urenPw = urenPw || getalOfNull(c.uren);
+    const ruw = CRM.fee.voorKlant(c.klant, c.geplaatst_op || null, 'uitzenden');
+    if(ruw){
+      if(!klantfactor){ const pv = CRM.fee.pctVoor(feeKand(c), ruw); klantfactor = pv && pv.pct ? Number(pv.pct) : null; }
+      if(!overname) overname = CRM.fee.normaliseer(ruw).overname_uren || null;
+    }
+  }
+  const fa = flexAfspraakVoor(f, (fp && fp.klant) || (c && c.klant));
+  if(fa){
+    klantfactor = klantfactor || getalOfNull(fa.factor);
+    inkoop = inkoop || getalOfNull(fa.inkoop_factor);
+    overname = overname || getalOfNull(fa.overname_uren);
+  }
+  inkoop = inkoop || Sn(f,'flex_inkoop_factor',1.8) || 1.8;
+  urenPw = urenPw || 40;
+  let margeUur = (uurloon && klantfactor && klantfactor > inkoop) ? (klantfactor - inkoop) * uurloon : null;
+  let bron = margeUur && overname ? (fp && fp.marge_werkelijk != null ? 'factuur' : 'afspraak') : 'streefwaarde';
+  if(!(margeUur && overname)){ overname = overname || 1560; margeUur = streefFlex(f) / overname; }
+  const restUren = Math.max(0, overname - (gewerkt || 0));
+  return {margeUur, overname, urenPw, gewerkt: gewerkt || 0, restUren,
+          totaal: margeUur * overname, rest: margeUur * restUren, bron,
+          einde: restUren ? addDays(todayISO(), Math.round(restUren / urenPw * 7)) : todayISO()};
+}
+
+/* Alle flexkrachten die nu lopen: de flexplaatsingen in Finance, plus wie
+   op het bord als Flex getekend heeft maar nog niet in Finance staat. */
+function flexPortefeuille(f){
+  const rijen = [], gekoppeld = new Set(), namen = new Set();
+  for(const fp of f.flexPl.filter(x => !x.gestopt_op)){
+    const c = fp.pipeline_candidate_id ? cands().find(x => x.id === fp.pipeline_candidate_id) : null;
+    if(c && c.gestopt_op) continue;
+    if(fp.pipeline_candidate_id) gekoppeld.add(fp.pipeline_candidate_id);
+    namen.add(String(fp.kandidaat||'').trim().toLowerCase());
+    rijen.push({naam: tekst(fp.kandidaat), klant: fp.klant, start: fp.start || (c && c.geplaatst_op), ...flexWaarde(f, fp, c)});
+  }
+  for(const c of cands()){
+    if(!isFlexType(c.type) || !isPlaced(c) || c.gestopt_op) continue;
+    if(gekoppeld.has(c.id) || namen.has(String(c.naam||'').trim().toLowerCase())) continue;
+    rijen.push({naam: tekst(c.naam), klant: c.klant, start: c.geplaatst_op, nieuw: true, ...flexWaarde(f, null, c)});
+  }
+  return rijen.sort((a,b) => String(a.einde).localeCompare(String(b.einde)));
+}
+
+/* Flex-marge die de portefeuille in een maand oplevert: per persoon
+   uren × marge, tot de overname bereikt is. Wie er nu niet is, telt
+   niet mee — de prognose laat dus zien wanneer flex terugloopt. */
+function flexUitPortefeuille(f, mk7){
+  const t = todayISO(), H = 52/12;
+  let som = 0;
+  for(const r of flexPortefeuille(f)){
+    let rest = r.restUren;
+    for(let i = 0; i < 24 && rest > 0; i++){
+      const m = String(addMonths(monthKey(t), i)).slice(0,7);
+      const deel = i === 0 ? Math.max(0, 1 - (+t.slice(8,10)) / 30) : 1;
+      const uren = Math.min(rest, r.urenPw * H * deel);
+      rest -= uren;
+      if(m === mk7){ som += uren * r.margeUur; break; }
+    }
+  }
+  return som;
+}
+
+/* Getekende waarde in een maand: W&S-fees (netto, na vervallen termijnen)
+   + flex-waarde van wie die maand tekende. Wie stopte, telt mee met wat
+   er werkelijk verdiend is. Board-kandidaten die nog niet in Finance zijn
+   afgerond tellen mee met de fee die het CRM voorrekent. */
+function getekendeWaarde(f, mk7){
+  let ws = 0, flex = 0, nWs = 0, nFlex = 0;
+  const gekoppeld = new Set(f.placements.map(p => p.pipeline_candidate_id).filter(Boolean));
+  for(const p of f.placements){
+    if(String(p.contract_datum||'').slice(0,7) !== mk7) continue;
+    ws += getal(p.fee_excl) - placementStats(f, p).vervallen; nWs++;
+  }
+  for(const c of cands()){
+    if(String(c.geplaatst_op||'').slice(0,7) !== mk7) continue;
+    if(isFlexType(c.type)){
+      const fp = f.flexPl.find(x => x.pipeline_candidate_id === c.id);
+      const w = flexWaarde(f, fp, c);
+      flex += c.gestopt_op ? (fp && flexPlBerekening(f, fp).verdiend) || 0 : w.totaal; nFlex++;
+    }else if(!gekoppeld.has(c.id) && !CRM.fee.geenFeeReden(c) && (c.type || 'W&S') !== 'ZZP' && !c.vervangt){
+      const vs = feeBerekening(f, c);
+      if(vs && vs.fee){ ws += vs.fee; nWs++; }
+    }
+  }
+  return {mk7, ws, flex, totaal: ws + flex, nWs, nFlex};
+}
+
+/* ─── Kaart: getekende waarde ─────────────────────────────────────── */
+function waardeKaart(f){
+  const t = todayISO();
+  const maanden = [5,4,3,2,1,0].map(i => String(addMonths(monthKey(t), -i)).slice(0,7));
+  const nodigVan = mk7 => { const n = nmbrsMaanden(f).find(x => x.mk7 === mk7 && !x.lopend);
+    return n ? n.kosten : budgetVoorMaand(f, mk7 + '-01'); };
+  const rijen = maanden.map(mk7 => {
+    const w = getekendeWaarde(f, mk7), nodig = nodigVan(mk7), nu = mk7 === t.slice(0,7);
+    const pct = nodig ? Math.min(100, w.totaal / nodig * 100) : 0;
+    return `<tr${nu ? ' class="fin-nu"' : ''}>
+      <td><b>${H(mkLabel(mk7 + '-01'))}</b>${nu ? ' <span class="meta">loopt</span>' : ''}</td>
+      <td class="n num">${eur(w.ws)} <span class="meta">${w.nWs}×</span></td>
+      <td class="n num">${eur(w.flex)} <span class="meta">${w.nFlex}×</span></td>
+      <td class="n"><b class="num">${eur(w.totaal)}</b></td>
+      <td class="n num meta">${eur(nodig)}</td>
+      <td style="width:22%"><div class="fin-waardebar${w.totaal >= nodig ? ' ok' : ''}"><i style="width:${pct}%"></i></div></td></tr>`;
+  }).join('');
+  return kaart('Potentieel — getekende waarde (nog niet binnen)', tabel(
+    '<th>Maand</th><th class="n">W&amp;S</th><th class="n">Flex t/m overname</th><th class="n">Totaal</th><th class="n">Nodig</th><th></th>', rijen),
+    {plat:true, voet:'Wat je in een maand tekent, ook als het geld later binnenkomt: W&S-fee + flex-marge tot de kosteloze overname (uurloon × klantafspraak, anders €12.000). "Nodig" = je kosten in die maand — teken je structureel meer, dan groeit het bedrijf.'});
+}
+
+/* Wat komt er in een maand ECHT binnen — "we moeten onszelf niet rijk
+   rekenen; ik moet exact weten wat we binnenkrijgen" (Tjeerd, 27 okt 2026).
+   • W&S: termijnen met een betaaldatum in die maand (werkelijk ontvangen);
+     vooruit: de vervaldatum (gefactureerd) of geplande datum + betaaltermijn
+     (nog te factureren). Te late betalingen tellen NIET mee in de
+     prognose — die staan apart als "nog te innen".
+   • Flex: Pronkert betaalt de marge een maand later uit; wat in maand m
+     binnenkomt is de marge die in maand m−1 is verdiend. Vooruit: de
+     huidige flexkrachten tot hun overname, geen nieuwe.
+   Alles excl. btw, zoals Nmbrs. Concepten en on hold tellen niet mee.  */
+function binnenMaand(f, mk7){
+  const t = todayISO(), nu7 = t.slice(0,7);
+  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
+  let wsEcht = 0, wsVerwacht = 0;
+  for(const i of f.installments){
+    const p = plById[i.placement_id]; if(!p) continue;
+    if(i.status === 'betaald'){
+      if(String(i.betaaldatum||'').slice(0,7) === mk7) wsEcht += bedragVan(i);
+      continue;
+    }
+    if(p.concept || opHold(f, p.id) || mk7 < nu7) continue;
+    let op = null;
+    if(i.status === 'gefactureerd' && i.factuurdatum){ const vv = vervaldatum(i, p); if(vv >= t) op = vv; }
+    else if(i.status === 'te_factureren' && i.geplande_datum){ const vv = addDays(i.geplande_datum, getal(p.betaaltermijn_dgn) || 14); if(vv >= t) op = vv; }
+    if(op && op.slice(0,7) === mk7) wsVerwacht += bedragVan(i);
+  }
+  const vorig7 = String(addMonths(mk7 + '-01', -1)).slice(0,7);
+  let flexEcht = 0, flexVerwacht = 0;
+  if(vorig7 < nu7) flexEcht = flexMaand(f, vorig7);                       // margefacturen van vorige maand
+  else if(vorig7 === nu7){ flexEcht = flexMaand(f, nu7); flexVerwacht = flexUitPortefeuille(f, nu7); }
+  else flexVerwacht = flexUitPortefeuille(f, vorig7);
+  /* Lopende maand: wat al binnen is telt als echt; de flex van vorige
+     maand komt deze maand binnen. */
+  if(mk7 === nu7){ flexEcht = flexMaand(f, vorig7); flexVerwacht = 0; }
+  return {mk7, wsEcht, wsVerwacht, flexEcht, flexVerwacht,
+          echt: wsEcht + flexEcht, verwacht: wsVerwacht + flexVerwacht, totaal: wsEcht + flexEcht + wsVerwacht + flexVerwacht};
+}
+
+/* Te late betalingen: wel van ons, maar nog niet binnen — apart, niet in de prognose. */
+function nogTeInnen(f){
+  const t = todayISO();
+  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
+  const rij = f.installments.filter(i => {
+    const p = plById[i.placement_id];
+    if(!p || i.status !== 'gefactureerd' || opHold(f, p.id)) return false;
+    const vv = vervaldatum(i, p); return vv && vv < t;
+  });
+  return {n: rij.length, bedrag: rij.reduce((s,i) => s + bedragVan(i), 0)};
+}
+
+/* ─── Kaart: maand voor maand — wat komt er echt binnen ──────────── */
 let _alleMaanden = false;
 function maandKaart(f){
-  const t = todayISO(), jaar = t.slice(0,4);
-  const echtAlle = nmbrsMaanden(f).filter(m => m.mk7.slice(0,4) === jaar);
-  /* Standaard de laatste vier maanden + zes vooruit; de rest op verzoek. */
-  const echt = _alleMaanden ? echtAlle : echtAlle.slice(-4);
+  const t = todayISO(), nu7 = t.slice(0,7), jaar = t.slice(0,4);
+  const nm = nmbrsMaanden(f);
+  const kostenVan = mk7 => { const n = nm.find(x => x.mk7 === mk7 && !x.lopend);
+    return n ? {b: n.kosten, bron: 'Nmbrs'} : {b: budgetVoorMaand(f, mk7 + '-01'), bron: 'begroting'}; };
+  const alleTerug = [];
+  for(let i = 1; i <= 12; i++){ const m = String(addMonths(monthKey(t), -i)).slice(0,7); if(m.slice(0,4) === jaar) alleTerug.unshift(m); }
+  const terug = _alleMaanden ? alleTerug : alleTerug.slice(-3);
+  const vooruit = [1,2,3,4,5,6].map(i => String(addMonths(monthKey(t), i)).slice(0,7));
   const fee = kpis(f).gemFee || 8500, perKracht = margePerFlexkracht(f);
-  const vooruit = [1,2,3,4,5,6].map(i => String(addMonths(monthKey(t), i)).slice(0,7)).map(mk7 => prognoseMaand(f, mk7));
-  const nodig = r => {
-    if(r.resultaat >= 0) return '<span class="meta">gedekt</span>';
-    const gat = -r.resultaat;
-    return `<span class="neg num">${eurN(r.resultaat)}</span><div class="rowsub">≈ ${Math.ceil(gat / fee)} W&amp;S of ${Math.ceil(gat / perKracht)} flex erbij</div>`;
-  };
-  const rij = (m, isProg) => {
-    const flex = isProg ? m.flex : flexMaand(f, m.mk7);
-    const ws = isProg ? m.ws : Math.max(0, m.omzet - flex);
-    const dekt = m.kosten ? flex / m.kosten : null;
-    return `<tr${isProg ? ' class="fin-prog"' : ''}>
-      <td><b>${H(mkLabel(m.mk7 + '-01'))}</b>${m.lopend ? ` <span class="meta">t/m ${H(dKort(t))}</span>` : ''}${isProg ? ' <span class="meta">prognose</span>' : ''}</td>
+  const inn = nogTeInnen(f);
+
+  const rij = mk7 => {
+    const b = binnenMaand(f, mk7), k = kostenVan(mk7);
+    const prog = mk7 > nu7, nu = mk7 === nu7;
+    const ws = b.wsEcht + b.wsVerwacht, flex = b.flexEcht + b.flexVerwacht;
+    const saldo = b.totaal - k.b;
+    const omzet = (nm.find(x => x.mk7 === mk7) || {}).omzet;
+    const nodig = prog && saldo < 0
+      ? `<span class="neg num">${eurN(saldo)}</span><div class="rowsub">≈ ${Math.ceil(-saldo / fee)} W&amp;S of ${Math.ceil(-saldo / perKracht)} flex erbij</div>`
+      : `<span class="num ${saldo < 0 ? 'neg' : 'pos'}">${eurN(saldo)}</span>`;
+    return `<tr class="${prog ? 'fin-prog' : ''}${nu ? ' fin-nu' : ''}">
+      <td><b>${H(mkLabel(mk7 + '-01'))}</b>${nu ? ' <span class="meta">tot nu</span>' : prog ? ' <span class="meta">verwacht</span>' : ''}</td>
       <td class="n num">${eur(ws)}</td>
       <td class="n num">${eur(flex)}</td>
-      <td class="n num">${eur(m.vast)}</td>
-      <td class="n num">${eur(m.variabel)}</td>
-      <td class="n"><b class="num ${m.resultaat < 0 ? 'neg' : 'pos'}">${eurN(m.resultaat)}</b></td>
-      <td class="n num">${dekt == null ? '—' : pct0(dekt)}</td>
-      <td class="n">${isProg ? nodig(m) : ''}</td></tr>`;
+      <td class="n"><b class="num">${eur(b.totaal)}</b>${omzet != null ? `<div class="rowsub">omzet Nmbrs ${eur(omzet)}</div>` : ''}</td>
+      <td class="n num">${eur(k.b)} <span class="meta">${k.bron === 'Nmbrs' ? '' : 'begroot'}</span></td>
+      <td class="n">${nodig}</td></tr>`;
   };
-  const heeftPL = echt.length > 0;
-  const body = heeftPL
-    ? tabel('<th>Maand</th><th class="n">W&amp;S</th><th class="n">Flex</th><th class="n">Vaste kosten</th><th class="n">Variabele kosten</th><th class="n">Resultaat</th><th class="n">Flex dekt</th><th class="n">Om kosten te dekken</th>',
-        (echtAlle.length > 4 ? `<tr><td colspan="8"><button type="button" class="lnk" id="fin_allemaanden">${
-          _alleMaanden ? 'Alleen de laatste maanden' : `Eerdere maanden (${echtAlle.length - 4})`}</button></td></tr>` : '')
-        + echt.map(m => rij(m, false)).join('') + `<tr class="fin-scheiding"><td colspan="8"></td></tr>` + vooruit.map(m => rij(m, true)).join(''))
-    : `<div style="padding:16px 20px"><div class="note info">Nog geen cijfers per post uit Nmbrs. De koppeling moet één keer vernieuwd worden
-        in Supabase; daarna staan hier elke maand je omzet, vaste en variabele kosten en je resultaat.</div></div>`
-      + tabel('<th>Maand</th><th class="n">W&amp;S</th><th class="n">Flex</th><th class="n">Vaste kosten</th><th class="n">Variabele kosten</th><th class="n">Resultaat</th><th class="n">Flex dekt</th><th class="n">Om kosten te dekken</th>',
-        vooruit.map(m => rij(m, true)).join(''));
-  return kaart('Maand voor maand', body, {plat:true,
-    acties:`<span class="meta">Nmbrs ${H(nmbrsStand(f))}</span> <button class="btn ghost sm" id="fin_nmbrs">↻ Nmbrs</button>`,
-    voet:`Werkelijk = Nmbrs (excl. btw). Prognose = W&S-termijnen die gepland staan + flex-gemiddelde − je begrote vaste lasten. "Om kosten te dekken" rekent met je gemiddelde fee (${eur(fee)}) en ${eur(perKracht)} marge per flexkracht per maand.`});
+  const kop = '<th>Maand</th><th class="n">Binnen W&amp;S</th><th class="n">Binnen flex</th><th class="n">Totaal binnen</th><th class="n">Kosten</th><th class="n">Over / tekort</th>';
+  const body = tabel(kop,
+    (alleTerug.length > 3 ? `<tr><td colspan="6"><button type="button" class="lnk" id="fin_allemaanden">${
+      _alleMaanden ? 'Alleen de laatste maanden' : `Eerdere maanden (${alleTerug.length - 3})`}</button></td></tr>` : '')
+    + terug.map(rij).join('') + rij(nu7) + `<tr class="fin-scheiding"><td colspan="6"></td></tr>` + vooruit.map(rij).join(''));
+  return kaart('Wat komt er echt binnen', body, {plat:true,
+    acties:`${inn.n ? `<span class="meta">nog te innen (te laat): <b class="neg num">${eur(inn.bedrag)}</b> · </span>` : ''}<span class="meta">Nmbrs ${H(nmbrsStand(f))}</span> <button class="btn ghost sm" id="fin_nmbrs">↻ Nmbrs</button>`,
+    voet:`Excl. btw. Binnen W&S = betaalde termijnen (vooruit: op de vervaldatum). Binnen flex = uitbetaling Pronkert, een maand na het werk (vooruit: je huidige flexkrachten tot hun overname — geen nieuwe). Te late betalingen tellen niet mee tot ze binnen zijn. "Om kosten te dekken" rekent met je gemiddelde fee (${eur(fee)}) en ${eur(perKracht)} marge per flexkracht per maand.`});
 }
 
 /* ─── Kaart: kostenbewaking ───────────────────────────────────────── */
@@ -3928,16 +4103,18 @@ function tabGeld(el, f){
   el.innerHTML = `
     ${strip([
       ['Banksaldo', saldo ? eur(getal(saldo.saldo)) : '—', saldo ? 'stand ' + H(dKort(saldo.datum)) : 'nog niet ingevuld'],
+      (() => { const b = binnenMaand(f, t.slice(0,7)); return ['Binnen ' + mkLabel(mk), eur(b.echt),
+        b.wsVerwacht ? `+ ${eur(b.wsVerwacht)} verwacht deze maand` : 'echt ontvangen, excl. btw']; })(),
       vorige ? ['Resultaat ' + mkLabel(vorige.mk7 + '-01'), `<span class="${vorige.resultaat < 0 ? 'neg' : ''}">${eurN(vorige.resultaat)}</span>`,
         `omzet ${eur(vorige.omzet)} · kosten ${eur(vorige.kosten)}`] : ['Resultaat', '—', 'wacht op Nmbrs'],
       kb ? ['Kosten ' + mkLabel(kb.laatst.mk7 + '-01'), eur(kb.laatst.kosten),
         `${(kb.dVast + kb.dVar) > 0 ? '<span class="neg">+' : '<span class="pos">−'}${eur(Math.abs(kb.dVast + kb.dVar))}</span> t.o.v. gemiddeld`]
         : ['Begrote kosten', eur(budgetNu), 'per maand'],
-      ['Jaardoel', pct0(doel ? gerealiseerd / doel : 0), `${eur(gerealiseerd)} van ${eur(doel)}`]
     ])}
     <div class="stack">
       ${maandKaart(f)}
       ${bewakingKaart(f)}
+      ${waardeKaart(f)}
       <div class="grid c2 fin-geld">
         ${kaart('Kas komende 13 weken', tabel('<th>Week van</th><th class="n">In</th><th class="n">Uit</th><th class="n">Saldo</th>', kasRijen),
           {plat:true, voet:'Incl. btw. Alleen wat vastligt: termijnen, flex-gemiddelde, vaste lasten, btw-afdracht en aflossing.'})}
