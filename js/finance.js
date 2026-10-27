@@ -421,7 +421,11 @@ const kostenVoorMaand = (f, mk) => { const a = actueelVoorMaand(f, mk); return a
 
 /* ─── Flex (bron: calc.js flexStats / flexPlBerekening / flexPlStats) ─── */
 function flexAfspraakVoor(f, klant){
-  return f.flexAfspr.find(a => CRM.zelfdeKlant(a.klant, klant)) || null;
+  /* Exact, of op woorden: "Omefa" hoort bij "Omefa European plastics & tooling". */
+  return f.flexAfspr.find(a => CRM.zelfdeKlant(a.klant, klant))
+    || f.flexAfspr.find(a => { const w = naamWoorden(a.klant), k = naamWoorden(klant);
+         return w.length && k.length && (w.every(x => k.includes(x)) || k.every(x => w.includes(x))); })
+    || null;
 }
 function flexPlBerekening(f, fp){
   const afspr = flexAfspraakVoor(f, fp.klant);
@@ -3401,13 +3405,16 @@ function tabFlex(el, f, compact){
       ${kaart(`Flex-portefeuille · ${pf.length} flexkracht${pf.length === 1 ? '' : 'en'}`, pf.length
         ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt / overname</th><th class="n">Nog te verdienen</th><th class="n">Overname ±</th>',
             pf.map(r => `<tr${r.compleet ? '' : ' class="fin-onvolledig"'}><td><b>${H(r.naam)}</b><div class="rowsub">${H(klantLabel(r.klant))}${r.nieuw ? ' · net getekend' : ''}</div></td>
-              <td class="n num">${r.margeUur ? eur2(r.margeUur) : '—'}${r.margeUur ? `<div class="rowsub" title="${H('Uurloon ' + eur2(r.uurloon) + ' × (klantfactor ' + num(r.klantfactor, 2) + ' − inkoop ' + num(r.inkoop, 3) + ', ' + r.inkoopBron + ')' + (r.klantfactorBron ? ' · klantfactor uit ' + r.klantfactorBron : ''))}">${/eigen margefacturen/.test(r.inkoopBron) ? 'uit facturen' : num(r.klantfactor, 2) + ' − ' + num(r.inkoop, 2)}</div>` : ''}</td>
+              <td class="n num">${r.margeUur ? eur2(r.margeUur) : '—'}${r.margeUur ? `<div class="rowsub" title="${H(r.echt
+                  ? 'Werkelijke marge per gewerkt uur uit de eigen margefacturen (leidend).' + (r.margeVoorspeld ? ' Voorspeld was ' + eur2(r.margeVoorspeld) + '.' : '')
+                  : 'Voorspelling: uurloon ' + eur2(r.uurloon) + (r.uurloonBron ? ' (' + r.uurloonBron + ')' : '') + ' × (klantfactor ' + num(r.klantfactor, 2) + ' uit ' + r.klantfactorBron + ' − inkoop ' + num(r.inkoop, 3) + ' uit ' + r.inkoopBron + ')')}">${
+                  r.echt ? `factuur${r.margeVoorspeld ? ' · voorspeld ' + eur2(r.margeVoorspeld) : ''}` : `voorspelling · ${num(r.klantfactor, 2)} − ${num(r.inkoop, 2)}`}</div>` : ''}</td>
               <td class="n num">${Math.round(r.gewerkt)} / ${r.overname ? Math.round(r.overname) + ' u' : '?'}
                 ${r.overname ? `<div class="fin-waardebar" style="margin-top:4px"><i style="width:${Math.min(100, r.gewerkt / r.overname * 100)}%"></i></div>` : ''}</td>
               <td class="n">${r.compleet ? `<b class="num">${eur(r.rest)}</b>` : '<span class="meta">mist gegevens</span>'}</td>
               <td class="n num">${r.einde ? H(dKort(r.einde)) : '—'}</td></tr>`).join(''))
         : CRM.ui.leeg('Geen lopende flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
-        {plat: !!pf.length, voet:'Potentieel, niet binnen: marge per uur × de uren tot de kosteloze overname. Marge per uur = uurloon × (klantfactor − inkoopfactor). Inkoop komt van de Pronkert-factuur zodra iemand werkt, daarvóór uit de kostprijsberekening (CAO van de klant, Fase 1/2). Na de overname rekenen we niets meer.'})}
+        {plat: !!pf.length, voet:'Potentieel, niet binnen: marge per uur × de uren tot de kosteloze overname. "Voorspelling" = uurloon × (klantfactor − inkoopfactor), met de inkoop van een collega bij dezelfde klant. Zodra iemands eigen margefactuur binnen is staat er "factuur": dan geldt de werkelijke marge per uur, altijd. Na de overname rekenen we niets meer.'})}
       ${compact ? '' : kaart('Flex binnen naast je kosten', tabel('<th>Maand</th><th class="n">Uitbetaald door Pronkert</th><th class="n">Kosten bedrijf</th><th class="n">Flex dekt</th>', maandRijen),
         {plat:true, voet:`Wat Pronkert in die maand uitbetaalt = de marge van het werk in de maand ervoor. Verdiend dit jaar (werkweken): ${eur(fx.ytd)}.`})}
       ${compact ? '' : perWeek()}
@@ -3884,111 +3891,95 @@ const nmbrsStand = f => {
      ontbreekt iets, dan de streefwaarde (€12.000);
    • na de overname stopt de marge (voorzichtig).                     */
 
-/* Waarde van één flexkracht — ZONDER gokken (Tjeerd, 27 okt 2026: "zodat
-   je niet gaat gokken en verkeerde cijfers hebt; geef in het CRM aan wat
-   je mist"). Elk gegeven komt uit de beste bron die er is:
-   • uurloon / uren p.w.: flexplaatsing (Pronkert-factuur) → kandidaatkaart
-   • klantfactor:   flexplaatsing → factuurtarief op de kandidaatkaart (÷ uurloon)
-                    → afspraak Uitzenden op de klantkaart → flex-afspraak
-   • overname-uren: flexplaatsing → afspraak Uitzenden → flex-afspraak
-   • inkoopfactor:  per klant ALTIJD dezelfde, los van het uurloon (Tjeerd:
-                    "een inkoopprijs is altijd hetzelfde als die van een andere
-                    kandidaat"). Eigen margefactuur → margefactuur van een collega bij
-                    dezelfde klant (zelfde factorschema) → kostprijsberekening met de CAO en
-                    contractfase uit de afspraak Uitzenden (zelfde als de
-                    kandidaatkaart) → flex-afspraak → CAO van de klant met
-                    Fase 1/2 (startfase van een nieuwe uitzendkracht)
-   Zo rekent Finance precies hetzelfde als de kandidaatkaart.
-   Ontbreekt uurloon of klantfactor, dan is er GEEN marge: de flexkracht
-   telt niet mee in de totalen en `mist` zegt wat er ingevuld moet worden. */
-function flexWaarde(f, fp, c){
-  let uurloon = null, klantfactor = null, inkoop = null, overname = null, urenPw = null, gewerkt = null, inkoopBron = '', fpInkoop = null;
+/* Waarde van één flexkracht — ZONDER gokken.
+   VOORSPELLING tot de eerste eigen margefactuur binnen is; daarna is de
+   FACTUUR leidend, altijd (Tjeerd, 27 okt 2026: "doe dit als voorspelling,
+   en zodra de echte margefactuur binnen is, die is leidend en altijd leidend").
+   Bronnen, in volgorde:
+   • uurloon:      flexplaatsing → kandidaatkaart (uurloon, of maandloon
+                   omgerekend: × 3 ÷ 13 weken ÷ uren per week)
+   • klantfactor:  flexplaatsing → factuurtarief op de kandidaatkaart ÷ uurloon
+                   → afspraak Uitzenden → flex-afspraak → factuur van een collega
+   • inkoopfactor: per klant ALTIJD dezelfde, los van het uurloon ("een
+                   inkoopprijs is altijd hetzelfde als die van een andere
+                   kandidaat"): factuur van een collega bij dezelfde klant (ook
+                   als die gestopt is) → handmatig vastgelegd (flex-afspraak)
+                   → flexplaatsing → kostprijsberekening CAO + fase
+   • overname:     flexplaatsing → afspraak Uitzenden → flex-afspraak → per klant
+   Ontbreekt iets, dan GEEN marge: telt nergens mee, `mist` zegt wat er moet. */
+function flexWaarde(f, fp, c, alleenVoorspelling){
   const mist = [];
-  if(fp){
-    const b = flexPlBerekening(f, fp);
-    uurloon = getalOfNull(fp.uurloon); klantfactor = getalOfNull(fp.klantfactor);
-    overname = getalOfNull(fp.overname_uren); gewerkt = b.gewerkteUren;
-    /* De op de flexplaatsing opgeslagen inkoop kan een standaardwaarde zijn;
-       die komt pas ná de factuur van een collega bij dezelfde klant. */
-    fpInkoop = getalOfNull(fp.inkoop_factor);
-    urenPw = getalOfNull(fp.uren_pw);
-  }
   const klant = (fp && fp.klant) || (c && c.klant) || '';
-  /* Staat deze persoon zelf al op een margefactuur, dan is dát de waarheid:
-     uurloon, wat de klant betaalt, de inkoop en de gewerkte uren. */
-  const eigen = eigenFactuur(f, (fp && fp.kandidaat) || (c && c.naam) || '', klant);
-  if(eigen){
-    uurloon = uurloon || eigen.uurloon;
-    klantfactor = klantfactor || eigen.klantfactor;
-    if(!inkoop && eigen.inkoopfactor){ inkoop = eigen.inkoopfactor; inkoopBron = 'eigen margefactuur'; }
-    if(gewerkt == null) gewerkt = eigen.uren;
+  let urenPw = (fp && getalOfNull(fp.uren_pw)) || (c && getalOfNull(c.uren)) || null;
+
+  /* uurloon */
+  let uurloon = (fp && getalOfNull(fp.uurloon)) || (c && getalOfNull(c.uurloon)) || null, uurloonBron = '';
+  if(!uurloon && c && getalOfNull(c.maandloon)){
+    uurloon = getalOfNull(c.maandloon) * 3 / 13 / (urenPw || 40);
+    uurloonBron = 'maandloon ' + eur(getalOfNull(c.maandloon)) + ' omgerekend';
   }
-  if(c){
-    uurloon = uurloon || getalOfNull(c.uurloon);
-    urenPw = urenPw || getalOfNull(c.uren);
-    /* Een ingevuld factuurtarief is wat de klant écht betaalt. */
-    const tarief = getalOfNull(c.tarief);
-    if(!klantfactor && tarief && uurloon) klantfactor = tarief / uurloon;
-  }
+
+  /* afspraken en facturen van de klant */
   const ruw = CRM.fee.voorKlant(klant, (c && c.geplaatst_op) || (fp && fp.start) || null, 'uitzenden');
-  if(ruw){
-    const a = CRM.fee.normaliseer(ruw);
-    if(!klantfactor){ const pv = CRM.fee.pctVoor(c ? feeKand(c) : {functie: (fp && fp.functie) || ''}, ruw); klantfactor = pv && pv.pct ? Number(pv.pct) : null; }
-    if(!overname) overname = a.overname_uren || null;
-    const cao = ruw.cao || a.cao, fase = ruw.contractfase || a.contractfase;
-    if(!inkoop){
-      const fi = inkoopUitFacturen(f, klant);
-      if(fi){ inkoop = fi.factor; inkoopBron = 'margefactuur ' + fi.naam + ' (zelfde klant)'; }
-    }
-    if(!inkoop && fpInkoop){ inkoop = fpInkoop; inkoopBron = 'flexplaatsing'; }
-    if(!inkoop && uurloon && cao && fase && CRM.kostprijsfactor){
-      const kp = CRM.kostprijsfactor(cao, fase, uurloon);
-      if(kp){ inkoop = kp.kostprijsfactor; inkoopBron = 'kostprijs ' + cao + ', ' + fase; }
-    }
-  }
-  const fiKlant = inkoopUitFacturen(f, klant);
-  if(!inkoop && fiKlant){ inkoop = fiKlant.factor; inkoopBron = 'margefactuur ' + fiKlant.naam + ' (zelfde klant)'; }
-  if(!inkoop && fpInkoop){ inkoop = fpInkoop; inkoopBron = 'flexplaatsing'; }
+  const a = ruw ? CRM.fee.normaliseer(ruw) : null;
   const fa = flexAfspraakVoor(f, klant);
-  if(fa){
-    klantfactor = klantfactor || getalOfNull(fa.factor);
-    overname = overname || getalOfNull(fa.overname_uren);
-    if(!inkoop && getalOfNull(fa.inkoop_factor)){ inkoop = getalOfNull(fa.inkoop_factor); inkoopBron = 'flex-afspraak'; }
-  }
-  if(!overname) overname = overnameKlant(f, klant);
-  /* Klantfactor nog onbekend: wat de klant volgens de margefactuur van een
-     collega werkelijk per uur betaalt (tarief ÷ uurloon). Echte data, geen schatting. */
-  let klantfactorBron = '';
+  const fiKlant = inkoopUitFacturen(f, klant);
+
+  /* klantfactor */
+  let klantfactor = (fp && getalOfNull(fp.klantfactor)) || null, klantfactorBron = '';
+  const tarief = c && getalOfNull(c.tarief);
+  if(!klantfactor && tarief && uurloon){ klantfactor = tarief / uurloon; klantfactorBron = 'factuurtarief kandidaatkaart'; }
+  if(!klantfactor && ruw){ const pv = CRM.fee.pctVoor(c ? feeKand(c) : {functie: (fp && fp.functie) || ''}, ruw);
+    if(pv && pv.pct){ klantfactor = Number(pv.pct); klantfactorBron = 'afspraak Uitzenden'; } }
+  if(!klantfactor && fa && getalOfNull(fa.factor)){ klantfactor = getalOfNull(fa.factor); klantfactorBron = 'flex-afspraak'; }
   if(!klantfactor && fiKlant && fiKlant.klantfactor){ klantfactor = fiKlant.klantfactor; klantfactorBron = 'margefactuur ' + fiKlant.naam; }
-  /* Controle: wijkt wat er is ingevuld af van wat Pronkert bij dezelfde klant
-     factureert? Dan is er iets mis met het uurloon, de factor of de afspraak. */
-  const afwijking = (fiKlant && !eigen && !(fp && fp.marge_werkelijk != null)) ? [
-      (klantfactor && fiKlant.klantfactor && Math.abs(klantfactor - fiKlant.klantfactor) > 0.05)
-        ? `klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}` : ''
-    ].filter(Boolean) : [];
+
+  /* inkoopfactor */
+  let inkoop = null, inkoopBron = '';
+  if(fiKlant){ inkoop = fiKlant.factor; inkoopBron = 'margefactuur ' + fiKlant.naam + ' (zelfde klant)'; }
+  if(!inkoop && fa && getalOfNull(fa.inkoop_factor)){ inkoop = getalOfNull(fa.inkoop_factor); inkoopBron = 'vastgelegd (flex-afspraak)'; }
+  if(!inkoop && fp && getalOfNull(fp.inkoop_factor)){ inkoop = getalOfNull(fp.inkoop_factor); inkoopBron = 'flexplaatsing'; }
   const kl = ((CRM.state && CRM.state.clients) || []).find(k => CRM.zelfdeKlant ? CRM.zelfdeKlant(k.naam, klant) : k.naam === klant);
-  if(!inkoop && uurloon && kl && kl.cao && CRM.kostprijsfactor){
-    const kp = CRM.kostprijsfactor(kl.cao, 'Fase 1/2', uurloon);
-    if(kp){ inkoop = kp.kostprijsfactor; inkoopBron = 'kostprijs ' + kl.cao + ', Fase 1/2'; }
+  if(!inkoop && uurloon && CRM.kostprijsfactor){
+    const cao = (ruw && ruw.cao) || (a && a.cao) || (kl && kl.cao), fase = (ruw && ruw.contractfase) || (a && a.contractfase) || 'Fase 1/2';
+    const kp = cao ? CRM.kostprijsfactor(cao, fase, uurloon) : null;
+    if(kp){ inkoop = kp.kostprijsfactor; inkoopBron = 'kostprijs ' + cao + ', ' + fase; }
   }
-  /* Werkt iemand al: zijn werkelijke marge per gewerkt uur uit de eigen
-     margefacturen (incl. ploegentoeslag, overwerk en reserveringen). */
-  const eigenMarge = eigen && eigen.margePerUur ? eigen.margePerUur : null;
-  if(!uurloon && !eigenMarge) mist.push({wat:'bruto uurloon', waar:'kandidaat'});
-  if(!klantfactor && !eigenMarge) mist.push({wat:'klantfactor (afspraak Uitzenden)', waar:'klant'});
-  if(!overname) mist.push({wat:'overname-uren (afspraak Uitzenden)', waar:'klant'});
+
+  /* overname */
+  const overname = (fp && getalOfNull(fp.overname_uren)) || (a && a.overname_uren) || (fa && getalOfNull(fa.overname_uren))
+    || overnameKlant(f, klant) || null;
+
+  /* de voorspelling */
+  const margeVoorspeld = (uurloon && klantfactor && inkoop) ? (klantfactor - inkoop) * uurloon : null;
+
+  /* de werkelijkheid: eigen margefacturen — leidend zodra ze er zijn */
+  const eigen = alleenVoorspelling ? null : eigenFactuur(f, (fp && fp.kandidaat) || (c && c.naam) || '', klant);
+  const echt = eigen && eigen.margePerUur ? eigen.margePerUur : null;
+  const gewerkt = (fp && flexPlBerekening(f, fp).gewerkteUren) || (eigen && eigen.uren) || 0;
+
+  if(!echt){
+    if(!uurloon) mist.push({wat:'bruto uurloon (of maandloon)', waar:'kandidaat'});
+    if(!klantfactor) mist.push({wat:'klantfactor (afspraak Uitzenden of factuurtarief)', waar:'klant'});
+    if(!inkoop && uurloon) mist.push({wat:'inkoopfactor (CAO bij de klant, of vastleggen onder ⚙)', waar:'klant'});
+  }
+  if(!overname) mist.push({wat:'overname-uren', waar:'klant'});
   if(!urenPw) mist.push({wat:'uren per week (40 aangenomen)', waar:'kandidaat', klein:true});
-  if(!inkoop && uurloon && !eigenMarge) mist.push({wat:'CAO + contractfase (afspraak Uitzenden → kostprijs)', waar:'klant'});
   urenPw = urenPw || 40;
-  const margeUur = eigenMarge || ((uurloon && klantfactor && inkoop) ? (klantfactor - inkoop) * uurloon : null);
-  if(eigenMarge) inkoopBron = 'werkelijke marge per uur uit de eigen margefacturen';
+
+  const margeUur = echt || margeVoorspeld;
   const compleet = !!(margeUur && overname);
-  const restUren = overname ? Math.max(0, overname - (gewerkt || 0)) : null;
-  return {uurloon, klantfactor, klantfactorBron, inkoop, inkoopBron, afwijking, overname, urenPw, gewerkt: gewerkt || 0, restUren, margeUur,
-          compleet, mist, klantId: kl ? kl.naam : klant,
+  const restUren = overname ? Math.max(0, overname - gewerkt) : null;
+  /* Controle: wijkt de ingevulde klantfactor af van wat Pronkert bij een
+     collega bij dezelfde klant factureert? */
+  const afwijking = (!echt && fiKlant && klantfactor && fiKlant.klantfactor && klantfactorBron !== 'margefactuur ' + fiKlant.naam
+      && Math.abs(klantfactor - fiKlant.klantfactor) > 0.05)
+    ? [`klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}`] : [];
+  return {uurloon, uurloonBron, klantfactor, klantfactorBron, inkoop, inkoopBron, afwijking, overname, urenPw, gewerkt, restUren,
+          margeUur, margeVoorspeld, echt: !!echt, compleet, mist, klantId: kl ? kl.naam : klant,
           totaal: compleet ? margeUur * overname : null,
           rest: compleet ? margeUur * restUren : null,
-          bron: !compleet ? 'onvolledig' : (inkoopBron === 'factuur Pronkert' ? 'factuur' : 'afspraak'),
+          bron: !compleet ? 'onvolledig' : (echt ? 'factuur' : 'voorspelling'),
           einde: restUren ? addDays(todayISO(), Math.round(restUren / urenPw * 7)) : null};
 }
 
@@ -4060,7 +4051,11 @@ function factuurZonderPortefeuille(f, pf){
   const grens = addDays(todayISO(), -21);
   const woorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w => w.length > 1);
   const namen = pf.map(r => woorden(r.naam));
+  /* Wie gestopt is (op het bord of in Finance) hoort er terecht niet meer in. */
+  const gestopt = [...f.flexPl.filter(x => x.gestopt_op).map(x => x.kandidaat),
+                   ...cands().filter(c => c.gestopt_op || faseVan(c) === 'Gestopt').map(c => c.naam)].map(woorden);
   return flexFactoren(f).filter(k => k.laatste && k.laatste >= grens && k.uren > 0)
+    .filter(k => { const roep = woorden(k.naam)[0]; return !gestopt.some(n => n.includes(roep)); })
     .filter(k => { const roep = woorden(k.naam)[0]; return roep && !namen.some(n => n.includes(roep)); });
 }
 
