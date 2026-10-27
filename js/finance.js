@@ -2101,11 +2101,11 @@ async function plWijzig(p, patch){
 /* Gefactureerd / betaald afvinken — zelfde regels als de ✓-knoppen in de
    finance-app: de datum is vandaag, en wie direct op betaald springt
    krijgt de geplande datum als factuurdatum. */
-async function markeer(inst, status){
+async function markeer(inst, status, datum){
   const patch = {status};
-  if(status === 'gefactureerd') patch.factuurdatum = todayISO();
+  if(status === 'gefactureerd') patch.factuurdatum = datum || todayISO();
   if(status === 'betaald'){
-    patch.betaaldatum = todayISO();
+    patch.betaaldatum = datum || todayISO();
     if(!inst.factuurdatum) patch.factuurdatum = inst.geplande_datum || todayISO();
   }
   if(status === 'te_factureren' || status === 'vervallen'){ patch.factuurdatum = null; patch.betaaldatum = null; }
@@ -2185,6 +2185,40 @@ async function finDoe(knop, werk, okTekst, daarna){
   finally{ if(knop) knop.disabled = false; if(daarna) daarna(gelukt); }
 }
 
+/* ─── Schema in één zin ────────────────────────────────────────────
+   "[7] termijnen, elke [1] maand, vanaf [24 sep]" met de datums en
+   bedragen er live onder — in plaats van een keuzelijst met drie soorten
+   schema's en verborgen velden (Tjeerd, 27 okt 2026: "schema opzetten is
+   niet makkelijk"). 50/50 na 3 maanden = 2 termijnen, elke 3 maanden.
+   Voorstel: zoals de vorige plaatsing bij dezelfde klant.            */
+function schemaVoorstel(f, klant, behalve){
+  const naam = String(klant||'').trim().toLowerCase();
+  const vorige = f.placements.filter(x => x.id !== behalve && naam && String(x.klant||'').trim().toLowerCase() === naam
+      && instOf(f, x.id).length)
+    .sort((a,b) => String(b.contract_datum||'').localeCompare(String(a.contract_datum||'')))[0];
+  if(!vorige) return {n:1, tussen:1, bron:''};
+  return {n: instOf(f, vorige.id).length, tussen: getal(vorige.maanden_tussen) || 1, bron: vorige.id};
+}
+function schemaZinHtml(pre, v, start){
+  return `<div class="fin-schema">
+      <input id="${pre}_n" type="number" min="1" max="24" value="${H(v.n)}"><span>termijn(en), elke</span>
+      <input id="${pre}_tussen" type="number" min="1" max="12" value="${H(v.tussen)}"><span>maand(en), vanaf</span>
+      <input id="${pre}_start" type="date" value="${H(start)}">
+    </div>
+    ${v.bron ? `<div class="hint">Voorstel: zoals de vorige plaatsing bij deze klant (${H(v.bron)}).</div>` : ''}
+    <div class="fin-schema-vb" id="${pre}_vb"></div>`;
+}
+function schemaUitZin(q, pre, fee){
+  const n = Math.max(1, Math.round(getal(q('#' + pre + '_n').value) || 1));
+  const tussen = Math.max(1, Math.round(getal(q('#' + pre + '_tussen').value) || 1));
+  const start = q('#' + pre + '_start').value || todayISO();
+  const rows = genSchema('nx', fee, start, {n, tussen});
+  q('#' + pre + '_vb').innerHTML = fee
+    ? rows.map(r => `<span>${H(dKort(r.datum))} <b class="num">${eur2(r.bedrag)}</b></span>`).join('')
+    : '<span class="meta">Vul eerst de fee in.</span>';
+  return {n, tussen, start, rows};
+}
+
 /* ─── Paneel: één plaatsing beheren ─────────────────────────────── */
 function plPaneel(f, pid, herteken){
   const p = f.placements.find(x => x.id === pid);
@@ -2221,8 +2255,12 @@ function plPaneel(f, pid, herteken){
     }
     return `<tr${i.status === 'vervallen' ? ' style="opacity:.55"' : ''}>
       <td class="num">${H(tekst(i.termijn_nr, '?'))}</td>
-      <td class="num">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</td>
-      <td class="n"><span class="num">${eur2(bedragVan(i))}</span><div class="rowsub num">${eur2(bedragVan(i)*btw)} incl.</div></td>
+      <td class="num">${i.status === 'te_factureren'
+        ? `<span class="fin-ed" data-ed="datum" data-iid="${H(i.id)}" title="Klik om de datum te wijzigen">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</span>`
+        : (i.geplande_datum ? H(dKort(i.geplande_datum)) : '—')}</td>
+      <td class="n">${i.status === 'te_factureren'
+        ? `<span class="fin-ed num" data-ed="bedrag" data-iid="${H(i.id)}" title="Klik om het bedrag te wijzigen">${eur2(bedragVan(i))}</span>`
+        : `<span class="num">${eur2(bedragVan(i))}</span>`}<div class="rowsub num">${eur2(bedragVan(i)*btw)} incl.</div></td>
       <td>${stChip(i.status)}${gemist ? ' ' + chip('gemist','red') : ''}${laat ? ' ' + chip(laat + ' dgn te laat','red') : ''}</td>
       <td class="num meta">${i.factuurdatum && i.status !== 'te_factureren' ? 'gefact. ' + H(dKort(i.factuurdatum)) : ''}${
         i.betaaldatum && i.status === 'betaald' ? '<br>betaald ' + H(dKort(i.betaaldatum)) : ''}${
@@ -2232,25 +2270,17 @@ function plPaneel(f, pid, herteken){
 
   const startVoor = (st.ins[0] && st.ins[0].geplande_datum) || p.eerste_factuurdatum || p.contract_datum || t;
   const nNu = st.ins.length;
-  const schemaKaart = !p.concept ? '' : `
-    <div class="card" style="margin-top:14px;border-left:3px solid var(--amber)">
-      <div class="card-h"><div class="h2">Hoe factureer je deze plaatsing?</div>
-        <span class="meta">afspraak met ${H(tekst(p.klant))}</span></div>
+  /* Schema (opnieuw) zetten kan zolang er nog niets gefactureerd is. */
+  const nogNiets = !st.ins.some(i => i.status === 'gefactureerd' || i.status === 'betaald');
+  const svP = nNu > 1 ? {n: nNu, tussen: getal(p.maanden_tussen) || 1, bron:''} : schemaVoorstel(f, p.klant, p.id);
+  const schemaKaart = !(p.concept || nogNiets) ? '' : `
+    <div class="card" style="margin-top:14px${p.concept ? ';border-left:3px solid var(--amber)' : ''}">
+      <div class="card-h"><div class="h2">Factuurschema</div><span class="spacer"></span>
+        <span class="meta">fee ${eur2(getalOfNull(p.fee_excl))} excl.</span></div>
       <div class="card-b">
-        <div class="row tight" style="flex-wrap:wrap;gap:10px;align-items:center">
-          <select id="fd_preset" style="width:auto">
-            <option value="1x">100% ineens</option>
-            <option value="5050">50% bij tekenen · 50% na X mnd</option>
-            <option value="nx">In N termijnen, elke X mnd</option>
-          </select>
-          <span id="fd_50">2e helft na <input id="fd_namnd" type="number" min="1" max="12" value="3" style="width:64px"> mnd</span>
-          <span id="fd_nx"><input id="fd_n" type="number" min="2" value="${nNu > 2 ? nNu : 7}" style="width:64px"> × om de
-            <input id="fd_tussen" type="number" min="1" value="1" style="width:64px"> mnd</span>
-          <span>vanaf <input id="fd_start" type="date" value="${H(startVoor)}" style="width:auto"></span>
-          <button class="btn sm" id="fd_zet">Termijnen zetten</button>
-        </div>
-        <p class="meta" style="margin:10px 0 0">Verdeelt de fee (${eur2(getalOfNull(p.fee_excl))} excl.) over nieuwe termijnen.
-          Stopt de kandidaat vóór een termijn, dan vervalt die vanzelf — je factureert alleen wat verdiend is.</p>
+        ${schemaZinHtml('fd', svP, startVoor)}
+        <div class="row tight" style="margin-top:10px"><span class="meta">Vervangt het huidige schema. Stopt de kandidaat, dan vervallen de termijnen erna vanzelf.</span>
+          <span class="spacer"></span><button class="btn sm" id="fd_zet">Termijnen zetten</button></div>
       </div></div>`;
 
   CRM.drawer.open(`
@@ -2316,19 +2346,20 @@ function plPaneel(f, pid, herteken){
           verval:`Termijn ${inst.termijn_nr} vervallen`, herstel:'Termijn hersteld', weg:'Termijn verwijderd'}[a], opnieuw);
     });
 
-    if(q('#fd_preset')){
-      const sel = q('#fd_preset');
-      sel.value = nNu === 2 ? '5050' : nNu > 2 ? 'nx' : '1x';
-      const sync = () => { q('#fd_50').hidden = sel.value !== '5050'; q('#fd_nx').hidden = sel.value !== 'nx'; };
-      sel.onchange = sync; sync();
-      q('#fd_zet').onclick = () => {
-        const o = sel.value === '5050' ? {naMnd: getal(q('#fd_namnd').value) || 3}
-                : sel.value === 'nx'   ? {n: Math.max(2, getal(q('#fd_n').value) || 2), tussen: getal(q('#fd_tussen').value) || 1}
-                : {};
-        o.start = q('#fd_start').value || null;
-        finDoe(q('#fd_zet'), () => zetSchema(f, p, sel.value, o), 'Factuurschema gezet', opnieuw);
-      };
+    if(q('#fd_n')){
+      const fee = getal(p.fee_excl);
+      const lees = () => schemaUitZin(q, 'fd', fee);
+      ['#fd_n','#fd_tussen','#fd_start'].forEach(sel => q(sel).addEventListener('input', lees));
+      lees();
+      q('#fd_zet').onclick = () => { const sz = lees();
+        finDoe(q('#fd_zet'), () => zetSchema(f, p, 'nx', {n: sz.n, tussen: sz.tussen, start: sz.start}), 'Factuurschema gezet', opnieuw); };
     }
+    /* Datum of bedrag direct in de tabel aanpassen. */
+    dr.querySelectorAll('.fin-ed').forEach(sp => sp.onclick = e => {
+      e.stopPropagation();
+      const inst = f.installments.find(i => String(i.id) === sp.dataset.iid);
+      if(inst) regelBewerken(sp, f, p, inst, sp.dataset.ed, opnieuw);
+    });
     q('#fd_plus').onclick = () => finDoe(q('#fd_plus'), async () => {
       const open = instOf(f, p.id).filter(i => i.status === 'te_factureren');
       if(!open.some(i => bedragVan(i) === 0)){
@@ -2473,6 +2504,7 @@ function plFormulier(f, {c = null, p = null} = {}, klaar){
   const af = ruw ? CRM.fee.normaliseer(ruw) : null;
   const vs = c ? feeBerekening(f, c) : null;
   const startVoorstel = c ? ((af && af.factuurmoment === 'start' && c.start) ? c.start : (c.geplaatst_op || c.start || todayISO())) : todayISO();
+  const svF = schemaVoorstel(f, c ? c.klant : '', null);
   const klanten = [...new Set([...f.placements.map(x => x.klant), ...((CRM.state && CRM.state.clients) || []).map(k => k.naam)]
     .filter(Boolean))].sort((a,b) => a.localeCompare(b, 'nl'));
   const w = (v, alt='') => H(v == null || v === '' ? alt : v);
@@ -2506,20 +2538,8 @@ function plFormulier(f, {c = null, p = null} = {}, klaar){
       <div class="f-row"><label for="pf_note">Notitie</label><input id="pf_note" value="${w(p && p.note)}"></div>
       ${bewerk ? '' : `
       <div class="h2" style="font-size:14px;margin:14px 0 8px">Factuurschema</div>
-      <div class="f-grid">
-        <div class="f-row"><label for="pf_preset">Verdeling</label>
-          <select id="pf_preset"><option value="1x">100% ineens</option>
-            <option value="nx">N termijnen, elke X mnd</option><option value="5050">50% · 50% na X mnd</option></select></div>
-        <div class="f-row"><label for="pf_start">1e factuurdatum</label>
-          <input id="pf_start" type="date" value="${H(startVoorstel)}">
-          ${af ? `<span class="hint">Afspraak: factureren ${af.factuurmoment === 'start' ? 'bij start' : 'bij contract getekend'}</span>` : ''}</div>
-        <div class="f-row" id="pf_nxrij"><label>Aantal × om de (mnd)</label>
-          <div class="row tight"><input id="pf_n" type="number" min="2" value="7" style="width:80px">
-            <input id="pf_tussen" type="number" min="1" value="1" style="width:80px"></div></div>
-        <div class="f-row" id="pf_50rij"><label for="pf_namnd">2e helft na (mnd)</label>
-          <input id="pf_namnd" type="number" min="1" value="3"></div>
-      </div>
-      <div id="pf_voorbeeld"></div>`}
+      ${schemaZinHtml('pf', svF, startVoorstel)}
+      ${af ? `<div class="hint">Afspraak met de klant: factureren ${af.factuurmoment === 'start' ? 'bij de start van de kandidaat' : 'bij contract getekend'} — de startdatum is daarop gezet.</div>` : ''}`}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="pf_ok">${bewerk ? 'Opslaan' : 'Plaatsing vastleggen'}</button></div>`, {
@@ -2527,22 +2547,9 @@ function plFormulier(f, {c = null, p = null} = {}, klaar){
     onOpen(m){
       const q = s => m.querySelector(s);
       let schema = [];
-      const opties = () => ({n: Math.max(2, getal(q('#pf_n').value) || 2), tussen: getal(q('#pf_tussen').value) || 1,
-                             naMnd: getal(q('#pf_namnd').value) || 3});
-      const voorbeeld = () => {
-        if(bewerk) return;
-        const pr = q('#pf_preset').value;
-        q('#pf_nxrij').style.display = pr === 'nx' ? '' : 'none';      // f-row: hidden werkt daar niet
-        q('#pf_50rij').style.display = pr === '5050' ? '' : 'none';
-        schema = genSchema(pr, getal(q('#pf_fee').value), q('#pf_start').value || todayISO(), opties());
-        q('#pf_voorbeeld').innerHTML = schema.length && getal(q('#pf_fee').value)
-          ? `<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>#</th><th>Datum</th><th class="n">Excl. btw</th></tr></thead><tbody>${
-              schema.map(r => `<tr><td class="num">${r.nr}</td><td class="num">${H(dKort(r.datum))}</td><td class="n num">${eur2(r.bedrag)}</td></tr>`).join('')}</tbody></table></div>`
-          : '';
-      };
+      const voorbeeld = () => { if(!bewerk) schema = schemaUitZin(q, 'pf', getal(q('#pf_fee').value)).rows; };
       if(!bewerk){
-        ['#pf_preset','#pf_fee','#pf_start','#pf_n','#pf_tussen','#pf_namnd'].forEach(s => q(s).addEventListener('input', voorbeeld));
-        q('#pf_preset').addEventListener('change', voorbeeld);
+        ['#pf_fee','#pf_n','#pf_tussen','#pf_start'].forEach(sel => q(sel).addEventListener('input', voorbeeld));
         voorbeeld();
       }
       q('#pf_ok').onclick = () => {
@@ -2593,12 +2600,13 @@ function plFormulier(f, {c = null, p = null} = {}, klaar){
    Alles van getekend tot betaald op één plek: bovenaan wat er nog
    afgerond moet worden, daaronder de plaatsingen. "Per maand" is de
    oude Facturatie-tab — hetzelfde werk, alleen anders gegroepeerd.    */
-let _plWeergave = 'plaatsing', _inboxAlles = false;
+let _plWeergave = 'actie', _inboxAlles = false;
 
 function tabPlaatsingen(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen plaatsingen in demo',
     'Hier zie je normaal alle W&S-plaatsingen met hun factuurschema, status per termijn en totalen.'); return; }
 
+  _netAf.clear(); _gemistOpen = null; _finDag = todayISO();
   const k = kpis(f), t = todayISO();
   const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
   const nGemist = f.installments.filter(i => i.status === 'te_factureren' && i.geplande_datum && i.geplande_datum < t
@@ -2627,8 +2635,9 @@ function tabPlaatsingen(el, f){
     </tr>`; }).join('') + (inbox.length > 4 ? `<tr><td colspan="3"><button type="button" class="lnk" id="fin_inbox_meer">${
       _inboxAlles ? 'Minder tonen' : `Toon alle ${inbox.length}`}</button></td></tr>` : '')), {plat:true}) : '';
 
-  el.innerHTML = `
-    ${strip([
+  /* "Op actie" heeft zijn eigen vooruitblik-regel; de cijferbalk alleen bij de andere twee. */
+  el.innerHTML = `<div class="fin-smal">
+    ${_plWeergave === 'actie' ? '' : strip([
       ['Nog te factureren', eur(k.nogTeFactureren), nGemist ? `<span class="neg">${nGemist} datum gemist</span>` : 'niets gemist'],
       ['Openstaand', eur(k.openstaand), nTeLaat ? `<span class="neg">${nTeLaat} te laat</span>` : 'niets te laat'],
       ['Vervallen door stops', eur(k.vervallen), `${pctF(k.stopPct, 0)} van de plaatsingen stopte`]
@@ -2636,13 +2645,14 @@ function tabPlaatsingen(el, f){
     ${inboxHtml ? `<div style="margin-bottom:14px">${inboxHtml}</div>` : ''}
     <div class="fin-toolbar">
       <div class="seg" id="fin_pl_weergave">
+        <button data-w="actie"${_plWeergave === 'actie' ? ' class="on"' : ''}>Op actie</button>
         <button data-w="plaatsing"${_plWeergave === 'plaatsing' ? ' class="on"' : ''}>Per plaatsing</button>
         <button data-w="maand"${_plWeergave === 'maand' ? ' class="on"' : ''}>Per maand</button>
       </div>
       <span class="spacer"></span>
       <button class="btn sub sm" id="fin_pl_nieuw">+ Plaatsing</button>
     </div>
-    <div id="fin_pl_view"></div>`;
+    <div id="fin_pl_view"></div></div>`;
 
   const herteken = () => tabPlaatsingen(el, f);
   el.querySelector('#fin_pl_nieuw').onclick = () => plFormulier(f, {}, herteken);
@@ -2662,6 +2672,7 @@ function tabPlaatsingen(el, f){
 
   const view = el.querySelector('#fin_pl_view');
   if(_plWeergave === 'maand') return facturatieLijst(view, f, herteken);
+  if(_plWeergave === 'actie') return actieLijst(view, f, herteken);
 
   view.innerHTML = `<div class="card">
     <div class="card-h">
@@ -2742,6 +2753,334 @@ function tekenPlTabel(el, f){
   wrap.querySelectorAll('.fin-plrow').forEach(tr => tr.onclick = () =>
     plPaneel(f, tr.dataset.pid, () => tabPlaatsingen(el, f)));
 }
+
+/* ═══ WEERGAVE: OP ACTIE ════════════════════════════════════════
+   Gekozen na een ontwerpronde met drie versies en negen beoordelaars
+   (27 okt 2026): de termijnen staan niet per maand maar naar wat Tjeerd
+   moet DOEN — eerst factureren, dan achter te late betalingen aan; wat
+   gewoon loopt is één dichte regel. Zijn keuzes: "Nu factureren" kijkt
+   t/m deze zondag, "te laat" = de dag na de vervaldatum.
+
+   Eén bron: deelIn() zet elke termijn in precies één groep. Vooruitblik,
+   groepskoppen en de rekencheck lezen alleen daaruit, zodat de getallen
+   nooit iets anders zeggen dan de lijst. Blijft er een termijn over die
+   nergens past, dan staat er een rode regel — niets valt stil weg.     */
+const ACTIE_GROEPEN = [
+  {k:'nu',          lbl:'Nu factureren',              open:true,  rand:'olijf'},
+  {k:'laat',        lbl:'Te laat betaald',            open:true,  rand:'rood'},
+  {k:'wacht',       lbl:'Wacht op betaling',          open:false},
+  {k:'komend',      lbl:'Komende 30 dagen',           open:false},
+  {k:'later',       lbl:'Later',                      open:false},
+  {k:'afgerond',    lbl:'Betaald deze maand',         open:false},
+  {k:'geannuleerd', lbl:'Geannuleerd / garantie — geen factuur', open:false}
+];
+const CONCEPT_VOORLOOP_DGN = 7;
+let _actieOpen = new Set(), _actieZoek = '';
+const _netAf = new Map();      // inst.id → {groep, vorige, tekst} — gedimd laten staan tot de volgende volledige render
+let _gemistOpen = null;        // inst.id waarvan de datumkeuze open staat
+
+const zondagVan = iso => { const d = new Date(iso + 'T12:00:00'); return addDays(iso, (7 - d.getDay()) % 7); };
+
+function deelIn(f, t){
+  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
+  const zondag = zondagVan(t), mk7 = t.slice(0,7);
+  const g = Object.fromEntries(ACTIE_GROEPEN.map(x => [x.k, []]));
+  const over = []; let afgehandeld = 0;
+  for(const i of f.installments){
+    const p = plById[i.placement_id];
+    if(!p){ over.push(i); continue; }
+    const x = {i, p};
+    if(i.status === 'betaald'){
+      if(String(i.betaaldatum||'').slice(0,7) === mk7){ x.datum = i.betaaldatum; g.afgerond.push(x); } else afgehandeld++;
+      continue;
+    }
+    if(i.status === 'vervallen'){ x.datum = i.geplande_datum; g.geannuleerd.push(x); continue; }
+    if(i.status === 'gefactureerd'){
+      if(!i.factuurdatum){ x.reden = 'datum'; g.nu.push(x); continue; }
+      x.datum = vervaldatum(i, p);
+      if(x.datum < t){ x.dagen = daysBetween(x.datum, t); g.laat.push(x); } else g.wacht.push(x);
+      continue;
+    }
+    if(i.status === 'te_factureren'){
+      x.datum = i.geplande_datum;
+      if(!i.geplande_datum){ x.reden = 'datum'; g.nu.push(x); continue; }
+      const over_ = daysBetween(t, i.geplande_datum);
+      if(p.concept){
+        if(over_ <= CONCEPT_VOORLOOP_DGN){ x.reden = 'concept'; g.nu.push(x); }
+        else (over_ <= 30 ? g.komend : g.later).push(x);
+        continue;
+      }
+      if(i.geplande_datum <= zondag){ if(over_ < 0) x.dagen = -over_; g.nu.push(x); continue; }
+      (over_ <= 30 ? g.komend : g.later).push(x);
+      continue;
+    }
+    over.push(i);
+  }
+  const opDatum = (a,b) => String(a.datum||'').localeCompare(String(b.datum||''));
+  g.nu.sort((a,b) => (a.datum ? 1 : 0) - (b.datum ? 1 : 0) || opDatum(a,b));
+  g.laat.sort((a,b) => b.dagen - a.dagen);
+  g.wacht.sort(opDatum); g.komend.sort(opDatum); g.later.sort(opDatum);
+  g.afgerond.sort((a,b) => opDatum(b,a)); g.geannuleerd.sort((a,b) => opDatum(b,a));
+  /* Rekencheck: elke termijn telt precies één keer. */
+  const geteld = Object.values(g).reduce((s,a) => s + a.length, 0) + over.length + afgehandeld;
+  return {g, over, zondag, klopt: geteld === f.installments.length};
+}
+
+/* Vooruitblik in één regel: wat komt er de komende 8 weken binnen (incl.
+   btw), gemeten zoals de kas-projectie: gefactureerd op de vervaldatum,
+   te factureren op geplande datum + betaaltermijn. Concept apart. */
+function vooruitblik(f, d, t){
+  const btw = 1 + Sn(f,'btw_pct',0.21), eind = addDays(t, 56);
+  let zeker = 0, concept = 0;
+  for(const x of [...d.g.wacht, ...d.g.komend, ...d.g.later, ...d.g.nu]){
+    const binnen = x.i.status === 'gefactureerd' ? x.datum
+      : (x.i.geplande_datum ? addDays(x.i.geplande_datum, getal(x.p.betaaltermijn_dgn) || 14) : null);
+    if(!binnen || binnen > eind) continue;
+    if(x.p.concept) concept += bedragVan(x.i) * btw; else zeker += bedragVan(x.i) * btw;
+  }
+  const achter = [...d.g.laat, ...d.g.nu.filter(x => x.dagen)].reduce((s,x) => s + bedragVan(x.i) * btw, 0);
+  return {zeker, concept, achter};
+}
+
+function actieLijst(el, f, herteken){
+  const t = todayISO();
+  const d = deelIn(f, t), vb = vooruitblik(f, d, t);
+  const z = _actieZoek.trim().toLowerCase();
+  const past = x => !z || [x.p.klant, x.p.kandidaat, x.p.id].some(v => String(v||'').toLowerCase().includes(z));
+
+  /* Gedimde regels blijven in de groep waar ze stonden. */
+  const netIds = new Set(_netAf.keys());
+  const regelsVan = k => {
+    const eigen = d.g[k].filter(x => !netIds.has(x.i.id));
+    const gedimd = [..._netAf.values()].filter(n => n.groep === k).map(n => n.x);
+    return [...eigen, ...gedimd].filter(past);
+  };
+
+  const status = x => {
+    if(x.reden === 'concept') return chip('concept — fee bevestigen', '');
+    if(x.reden === 'datum')   return chip('datum ontbreekt', '');
+    if(x.i.status === 'gefactureerd') return x.dagen ? chip(x.dagen + ' d te laat', 'red') : `<span class="meta">vervalt</span>`;
+    if(x.i.status === 'te_factureren'){
+      if(x.dagen) return chip('gemist ' + x.dagen + ' d', 'red');
+      const over_ = daysBetween(t, x.i.geplande_datum);
+      return over_ === 0 ? chip('vandaag', '') : `<span class="meta">over ${over_} d</span>`;
+    }
+    if(x.i.status === 'betaald') return `<span class="meta">betaald</span>`;
+    return `<span class="meta">geen factuur</span>`;
+  };
+  const knop = x => {
+    if(x.reden === 'concept') return `<button class="btn ghost sm" data-ac="paneel">Fee bevestigen</button>`;
+    if(x.i.status === 'te_factureren') return `<button class="btn sm" data-ac="fact">Gefactureerd ✓</button>`;
+    if(x.i.status === 'gefactureerd' && !x.i.factuurdatum) return `<button class="btn ghost sm" data-ac="paneel">Datum invullen</button>`;
+    if(x.i.status === 'gefactureerd') return `<button class="btn sm" data-ac="paid">Betaald ✓</button>`;
+    return '';
+  };
+  const bewerkbaar = x => x.i.status === 'te_factureren' && !_netAf.has(x.i.id);
+  const regel = (x, groep) => {
+    const n = _netAf.get(x.i.id);
+    const datumCel = x.datum ? H(dKort(x.datum)) : '—';
+    const keuze = _gemistOpen === x.i.id ? `<tr class="fin-ac-keuze"><td colspan="6">
+        gefactureerd op
+        <button class="btn ghost sm" data-kies="${H(x.i.geplande_datum)}">${H(dKort(x.i.geplande_datum))} (gepland)</button>
+        <button class="btn ghost sm" data-kies="${H(t)}">vandaag</button>
+        <input type="date" class="fin-ac-datum" max="${H(t)}" value="">
+        <span class="meta fin-ac-vv"></span>
+        <button class="btn ghost sm" data-kies="annuleer">Annuleren</button></td></tr>` : '';
+    return `<tr class="fin-ac-rij${n ? ' gedimd' : ''}" data-iid="${H(x.i.id)}" data-pid="${H(x.p.id)}" data-groep="${groep}">
+      <td class="num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="datum" title="Klik om de datum te wijzigen">${datumCel}</span>` : datumCel}</td>
+      <td class="fin-ac-wie">${H(klantLabel(x.p.klant))} <span class="meta">· ${H(tekst(x.p.kandidaat))}</span></td>
+      <td class="num meta">${H(x.p.id)} t${H(tekst(x.i.termijn_nr,'?'))}</td>
+      <td class="n num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="bedrag" title="Klik om het bedrag te wijzigen">${eur(bedragVan(x.i))}</span>` : eur(bedragVan(x.i))}</td>
+      <td>${n ? `<span class="pos">✓ ${H(n.tekst)}</span>` : status(x)}</td>
+      <td class="n">${n ? `<button type="button" class="lnk" data-ac="ongedaan">ongedaan</button>` : knop(x)}</td>
+    </tr>${keuze}`;
+  };
+
+  const zoekt = !!z;
+  const blokken = ACTIE_GROEPEN.map(gr => {
+    const rijen = regelsVan(gr.k);
+    const som = rijen.reduce((s,x) => s + bedragVan(x.i), 0);
+    const open = gr.open || _actieOpen.has(gr.k) || (zoekt && rijen.length);
+    if(!rijen.length && !gr.open) return '';
+    const eerst = rijen.find(x => x.datum);
+    const vooruit = ['wacht','komend','later'].includes(gr.k);
+    const sub = gr.k === 'nu' ? ` · t/m ${H(dKort(d.zondag))}`
+      : gr.k === 'laat' ? ' · langst open bovenaan'
+      : (!open && eerst && vooruit) ? ` · eerstvolgende ${H(dKort(eerst.datum))}` : '';
+    const kop = `<tr class="fin-ac-grp${gr.rand ? ' ' + gr.rand : ''}" data-grp="${gr.k}">
+      <td colspan="4">${gr.open ? '' : (open ? '▾ ' : '▸ ')}<b>${H(gr.lbl)}</b><span class="meta">${sub}</span></td>
+      <td colspan="2" class="n meta">${rijen.length} · ${eur(som)}</td></tr>`;
+    if(!rijen.length) return kop + `<tr><td colspan="6" class="meta fin-ac-leeg">✓ niets ${gr.k === 'nu' ? 'te factureren t/m ' + H(dKort(d.zondag)) : 'te laat'}</td></tr>`;
+    return kop + (open ? rijen.map(x => regel(x, gr.k)).join('') : '');
+  }).join('');
+
+  el.innerHTML = `
+    <div class="fin-ac">
+      <div class="fin-ac-top">
+        <div class="searchbox"><input type="search" id="fin_ac_zoek" placeholder="Zoek klant, kandidaat of P-nummer" value="${H(_actieZoek)}"></div>
+        <span class="meta">Binnen 8 weken verwacht <b class="num">${eur(vb.zeker)}</b> incl. btw${vb.concept ? ` (+ ${eur(vb.concept)} concept)` : ''}
+          · te laat + gemist <b class="num${vb.achter ? ' neg' : ''}">${eur(vb.achter)}</b>
+          · <button type="button" class="lnk" id="fin_ac_kas">kas per week</button></span>
+      </div>
+      ${!d.klopt || d.over.length ? `<div class="note err" style="margin-bottom:10px">${d.over.length} termijn${d.over.length === 1 ? '' : 'en'} niet in te delen
+        (geen plaatsing of onbekende status) — controleer: ${H(d.over.map(i => (i.placement_id||'?') + ' t' + (i.termijn_nr||'?')).join(', '))}</div>` : ''}
+      <div class="card"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl">
+        <colgroup><col style="width:74px"><col><col style="width:92px"><col style="width:96px"><col style="width:150px"><col style="width:140px"></colgroup>
+        <tbody>${blokken}</tbody></table></div></div>
+    </div>`;
+
+  const opnieuw = () => actieLijst(el, f, herteken);
+  const zoek = el.querySelector('#fin_ac_zoek');
+  zoek.addEventListener('input', CRM.debounce(e => { _actieZoek = e.target.value; opnieuw();
+    const z2 = el.querySelector('#fin_ac_zoek'); if(z2){ z2.focus(); z2.setSelectionRange(z2.value.length, z2.value.length); } }, 250));
+  el.querySelector('#fin_ac_kas').onclick = () => { _tab = 'geld'; CRM.render(); };
+  el.querySelectorAll('.fin-ac-grp').forEach(tr => tr.onclick = () => {
+    const k = tr.dataset.grp, gr = ACTIE_GROEPEN.find(x => x.k === k);
+    if(gr.open) return;
+    if(_actieOpen.has(k)) _actieOpen.delete(k); else _actieOpen.add(k);
+    opnieuw();
+  });
+
+  const vind = tr => {
+    const id = tr.dataset.iid;
+    const n = [..._netAf.entries()].find(([k]) => String(k) === id);
+    if(n) return n[1].x;
+    for(const k of Object.keys(d.g)){ const x = d.g[k].find(y => String(y.i.id) === id); if(x) return x; }
+    return null;
+  };
+  const afvinken = async (x, status, datum, groep, knopEl) => {
+    const vorige = {status: x.i.status, factuurdatum: x.i.factuurdatum ?? null, betaaldatum: x.i.betaaldatum ?? null};
+    await finDoe(knopEl, () => markeer(x.i, status, datum), null, ok => {
+      if(ok){
+        const tekstNa = status === 'betaald' ? 'betaald' : 'gefactureerd · vervalt ' + dKort(vervaldatum(x.i, x.p));
+        _netAf.set(x.i.id, {groep, vorige, tekst: tekstNa, x});
+      }
+      _gemistOpen = null; opnieuw();
+    });
+  };
+
+  el.querySelectorAll('.fin-ac-rij').forEach(tr => {
+    const x = vind(tr); if(!x) return;
+    tr.onclick = e => {
+      if(e.target.closest('button, input, .fin-ed')) return;
+      plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
+    };
+    tr.querySelectorAll('[data-ac]').forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const a = b.dataset.ac;
+      if(a === 'paneel') return plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
+      if(a === 'paid') return afvinken(x, 'betaald', null, tr.dataset.groep, b);
+      if(a === 'fact'){
+        /* Gemist: de echte factuurdatum kiezen, niet stil "vandaag". */
+        if(x.dagen && x.i.status === 'te_factureren'){ _gemistOpen = x.i.id; return opnieuw(); }
+        return afvinken(x, 'gefactureerd', null, tr.dataset.groep, b);
+      }
+      if(a === 'ongedaan'){
+        const n = _netAf.get(x.i.id); if(!n) return;
+        return finDoe(b, () => instWijzig(x.i, n.vorige), 'Teruggezet', ok => { if(ok) _netAf.delete(x.i.id); opnieuw(); });
+      }
+    });
+    tr.querySelectorAll('.fin-ed').forEach(sp => sp.onclick = e => {
+      e.stopPropagation();
+      regelBewerken(sp, f, x.p, x.i, sp.dataset.ed, opnieuw);
+    });
+  });
+
+  /* Datumkeuze voor een gemiste termijn. */
+  const keuze = el.querySelector('.fin-ac-keuze');
+  if(keuze){
+    const x = vind(keuze.previousElementSibling);
+    const vvEl = keuze.querySelector('.fin-ac-vv');
+    const toonVv = iso => { vvEl.textContent = iso ? '→ vervalt ' + dKort(addDays(iso, getal(x.p.betaaltermijn_dgn) || 14)) : ''; };
+    const inp = keuze.querySelector('.fin-ac-datum');
+    inp.oninput = () => toonVv(inp.value);
+    inp.onchange = () => {
+      if(!inp.value) return;
+      if(inp.value > t) return CRM.toast('Een factuurdatum kan niet in de toekomst liggen', 'err');
+      afvinken(x, 'gefactureerd', inp.value, keuze.previousElementSibling.dataset.groep, null);
+    };
+    keuze.querySelectorAll('[data-kies]').forEach(b => {
+      b.onmouseenter = () => b.dataset.kies !== 'annuleer' && toonVv(b.dataset.kies);
+      b.onclick = () => {
+        if(b.dataset.kies === 'annuleer'){ _gemistOpen = null; return opnieuw(); }
+        afvinken(x, 'gefactureerd', b.dataset.kies, keuze.previousElementSibling.dataset.groep, b);
+      };
+    });
+  }
+}
+
+/* ─── Datum of bedrag in de regel zelf aanpassen ────────────────────
+   "Termijnen aanpassen moet makkelijker" (Tjeerd, 27 okt 2026): klik op
+   de datum of het bedrag, typ, Enter. Bij een andere datum volgt één
+   vraag: de latere open termijnen van deze plaatsing ook opschuiven?  */
+function regelBewerken(cel, f, p, inst, veld, klaar){
+  const oud = veld === 'datum' ? (inst.geplande_datum || '') : bedragVan(inst);
+  cel.innerHTML = veld === 'datum'
+    ? `<input type="date" class="fin-ed-in" value="${H(oud)}">`
+    : `<input type="number" step="0.01" class="fin-ed-in" value="${H(oud)}" style="text-align:right">`;
+  const inp = cel.querySelector('input');
+  inp.focus(); if(inp.select) try{ inp.select(); }catch(e){}
+  let klaarGezet = false;
+  const opslaan = async () => {
+    if(klaarGezet) return; klaarGezet = true;
+    const nieuw = veld === 'datum' ? inp.value : getal(inp.value);
+    if(nieuw === '' || nieuw == null || nieuw === oud) return klaar();
+    if(veld === 'bedrag'){
+      return finDoe(null, () => instWijzig(inst, {bedrag_excl: nieuw}), 'Bedrag aangepast', () => klaar());
+    }
+    const latere = instOf(f, p.id).filter(i => getal(i.termijn_nr) > getal(inst.termijn_nr)
+      && i.status === 'te_factureren' && i.geplande_datum);
+    const schuif = latere.length && oud ? await schuifVraag(latere, oud, nieuw) : false;
+    if(schuif === null) return klaar();
+    finDoe(null, async () => {
+      await instWijzig(inst, {geplande_datum: nieuw});
+      if(schuif) for(const i of latere) await instWijzig(i, {geplande_datum: verschuif(i.geplande_datum, oud, nieuw)});
+      if(getal(inst.termijn_nr) === 1) await plWijzig(p, {eerste_factuurdatum: nieuw});
+    }, schuif ? `Datum aangepast — ${latere.length} latere termijn${latere.length === 1 ? '' : 'en'} mee` : 'Datum aangepast', () => klaar());
+  };
+  inp.onkeydown = e => { if(e.key === 'Enter') opslaan(); if(e.key === 'Escape'){ klaarGezet = true; klaar(); } };
+  inp.onblur = () => setTimeout(opslaan, 120);
+  inp.onclick = e => e.stopPropagation();
+}
+
+/* Zelfde verschuiving voor de latere termijnen: blijft de dag van de
+   maand gelijk (24 sep → 24 okt), dan hele maanden — anders dagen. */
+function verschuif(iso, oud, nieuw){
+  if(String(oud).slice(8,10) === String(nieuw).slice(8,10)){
+    const mnd = (+nieuw.slice(0,4) - +oud.slice(0,4)) * 12 + (+nieuw.slice(5,7) - +oud.slice(5,7));
+    return addMonths(iso, mnd);
+  }
+  return addDays(iso, daysBetween(oud, nieuw));
+}
+
+/* Ja / Nee / Annuleren — CRM.bevestig kent maar twee knoppen. */
+function schuifVraag(latere, oud, nieuw){
+  return new Promise(res => {
+    const voorbeeld = latere.slice(0,4).map(i => `${dKort(i.geplande_datum)} → ${dKort(verschuif(i.geplande_datum, oud, nieuw))}`).join(' · ');
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">Latere termijnen ook opschuiven?</div></div>
+      <div class="modal-b"><p class="sub" style="margin:0">${latere.length} latere open termijn${latere.length === 1 ? '' : 'en'}:
+        ${H(voorbeeld)}${latere.length > 4 ? ' …' : ''}</p></div>
+      <div class="modal-f"><button class="btn ghost" id="sv_stop">Annuleren</button><span class="spacer"></span>
+        <button class="btn ghost" id="sv_nee">Nee, alleen deze</button><button class="btn" id="sv_ja">Ja, schuif mee</button></div>`, {
+      onClose(){ res(null); },
+      onOpen(m){
+        const kies = v => { CRM.modal._onClose = null; CRM.modal.close(); res(v); };
+        m.querySelector('#sv_ja').onclick = () => kies(true);
+        m.querySelector('#sv_nee').onclick = () => kies(false);
+        m.querySelector('#sv_stop').onclick = () => kies(null);
+      }});
+  });
+}
+
+/* Na een nacht met het tabblad open: bij terugkomen opnieuw indelen als
+   de datum veranderd is, zodat een termijn van gisteren als "gemist"
+   bovenaan staat. */
+let _finDag = null;
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden || !_finDag || _finDag === todayISO()) return;
+  if(String(location.hash).includes('finance')){ _netAf.clear(); CRM.render(); }
+});
 
 /* ─── Weergave "Per maand" (was de Facturatie-tab) ──────────────
    Hetzelfde termijnschema, gegroepeerd per maand of per klant, met de
@@ -3396,14 +3735,22 @@ function budgetVenster(f, b, klaar){
    Alleen wat de vier schermen gebruiken. W&S-fees staan niet hier maar
    per klant bij Commerciële afspraken — dat is de getekende bron.     */
 const INST_VELDEN = [
-  ['doel_omzet_jaar',       'Omzetdoel dit jaar (€)',                      'eur', 400000],
-  ['btw_pct',               'Btw (%)',                                     'pct', 0.21],
-  ['vpb_pct',               'Vpb-reservering (% van de winst)',            'pct', 0.19],
-  ['voorbelasting_pm',      'Btw op kosten per maand (€)',                 'eur', 0],
-  ['default_betaaltermijn', 'Standaard betaaltermijn (dagen)',             'int', 14],
-  ['waarschuwing_dgn',      'Factuur-herinnering (dagen vooruit)',         'int', 21],
-  ['stop_achterstand_mnd',  'Termijnen behouden na een stop (maanden)',    'int', 1],
-  ['flex_inkoop_factor',    'Standaard inkoopfactor flex (Pronkert)',      'num', 1.8]
+  ['doel_omzet_jaar',       'Omzetdoel dit jaar (€)',                   'eur', 400000,
+    'Waar de balk "Jaardoel" onder Geld naartoe telt.'],
+  ['btw_pct',               'Btw (%)',                                  'pct', 0.21,
+    'Voor de bedragen incl. btw en het btw-potje. Normaal 21.'],
+  ['vpb_pct',               'Vpb-reservering (% van de winst)',         'pct', 0.19,
+    'Hoeveel van je winst je opzij zet voor de vennootschapsbelasting (19% tot €200.000 winst).'],
+  ['voorbelasting_pm',      'Btw op je kosten per maand (€)',           'eur', 0,
+    'De btw die je zelf betaalt op inkopen; die mag je aftrekken, dus het btw-potje wordt kleiner.'],
+  ['default_betaaltermijn', 'Standaard betaaltermijn (dagen)',          'int', 14,
+    'Voor een nieuwe plaatsing zonder afspraak met de klant. Met afspraak geldt die van de afspraak.'],
+  ['waarschuwing_dgn',      'Factuur vooraf melden (dagen)',            'int', 21,
+    'Bij 21 zie je een factuur al 21 dagen vóór de datum op Vandaag staan.'],
+  ['stop_achterstand_mnd',  'Termijnen behouden na een stop (maanden)', 'int', 1,
+    'Stopt een kandidaat, dan factureer je nog deze maanden na de stopdatum; de termijnen daarna vervallen.'],
+  ['flex_inkoop_factor',    'Standaard inkoopfactor flex (Pronkert)',   'num', 1.8,
+    'Wat Pronkert per uur rekent (× uurloon) als een flex-afspraak geen eigen inkoopfactor heeft.']
 ];
 function instellingenPaneel(f){
   const toon = (key, type, std) => {
@@ -3417,9 +3764,10 @@ function instellingenPaneel(f){
       <div class="meta" style="margin-top:3px">Finance — alleen voor jou</div></div>
       <button class="btn ghost sm x" data-close>Sluiten</button></div>
     <div class="drawer-b">
-      ${kaart('Doelen en percentages', `<div class="f-grid">${INST_VELDEN.map(([key, lbl, type, std]) =>
+      ${kaart('Doelen en percentages', `<div class="f-grid">${INST_VELDEN.map(([key, lbl, type, std, uitleg]) =>
         `<div class="f-row"><label for="in_${key}">${H(lbl)}</label>
-          <input type="number" step="any" id="in_${key}" data-key="${key}" data-type="${type}" value="${H(toon(key, type, std))}"></div>`).join('')}</div>
+          <input type="number" step="any" id="in_${key}" data-key="${key}" data-type="${type}" value="${H(toon(key, type, std))}">
+          <span class="hint">${H(uitleg)}</span></div>`).join('')}</div>
         <div class="row tight"><span class="spacer"></span><button class="btn sm" id="in_ok">Opslaan</button></div>`)}
       <div style="margin-top:14px">${kaart('Flex-afspraken per klant', afspr.length
         ? tabel('<th>Klant</th><th class="n">Klantfactor</th><th class="n">Inkoop</th><th class="n">Overname na</th>',

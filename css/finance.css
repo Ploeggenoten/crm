@@ -175,3 +175,39 @@ table.tbl tr.fin-meta-uit td:first-child{position:relative}
 .fin-werkelijk{padding:10px 18px;border-top:1px solid var(--line);font-size:12px}
 .fin-geld{align-items:start}
 @media (max-width:760px){ .fin-strip .v{font-size:17px} .fin-todo{flex-wrap:wrap} }
+
+/* ── Facturatie "Op actie" (27 okt 2026) ─────────────────────────────
+   Eén smalle tabel, groepen naar wat er moet gebeuren. Max ±1080px zodat
+   hij op een breed scherm niet uitrekt; de knop staat naast het bedrag. */
+.fin-ac{max-width:1080px}
+.fin-ac-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
+.fin-ac-top .searchbox{flex:0 1 300px}
+.fin-ac-tbl{table-layout:fixed}
+.fin-ac-tbl td{padding:8px 12px;vertical-align:middle}
+.fin-ac-wie{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fin-ac-rij{cursor:pointer}
+.fin-ac-rij.gedimd td{opacity:.55}
+.fin-ac-rij.gedimd td:last-child{opacity:1}
+tr.fin-ac-grp td{background:var(--card-2);font-size:13px;padding:9px 12px;cursor:pointer;border-top:1px solid var(--line)}
+tr.fin-ac-grp.olijf td:first-child{box-shadow:inset 3px 0 0 var(--olive)}
+tr.fin-ac-grp.rood td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+tr.fin-ac-grp.rood b{color:var(--red)}
+tr.fin-ac-grp.olijf, tr.fin-ac-grp.rood{cursor:default}
+.fin-ac-leeg{padding:9px 12px 11px 24px !important}
+tr.fin-ac-keuze td{background:var(--card-2);font-size:12.5px;padding:8px 12px 10px 86px;color:var(--txt-2)}
+tr.fin-ac-keuze .btn{margin:0 2px}
+tr.fin-ac-keuze input[type=date]{width:150px;height:28px;font-size:12.5px;display:inline-block;margin:0 6px}
+
+/* Aanklikbaar om in de regel aan te passen: datum en bedrag. */
+.fin-ed{border-bottom:1px dotted var(--muted);cursor:text}
+.fin-ed:hover{border-bottom-color:var(--olive);color:var(--olive)}
+.fin-ed-in{height:28px;font-size:12.5px;padding:2px 6px;width:100%;max-width:150px}
+
+/* Schema in één zin */
+.fin-schema{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px}
+.fin-schema input[type=number]{width:64px;text-align:center}
+.fin-schema input[type=date]{width:auto}
+.fin-schema-vb{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12.5px;color:var(--txt-2)}
+.fin-schema-vb b{color:var(--ink)}
+.fin-smal{max-width:1080px}
+.fin-ac-tbl td:first-child{white-space:nowrap}
