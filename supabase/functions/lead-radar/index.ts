@@ -198,6 +198,44 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Modus 'uitkomsten': wat er écht van de radarleads geworden is, zodat de
+  // criticus in de ochtendroutine leert van Tjeerds keuzes en belresultaten
+  // in plaats van van zijn eigen aannames (27 okt 2026). Per radarbedrijf dat
+  // is opgepakt of genegeerd: de radarstatus en -notitie, de huidige fase in
+  // de klantpijplijn, en de belletjes met hun uitkomst (extra.uitkomst, gezet
+  // door het "Gebeld"-menu in js/salesmeter.js). Alleen namen, datums en
+  // uitkomsten — geen contactgegevens, die heeft de routine niet nodig.
+  if (body.uitkomsten) {
+    const sinds = new Date(Date.now() - 120 * 864e5).toISOString();
+    const [radar, klanten, acts] = await Promise.all([
+      service.from("crm_leadradar")
+        .select("id,bedrijf,plaats,bron,status,status_door,notitie,gevonden_op")
+        .in("status", ["toegevoegd", "genegeerd"]).limit(5000),
+      service.from("clients").select("naam,fase,fase_sinds").limit(5000),
+      service.from("crm_activiteiten").select("entiteit,ref,soort,op,extra")
+        .eq("soort", "bel").gte("op", sinds).limit(10000),
+    ]);
+    const sleutel = (s: unknown) => String(s ?? "").trim().toLowerCase();
+    const fase = new Map((klanten.data ?? []).map((k: Record<string, unknown>) => [sleutel(k.naam), k]));
+    const belPer = new Map<string, Record<string, unknown>[]>();
+    for (const a of (acts.data ?? []) as Record<string, unknown>[]) {
+      const k = a.entiteit === "radar" ? "radar:" + String(a.ref) : sleutel(a.ref);
+      const x = (a.extra ?? {}) as Record<string, unknown>;
+      if (!belPer.has(k)) belPer.set(k, []);
+      belPer.get(k)!.push({ op: String(a.op).slice(0, 10), uitkomst: x.uitkomst ?? "", koud: x.koud ?? null });
+    }
+    const rijen = ((radar.data ?? []) as Record<string, unknown>[]).map((r) => {
+      const k = fase.get(sleutel(r.bedrijf)) as Record<string, unknown> | undefined;
+      return {
+        bedrijf: r.bedrijf, plaats: r.plaats, bron: r.bron, gevonden_op: r.gevonden_op,
+        radarstatus: r.status, notitie: r.notitie,
+        fase: k?.fase ?? null, fase_sinds: k?.fase_sinds ?? null,
+        belletjes: [...(belPer.get(sleutel(r.bedrijf)) ?? []), ...(belPer.get("radar:" + String(r.id)) ?? [])],
+      };
+    });
+    return antwoord({ ok: true, rijen });
+  }
+
   // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
   // rows: [{bedrijf, plaats?, functies?, vacatures?, url?, bron?, notitie?, concepten?}]
   if (Array.isArray(body.import)) {
