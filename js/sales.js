@@ -153,6 +153,7 @@ async function taakKlaar(id, klaar){
     if(error){ t.klaar = !klaar; return CRM.fout('Taak bijwerken mislukt', error); }
   }
   CRM.navBadges();
+  if(klaar && CRM.salesmeter) CRM.salesmeter.naKennismaking(t).then(() => tekenInhoud());
 }
 
 /* Geen gehoor bij een contactpersoon (Tjeerd, 17 sep 2026: "veel tijd kwijt
@@ -165,16 +166,45 @@ async function taakKlaar(id, klaar){
    belpoging opnieuw zou moeten doen. Alleen de bedrijfsnaam vlechten we
    erin: een eigennaam past overal, in tegenstelling tot de branche (te veel
    risico op een kromme zin — "in de Voedingsmiddelen" leest niet lekker). */
+/* Sinds 27 okt 2026 volgens Tjeerds vaste korte bericht (bron:
+   ~/ploeggenoten-leadradar/mailtemplate.md, "Korte berichten"): de hele
+   keten erin, "social media advertising" en nooit "Meta", geen
+   gedachtestreepjes. Alleen Tjeerd is "eigenaar van". */
 function geenGehoorBericht(contactNaam, klantNaam){
   const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
   const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
+  const wie = /^tjeerd$/i.test(afzender) ? 'Tjeerd, eigenaar van Ploeggenoten' : `${afzender} van Ploeggenoten`;
   const bedrijf = String(klantNaam||'').trim();
-  return `Hoi${voornaam?' '+voornaam:''}, met ${afzender} van Ploeggenoten. Wij zijn een recruitmentbureau voor productie, logistiek en industrie, met een sterke focus op social media marketing.
-
-We filmen wervingsvideo's bij${bedrijf?' '+bedrijf:' jullie'} op de vloer en zetten die gericht uit via Meta. Zo versterk je je werkgeversmerk en bereik je ook wie niet actief zoekt. De hele werving pakken wij op, uitzenden of werving en selectie, alles op no cure no pay.
-
-Ik probeerde je net al te bellen. Heb je vandaag tijd om elkaar even te spreken?`;
+  return `Hoi${voornaam?' '+voornaam:''}, ik probeerde je net te bellen. Ik ben ${wie}, uitzendbureau voor productie en industrie. Wij maken de wervingscampagnes zelf en zetten die uit via social media advertising, en doen daarna het hele traject, van zichtbaarheid tot verloning en behoud. Benieuwd hoe ${bedrijf || 'jullie'} er voor staat met de bezetting. Wanneer schikt het om even te bellen?`;
 }
+CRM.geenGehoorBericht = geenGehoorBericht;
+
+/* Tjeerds vaste salesmail (bron: ~/ploeggenoten-leadradar/mailtemplate.md,
+   daar ook de beslisregels). Alleen [detail] en [vervolgstap] wisselen per
+   prospect; de leadradar-routine vult die zelf in (concepten.mail), dit is
+   de terugval als er geen concept is. Pas je de template aan, doe het dan
+   op beide plekken. */
+CRM.salesTemplate = voornaam => `Hoi ${voornaam || '[naam]'},
+
+[Reden van contact, twee zinnen met één echt detail van hun site, uit het gesprek of uit een bericht van henzelf.]
+
+Ik ben Tjeerd, eigenaar van Ploeggenoten, een uitzendbureau uit Alphen aan den Rijn voor productie, logistiek en industrie. Wij doen het hele traject, van zichtbaarheid tot verloning en behoud.
+
+Een vacature wacht tot iemand hem vindt. Wij gaan die iemand halen. Per functie maken we een campagne op maat: wij bedenken het concept, schrijven het script, filmen bij jullie op de vloer en zetten dat betaald uit via social media advertising. Zo bereik je ook de mensen die zich oriënteren maar niet actief zoeken, en dat is de grootste groep. En jullie employer branding groeit mee, want elke campagne laat de regio zien wat voor werkgever jullie zijn.
+
+Daarna pakken wij de hele recruitment op: screening, gesprekken, plaatsing en verloning. En we blijven erop zitten als iemand is gestart, want behoud weegt zwaarder dan instroom. Flex, werving en selectie of zzp, net wat past bij de vraag. De video’s en het advertentiebudget zijn voor onze rekening, dus je betaalt pas als er via ons iemand bij jullie start. No cure no pay.
+
+Wat we maken staat hier: https://linktr.ee/ploeggenoten
+
+[Vervolgstap: twee concrete tijdstippen, of: kan ik degene die hierover gaat deze week even kort spreken?]
+
+Groet,
+Tjeerd van Elk
+Ploeggenoten
+06 13 55 53 72
+tjeerd@ploeggenoten.nl
+ploeggenoten.nl
+J. Keplerweg 10L, Alphen aan den Rijn`;
 async function geenGehoor(naam, contactId){
   const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
   if(!c || !c.telefoon) return;
@@ -693,6 +723,12 @@ function lijstHTML(klanten){
 function openOpvolgingen(){
   const klantVan = new Map((CRM.state.contacten||[]).map(x => [String(x.id), x.klant]));
   return (CRM.state.taken||[]).filter(t => !t.klaar).map(t => {
+    /* Nabellen van een radarbedrijf (geen gehoor): hangt aan de radarrij,
+       het is nog geen lead. Zie js/salesmeter.js. */
+    if(t.entiteit === 'radar'){
+      const r = radar.find(x => String(x.id) === String(t.ref));
+      return r && (r.status||'nieuw') === 'nieuw' ? Object.assign({}, t, {klantNaam:r.bedrijf, radarId:r.id, contactId:''}) : null;
+    }
     const klant = t.entiteit === 'klant' ? t.ref
                 : t.entiteit === 'contact' ? klantVan.get(String(t.ref)) : '';
     /* Hangt de taak aan een persoon, dan onthouden we wie. "Gerta bellen"
@@ -728,17 +764,50 @@ function opvolgHTML(){
         <b class="trunc">${h(t.tekst)}</b>
         <div class="meta">${t.datum ? `<span class="num">${h(CRM.fmtDateShort(t.datum))}${t.tijd?' '+h(t.tijd):''}</span> · ` : ''}${h(t.voor||'')}</div>
       </div>
-      <button class="btn sm ghost" data-opklant="${h(t.klantNaam)}"${
+      ${telLink(nummerVoorTaak(t), `data-optel="${h(t.id)}"`)}
+      <button class="btn sm ghost" ${t.radarId ? `data-opradar="${h(t.radarId)}"` : `data-opklant="${h(t.klantNaam)}"`}${
         t.contactId ? ` data-opcontact="${h(t.contactId)}"` : ''}>${h(t.klantNaam)}</button>
       ${CRM.salesmeter ? `<button class="btn sm" data-opbel="${h(t.id)}" title="Leg de uitkomst vast; deze opvolging gaat dicht en de volgende stap komt erin">📞 Gebeld</button>` : ''}
     </div>`).join('')}`).join('')}</div></div>`;
 }
+/* Het nummer bij een opvolging: de contactpersoon van de taak, anders de
+   hoofdcontactpersoon of de klant zelf; bij een radartaak de radarrij. */
+function nummerVoorTaak(t){
+  if(t.radarId){ const r = radar.find(x => x.id === t.radarId); return r ? radarTelefoon(r) : ''; }
+  const cs = (CRM.state.contacten||[]).filter(c => c.klant === t.klantNaam);
+  const c = (t.contactId && cs.find(x => String(x.id) === t.contactId)) || null;
+  return (c && c.telefoon) || (cs.find(x => x.hoofd && x.telefoon) || cs.find(x => x.telefoon) || {}).telefoon
+    || (CRM.klant(t.klantNaam) || {}).telefoon || '';
+}
+const radarTelefoon = r => ((contactUitRadar(r) || {}).telefoon) || ((String(r.notitie||'').match(/Tel:\s*([+\d][\d\s\-()]{7,})/) || [])[1] || '').trim();
+/* Alleen het nummer, als link: klikken = bellen + even later het
+   uitkomstmenu (CRM.salesmeter.belEnVraag). Geen nummer = niets. */
+function telLink(nr, attr){
+  const schoon = String(nr||'').replace(/[^\d+]/g, '');
+  if(schoon.length < 8 || !CRM.salesmeter) return '';
+  return `<a class="btn sm ghost sm-tel" href="tel:${h(schoon)}" ${attr} title="Bellen — daarna staat de uitkomst klaar">📞 ${h(String(nr).trim())}</a>`;
+}
+/* Gebeld-context voor een opvolging (gedeeld door de knop en het nummer). */
+function ctxVoorTaak(t){
+  if(t.radarId){
+    const r = radar.find(x => x.id === t.radarId);
+    return r ? radarCtx(r, {taakId:t.id}) : null;
+  }
+  const c = t.contactId ? (CRM.state.contacten||[]).find(x => String(x.id) === t.contactId) : null;
+  return {naam: c ? `${c.naam} · ${t.klantNaam}` : t.klantNaam, klant:t.klantNaam,
+    contactId:t.contactId, contactNaam:c ? c.naam : '', taakId:t.id, telefoon:nummerVoorTaak(t)};
+}
 function bindOpvolg(){
   CRM.$$('[data-opbel]', mountEl).forEach(b => b.onclick = () => {
     const t = openOpvolgingen().find(x => x.id === b.dataset.opbel); if(!t) return;
-    const c = t.contactId ? (CRM.state.contacten||[]).find(x => String(x.id) === t.contactId) : null;
-    CRM.salesmeter.gebeld({naam: c ? `${c.naam} · ${t.klantNaam}` : t.klantNaam, klant:t.klantNaam,
-      contactId:t.contactId, contactNaam:c ? c.naam : '', taakId:t.id}, () => tekenInhoud());
+    const ctx = ctxVoorTaak(t); if(ctx) CRM.salesmeter.gebeld(ctx, () => tekenInhoud());
+  });
+  CRM.$$('[data-optel]', mountEl).forEach(a => a.addEventListener('click', () => {
+    const t = openOpvolgingen().find(x => x.id === a.dataset.optel); if(!t) return;
+    const ctx = ctxVoorTaak(t); if(ctx) CRM.salesmeter.belEnVraag(ctx, () => tekenInhoud());
+  }));
+  CRM.$$('[data-opradar]', mountEl).forEach(b => b.onclick = () => {
+    tab = 'radar'; V.zet('tab', tab); tekenActies(); tekenInhoud();
   });
   CRM.$$('[data-opvink]', mountEl).forEach(c => c.onchange = async () => {
     await taakKlaar(c.dataset.opvink, c.checked);
@@ -1436,6 +1505,7 @@ function radarTabelHTML(rijen, zelf, totaal){
           ${r.laatst_gezien && r.laatst_gezien!==r.gevonden_op?`<div class="rowsub">gezien ${h(CRM.geleden(r.laatst_gezien))}</div>`:''}</td>
         <td>${
           st==='nieuw' ? `<div class="row tight r-acties">
+              ${telLink(radarTelefoon(r), `data-rtel="${h(r.id)}"`)}
               <button class="btn sm" data-rbel="${h(r.id)}" title="Leg de uitkomst vast; de opvolging komt vanzelf in Opvolgingen">📞 Gebeld</button>
               <button class="btn sm ghost" data-rlead="${h(r.id)}">→ Lead</button>
               <button class="btn sm sub" data-rneg="${h(r.id)}">Negeren</button></div>`
@@ -1580,15 +1650,37 @@ async function radarNaarLead(id, opts={}){
 }
 
 /* Negeren: de motor slaat genegeerde bedrijven voortaan over. */
+/* Reden met één klik (Tjeerd, 27 okt 2026): 103 van 109 genegeerde leads
+   hadden geen reden, en juist die reden leert de ochtendroutine wat hij
+   niet moet aanleveren. De reden komt vóór de bestaande notitie, zodat de
+   contactgegevens daarin niet verloren gaan. */
+const REDENEN_NEGEER = ['Te klein', 'Buiten ons werkgebied', 'Werkt al met een bureau', 'Geen productie of logistiek', 'Staat al onder een andere naam'];
+const metReden = (r, reden) => [reden, r.notitie].filter(Boolean).join(' · ');
 async function radarNegeren(id){
   const r = radar.find(x=>x.id===id); if(!r) return;
-  const reden = await CRM.vraag('Negeren — '+r.bedrijf, {
-    knop:'Negeren', placeholder:'Bijv. te klein, verkeerde regio (mag leeg blijven)',
-    hint:'De radar slaat dit bedrijf voortaan over. Een reden is optioneel maar helpt je collega’s.'
-  });
-  if(await zetRadarStatus(id, 'genegeerd', reden||''))
+  const reden = CRM.salesmeter
+    ? await CRM.salesmeter.kiesReden('Negeren — '+r.bedrijf, REDENEN_NEGEER)
+    : await CRM.vraag('Negeren — '+r.bedrijf, {knop:'Negeren', placeholder:'Reden (mag leeg blijven)'});
+  if(reden === null) return;
+  if(await zetRadarStatus(id, 'genegeerd', metReden(r, reden ? 'Genegeerd: '+reden : '')))
     CRM.toast(`${r.bedrijf} genegeerd — de radar slaat dit bedrijf voortaan over`);
 }
+
+/* Gebeld-context voor een radarrij. opRadar: geen gehoor/receptie laten
+   hem op de radar staan (zie js/salesmeter.js). */
+function radarCtx(r, extra = {}){
+  const ct = contactUitRadar(r);
+  return Object.assign({naam:r.bedrijf, contactNaam: ct ? ct.naam : '', telefoon: radarTelefoon(r),
+    radar:{id:r.id, opRadar:true,
+      naarKlant:()=>radarNaarLead(r.id, {stil:true}),
+      negeer:reden=>zetRadarStatus(r.id, 'genegeerd', metReden(r, reden))}}, extra);
+}
+
+/* Conceptteksten van de radar voor een klant (voor "Info gemaild"). */
+CRM.radarConcept = klant => {
+  const r = radar.find(x => CRM.zelfdeKlant(x.bedrijf, klant) && x.concepten && x.concepten.mail);
+  return r ? r.concepten : null;
+};
 
 /* "↻ Nu zoeken": de Edge Function direct aanroepen. */
 async function radarZoeken(){
@@ -2411,10 +2503,12 @@ function bindRadar(){
      want je wilt door met de volgende op de lijst. */
   CRM.$$('[data-rbel]', mountEl).forEach(b=>b.onclick=()=>{
     const r = radar.find(x=>x.id===b.dataset.rbel); if(!r || !CRM.salesmeter) return;
-    CRM.salesmeter.gebeld({naam:r.bedrijf, radar:{id:r.id,
-      naarKlant:()=>radarNaarLead(r.id, {stil:true}),
-      negeer:reden=>zetRadarStatus(r.id, 'genegeerd', reden)}}, ()=>tekenInhoud());
+    CRM.salesmeter.gebeld(radarCtx(r), ()=>tekenInhoud());
   });
+  CRM.$$('[data-rtel]', mountEl).forEach(a=>a.addEventListener('click', ()=>{
+    const r = radar.find(x=>x.id===a.dataset.rtel); if(!r || !CRM.salesmeter) return;
+    CRM.salesmeter.belEnVraag(radarCtx(r), ()=>tekenInhoud());
+  }));
   CRM.$$('[data-rneg]',  mountEl).forEach(b=>b.onclick=()=>radarNegeren(b.dataset.rneg));
   CRM.$$('[data-rher]',  mountEl).forEach(b=>b.onclick=()=>zetRadarStatus(b.dataset.rher,'nieuw',''));
   CRM.$$('[data-rpijp]', mountEl).forEach(b=>b.onclick=()=>{

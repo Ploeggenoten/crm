@@ -935,6 +935,7 @@ function bindKaart(mount, ct, klant){
     CRM.toast('Taak afgevinkt','ok');
     CRM.navBadges();
     opnieuw();
+    if(CRM.salesmeter) CRM.salesmeter.naKennismaking(t);
   });
   mount.querySelectorAll('[data-taakbewerk]').forEach(b => b.onclick = async () => {
     const t = (CRM.state.taken||[]).find(x => String(x.id) === b.dataset.taakbewerk);

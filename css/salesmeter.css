@@ -10,3 +10,16 @@
 .sm-o.hoofd{border-color:var(--olive);background:#f3f7ea}
 .sm-ico{font-size:16px;line-height:1.2}
 .sm-teller{text-align:center;padding-top:6px}
+
+/* Redenen met één klik (kiesReden) */
+.sm-redenen{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Na "geen gehoor": balkje onderin om het WhatsApp-appje klaar te zetten */
+.sm-appje{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:900;
+  display:flex;align-items:center;gap:10px;padding:10px 12px 10px 16px;border-radius:14px;
+  background:rgba(255,255,255,.96);box-shadow:0 10px 30px rgba(0,0,0,.18);font-size:13.5px;
+  max-width:calc(100vw - 32px)}
+.sm-appje span{white-space:nowrap}
+
+/* Telefoonnummer in een rij: aanklikken = bellen + uitkomstmenu */
+.sm-tel{white-space:nowrap;font-variant-numeric:tabular-nums;text-decoration:none}

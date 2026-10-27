@@ -532,14 +532,15 @@ function bouwTaken(){
         ? (CRM.state.contacten||[]).find(x => String(x.id) === String(t.ref)) : null;
       const refNaam = t.entiteit === 'kandidaat' ? ((CRM.kandidaat(t.ref)||{}).naam || '')
                     : t.entiteit === 'contact' ? (ctRij ? ctRij.naam + (ctRij.klant ? ' ('+ctRij.klant+')' : '') : '')
+                    : t.entiteit === 'radar' ? 'Leadradar'
                     : (t.ref || '');
       const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
       const rij = { id:String(t.id), tekst:t.tekst || '(lege taak)', datum:d,
         prio: prioNorm(t.prioriteit),
         sub: [refNaam, van].filter(Boolean).join(' · '),
         mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
-           : t.entiteit==='lead' ? 'recruitment' : (ctRij ? 'contacten' : ''),
-        ref: t.ref || '' };
+           : t.entiteit==='lead' ? 'recruitment' : t.entiteit==='radar' ? 'sales' : (ctRij ? 'contacten' : ''),
+        ref: t.entiteit==='radar' ? '' : (t.ref || '') };
       const g = !d ? 'geen' : d < nu ? 'over' : d === nu ? 'vandaag'
               : d <= eindWeek ? 'week' : 'later';
       /* Alleen wat vandaag af moet telt mee in de voortgangsbalk. Een taak
@@ -883,6 +884,7 @@ async function taakAfvinken(id, cb){
   rijAf(cb);
   CRM.toast('Taak afgerond','ok');
   CRM.navBadges();
+  if(CRM.salesmeter) CRM.salesmeter.naKennismaking(t);
 }
 
 /* "Acties over datum": de onderliggende kandidaat-acties worden echt als

@@ -15,9 +15,23 @@
         bel later terug        → op de datum die je kiest
         info gemaild           → over 3 werkdagen nabellen
         afspraak gemaakt       → fase "Gesprek ingepland" + taak op de dag
-        geen interesse         → klaar; over 3 maanden nog eens proberen
+        geen interesse         → klaar; koude lead naar "Project uitgesteld"
       Die taken hangen aan de klant (of contactpersoon), dus ze staan
       vanzelf in Sales → Opvolgingen. Er is bewust géén tweede lijst.
+
+   ZELF OPRUIMEN (Tjeerd, 27 okt 2026: "te veel handmatig werk, ook met
+   opvolgingen"). Van de 105 opgepakte radarleads stonden er 91 nog op
+   Lead: elk "geen gehoor" maakte er een klant mét taak van. Daarom:
+     - een radarbedrijf wordt pas een lead bij een echt gesprek (later,
+       info, afspraak). Geen gehoor / receptie blijft op de radar, met de
+       nabeltaak aan de radarrij (entiteit 'radar');
+     - na 3 pogingen zonder gehoor parkeert het systeem: radarrij genegeerd
+       met die reden, koude lead naar "Project uitgesteld";
+     - "geen interesse" maakt geen taak meer voor over 3 maanden;
+     - info gemaild opent meteen de mail (radarconcept of Tjeerds vaste
+       template), geen gehoor biedt het WhatsApp-appje aan;
+     - een Kennismaking-taak afvinken vraagt hoe het ging en zet de
+       volgende stap (naKennismaking).
 
    WAT TELT ALS KOUD: een belletje naar een bedrijf dat nog geen kennis-
    making heeft gehad — Leadradar, of een klant in Lead t/m "In afwachting
@@ -38,12 +52,12 @@
   const MAX_POGINGEN = 3;
 
   const UITKOMSTEN = [
-    {k:'geen_gehoor', ico:'📵', lbl:'Geen gehoor',             hint:'Opnieuw over 2 werkdagen · max. 3 pogingen'},
+    {k:'geen_gehoor', ico:'📵', lbl:'Geen gehoor',             hint:'Opnieuw over 2 werkdagen · na 3 pogingen geparkeerd'},
     {k:'receptie',    ico:'☎️', lbl:'Receptie / niet de beslisser', hint:'Naam beslisser noteren · opnieuw over 2 werkdagen'},
     {k:'later',       ico:'⏰', lbl:'Bel later terug',          hint:'Jij kiest de datum'},
-    {k:'info',        ico:'✉️', lbl:'Info gemaild',             hint:'Nabellen over 3 werkdagen'},
+    {k:'info',        ico:'✉️', lbl:'Info gemaild',             hint:'Mail gaat open · nabellen over 3 werkdagen'},
     {k:'afspraak',    ico:'🤝', lbl:'Afspraak gemaakt',         hint:'Fase "Gesprek ingepland" · telt voor je weekdoel', hoofd:true},
-    {k:'geen_interesse', ico:'✕', lbl:'Geen interesse',         hint:'Klaar · over 3 maanden nog eens'}
+    {k:'geen_interesse', ico:'✕', lbl:'Geen interesse',         hint:'Klaar · geen nieuwe taak'}
   ];
   const UITKOMST = Object.fromEntries(UITKOMSTEN.map(u => [u.k, u]));
 
@@ -100,7 +114,7 @@
   function opvolgen(wie = CRM.me()){
     const vandaag = CRM.todayISO();
     const open = (CRM.state.taken||[]).filter(t => !t.klaar && (!t.voor || t.voor === wie)
-      && (t.entiteit === 'klant' || t.entiteit === 'contact') && t.datum && String(t.datum).slice(0,10) <= vandaag);
+      && ['klant','contact','radar'].includes(t.entiteit) && t.datum && String(t.datum).slice(0,10) <= vandaag);
     return {n: open.length, verlopen: open.filter(t => String(t.datum).slice(0,10) < vandaag).length};
   }
 
@@ -115,10 +129,23 @@
     return n + 1;
   }
 
+  /* Idem op een radarrij: belletjes met entiteit 'radar'. */
+  function pogingRadar(id){
+    const bel = (CRM.state.activiteiten||[])
+      .filter(a => a.soort === 'bel' && a.entiteit === 'radar' && String(a.ref) === String(id))
+      .sort((a,b) => String(b.op).localeCompare(String(a.op)));
+    let n = 0;
+    for(const a of bel){ const u = uitkomstVan(a); if(u === 'geen_gehoor' || u === 'receptie') n++; else break; }
+    return n + 1;
+  }
+
   /* ─── Taak klaarzetten (zonder venster) ──────────────────────── */
   async function taak(klant, contactId, tekst, datum, prioriteit = 'normaal'){
+    return taakOp(contactId ? 'contact' : 'klant', contactId || klant, tekst, datum, prioriteit);
+  }
+  async function taakOp(entiteit, ref, tekst, datum, prioriteit = 'normaal'){
     const rij = {id:CRM.uid(), tekst, datum, tijd:'', klaar:false,
-      entiteit: contactId ? 'contact' : 'klant', ref: String(contactId || klant),
+      entiteit, ref: String(ref),
       voor:CRM.me(), door:CRM.me(), prioriteit, created_at:new Date().toISOString()};
     CRM.state.taken.push(rij);
     if(!CRM.demo){
@@ -213,15 +240,42 @@
       if(!afspraak) return;
     }
     let reden = '';
-    if(uk === 'geen_interesse'){ await rust(); reden = await CRM.vraag('Geen interesse — reden?', {knop:'Vastleggen', placeholder:'Bijv. werken al met een bureau (mag leeg)'}) || ''; }
+    if(uk === 'geen_interesse'){
+      await rust();
+      reden = await kiesReden('Geen interesse — waarom?', REDENEN_NEE);
+      if(reden === null) return;
+    }
 
-    /* Leadradar: alles behalve "geen interesse" maakt er een lead van, zodat
-       de opvolging op één plek staat. */
+    /* Leadradar: een echt gesprek (later, info, afspraak) maakt er een lead
+       van. Geen gehoor en receptie blijven op de radar, met de nabeltaak aan
+       de radarrij; na de laatste poging parkeert het systeem hem.
+       Bij "Nieuw belletje" (geen echte radarrij, opRadar ontbreekt) wordt
+       het wél meteen een lead: dat bedrijf typte je zelf in. */
     if(ctx.radar){
       if(uk === 'geen_interesse'){
         await CRM.logActiviteit('radar', ctx.radar.id, 'bel', `Gebeld — geen interesse${reden?': '+reden:''}`, {uitkomst:uk, koud:true});
         await ctx.radar.negeer(reden ? 'Geen interesse: '+reden : 'Geen interesse (gebeld)');
+        if(ctx.taakId) await taakAf(ctx.taakId);
         CRM.toast('Vastgelegd — de radar slaat dit bedrijf voortaan over', 'ok');
+        return klaar && klaar();
+      }
+      if(ctx.radar.opRadar && (uk === 'geen_gehoor' || uk === 'receptie')){
+        const p = pogingRadar(ctx.radar.id);
+        const wie = ctx.contactNaam ? ` met ${ctx.contactNaam}` : '';
+        await CRM.logActiviteit('radar', ctx.radar.id, 'bel',
+          `Gebeld${wie}, ${uk === 'receptie' ? 'receptie / niet de beslisser' : 'geen gehoor'} (poging ${p} van ${MAX_POGINGEN})${extraInfo?` — beslisser: ${extraInfo}`:''}`,
+          {uitkomst:uk, koud:true, poging:p});
+        if(ctx.taakId) await taakAf(ctx.taakId);
+        if(p < MAX_POGINGEN){
+          await taakOp('radar', ctx.radar.id, `Bel ${ctx.naam} opnieuw — ${u.lbl.toLowerCase()} (poging ${p+1} van ${MAX_POGINGEN})`, werkdagenErbij(2));
+          const t = tel();
+          CRM.toast(t.doel ? `${u.lbl} vastgelegd — ${t.vandaag} van ${t.doel.belDag} vandaag` : `${u.lbl} vastgelegd`, 'ok');
+        } else {
+          await ctx.radar.negeer(`Geparkeerd na ${MAX_POGINGEN}× geen gehoor`);
+          CRM.toast(`${MAX_POGINGEN} pogingen zonder gehoor — geparkeerd, staat niet meer op je lijst`, 'ok');
+        }
+        CRM.navBadges && CRM.navBadges();
+        if(uk === 'geen_gehoor' && ctx.telefoon) appjeAanbieden(ctx.telefoon, ctx.contactNaam, ctx.naam);
         return klaar && klaar();
       }
       klant = await ctx.radar.naarKlant();
@@ -255,9 +309,10 @@
 
     /* Volgende stap. */
     const n = ctx.contactNaam || klant;
+    let geparkeerd = false;
     if(uk === 'geen_gehoor' || uk === 'receptie'){
       if(p < MAX_POGINGEN) await taak(klant, ctx.contactId, `Bel ${n} opnieuw — ${u.lbl.toLowerCase()} (poging ${p+1} van ${MAX_POGINGEN})`, werkdagenErbij(2));
-      else CRM.toast(`${MAX_POGINGEN} pogingen zonder gehoor — geen nieuwe belafspraak gezet`);
+      else geparkeerd = await parkeer(k, `${MAX_POGINGEN}× geen gehoor`);
     }
     if(uk === 'later') await taak(klant, ctx.contactId, `Bel ${n} terug — afgesproken`, afspraak.datum, 'hoog');
     if(uk === 'info') await taak(klant, ctx.contactId, `Nabellen ${n} — info gemaild`, werkdagenErbij(3));
@@ -272,16 +327,179 @@
         CRM.logActiviteit('klant', klant, 'fase', `${oud||'Lead'} → Gesprek ingepland`);
       }
     }
-    if(uk === 'geen_interesse'){
-      const d = new Date(); d.setMonth(d.getMonth()+3);
-      await taak(klant, ctx.contactId, `${klant} nog eens proberen — 3 maanden geleden geen interesse`, iso(d), 'laag');
-    }
+    if(uk === 'geen_interesse') await parkeer(k, 'geen interesse' + (reden ? ': ' + reden : ''));
     if(ctx.taakId) await taakAf(ctx.taakId);
 
     const t = tel();
-    CRM.toast(t.doel ? `${u.lbl} vastgelegd — ${t.vandaag} van ${t.doel.belDag} vandaag` : `${u.lbl} vastgelegd`, 'ok');
+    CRM.toast(geparkeerd ? `${MAX_POGINGEN} pogingen zonder gehoor — ${klant} staat nu op "Project uitgesteld"`
+      : t.doel ? `${u.lbl} vastgelegd — ${t.vandaag} van ${t.doel.belDag} vandaag` : `${u.lbl} vastgelegd`, 'ok');
     CRM.navBadges && CRM.navBadges();
     if(klaar) klaar();
+
+    /* De vervolghandeling die je anders zelf opzoekt. Pas na klaar(), zodat
+       de lijst eronder al bijgewerkt is, en na een rustpauze (zie rust). */
+    if(uk === 'info'){ await rust(); infoMail(klant, ctx.contactId); }
+    if(uk === 'geen_gehoor' && !geparkeerd){
+      const c = ctx.contactId ? (CRM.state.contacten||[]).find(x => String(x.id) === String(ctx.contactId)) : null;
+      const tel_ = (c && c.telefoon) || ctx.telefoon || '';
+      if(tel_) appjeAanbieden(tel_, (c && c.naam) || ctx.contactNaam, klant);
+    }
+  }
+
+  /* Koude lead parkeren: naar "Project uitgesteld" (hint: later opnieuw
+     benaderen). Een warme relatie blijft staan waar hij staat. */
+  async function parkeer(k, waarom){
+    if(!k || !KOUDE_FASES.includes(k.fase || 'Lead')) return false;
+    const oud = k.fase || 'Lead';
+    k.fase = 'Project uitgesteld'; k.fase_sinds = CRM.todayISO();
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('clients').update({fase:k.fase, fase_sinds:k.fase_sinds}).eq('naam', k.naam);
+      if(error){ k.fase = oud; CRM.fout('Parkeren mislukt', error); return false; }
+    }
+    CRM.logActiviteit('klant', k.naam, 'fase', `${oud} → Project uitgesteld (geparkeerd: ${waarom})`);
+    return true;
+  }
+
+  /* ─── Redenen met één klik ───────────────────────────────────────
+     103 van de 109 genegeerde radarleads hadden geen reden: typen doet
+     niemand midden in een belronde. Knoppen wel. "Anders" vraagt alsnog
+     om tekst. null = geannuleerd. */
+  const REDENEN_NEE = ['Werken al met een bureau', 'Nu geen vacatures', 'Werven zelf', 'Geen tijd / niet de juiste persoon'];
+  function kiesReden(titel, opties){
+    return new Promise(res => {
+      CRM.modal.open(`
+        <div class="modal-h"><div class="h2">${h(titel)}</div></div>
+        <div class="modal-b"><div class="sm-redenen">${opties.map((o, i) =>
+          `<button type="button" class="btn ghost" data-rd="${i}">${h(o)}</button>`).join('')}
+          <button type="button" class="btn ghost" data-rd="anders">Anders…</button></div>
+          <input type="text" id="sm_rd" placeholder="Reden" style="display:none;margin-top:10px"></div>
+        <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+          <button class="btn" id="sm_rdok" style="display:none">Vastleggen</button></div>`, {
+        onClose(){ res(null); },
+        onOpen(m){
+          const sluit = v => { CRM.modal._onClose = null; CRM.modal.close(); res(v); };
+          const inp = m.querySelector('#sm_rd'), ok = m.querySelector('#sm_rdok');
+          CRM.$$('[data-rd]', m).forEach(b => b.onclick = () => {
+            if(b.dataset.rd !== 'anders') return sluit(opties[Number(b.dataset.rd)]);
+            inp.style.display = ''; ok.style.display = ''; inp.focus();
+          });
+          ok.onclick = () => sluit(inp.value.trim());
+          inp.onkeydown = e => { if(e.key === 'Enter') sluit(inp.value.trim()); };
+          m.querySelector('[data-mclose]').onclick = () => sluit(null);
+        }});
+    });
+  }
+
+  /* ─── Info gemaild → de mail staat meteen open ───────────────────
+     Eerst de conceptmail die de leadradar voor dit bedrijf schreef (al in
+     Tjeerds vaste template), anders de template zelf met [haakjes] waar
+     het detail en de vervolgstap moeten komen. Jij verstuurt zelf. */
+  function infoMail(klant, contactId){
+    if(!CRM.mailUI) return;
+    const k = CRM.klant(klant) || {};
+    const cs = (CRM.state.contacten||[]).filter(c => c.klant === klant);
+    const c = (contactId && cs.find(x => String(x.id) === String(contactId))) || cs.find(x => x.hoofd && x.email) || cs.find(x => x.email) || null;
+    const concept = CRM.radarConcept ? CRM.radarConcept(klant) : null;
+    const voornaam = c ? String(c.naam||'').trim().split(/\s+/)[0] : '';
+    const tekst = (concept && concept.mail) || (CRM.salesTemplate ? CRM.salesTemplate(voornaam) : '');
+    CRM.mailUI.opstellen({
+      aan: (c && c.email) || k.email || '',
+      wie: c ? `${c.naam} — ${klant}` : klant,
+      onderwerp: `Ploeggenoten · ${klant}`,
+      tekst, set:'klant', ctx:{voornaam, klant},
+      entiteit: c ? 'contact' : 'klant', ref: c ? String(c.id) : klant
+    });
+  }
+
+  /* ─── Geen gehoor → WhatsApp-appje met één klik ──────────────────
+     Een klein balkje onderin, 10 seconden; negeren mag. Het bericht zelf
+     staat in sales.js (geenGehoorBericht). */
+  function appjeAanbieden(telefoon, contactNaam, klant){
+    const link = CRM.waHref && CRM.geenGehoorBericht && CRM.waHref(telefoon, CRM.geenGehoorBericht(contactNaam, klant));
+    if(!link) return;
+    document.querySelector('.sm-appje')?.remove();
+    const el = document.createElement('div');
+    el.className = 'sm-appje';
+    el.innerHTML = `<span>Appje sturen${contactNaam ? ' naar ' + h(String(contactNaam).split(/\s+/)[0]) : ''}?</span>
+      <a class="btn sm" href="${h(link)}" target="_blank" rel="noopener">💬 WhatsApp klaarzetten</a>
+      <button type="button" class="btn sm ghost" aria-label="Sluiten">✕</button>`;
+    document.body.appendChild(el);
+    const weg = () => el.remove();
+    el.querySelector('a').addEventListener('click', () => {
+      if(CRM.klant(klant)) CRM.logActiviteit('klant', klant, 'whatsapp', `WhatsApp-appje klaargezet na geen gehoor${contactNaam ? ' voor ' + contactNaam : ''}`);
+      setTimeout(weg, 300);
+    });
+    el.querySelector('button').onclick = weg;
+    setTimeout(weg, 10000);
+  }
+
+  /* ─── Bellen = nummer aanklikken ─────────────────────────────────
+     Op een rij met een tel:-link start de klik het gesprek, en even later
+     staat het uitkomstmenu al open. Na het ophangen nog één klik. */
+  function belEnVraag(ctx, klaar){ setTimeout(() => gebeld(ctx, klaar), 900); }
+
+  /* ─── Kennismaking gehad → één venster, volgende stap staat ──────
+     Aangeroepen na het afvinken van een taak die met "Kennismaking "
+     begint (sales.js, dashboard.js, contactkaart.js). */
+  async function naKennismaking(t){
+    if(!t || !/^Kennismaking\s/.test(String(t.tekst||''))) return;
+    const klant = t.entiteit === 'klant' ? t.ref : t.entiteit === 'contact' ? klantVanContact(t.ref) : '';
+    const k = klant && CRM.klant(klant);
+    if(!k) return;
+    const contactId = t.entiteit === 'contact' ? String(t.ref) : '';
+    const rust = () => new Promise(r => setTimeout(r, 450));
+    await rust();
+    const keuze = await new Promise(res => {
+      CRM.modal.open(`
+        <div class="modal-h"><div class="h2">Hoe ging de kennismaking?</div>
+          <p class="sub" style="margin:6px 0 0">${h(klant)}</p></div>
+        <div class="modal-b">
+          <textarea id="km_v" placeholder="Kort verslag: wat speelt er, welke functies, wie beslist (mag leeg)"></textarea>
+          <div class="sm-menu" style="margin-top:12px">
+            <button type="button" class="sm-o hoofd" data-km="voorstel"><span class="sm-ico">📄</span><b>Voorstel sturen</b><span class="meta">Fase "Voorstel gedaan" · over 5 werkdagen nabellen</span></button>
+            <button type="button" class="sm-o" data-km="later"><span class="sm-ico">⏳</span><b>Nog niet</b><span class="meta">Jij kiest wanneer je opvolgt</span></button>
+            <button type="button" class="sm-o" data-km="nee"><span class="sm-ico">✕</span><b>Geen match</b><span class="meta">Naar "Project uitgesteld" · geen taak</span></button>
+          </div></div>
+        <div class="modal-f"><button class="btn ghost" data-mclose>Later invullen</button></div>`, {
+        onClose(){ res(null); },
+        onOpen(m){
+          CRM.$$('[data-km]', m).forEach(b => b.onclick = () => {
+            const v = m.querySelector('#km_v').value.trim();
+            CRM.modal._onClose = null; CRM.modal.close(); res({k:b.dataset.km, verslag:v});
+          });
+        }});
+    });
+    if(!keuze) return;
+    let datum = null;
+    if(keuze.k === 'later'){
+      await rust();
+      const d = new Date(); d.setDate(d.getDate() + 28);
+      const gekozen = await kiesDatum('Wanneer opvolgen?', '', iso(d));
+      if(!gekozen) return;
+      datum = gekozen.datum;
+    }
+    if(keuze.verslag) await CRM.logActiviteit(contactId ? 'contact' : 'klant', contactId || klant, 'gesprek', `Kennismaking: ${keuze.verslag}`);
+    const naarFase = async nieuw => {
+      if(k.fase === nieuw) return;
+      const oud = k.fase || 'Lead'; k.fase = nieuw; k.fase_sinds = CRM.todayISO();
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('clients').update({fase:k.fase, fase_sinds:k.fase_sinds}).eq('naam', klant);
+        if(error){ k.fase = oud; return CRM.fout('Fase bijwerken mislukt', error); }
+      }
+      CRM.logActiviteit('klant', klant, 'fase', `${oud} → ${nieuw}`);
+    };
+    if(keuze.k === 'voorstel'){
+      await naarFase('Voorstel gedaan');
+      await taak(klant, contactId, `Voorstel nabellen — ${klant}`, werkdagenErbij(5), 'hoog');
+      CRM.toast('Vastgelegd — over 5 werkdagen staat het nabellen in Opvolgingen', 'ok');
+    } else if(keuze.k === 'later'){
+      await taak(klant, contactId, `${klant} opvolgen na kennismaking`, datum);
+      CRM.toast('Vastgelegd — de opvolging staat in Opvolgingen', 'ok');
+    } else {
+      await naarFase('Project uitgesteld');
+      CRM.toast('Vastgelegd — geen match', 'ok');
+    }
+    CRM.navBadges && CRM.navBadges();
   }
 
 
@@ -369,5 +587,5 @@
     }, naContact: () => gemaakt && gemaakt.contactId}, klaar);
   }
 
-  CRM.salesmeter = {doel, tel, opvolgen, gebeld, belNieuw, UITKOMST, KOUDE_FASES};
+  CRM.salesmeter = {doel, tel, opvolgen, gebeld, belNieuw, belEnVraag, naKennismaking, kiesReden, UITKOMST, KOUDE_FASES};
 })();

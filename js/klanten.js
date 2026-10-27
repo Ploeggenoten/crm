@@ -4672,6 +4672,10 @@ const voornaamVan = n => String(n||'').trim().split(/\s+/)[0] || '';
    ingevuld en [haakjes] waar de gebruiker zelf iets moet kiezen. */
 const SJABLONEN = {
   klant: [
+    /* Tjeerds vaste salesmail (CRM.salesTemplate in sales.js). */
+    { lbl:'Info na ons gesprek (vaste template)',
+      onderwerp: c => 'Ploeggenoten' + (c.klant ? ' · ' + c.klant : ''),
+      tekst: c => CRM.salesTemplate ? CRM.salesTemplate(c.voornaam) : '' },
     { lbl:'Kandidaat voorstellen',
       onderwerp: c => 'Kandidaat voor ' + (c.functie || 'jullie vacature'),
       tekst: c => `Beste ${c.voornaam || '[naam]'},
@@ -4795,8 +4799,11 @@ CRM.mailUI = {
   opstellen(opts = {}){
     const aan = String(opts.aan || '').trim();
     if(!mailAan()){
-      const q = opts.onderwerp ? '?subject=' + encodeURIComponent(opts.onderwerp) : '';
-      window.location.href = 'mailto:' + encodeURIComponent(aan) + q;
+      /* Zonder Outlook-koppeling: mailto, mét de tekst als die er is
+         (bijv. de conceptmail na "Info gemaild"). */
+      const q = [opts.onderwerp ? 'subject=' + encodeURIComponent(opts.onderwerp) : '',
+                 opts.tekst ? 'body=' + encodeURIComponent(opts.tekst) : ''].filter(Boolean).join('&');
+      window.location.href = 'mailto:' + encodeURIComponent(aan) + (q ? '?' + q : '');
       return;
     }
     const set = SJABLONEN[opts.set] || [];
