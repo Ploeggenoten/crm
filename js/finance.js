@@ -20,10 +20,6 @@
 'use strict';
 
 const FIN_APP = 'https://ploeggenoten.github.io/ploeggenoten-finance/';
-/* De finance-app heeft (nog) geen hash-router; de hash is onschadelijk
-   en maakt de bedoeling per knop duidelijk. */
-const finLink = (view, lbl, klasse='btn ghost sm') =>
-  `<a class="${klasse}" href="${FIN_APP}${view?'#'+view:''}" target="_blank" rel="noopener">${CRM.h(lbl)} ↗</a>`;
 
 /* ─── Getallen uit de database ────────────────────────────────
    Een bedrag kan als tekst binnenkomen: PostgREST levert `numeric`
@@ -622,12 +618,18 @@ function potjes(f){
 
   const ankerWinst = Sn(f,'yuki_winst_ytd',0);
   const ankerDatum = S(f,'yuki_winst_datum',null);
-  const start = (ankerDatum && String(ankerDatum).slice(0,4) === String(y)) ? String(ankerDatum) : `${y}-01-01`;
-  const basisWinst = (ankerDatum && start === String(ankerDatum)) ? ankerWinst : 0;
+  /* Zonder Yuki-anker voor dit jaar begint de telling óp 1 januari: eerder
+     vielen januari-kosten en facturen van 1 januari weg (`> start`,
+     `<= start`), waardoor winst en vpb-potje te hoog uitkwamen (audit
+     27 okt 2026). Mét anker zitten die dagen al in de ankerwinst. */
+  const metAnker = !!(ankerDatum && String(ankerDatum).slice(0,4) === String(y));
+  const start = metAnker ? String(ankerDatum) : `${y}-01-01`;
+  const basisWinst = metAnker ? ankerWinst : 0;
+  const naStart = d => metAnker ? d > start : d >= start;
   const omzetYtd = basisWinst
-    + f.installments.filter(i => i.factuurdatum && i.factuurdatum > start
+    + f.installments.filter(i => i.factuurdatum && naStart(i.factuurdatum)
         && (i.status==='gefactureerd' || i.status==='betaald')).reduce((s,i) => s + bedragVan(i), 0)
-    + f.flexWeken.filter(w => w.week > start && String(w.week).slice(0,4) === String(y))
+    + f.flexWeken.filter(w => naStart(String(w.week||'')) && String(w.week).slice(0,4) === String(y))
         .reduce((s,w) => s + getal(w.bedrag), 0);
   /* het deel van de TVE-uitkering boven de fee is RC-aflossing (balans), géén kosten */
   const rcAfbouwPm = Math.max(0, Sn(f,'mgmt_uitkering_pm',0) - Sn(f,'mgmt_fee_pm',0));
@@ -635,7 +637,7 @@ function potjes(f){
   for(let m=0; m<12; m++){
     const mk = `${y}-${String(m+1).padStart(2,'0')}-01`;
     if(mk > monthKey(t)) break;
-    if(mk <= monthKey(start)) continue;   // maanden t/m het anker zitten al in de ankerwinst
+    if(metAnker && mk <= monthKey(start)) continue;   // maanden t/m het anker zitten al in de ankerwinst
     kostenYtd += kostenVoorMaand(f, mk) - rcAfbouwPm;
   }
   const winstYtd = omzetYtd - kostenYtd;
@@ -1046,7 +1048,7 @@ function acties(f){
   for(const p of f.placements){
     if(p.concept){
       list.push({soort:'concept', urg:2, p,
-        txt:`Nieuwe plaatsing ${tekst(p.id, 'zonder nummer')} vanaf het bord — fee geschat op ${eur(getalOfNull(p.fee_excl))}. Bevestig de fee én het factuurschema`});
+        txt:`Fee (${eur(getalOfNull(p.fee_excl))}) en factuurschema bevestigen`});
       continue;
     }
     const st = placementStats(f, p);
@@ -1074,14 +1076,14 @@ function acties(f){
       const cc = cands().find(x => x.id === p.pipeline_candidate_id);
       if(cc && !['Contract getekend','Gestart','Gestopt'].includes(faseVan(cc)) && (st.gefact > 0 || st.betaald > 0))
         list.push({soort:'terug', urg:2, p,
-          txt:`${tekst(p.kandidaat)} staat op het bord terug op "${tekst(faseVan(cc), 'onbekend')}" (niet meer getekend), maar er is al gefactureerd — controleer`});
+          txt:`Op het bord terug naar "${tekst(faseVan(cc), 'onbekend')}", maar er is al gefactureerd — controleer`});
     }
   }
   for(const c of inboxCandidates(f))
-    list.push({soort:'afronden', urg:1, c, txt:`${tekst(c.naam)} (${klantLabel(c.klant)}) — plaatsing afronden`});
+    list.push({soort:'afronden', urg:1, c, txt:'Plaatsing afronden' + (c.geplaatst_op ? ` — getekend ${dOf(c.geplaatst_op)}` : '')});
   for(const {p, c} of stopSignalen(f))
     list.push({soort:'stop_signaal', urg:2, p, c,
-      txt:`${tekst(p.kandidaat)} staat op het bord als gestopt (${dOf(c.gestopt_op)}) — verwerken`});
+      txt:`Op het bord gestopt (${dOf(c.gestopt_op)}) — verwerken`});
   const saldo = f.saldi[0];
   const saldoOud = saldo ? daysBetween(saldo.datum, t) : null;
   if(!saldo || (saldoOud != null && saldoOud > 14))
@@ -1882,18 +1884,12 @@ function lineChart(labels, series, opts){
 /* ─── Module-state (blijft staan tussen tabwissels) ───────────── */
 let _tab = 'vandaag', _zoek = '', _filter = 'alle';
 let _factStatus = 'actueel', _factKlant = '', _factGroep = 'maand';
-let _cfScenario = 'pijplijn', _ketStap = '';
-let _sd = null;                       // netto-calculator salaris vs. dividend
 
 const TABS = [
   {k:'vandaag',     lbl:'Vandaag'},
-  {k:'advies',      lbl:'Advies'},
-  {k:'plaatsingen', lbl:'Plaatsingen & termijnen'},
-  {k:'facturatie',  lbl:'Facturatie'},
-  {k:'flex',        lbl:'Flex'},
-  {k:'cashflow',    lbl:'Cashflow'},
-  {k:'winst',       lbl:'Winst & doelen'},
-  {k:'kosten',      lbl:'Kosten'}
+  {k:'plaatsingen', lbl:'Plaatsingen'},
+  {k:'geld',        lbl:'Geld'},
+  {k:'flex',        lbl:'Flex'}
 ];
 
 function demoLeeg(titel, tekst){
@@ -1906,134 +1902,158 @@ function demoLeeg(titel, tekst){
     ${CRM.ui.leeg(titel, tekst, `<a class="btn ghost" href="${FIN_APP}" target="_blank" rel="noopener">Finance-app openen ↗</a>`)}`;
 }
 
-/* ═══ TAB: VANDAAG ═════════════════════════════════════════════ */
+/* ═══ OPZET ════════════════════════════════════════════════════
+   Vier tabbladen: Vandaag · Plaatsingen · Geld · Flex, plus ⚙ voor de
+   instellingen (Tjeerd, 27 okt 2026: "zo overzichtelijk mogelijk, niet
+   te groot — naar de adviezen kijk ik nooit"). Geen grote KPI-tegels
+   meer maar één smalle cijferbalk per scherm, en dan meteen het werk.
+   Advies, scenario's en analyses zijn eruit; de rekenkern hierboven
+   blijft staan voor wat de schermen nog gebruiken.                   */
+
+/* Smalle cijferbalk: [label, waarde-html, onderschrift-html]. */
+function strip(cellen){
+  return `<div class="fin-strip">${cellen.filter(Boolean).map(([l, v, s]) =>
+    `<div><div class="l">${H(l)}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`).join('')}</div>`;
+}
+
+/* ═══ TAB: VANDAAG ═════════════════════════════════════════════
+   Eén vraag: wat moet ik nu doen, en hoe staat de bank ervoor. Elke
+   regel in Te doen heeft zijn eigen knop — niets linkt meer naar de
+   finance-app.                                                        */
+const TODO_KNOP = {
+  factureren:   ['Gefactureerd ✓', 'fact'],
+  te_laat:      ['Betaald ✓', 'paid'],
+  afronden:     ['Afronden', 'afronden'],
+  concept:      ['Bekijken', 'paneel'],
+  vervanging:   ['Bekijken', 'paneel'],
+  terug:        ['Bekijken', 'paneel'],
+  stop:         ['Laten vervallen', 'stopverwerk'],
+  stop_signaal: ['Verwerken', 'stop'],
+  saldo:        ['Bijwerken', 'saldo'],
+  flex:         ['Naar Flex', 'flex'],
+  zzp_factuur:  ['Gefactureerd ✓', 'zzp'],
+  afronden_groep: ['Naar Plaatsingen', 'plaatsingen']
+};
+
 function tabVandaag(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen financiële gegevens in demo',
-    'Log in met je eigen account om banksaldo, facturatie en signalen te zien.'); return; }
+    'Log in met je eigen account om banksaldo, facturatie en je takenlijst te zien.'); return; }
 
-  const k = kpis(f), pot = potjes(f), con = concentratie(f), fx = flexStats(f), tgt = targetInfo(f);
+  const k = kpis(f), pot = potjes(f), con = concentratie(f);
+  const t = todayISO(), mk7 = t.slice(0,7);
   const saldo = f.saldi[0];
   const vrij = saldo ? getal(saldo.saldo) - pot.btwPot - pot.vpbPot : null;
-  const lijst = acties(f);
-  const bw = yukiBewaking(f);
-  const brief = cfoBriefing(f);
+  /* Meer dan twee af te ronden plaatsingen worden één regel met een knop
+     naar Plaatsingen — anders verdrinkt de rest van het werk erin. */
+  const ruw = acties(f);
+  const afTeRonden = ruw.filter(a => a.soort === 'afronden');
+  const lijst = afTeRonden.length > 2
+    ? [...ruw.filter(a => a.soort !== 'afronden'),
+       {soort:'afronden_groep', urg:1, txt:`${afTeRonden.length} plaatsingen af te ronden`,
+        sub: afTeRonden.slice(0,3).map(a => tekst(a.c.naam)).join(', ') + (afTeRonden.length > 3 ? ' …' : '')}]
+    : ruw;
+  const nTeLaat = lijst.filter(a => a.soort === 'te_laat').length;
+  const concepten = new Set(f.placements.filter(p => p.concept).map(p => p.id));
+  const teFactNu = f.installments.filter(i => i.status === 'te_factureren' && !concepten.has(i.placement_id)
+    && i.geplande_datum && String(i.geplande_datum).slice(0,7) <= mk7).reduce((s,i) => s + bedragVan(i), 0);
 
-  const ICO = {factureren:'🧾', te_laat:'⏰', vervanging:'🔁', stop:'✂️', afronden:'📥',
-               stop_signaal:'🛑', saldo:'🏦', flex:'🟢', concept:'✨', terug:'↩️', zzp_factuur:'🧾'};
-  const actieItems = lijst.map(a => {
-    const wie = a.p ? `${a.p.kandidaat||'—'} · ${a.p.klant||'—'}`
-              : a.zzp ? 'ZZP · ' + (a.zzp.klant||'—')
-              : (a.c ? `${a.c.naam||'—'} · ${a.c.klant||''}` : 'Algemeen');
-    const bedrag = a.i ? ` · ${eur(bedragVan(a.i))} excl. btw` : '';
-    return {ico: ICO[a.soort] || '•', titel: a.txt, tekst: wie + bedrag,
-            wanneer: a.urg >= 2 ? 'urgent' : ''};
-  });
-
-  const briefIco = {ok:'🟢', warn:'🟠', kans:'🟡'};
-  const briefHtml = `<div class="fin-brief">
-    <div class="fin-brief-h">🧭 Je CFO deze week <span class="meta">— ${H(dOf(todayISO()))}</span></div>
-    ${brief.map(z => `<div class="fin-brief-r"><span>${briefIco[z.k]||'•'}</span><span>${H(z.t)}</span></div>`).join('')}
-  </div>`;
-
-  const rij = (l, v) => `<div class="fin-pot"><span>${H(l)}</span><b>${v}</b></div>`;
-  const potHtml = [
-    rij('Btw-potje dit kwartaal (indicatief)', eur(pot.btwPot)),
-    rij(`Vpb-reservering YTD (${pctF(Sn(f,'vpb_pct',0.19), 0)})`, eur(pot.vpbPot)),
-    rij('Samen opzij te zetten', eur(pot.btwPot + pot.vpbPot)),
-    rij('Winst-indicatie YTD' + (S(f,'yuki_synced_at') ? ' (live uit Yuki)' : ''), eurN(pot.winstYtd)),
-    (bw && bw.crediteuren > 0) ? rij('Nog te betalen inkoopfacturen (Yuki)', eur(bw.crediteuren)) : ''
-  ].join('');
-
-  const risicoHtml = [
-    rij('Grootste klant', con.top1 ? H(con.top1.klant) + ' · ' + pctF(con.top1.aandeel) : '—'),
-    rij('Top-3 klanten', pctF(con.top3 || 0)),
-    (con.top1 && con.top1.aandeel > 0.35)
-      ? `<div style="margin-top:8px">${chip('⚠ hoge afhankelijkheid van ' + con.top1.klant, 'red')}</div>` : '',
-    rij('Stop-percentage plaatsingen', pctF(k.stopPct)),
-    rij('Vervallen omzet (stops)', eur(k.vervallen)),
-    rij('DSO (gem. betaalduur)', k.dso == null ? '—' : k.dso + ' dgn')
-  ].join('');
+  const regel = (a, n) => {
+    const wie = a.p ? `${tekst(a.p.kandidaat)} · ${klantLabel(a.p.klant)}`
+              : a.c ? `${tekst(a.c.naam)} · ${klantLabel(a.c.klant)}`
+              : a.zzp ? 'ZZP · ' + klantLabel(a.zzp.klant) : '';
+    const [lbl, doe] = TODO_KNOP[a.soort] || [];
+    const hoofd = doe === 'fact' || doe === 'paid' || doe === 'afronden' || doe === 'zzp';
+    const kop = wie || a.txt, onder = wie ? a.txt : (a.sub || '');
+    return `<div class="fin-todo${a.urg >= 2 ? ' urg' : ''}">
+      <div class="t"><b>${H(kop)}</b>${onder ? `<div class="w">${H(onder)}</div>` : ''}</div>
+      ${a.i ? `<div class="bd num">${eur(bedragVan(a.i))}</div>` : ''}
+      ${lbl ? `<button class="btn ${hoofd ? '' : 'ghost '}sm" data-todo="${n}">${H(lbl)}</button>` : ''}
+    </div>`;
+  };
+  const waarschuwing = (con.top1 && con.top1.aandeel > 0.35)
+    ? `<div class="fin-todo"><div class="t">${H(klantLabel(con.top1.klant))} is ${pct0(con.top1.aandeel)} van je W&amp;S-omzet
+        <div class="w">Hoge afhankelijkheid van één klant</div></div></div>` : '';
 
   el.innerHTML = `
-    ${briefHtml}
-    <div class="grid c4" style="margin:18px 0">
-      ${CRM.ui.kpi('Banksaldo', saldo ? eur(getal(saldo.saldo)) : '—',
-        saldo ? `stand van ${H(dOf(saldo.datum))} · vrij besteedbaar na potjes: <b>${eur(vrij)}</b>`
-              : 'nog geen saldo bekend', 'accent')}
-      ${CRM.ui.kpi('Openstaand (gefact., niet betaald)', eur(k.openstaand),
-        (bw && bw.yukiDeb) ? `Yuki meldt ${eur(bw.yukiDeb)} open (incl. btw)` : 'excl. btw')}
-      ${CRM.ui.kpi('Deze maand' + (tgt.aantalTarget ? ' · target bord' : ''),
-        tgt.aantalTarget ? `${telSpan(tgt.plaatsingen)} <span style="font-size:15px;color:var(--muted)">/ ${tgt.aantalTarget}</span>` : eur(k.omzetDezeMaand),
-        tgt.aantalTarget
-          ? `plaatsingen · gefactureerd ${eur(k.omzetDezeMaand)}${tgt.omzetTarget ? ' van ~'+eur(tgt.omzetTarget) : ''}`
-          : `gefactureerd; nog te factureren: ${eur(k.nogTeFactureren)}`)}
-      ${CRM.ui.kpi('Flex (run-rate p/m)', fx.maandRunRate ? eur(fx.maandRunRate) : '—',
-        fx.laatste ? `laatste week ${eur(getal(fx.laatste.bedrag))}` : 'nog geen weken ingevoerd')}
+    ${strip([
+      ['Banksaldo', saldo ? eur(getal(saldo.saldo)) : '—',
+        `${saldo ? 'stand ' + H(dKort(saldo.datum)) + ' · ' : ''}<button type="button" class="lnk" id="fv_saldo">${saldo ? 'bijwerken' : 'invullen'}</button>`],
+      ['Vrij besteedbaar', eurN(vrij), 'na het btw- en vpb-potje'],
+      ['Openstaand', eur(k.openstaand), nTeLaat ? `<span class="neg">${nTeLaat} te laat</span>` : 'niets te laat'],
+      ['Te factureren', eur(teFactNu), 't/m deze maand']
+    ])}
+    <div class="card">
+      <div class="card-h"><div class="h2">Te doen</div><span class="meta">${lijst.length || ''}</span></div>
+      <div class="card-b" style="padding:0">${lijst.map(regel).join('') + waarschuwing
+        || '<div class="fin-todo"><div class="t meta">Niets te doen — alles is bij.</div></div>'}</div>
     </div>
-
-    <div class="grid c2">
-      ${kaart(`Acties (${lijst.length})`,
-        (actieItems.length ? CRM.ui.tijdlijn(actieItems)
-                          : `<div class="note ok">Geen openstaande acties — alles is bij.</div>`)
-        + lijst.filter(a => a.soort === 'zzp_factuur' && a.zzp.gewerkt != null && a.zzp.gewerkt !== '' && a.zzp.marge != null)
-            .map(a => `<div class="fin-pot"><span>ZZP-marge ${H((CRM.kandidaat(a.zzp.kandidaat_id)||{}).naam||'?')} · ${H(a.zzp.klant||'—')}</span>
-              <button type="button" class="btn ghost sm" data-zzpfact="${H(String(a.zzp.id))}">✓ Gefactureerd</button></div>`).join(''),
-        {acties: lijst.length ? `<button class="btn ghost sm" data-gatab="plaatsingen">Afhandelen →</button>` : ''})}
-      <div class="stack">
-        ${kaart('Belastingpotjes', potHtml, {voet:'Btw = ontvangen btw dit kwartaal − voorbelasting. Vpb = percentage over de winst YTD (waar mogelijk verankerd op Yuki). Doorgeefgeld: reserveer het apart.'})}
-        ${kaart('Risico’s', risicoHtml)}
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><div class="h2">Opzij zetten</div><span class="meta">doorgeefgeld — niet vrij te besteden</span></div>
+      <div class="card-b">
+        <div class="fin-pot"><span>Btw dit kwartaal</span><b>${eur(pot.btwPot)}</b></div>
+        <div class="fin-pot"><span>Vpb over de winst tot nu (${pct0(Sn(f,'vpb_pct',0.19))})</span><b>${eur(pot.vpbPot)}</b></div>
+        <div class="fin-pot"><span><b>Samen</b></span><b>${eur(pot.btwPot + pot.vpbPot)}</b></div>
       </div>
-    </div>
-
-    <div class="grid c2" style="margin-top:16px">
-      ${kaart('Deze maand getekend', maandGetekendHtml(f))}
-      ${kaart('Wat een adviseur checkt',
-        tabel('<th>Kengetal</th><th class="n">Waarde</th><th>Toelichting</th>',
-          adviseurCijfers(f).map(([l,v,s]) => `<tr><td>${H(l)}</td><td class="n"><b class="num">${H(v)}</b></td><td class="meta">${H(s)}</td></tr>`).join('')),
-        {plat:true})}
-    </div>
-
-    <div class="note info" style="margin-top:18px">
-      Plaatsingen afronden, termijnen afvinken en fees bevestigen doe je nu hier, op de tabbladen
-      Plaatsingen &amp; termijnen en Facturatie. Saldo, kosten en instellingen nog even in de finance-app.
     </div>`;
 
-  /* ZZP-klus als gefactureerd afvinken — dit is de ene bewerking die hier
-     wél mag: de klus leeft in crm_klussen (CRM-data, team-RLS), niet in de
-     fin_*-tabellen van de finance-app. */
-  /* Afhandelen gebeurt sinds stap 1 van de overzet hier in het CRM. */
-  el.querySelectorAll('[data-gatab]').forEach(b => b.onclick = () => { _tab = b.dataset.gatab; CRM.render(); });
-  el.querySelectorAll('[data-zzpfact]').forEach(b => b.onclick = async () => {
-    const kz = (CRM.state.klussen||[]).find(x => String(x.id) === b.dataset.zzpfact);
-    if(!kz) return;
-    kz.gefactureerd = true;
-    if(!CRM.demo){
-      const {error} = await CRM.sb.from('crm_klussen').update({gefactureerd:true}).eq('id', kz.id);
-      if(error){ kz.gefactureerd = false; return CRM.fout('Afvinken mislukt', error); }
+  const herteken = () => tabVandaag(el, f);
+  el.querySelector('#fv_saldo').onclick = () => saldoVenster(f, herteken);
+  el.querySelectorAll('[data-todo]').forEach(b => b.onclick = () => {
+    const a = lijst[+b.dataset.todo]; if(!a) return;
+    const doe = (TODO_KNOP[a.soort] || [])[1];
+    if(doe === 'fact') return finDoe(b, () => markeer(a.i, 'gefactureerd'), `Termijn ${a.i.termijn_nr} gefactureerd`, herteken);
+    if(doe === 'paid') return finDoe(b, () => markeer(a.i, 'betaald'), `Termijn ${a.i.termijn_nr} betaald`, herteken);
+    if(doe === 'afronden') return plFormulier(f, {c: a.c}, herteken);
+    if(doe === 'paneel') return plPaneel(f, a.p.id, herteken);
+    if(doe === 'stop') return stopVenster(f, a.p, herteken, a.c && a.c.gestopt_op);
+    if(doe === 'stopverwerk') return finDoe(b, async () => {
+      for(const i of stopImpact(f, a.p)) await markeer(i, 'vervallen');
+    }, 'Termijnen na de stop vervallen', herteken);
+    if(doe === 'saldo') return saldoVenster(f, herteken);
+    if(doe === 'flex'){ _tab = 'flex'; return CRM.render(); }
+    if(doe === 'plaatsingen'){ _tab = 'plaatsingen'; return CRM.render(); }
+    if(doe === 'zzp'){
+      /* De klus leeft in crm_klussen (CRM-data, team-RLS), niet in fin_*. */
+      return finDoe(b, async () => {
+        if(!CRM.demo && !CRM._finMock){
+          const {error} = await CRM.sb.from('crm_klussen').update({gefactureerd:true}).eq('id', a.zzp.id);
+          if(error) throw error;
+        }
+        a.zzp.gefactureerd = true;
+      }, 'Klus staat op gefactureerd', herteken);
     }
-    CRM.toast('Klus staat op gefactureerd','ok');
-    tabVandaag(el, f);
   });
 }
 
-/* Kandidaten die deze maand tekenden/stopten, geteld zoals het bord. */
-function maandGetekendHtml(f){
-  const mk7 = todayISO().slice(0,7);
-  const cs = cands();
-  const getekend = cs.filter(c => String(c.geplaatst_op||'').slice(0,7) === mk7);
-  const gestopt  = cs.filter(c => faseVan(c) === 'Gestopt'
-    && String(c.gestopt_op||'').slice(0,7) === mk7 && c.geplaatst_op && !(c.vervangt||''));
-  return `
-    ${getekend.length ? tabel('<th>Kandidaat</th><th>Type</th><th class="n">Geplaatst</th>',
-      getekend.map(c => `<tr>
-        <td><b>${H(tekst(c.naam))}</b><div class="rowsub">${H([c.functie, c.klant].filter(Boolean).join(' · '))}</div></td>
-        <td>${chip(c.type || '?', c.type === 'W&S' ? 'blue' : 'purple')}</td>
-        <td class="n"><span class="num meta">${H(dKort(c.geplaatst_op))}</span></td></tr>`).join('')
-      ) : CRM.ui.leeg('Nog niets getekend deze maand','')}
-    ${gestopt.length ? `<div class="note warn" style="margin-top:12px">
-      ${gestopt.length} gestopt deze maand: ${H(gestopt.map(c => c.naam).join(', '))}</div>` : ''}
-    <p class="meta" style="margin:12px 0 0">Netto telling = getekend deze maand − gestopt deze maand,
-      exact zoals het pijplijnbord en de finance-app het rekenen.</p>`;
+/* ─── Venster: banksaldo bijwerken ─────────────────────────────────
+   Een leeg veld is geen €0 (Number('') === 0): dat overschreef in de
+   finance-app het saldo van vandaag. Hier dus eerst kijken of er iets
+   staat. Eén saldo per dag (upsert op datum).                          */
+function saldoVenster(f, klaar){
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Banksaldo bijwerken</div></div>
+    <div class="modal-b"><div class="f-grid">
+      <div class="f-row"><label for="bs_datum">Datum</label><input type="date" id="bs_datum" value="${H(todayISO())}"></div>
+      <div class="f-row"><label for="bs_saldo">Saldo (€)</label><input type="number" id="bs_saldo" step="0.01" placeholder="bijv. 42350"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="bs_ok">Opslaan</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      const q = s => m.querySelector(s);
+      setTimeout(() => q('#bs_saldo').focus(), 60);
+      q('#bs_ok').onclick = () => {
+        const ruw = q('#bs_saldo').value.trim(), datum = q('#bs_datum').value;
+        if(ruw === '' || !isFinite(Number(ruw))) return CRM.toast('Vul een bedrag in', 'err');
+        if(!datum) return CRM.toast('Kies een datum', 'err');
+        const rij = {datum, saldo: Number(ruw)};
+        finDoe(q('#bs_ok'), async () => {
+          await finSchrijf('fin_bank_saldo', q2 => q2.upsert(rij, {onConflict:'datum'}));
+          f.saldi = [rij, ...f.saldi.filter(s => s.datum !== datum)]
+            .sort((a,b) => String(b.datum).localeCompare(String(a.datum)));
+        }, 'Banksaldo bijgewerkt', ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar(); } });
+      };
+    }});
 }
 
 /* ═══ BEWERKEN — plaatsingen en termijnen ═══════════════════════
@@ -2412,13 +2432,13 @@ function termijnBewerken(f, p, inst, klaar){
 }
 
 /* ─── Venster: kandidaat gestopt ─────────────────────────────────── */
-function stopVenster(f, p, klaar){
+function stopVenster(f, p, klaar, voorstelDatum){
   const g = garantie(f, p), mnd = Sn(f,'stop_achterstand_mnd',1);
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">Kandidaat gestopt · ${H(tekst(p.kandidaat))}</div></div>
     <div class="modal-b">
       <div class="f-row"><label for="sv_datum">Gestopt op</label>
-        <input type="date" id="sv_datum" value="${H(todayISO())}"></div>
+        <input type="date" id="sv_datum" value="${H(voorstelDatum || todayISO())}"></div>
       <p class="meta" style="margin:4px 0 0">${g.tot ? `Garantie loopt t/m ${H(dOf(g.tot))} — stopt hij daarvoor, dan lever je een kosteloze vervanging.`
         : 'Geen garantie op deze plaatsing.'} Open termijnen ná de stopdatum + ${H(mnd)} maand vervallen.</p>
     </div>
@@ -2569,99 +2589,66 @@ function plFormulier(f, {c = null, p = null} = {}, klaar){
     }});
 }
 
-/* ═══ TAB: PLAATSINGEN & TERMIJNEN ═════════════════════════════ */
+/* ═══ TAB: PLAATSINGEN ═════════════════════════════════════════
+   Alles van getekend tot betaald op één plek: bovenaan wat er nog
+   afgerond moet worden, daaronder de plaatsingen. "Per maand" is de
+   oude Facturatie-tab — hetzelfde werk, alleen anders gegroepeerd.    */
+let _plWeergave = 'plaatsing', _inboxAlles = false;
+
 function tabPlaatsingen(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen plaatsingen in demo',
     'Hier zie je normaal alle W&S-plaatsingen met hun factuurschema, status per termijn en totalen.'); return; }
 
-  const k = kpis(f);
-  const jaar = todayISO().slice(0,4);
-  const betaaldJaar = f.installments.filter(i => i.status==='betaald'
-    && String(i.betaaldatum||'').slice(0,4) === jaar).reduce((s,i) => s + bedragVan(i), 0);
-  const klantRows = perKlantStats(f);
-  const tot = klantRows.reduce((t,r) => ({
-    n:t.n+r.n, fee:t.fee+r.fee, gefact:t.gefact+r.gefact, betaald:t.betaald+r.betaald,
-    open:t.open+r.open, nog:t.nog+r.nog, vervallen:t.vervallen+r.vervallen,
-    netto:t.netto+r.netto, w:t.w+(r.winstIndicatie||0)
-  }), {n:0,fee:0,gefact:0,betaald:0,open:0,nog:0,vervallen:0,netto:0,w:0});
+  const k = kpis(f), t = todayISO();
+  const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
+  const nGemist = f.installments.filter(i => i.status === 'te_factureren' && i.geplande_datum && i.geplande_datum < t
+    && plById[i.placement_id] && !plById[i.placement_id].concept).length;
+  const nTeLaat = f.installments.filter(i => {
+    if(i.status !== 'gefactureerd') return false;
+    const vv = plById[i.placement_id] && vervaldatum(i, plById[i.placement_id]);
+    return vv && vv < t;
+  }).length;
 
   /* Getekend op het bord, nog niet in Finance: hier rond je ze af. De fee
      die het CRM voorrekent staat er al naast. */
   const inbox = inboxCandidates(f);
-  const inboxHtml = inbox.length ? kaart(`Af te ronden vanuit het bord (${inbox.length})`, tabel(
-    '<th>Kandidaat</th><th>Fase</th><th class="n">CRM rekent</th><th></th>',
-    inbox.map(c => { const vs = feeBerekening(f, c); return `<tr>
+  /* Vier zichtbaar, de rest op verzoek — anders duwt een lange inbox de
+     plaatsingen zelf van het scherm. */
+  const inboxZicht = _inboxAlles ? inbox : inbox.slice(0, 4);
+  const inboxHtml = inbox.length ? kaart(`Af te ronden (${inbox.length})`, tabel(
+    '<th>Kandidaat</th><th class="n">CRM rekent</th><th></th>',
+    inboxZicht.map(c => { const vs = feeBerekening(f, c); return `<tr>
       <td><b>${H(tekst(c.naam))}</b><div class="rowsub">${H([c.functie, c.klant].filter(Boolean).join(' · '))}${
         c.geplaatst_op ? ' · getekend ' + H(dKort(c.geplaatst_op)) : ''}</div></td>
-      <td>${chip(faseVan(c) || '—', '')}</td>
       <td class="n">${vs ? `<span class="num">${eur(vs.fee)}</span>${vs.zeker ? '' : '<div class="rowsub">schatting</div>'}`
                          : '<span class="meta">geen maandloon</span>'}</td>
       <td class="n" style="white-space:nowrap"><button class="btn sm" data-afronden="${H(c.id)}">Afronden</button>
         <button class="btn ghost sm" data-nietfact="${H(c.id)}" title="Hier wordt niet voor gefactureerd">Niet factureren</button></td>
-    </tr>`; }).join('')), {plat:true}) : '';
+    </tr>`; }).join('') + (inbox.length > 4 ? `<tr><td colspan="3"><button type="button" class="lnk" id="fin_inbox_meer">${
+      _inboxAlles ? 'Minder tonen' : `Toon alle ${inbox.length}`}</button></td></tr>` : '')), {plat:true}) : '';
 
   el.innerHTML = `
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Pipeline aan open termijnen', eur(k.nogTeFactureren), 'nog te factureren (excl. btw)')}
-      ${CRM.ui.kpi('Gefactureerd — openstaand', eur(k.openstaand), 'verstuurd, nog niet betaald', 'accent')}
-      ${CRM.ui.kpi('Betaald dit jaar', eur(betaaldJaar), `ontvangen in ${jaar}`)}
-      ${CRM.ui.kpi('Vervallen door stops', eur(k.vervallen), `${pctF(k.stopPct)} van de plaatsingen stopte`)}
-    </div>
-
-    <div class="stack">
-      ${inboxHtml}
-      ${kaart('Per klant',
-        klantRows.length ? tabel(
-          '<th>Klant</th><th class="n">Plaats.</th><th class="n">Fee totaal</th><th class="n">Gefactureerd</th>'
-          + '<th class="n">Betaald</th><th class="n">Open</th><th class="n">Nog te fact.</th>'
-          + '<th class="n">Vervallen</th><th class="n">Netto omzet</th><th class="n">Winst-indicatie</th>',
-          klantRows.map(r => `<tr>
-            <td><b>${H(tekst(r.klant))}</b>${r.gestopt ? `<div class="rowsub">${r.gestopt}× gestopt</div>` : ''}</td>
-            <td class="n num">${r.n}</td>
-            <td class="n num">${eur(r.fee)}</td>
-            <td class="n num">${eur(r.gefact)}</td>
-            <td class="n num">${eur(r.betaald)}</td>
-            <td class="n">${r.open ? `<span class="num" style="color:var(--amber)">${eur(r.open)}</span>` : '<span class="meta">—</span>'}</td>
-            <td class="n num">${r.nog ? eur(r.nog) : '<span class="meta">—</span>'}</td>
-            <td class="n">${r.vervallen ? `<span class="num neg">${eur(r.vervallen)}</span>` : '<span class="meta">—</span>'}</td>
-            <td class="n"><b class="num">${eur(r.netto)}</b> <span class="meta">(${pctF(r.aandeel)})</span></td>
-            <td class="n num">${r.winstIndicatie != null ? eur(r.winstIndicatie) : '<span class="meta">—</span>'}</td></tr>`).join('')
-          + `<tr><td><b>Totaal</b></td><td class="n num"><b>${tot.n}</b></td>
-             <td class="n num"><b>${eur(tot.fee)}</b></td><td class="n num"><b>${eur(tot.gefact)}</b></td>
-             <td class="n num"><b>${eur(tot.betaald)}</b></td><td class="n num"><b>${eur(tot.open)}</b></td>
-             <td class="n num"><b>${eur(tot.nog)}</b></td><td class="n num"><b>${eur(tot.vervallen)}</b></td>
-             <td class="n num"><b>${eur(tot.netto)}</b></td>
-             <td class="n num"><b>${tot.w ? eur(tot.w) : '—'}</b></td></tr>`
-        ) : CRM.ui.leeg('Nog geen plaatsingen','Zodra een kandidaat tekent, verschijnt de klant hier.'),
-        {plat: !!klantRows.length,
-         voet:'Netto omzet = fee − vervallen termijnen. Winst-indicatie = netto omzet × je bedrijfsbrede winstmarge (uit Yuki); kosten worden niet per klant geregistreerd, dus dit is naar rato.'})}
-
-      <div class="card">
-        <div class="card-h">
-          <div class="h2">Alle plaatsingen (W&amp;S)</div>
-          <div class="searchbox"><input type="search" id="fin_pl_zoek" placeholder="Zoek kandidaat, klant of functie" value="${H(_zoek)}"></div>
-          <select id="fin_pl_filter" style="width:auto">
-            <option value="alle">Alle statussen</option>
-            <option value="concept">Concept (fee bevestigen)</option>
-            <option value="te_factureren">Met open termijnen</option>
-            <option value="gefactureerd">Met gefactureerde termijnen</option>
-            <option value="betaald">Met betaalde termijnen</option>
-            <option value="vervallen">Met vervallen termijnen</option>
-            <option value="gestopt">Gestopt</option>
-          </select>
-          <button class="btn sub sm" id="fin_pl_nieuw">+ Plaatsing</button>
-        </div>
-        <div class="card-b" style="padding:0"><div id="fin_pl_tbl"></div></div>
+    ${strip([
+      ['Nog te factureren', eur(k.nogTeFactureren), nGemist ? `<span class="neg">${nGemist} datum gemist</span>` : 'niets gemist'],
+      ['Openstaand', eur(k.openstaand), nTeLaat ? `<span class="neg">${nTeLaat} te laat</span>` : 'niets te laat'],
+      ['Vervallen door stops', eur(k.vervallen), `${pctF(k.stopPct, 0)} van de plaatsingen stopte`]
+    ])}
+    ${inboxHtml ? `<div style="margin-bottom:14px">${inboxHtml}</div>` : ''}
+    <div class="fin-toolbar">
+      <div class="seg" id="fin_pl_weergave">
+        <button data-w="plaatsing"${_plWeergave === 'plaatsing' ? ' class="on"' : ''}>Per plaatsing</button>
+        <button data-w="maand"${_plWeergave === 'maand' ? ' class="on"' : ''}>Per maand</button>
       </div>
-    </div>`;
+      <span class="spacer"></span>
+      <button class="btn sub sm" id="fin_pl_nieuw">+ Plaatsing</button>
+    </div>
+    <div id="fin_pl_view"></div>`;
 
-  el.querySelector('#fin_pl_filter').value = _filter;
-  el.querySelector('#fin_pl_zoek').addEventListener('input', CRM.debounce(e => {
-    _zoek = e.target.value; tekenPlTabel(el, f);
-  }, 200));
-  el.querySelector('#fin_pl_filter').onchange = e => { _filter = e.target.value; tekenPlTabel(el, f); };
   const herteken = () => tabPlaatsingen(el, f);
   el.querySelector('#fin_pl_nieuw').onclick = () => plFormulier(f, {}, herteken);
+  el.querySelectorAll('#fin_pl_weergave button').forEach(b => b.onclick = () => { _plWeergave = b.dataset.w; herteken(); });
+  const meer = el.querySelector('#fin_inbox_meer');
+  if(meer) meer.onclick = () => { _inboxAlles = !_inboxAlles; herteken(); };
   el.querySelectorAll('[data-afronden]').forEach(b => b.onclick = () => {
     const c = cands().find(x => String(x.id) === b.dataset.afronden);
     if(c) plFormulier(f, {c}, herteken);
@@ -2672,6 +2659,29 @@ function tabPlaatsingen(el, f){
       'Hij verdwijnt uit deze lijst en wordt geen plaatsing in Finance.', {knop:'Niet factureren'})) return;
     finDoe(b, () => niemandFactureren(f, c.id), `${tekst(c.naam)} staat op niet factureren`, herteken);
   });
+
+  const view = el.querySelector('#fin_pl_view');
+  if(_plWeergave === 'maand') return facturatieLijst(view, f, herteken);
+
+  view.innerHTML = `<div class="card">
+    <div class="card-h">
+      <div class="searchbox"><input type="search" id="fin_pl_zoek" placeholder="Zoek kandidaat, klant of functie" value="${H(_zoek)}"></div>
+      <select id="fin_pl_filter" style="width:auto">
+        <option value="alle">Alle</option>
+        <option value="concept">Concept (fee bevestigen)</option>
+        <option value="te_factureren">Met open termijnen</option>
+        <option value="gefactureerd">Wacht op betaling</option>
+        <option value="gestopt">Gestopt</option>
+      </select>
+    </div>
+    <div class="card-b" style="padding:0"><div id="fin_pl_tbl"></div></div>
+  </div>`;
+  const sel = view.querySelector('#fin_pl_filter');
+  sel.value = [...sel.options].some(o => o.value === _filter) ? _filter : 'alle';
+  view.querySelector('#fin_pl_zoek').addEventListener('input', CRM.debounce(e => {
+    _zoek = e.target.value; tekenPlTabel(el, f);
+  }, 200));
+  sel.onchange = e => { _filter = e.target.value; tekenPlTabel(el, f); };
   tekenPlTabel(el, f);
 }
 
@@ -2733,15 +2743,10 @@ function tekenPlTabel(el, f){
     plPaneel(f, tr.dataset.pid, () => tabPlaatsingen(el, f)));
 }
 
-/* ═══ TAB: FACTURATIE ══════════════════════════════════════════
-   Overgezet uit ~/ploeggenoten-finance/js/facturatie.js. De bron-app
-   groepeert per MAAND met een klantfilter; hier kun je bovendien op
-   klant groeperen, zodat "wat staat er bij deze klant open" in één
-   blik klopt. Bedragen excl. én incl. btw, met "GEMIST" voor een
-   gepasseerde factuurdatum en "X dgn te laat" na de vervaldatum.    */
-function tabFacturatie(el, f){
-  if(f.demo){ el.innerHTML = demoLeeg('Geen facturatie in demo',
-    'Hier zie je normaal het volledige termijnschema per maand of per klant, met btw, te late en gemiste termijnen.'); return; }
+/* ─── Weergave "Per maand" (was de Facturatie-tab) ──────────────
+   Hetzelfde termijnschema, gegroepeerd per maand of per klant, met de
+   afvinkknoppen per regel. De cijferbalk staat al boven in Plaatsingen. */
+function facturatieLijst(el, f, herteken){
 
   const btw = 1 + Sn(f,'btw_pct',0.21);
   const t = todayISO();
@@ -2754,16 +2759,6 @@ function tabFacturatie(el, f){
   if(_factStatus === 'actueel') items = items.filter(x => x.i.status !== 'vervallen' && x.i.status !== 'betaald');
   else if(_factStatus !== 'alles') items = items.filter(x => x.i.status === _factStatus);
   items.sort((a,b) => String(a.i.geplande_datum||'9999').localeCompare(String(b.i.geplande_datum||'9999')));
-
-  /* Samenvatting over de ongefilterde set — dit is het "hoe sta ik ervoor". */
-  const alle = f.installments;
-  const som = fn => alle.filter(fn).reduce((s,i) => s + bedragVan(i), 0);
-  const gemist = alle.filter(i => i.status==='te_factureren' && i.geplande_datum && i.geplande_datum < t);
-  const teLaat = alle.filter(i => {
-    if(i.status !== 'gefactureerd') return false;
-    const p = plById[i.placement_id]; if(!p) return false;
-    const vv = vervaldatum(i, p); return vv && vv < t;
-  });
 
   /* Groepering */
   const groepen = {};
@@ -2810,24 +2805,8 @@ function tabFacturatie(el, f){
   }).join('');
 
   el.innerHTML = `
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Te factureren', eur(som(i => i.status==='te_factureren')),
-        gemist.length ? `<span class="neg">${gemist.length} termijn(en) gemist</span> · ${eur(gemist.reduce((s,i)=>s+bedragVan(i),0))}`
-                      : 'geen gemiste factuurdatums', gemist.length ? '' : 'accent')}
-      ${CRM.ui.kpi('Wacht op betaling', eur(som(i => i.status==='gefactureerd')),
-        teLaat.length ? `<span class="neg">${teLaat.length} over de vervaldatum</span> · ${eur(teLaat.reduce((s,i)=>s+bedragVan(i),0))}`
-                      : 'alles binnen de betaaltermijn')}
-      ${CRM.ui.kpi('Betaald', eur(som(i => i.status==='betaald')), 'volledig afgerekend (excl. btw)')}
-      ${CRM.ui.kpi('Vervallen', eur(som(i => i.status==='vervallen')), 'termijnen die door een stop niet meer komen')}
-    </div>
-
     <div class="card" style="margin-bottom:16px">
       <div class="card-h">
-        <div class="h2">Termijnschema</div>
-        <div class="seg" id="fin_fact_groep">
-          <button data-g="maand"${_factGroep==='maand'?' class="on"':''}>Per maand</button>
-          <button data-g="klant"${_factGroep==='klant'?' class="on"':''}>Per klant</button>
-        </div>
         <select id="fin_fact_status" style="width:auto">
           <option value="actueel">Actueel (open + te factureren)</option>
           <option value="te_factureren">Te factureren</option>
@@ -2841,26 +2820,19 @@ function tabFacturatie(el, f){
           ${klanten.map(kl => `<option value="${H(kl)}">${H(kl)}</option>`).join('')}
         </select>
       </div>
-      <div class="card-f"><span class="meta">${items.length} termijn(en) in beeld ·
-        totaal ${eur(items.reduce((s,x) => s + bedragVan(x.i), 0))} excl. btw.
-        "GEMIST" = de geplande factuurdatum is voorbij maar er is nog niet gefactureerd.
-        "X dgn te laat" = de vervaldatum (factuurdatum + betaaltermijn van die klant) is verstreken.</span></div>
+      <div class="card-f"><span class="meta">${items.length} termijn(en) · ${eur(items.reduce((s,x) => s + bedragVan(x.i), 0))} excl. btw</span></div>
     </div>
 
     <div class="stack">${blokken || CRM.ui.leeg('Niets gevonden met dit filter','Kies een andere status of klant.')}</div>`;
 
   const stSel = el.querySelector('#fin_fact_status'); stSel.value = _factStatus;
   const klSel = el.querySelector('#fin_fact_klant'); klSel.value = _factKlant;
-  stSel.onchange = e => { _factStatus = e.target.value; tabFacturatie(el, f); };
-  klSel.onchange = e => { _factKlant = e.target.value; tabFacturatie(el, f); };
-  el.querySelectorAll('#fin_fact_groep button').forEach(b => b.onclick = () => {
-    _factGroep = b.dataset.g; tabFacturatie(el, f);
-  });
+  stSel.onchange = e => { _factStatus = e.target.value; facturatieLijst(el, f, herteken); };
+  klSel.onchange = e => { _factKlant = e.target.value; facturatieLijst(el, f, herteken); };
   /* Afvinken kan hier rechtstreeks; een klik op de rij zelf opent de
      plaatsing. De knop houdt zijn klik voor zichzelf (stopPropagation op de
      knop zelf — niet op de cel, dat was precies de fout in de finance-app
      waardoor deze knoppen daar niets deden). */
-  const herteken = () => tabFacturatie(el, f);
   el.querySelectorAll('[data-fa]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const inst = f.installments.find(i => String(i.id) === b.dataset.iid); if(!inst) return;
@@ -2870,181 +2842,62 @@ function tabFacturatie(el, f){
   el.querySelectorAll('tr[data-pid]').forEach(tr => tr.onclick = () => plPaneel(f, tr.dataset.pid, herteken));
 }
 
-/* ═══ TAB: FLEX ════════════════════════════════════════════════ */
+/* ═══ TAB: FLEX ════════════════════════════════════════════════
+   Wat levert flex op, wie loopt er, en wanneer mag de klant iemand
+   kosteloos overnemen. De tariefopbouw-analyse en de staafgrafiek zijn
+   eruit (27 okt 2026, "niet te groot"); de week-per-persoon-tabel blijft,
+   want dat is de vraag die elke week speelt.                         */
 function tabFlex(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen flex-gegevens in demo',
-    'Hier zie je normaal de flexkrachten met marge per uur, gewerkte uren, overname-waarde en de wekelijkse marge-uitkering van Pronkert.'); return; }
+    'Hier zie je normaal de flexkrachten met marge per uur, gewerkte uren, overname en de wekelijkse marge van Pronkert.'); return; }
 
   const st = flexPlStats(f), fx = flexStats(f);
-  const vaste = budgetVoorMaand(f, monthKey(todayISO()));
-  const dekking = vaste ? fx.maandRunRate/vaste : null;
-  const weken = fx.weken.slice(-13);
-  const maxW = Math.max(1, ...weken.map(w => getal(w.bedrag)));
-  const pwk = flexPerWeekKracht(f, 13);
+  const pwk = flexPerWeekKracht(f, 8);
+  const knopInlezen = '<button class="btn ghost sm" id="fin_marge_in">Margefactuur inlezen</button>';
 
-  /* Bijna aan de kosteloze overname: dáár stopt de marge. Onder de 15% van de
-     afgesproken uren is het tijd om met de klant te praten, niet als het al zover is. */
+  /* Bijna aan de kosteloze overname: dáár stopt de marge. Onder de 15% van
+     de afgesproken uren is het tijd om met de klant te praten. */
   const bijnaOver = st.rows.filter(r => r.resterendUren != null && r.overnameUren
     && r.resterendUren / r.overnameUren <= 0.15);
 
-  const rij = (r, afgerond) => `
-    <tr>
-      <td><b>${H(tekst(r.f.kandidaat))}</b>
-        <div class="rowsub">${H(klantLabel(r.f.klant))}${afgerond && r.f.gestopt_op ? ' · gestopt ' + H(dKort(r.f.gestopt_op)) : ''}${
-          r.f.concept ? ' · concept' : ''}</div></td>
-      <td class="n num">${eur2(r.uurloon)}</td>
-      <td class="n num">${r.klantfactor ? num(r.klantfactor, 2) : '—'} <span class="meta">− ${num(r.inkoop, 2)}</span></td>
+  const rij = r => `<tr>
+      <td><b>${H(tekst(r.f.kandidaat))}</b><div class="rowsub">${H(klantLabel(r.f.klant))}${r.f.concept ? ' · nog aanvullen' : ''}</div></td>
       <td class="n num">${r.margePerUur != null ? eur2(r.margePerUur) : '<span class="meta">factor?</span>'}</td>
       <td class="n num">${r.gewerkteUren != null ? Math.round(r.gewerkteUren) + ' u' : '—'}</td>
-      <td class="n">${r.verdiend != null ? `<span class="num pos">${eur(r.verdiend)}</span>${
-        r.margeWerkelijk != null ? ' <span class="meta" title="werkelijke marge uit de Pronkert-facturen">✓</span>' : ''}`
+      <td class="n">${r.verdiend != null ? `<span class="num pos">${eur(r.verdiend)}</span>` : '<span class="meta">—</span>'}</td>
+      <td class="n">${r.resterendUren != null ? `<span class="num">nog ${Math.round(r.resterendUren)} u</span>`
         : '<span class="meta">—</span>'}</td>
-      ${afgerond ? '' : `<td class="n">${r.resterendUren != null
-        ? `<b class="num">nog ${Math.round(r.resterendUren)} u</b>${r.overnameWaarde != null ? `<div class="rowsub">waarde ${eur(r.overnameWaarde)}</div>` : ''}`
-        : (r.overnameWaarde != null ? `<b class="num">${eur(r.overnameWaarde)}</b>` : '<span class="meta">overname-uren?</span>')}</td>`}
     </tr>`;
 
-  /* Wat kwam er per week per persoon binnen — de vraag die elke vrijdag speelt.
-     Kolommen zijn de flexkrachten die in de getoonde weken gewerkt hebben. */
-  const knopInlezen = '<button class="btn sub sm" id="fin_marge_in">Margefactuur inlezen</button>';
-  const perWeekKaart = () => {
-    if(!pwk.rijen.length) return kaart('Per week en per persoon',
-      CRM.ui.leeg('Nog geen factuurregels ingelezen',
-        'Zodra de weekroutine de margefactuur van Pronkert leest, staat hier per week wat elke flexkracht opleverde. Je kunt een factuur ook zelf inlezen.'),
-      {acties: knopInlezen});
-    const cel = c => c ? `<span class="num pos">${eur(c.marge)}</span><div class="rowsub num">${num(c.uren,2)} u</div>`
+  const perWeek = () => {
+    if(!pwk.rijen.length) return kaart('Per week', CRM.ui.leeg('Nog geen margefacturen ingelezen',
+      'De weekroutine leest ze elke zaterdag uit de mail. Je kunt er ook zelf een inlezen.'), {acties: knopInlezen});
+    const cel = c => c ? `<span class="num">${eur(c.marge)}</span><div class="rowsub num">${num(c.uren,1)} u</div>`
                        : '<span class="meta">—</span>';
-    const kop = '<th>Week</th>' + pwk.kolommen.map(k => `<th class="n">${H(k.naam)}</th>`).join('')
-              + '<th class="n">Totaal</th><th class="n">Uren</th>';
-    const rijen = pwk.rijen.map(w => `<tr>
-        <td><b class="num">${H(dKort(w.week))}</b></td>
-        ${pwk.kolommen.map(k => `<td class="n">${cel(w.per.get(k.sleutel))}</td>`).join('')}
-        <td class="n"><b class="num">${eur(w.bedrag)}</b></td>
-        <td class="n num">${num(w.uren,2)} u</td></tr>`).join('');
-    const somK = s => pwk.rijen.reduce((a,w) => {
-      const c = w.per.get(s); return {m:a.m + (c?c.marge:0), u:a.u + (c?c.uren:0)}; }, {m:0,u:0});
-    const voetrij = `<tr>
-        <td><b>Totaal ${pwk.rijen.length} ${pwk.rijen.length===1?'week':'weken'}</b></td>
-        ${pwk.kolommen.map(k => { const s = somK(k.sleutel);
-          return `<td class="n"><b class="num">${eur(s.m)}</b><div class="rowsub num">${num(s.u,2)} u</div></td>`; }).join('')}
-        <td class="n"><b class="num">${eur(pwk.rijen.reduce((a,w) => a + w.bedrag, 0))}</b></td>
-        <td class="n num">${num(pwk.rijen.reduce((a,w) => a + w.uren, 0),2)} u</td></tr>`;
-    return kaart('Per week en per persoon', tabel(kop, rijen + voetrij),
-      {plat:true, acties: knopInlezen,
-       voet:'Rechtstreeks uit de margefacturen van Pronkert. Uren zijn gewerkte uren — eindejaarsuitkering en atv leveren wel marge op, maar geen uren.'});
+    const kop = '<th>Week</th>' + pwk.kolommen.map(k => `<th class="n">${H(k.naam)}</th>`).join('') + '<th class="n">Totaal</th>';
+    const rijen = pwk.rijen.map(w => `<tr><td class="num">${H(dKort(w.week))}</td>
+      ${pwk.kolommen.map(k => `<td class="n">${cel(w.per.get(k.sleutel))}</td>`).join('')}
+      <td class="n"><b class="num">${eur(w.bedrag)}</b></td></tr>`).join('');
+    return kaart('Per week', tabel(kop, rijen), {plat:true, acties: knopInlezen});
   };
-
-  /* De opbouw van het uurtarief, rechtstreeks van de factuur: wat Pronkert ons
-     rekent, wat de klant betaalt, en het verschil — in factor én in euro's. */
-  const fct = flexFactoren(f);
-  const inkStd = Sn(f,'flex_inkoop_factor',1.8) || 1.8;
-  const factorKaart = () => {
-    if(!fct.length) return '';
-    const rijen = fct.map(k => `<tr>
-        <td><b>${H(k.naam)}</b><div class="rowsub">${H(k.functie || k.klant || '')}${
-          k.regnr ? ' · reg. ' + H(k.regnr) : ''}</div></td>
-        <td class="n num">${eur2(k.uurloon)}</td>
-        <td class="n"><b class="num">${num(k.inkoopfactor,4)}×</b>
-          <div class="rowsub num">${eur2(k.inkooptarief)}/uur</div>
-          ${k.factorGewijzigd ? `<div class="rowsub"><span class="chip amber">nu ${H(num(k.factorGewijzigd,4))}×</span></div>` : ''}</td>
-        <td class="n"><b class="num">${num(k.klantfactor,4)}×</b>
-          <div class="rowsub num">${eur2(k.klanttarief)}/uur</div></td>
-        <td class="n"><b class="num pos">${num(k.margefactor,4)}×</b></td>
-        <td class="n num pos">${eur2(k.margePerUur)}</td>
-        <td class="n num">${k.margePct != null ? pctF(k.margePct) : '—'}</td>
-        <td class="n num">${num(k.uren,2)} u</td>
-        <td class="n"><b class="num pos">${eur(k.marge)}</b>
-          <div class="rowsub num">van ${eur(k.klantomzet)} omzet</div></td>
-      </tr>`).join('');
-    const kop = '<th>Flexkracht</th><th class="n">Uurloon</th><th class="n">Inkoop Pronkert</th>'
-      + '<th class="n">Klant betaalt</th><th class="n">Marge-factor</th><th class="n">Marge/uur</th>'
-      + '<th class="n">Marge %</th><th class="n">Uren</th><th class="n">Verdiend</th>';
-    /* De factuur is leidend: bij elke import worden uurloon, inkoop- en
-       klantfactor op de plaatsing bijgewerkt. Zolang dat nog niet gebeurd is
-       rekent de app vooruit met een andere factor dan Pronkert factureert, en
-       staat élke verwachte marge en overname-waarde net verkeerd. */
-    const afwijkers = fct.filter(k => k.inkoopfactor &&
-      Math.abs(k.inkoopfactor - (k.plInkoop != null ? k.plInkoop : inkStd)) > 0.005);
-    const geenPl = fct.filter(k => !k.plaatsing);
-    const note = (afwijkers.length ? `<div class="note info" style="margin:0 0 12px">
-        De plaatsing rekent nog met een andere inkoopfactor dan de factuur:
-        ${afwijkers.map(k => `${H(k.naam)} staat op <b>${H(num(k.plInkoop != null ? k.plInkoop : inkStd,4))}×</b>,
-          Pronkert factureert <b>${H(num(k.inkoopfactor,4))}×</b>`).join(' · ')}.
-        Bij de eerstvolgende import wordt dat gelijkgetrokken — de factuur is leidend.
-      </div>` : '') +
-      (geenPl.length ? `<div class="note warn" style="margin:0 0 12px">
-        Niet aan een plaatsing te koppelen: ${geenPl.map(k =>
-          `${H(k.naam)}${k.regnr ? ' (reg. ' + H(k.regnr) + ')' : ''}`).join(', ')}.
-        Zet dat registratienummer op de juiste flexplaatsing, dan matcht elke volgende factuur vanzelf.
-      </div>` : '');
-    return kaart('Tariefopbouw per flexkracht — van de margefactuur',
-      note + tabel(kop, rijen),
-      {voet:'Inkoop = uurloon × factor van Pronkert. Klant betaalt = het tarief op dezelfde regel. '
-          + 'Marge-factor = klantfactor − inkoopfactor; × het uurloon geeft de marge per uur. '
-          + 'Factoren zijn gewogen over de normale uren — overwerk en eindejaarsuitkering/atv lopen op een eigen factor, maar tellen wel mee in het bedrag en het percentage.'});
-  };
-
-  const overnameNote = bijnaOver.length ? `<div class="note warn">
-      <b>Bijna aan de kosteloze overname.</b> ${bijnaOver.map(r =>
-        `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} — nog ${Math.round(r.resterendUren)} u`).join(' · ')}.
-      Daarna mag de klant hem kosteloos overnemen en stopt jouw marge. Nu is het moment voor een vervolgafspraak.
-    </div>` : '';
-
-  const kopActief = '<th>Flexkracht</th><th class="n">Uurloon</th><th class="n">Factor</th>'
-    + '<th class="n">Marge/uur</th><th class="n">Gewerkte uren</th><th class="n">Verdiend</th><th class="n">Tot kosteloze overname</th>';
-  const kopKlaar  = '<th>Flexkracht</th><th class="n">Uurloon</th><th class="n">Factor</th>'
-    + '<th class="n">Marge/uur</th><th class="n">Gewerkte uren</th><th class="n">Verdiend</th>';
-
-  const trendTxt = fx.trendPct == null ? 'nog geen vorige periode om mee te vergelijken'
-    : `${fx.trendPct >= 0 ? '▲ +' : '▼ '}${pctF(Math.abs(fx.trendPct))} vs. de 4 weken ervoor`;
 
   el.innerHTML = `
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Laatste week' + (fx.laatste ? ' · ' + dKort(fx.laatste.week) : ''),
-        fx.laatste ? eur(getal(fx.laatste.bedrag)) : '—',
-        (fx.laatste && fx.laatste.flexkrachten) ? `${fx.laatste.flexkrachten} flexkrachten` : 'uitbetaalde marge, excl. btw')}
-      ${CRM.ui.kpi('Gemiddeld (4 weken)', eur(fx.avg4), trendTxt)}
-      ${CRM.ui.kpi('Run-rate p/m', eur(fx.maandRunRate), 'gemiddelde laatste 4 weken × 52 ÷ 12', 'accent')}
-      ${CRM.ui.kpi('Dekking vaste lasten', dekking == null ? '—' : pctF(dekking),
-        vaste ? `recurring marge vs. ${eur(vaste)}/m` : 'nog geen budget ingesteld')}
-    </div>
-
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Actief lopend', `<span class="num">${st.nActief}</span>`,
-        st.nConcept ? `${st.nConcept} nog aan te vullen` : (st.nGestopt ? `${st.nGestopt} afgerond` : 'via Pronkert'))}
-      ${CRM.ui.kpi('Verwachte marge p/m', eur(st.margePerMaand), 'op contracturen (model)')}
-      ${CRM.ui.kpi('Overname-potentieel', eur(st.overnamePotentieel), 'marge tot de kosteloze overname')}
-      ${CRM.ui.kpi('Verdiend over gewerkte uren', eur(st.verdiendTotaal),
-        st.nGestopt ? `incl. ${eur(st.verdiendAfgerond)} afgerond` : 'werkelijk gemaakt')}
-    </div>
-
+    ${strip([
+      ['Flex per maand', eur(fx.maandRunRate), 'gem. laatste 4 weken × 52 ÷ 12'],
+      ['Laatste week', fx.laatste ? eur(getal(fx.laatste.bedrag)) : '—', fx.laatste ? 'week van ' + H(dKort(fx.laatste.week)) : 'nog niets ingelezen'],
+      ['Flexkrachten', `<span class="num">${st.nActief}</span>`, st.nConcept ? `${st.nConcept} nog aan te vullen` : 'actief via Pronkert'],
+      ['Dit jaar', eur(fx.ytd), 'flex-marge sinds 1 januari']
+    ])}
+    ${bijnaOver.length ? `<div class="note warn" style="margin-bottom:14px"><b>Bijna kosteloos over te nemen:</b>
+      ${bijnaOver.map(r => `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} (nog ${Math.round(r.resterendUren)} u)`).join(' · ')}.
+      Nu is het moment voor een vervolgafspraak.</div>` : ''}
     <div class="stack">
-      ${overnameNote}
-      ${kaart('Actief lopend',
-        st.rows.length ? tabel(kopActief, st.rows.map(r => rij(r,false)).join(''))
-          : CRM.ui.leeg('Geen actieve flexkrachten','Ze verschijnen automatisch vanuit het bord (Contract getekend, type Flex).'),
-        {plat: !!st.rows.length, acties: finLink('flex','Openen in finance-app'),
-         voet:'Marge/uur = (klantfactor − inkoopfactor Pronkert) × uurloon. Verdiend = werkelijke marge uit de Pronkert-facturen (✓) of anders marge/uur × gewerkte uren. Tot kosteloze overname = afgesproken overname-uren − gewerkte uren.'})}
-
-      ${st.gestoptRows.length ? kaart('Afgerond / gestopt — verdiende marge',
-        tabel(kopKlaar, st.gestoptRows.map(r => rij(r,true)).join('')), {plat:true}) : ''}
-
-      ${factorKaart()}
-
-      ${perWeekKaart()}
-
-      ${kaart('Wekelijkse marge (Pronkert)',
-        weken.length ? `<div class="fin-bars">
-          ${weken.map(w => `<div class="fb" title="week van ${H(dOf(w.week))}: ${H(eur(getal(w.bedrag)))}${
-            w.flexkrachten ? ' · ' + w.flexkrachten + ' flexkrachten' : ''}">
-            <i style="height:${Math.max(2, (getal(w.bedrag)/maxW)*100)}%"></i>
-            <span class="num">${H(dKort(w.week))}</span></div>`).join('')}
-        </div>
-        <p class="meta" style="margin-top:12px">Flex-omzet dit jaar (YTD): <b>${eur(fx.ytd)}</b>.
-          Sven wordt wekelijks gefactureerd, Alain per 4 weken — recente weken kunnen tijdelijk lager
-          lijken tot die factuur binnen is. De cashflow rekent met het gemiddelde van de laatste 4 weken.</p>`
-        : CRM.ui.leeg('Nog geen weekfacturen verwerkt','Lees een margefactuur in — of wacht op de weekroutine, die dat zaterdag zelf doet.'),
-        {acties:`<span class="meta">laatste ${weken.length} weken</span>`})}
+      ${kaart('Flexkrachten', st.rows.length
+        ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt</th><th class="n">Verdiend</th><th class="n">Tot overname</th>',
+            st.rows.map(rij).join(''))
+        : CRM.ui.leeg('Geen actieve flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
+        {plat: !!st.rows.length})}
+      ${perWeek()}
     </div>`;
 
   el.querySelectorAll('#fin_marge_in').forEach(b => b.onclick = () => openMargeImport(f));
@@ -3161,120 +3014,6 @@ function openMargeImport(f){
         };
       }
     });
-}
-
-/* ═══ TAB: CASHFLOW ════════════════════════════════════════════
-   Volledige projectie uit calc.js: ontvangsten op betaaldatum (incl. btw),
-   flex-run-rate, kosten (werkelijk waar bekend), btw-afdracht per kwartaal
-   en geplande aflossingen. Plus de 13-weken kaspositie.                  */
-const CF_SCENARIOS = {
-  pijplijn: {lbl:'Verwacht · pijplijn', bron:'pijplijn'},
-  target:   {lbl:'Op target',           bron:'target'},
-  tegen:    {lbl:'Tegenvaller (−2/mnd)',bron:'target', min:2},
-  geen:     {lbl:'Zonder nieuwe W&S',   bron:'geen'}
-};
-function tabCashflow(el, f){
-  if(f.demo){ el.innerHTML = demoLeeg('Geen cashflow in demo',
-    'Hier zie je normaal de 12-maands saldo-projectie met btw-afdracht en aflossingen, plus de 13-weken kaspositie.'); return; }
-
-  const tgt = boardTarget(todayISO().slice(0,7));
-  const mk = key => {
-    const s = CF_SCENARIOS[key];
-    return {bron: s.bron, plaatsingenPm: Math.max(0, tgt - (s.min||0))};
-  };
-  const proj      = projectie(f, 12, mk(_cfScenario));
-  const sTarget   = projectie(f, 12, mk('target'));
-  const sPijplijn = projectie(f, 12, mk('pijplijn'));
-  const sDown     = projectie(f, 12, mk('tegen'));
-  const be = breakEven(f), pot = potjes(f), pf = pipelineForecast(f);
-  const saldo = f.saldi[0];
-  const vrij = saldo ? getal(saldo.saldo) - pot.btwPot - pot.vpbPot : null;
-  const bp = boardPlaatsingen(todayISO().slice(0,7));
-  const wp = weekProjectie(f, 13);
-
-  const chart = lineChart(proj.rows.map(r => r.label), [
-    {label:'Huidig scenario', color:'var(--olive)',   values: proj.rows.map(r => r.saldo)},
-    {label:'Op target',       color:'var(--green)',   values: sTarget.rows.map(r => r.saldo)},
-    {label:'Tegenvaller',     color:'var(--amber)',   values: sDown.rows.map(r => r.saldo), dash:true}
-  ], {height:250});
-
-  const maandRijen = proj.rows.map(r => `<tr>
-    <td><b>${H(r.label)}</b></td>
-    <td class="n num">${eur(r.inFact)}</td>
-    <td class="n num" style="color:var(--purple)">${r.inFlex ? eur(r.inFlex) : '—'}</td>
-    <td class="n num meta">${r.inScenario ? eur(r.inScenario) : '—'}</td>
-    <td class="n num">${eur(r.uitKosten)}</td>
-    <td class="n num">${r.uitBtw ? eur(r.uitBtw) : '—'}</td>
-    <td class="n num">${r.uitLening ? eur(r.uitLening) : '—'}</td>
-    <td class="n">${signEur(r.inTot - r.uitTot)}</td>
-    <td class="n"><span class="num ${r.saldo < 0 ? 'neg' : ''}" style="font-weight:700">${eurN(r.saldo)}</span></td>
-  </tr>`).join('');
-
-  const weekRijen = wp.weeks.map(w => `<tr${w === wp.laagste ? ' class="fin-laagst"' : ''}>
-    <td><b>${H(dKort(w.start))}</b>${w === wp.laagste ? ' ' + chip('laagst','amber') : ''}</td>
-    <td class="n num">${w.in ? eur(w.in) : '—'}</td>
-    <td class="n num">${w.uit ? eur(w.uit) : '—'}</td>
-    <td class="n">${signEur(w.netto)}</td>
-    <td class="n"><span class="num ${w.saldo < 0 ? 'neg' : ''}" style="font-weight:700">${eurN(w.saldo)}</span></td>
-  </tr>`).join('');
-
-  const scenKaart = (key, p) => `<div class="kpi${key===_cfScenario?' accent':''}">
-    <div class="label">${H(CF_SCENARIOS[key].lbl)}</div>
-    <div class="big"><span class="num ${p.eind < 0 ? 'neg' : ''}">${eurN(p.eind)}</span></div>
-    <div class="kd">eindsaldo na 12 mnd · laagste ${eurN(p.laagste.saldo)} (${H(p.laagste.label||'—')})</div>
-  </div>`;
-
-  el.innerHTML = `
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Startsaldo' + (saldo ? ' · ' + dKort(saldo.datum) : ''),
-        saldo ? eur(getal(saldo.saldo)) : '—',
-        saldo ? `vrij na belastingpotjes: <b>${eurN(vrij)}</b>` : 'nog geen banksaldo bekend', 'accent')}
-      ${CRM.ui.kpi('Laagste punt (dit scenario)',
-        `<span class="num ${proj.laagste.saldo < 0 ? 'neg' : ''}">${eurN(proj.laagste.saldo)}</span>`,
-        H(proj.laagste.label || '—') + (proj.negatief ? ' · <span class="neg">projectie duikt onder nul</span>' : ''))}
-      ${CRM.ui.kpi('Runway zónder nieuwe W&S', (proj.runway >= 12 ? '12+' : proj.runway) + ' mnd',
-        'factuurschema + flex − kosten, btw en aflossing')}
-      ${CRM.ui.kpi('Deze maand · target bord', `${telSpan(bp.netto)} <span style="font-size:15px;color:var(--muted)">/ ${tgt}</span>`,
-        `${bp.ws} W&amp;S · ${bp.flex} flex${bp.onb ? ' · '+bp.onb+' ?' : ''}${bp.stopM ? ' · −'+bp.stopM+' gestopt' : ''}`)}
-    </div>
-
-    <div class="grid c4" style="margin-bottom:18px">
-      ${scenKaart('pijplijn', sPijplijn)}
-      ${scenKaart('target', sTarget)}
-      ${scenKaart('tegen', sDown)}
-      ${CRM.ui.kpi('Break-even', be.nodig == null ? '—' : num(be.nodig) + ' pl./mnd',
-        `kosten ${eur(be.kostPm)}/m − flex ${eur(be.flexPm)}, gedeeld door fee ${eur(be.gemFee)} × blijfkans ${pctF(be.behoud, 0)}`)}
-    </div>
-
-    <div class="stack">
-      ${kaart('Saldo-projectie — 12 maanden', chart, {acties:`
-        <div class="seg" id="fin_cf_scen">
-          ${Object.keys(CF_SCENARIOS).map(k =>
-            `<button data-s="${k}"${k===_cfScenario?' class="on"':''}>${H(CF_SCENARIOS[k].lbl)}</button>`).join('')}
-        </div>`,
-        voet:`Blijfkans ${pctF(proj.blijfkans, 0)} (historisch: ${kpis(f).nGestopt} van ${f.placements.length} plaatsingen gestopt). Pijplijn levert nu gewogen ${num(pf.verwachtAantal)} plaatsingen in beeld.`})}
-
-      ${kaart('Maandtabel', tabel(
-        '<th>Maand</th><th class="n">In: facturen</th><th class="n">In: flex</th><th class="n">In: scenario</th>'
-        + '<th class="n">Uit: kosten</th><th class="n">Btw-afdracht</th><th class="n">Aflossing</th>'
-        + '<th class="n">Netto</th><th class="n">Saldo</th>', maandRijen), {plat:true,
-        voet:'Alle bedragen INCL. btw — dit is wat er op de bank komt en afgaat. Ontvangst = geplande factuurdatum + betaaltermijn van die klant; te late betalingen: aanname binnen 2 weken. Btw-afdracht in jan/apr/jul/okt over het vorige kwartaal, minus geschatte voorbelasting.'})}
-
-      ${kaart('13-weken cashflow — grip op de timing', tabel(
-        '<th>Week vanaf</th><th class="n">In</th><th class="n">Uit</th><th class="n">Netto</th><th class="n">Saldo eind</th>',
-        weekRijen), {plat:true,
-        acties:`<span class="meta">krapste moment: week van ${H(dOf(wp.laagste.start))} → ${H(eurN(wp.laagste.saldo))}</span>`,
-        voet:'Vaste lasten zijn per week uitgesmeerd; btw-afdrachten en aflossingen staan op hun echte datum. Nieuwe, nog niet-gefactureerde W&S-omzet zit hier bewust NIET in — dit is je zekere kaspositie.'})}
-    </div>
-
-    <div class="note info" style="margin-top:16px">
-      Scenario’s zijn hier ter vergelijking; de wat-als-schuiven (extra hire, omzetdip, flexfactor,
-      opgeslagen prognoses) staan in de finance-app. ${finLink('cashflow','Wat-als in de finance-app','btn ghost sm')}
-    </div>`;
-
-  el.querySelectorAll('#fin_cf_scen button').forEach(b => b.onclick = () => {
-    _cfScenario = b.dataset.s; tabCashflow(el, f);
-  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3520,96 +3259,241 @@ function metaRijenVoorTeam(an){
   }));
 }
 
-/* ═══ TAB: KOSTEN ══════════════════════════════════════════════ */
-function tabKosten(el, f){
-  if(f.demo){ el.innerHTML = demoLeeg('Geen kosten in demo',
-    'Hier zie je normaal het kostenbudget per post naast de werkelijke kosten uit Yuki, met verschil per maand en de bankmutaties.'); return; }
+/* ═══ TAB: GELD ════════════════════════════════════════════════
+   Cashflow, kosten en het jaardoel op één scherm: hoe staat de bank er
+   de komende 13 weken voor, ligt het jaardoel op koers, en wat kost het
+   bedrijf per maand. De 12-maands scenario's, de break-even- en
+   investeringsrekensommen zijn eruit (27 okt 2026).
 
-  const mk0 = monthKey(todayISO());
-  const maanden = [...Array(6)].map((_,i) => addMonths(mk0, -5+i));
-  const postenNu = f.budget
-    .filter(b => String(b.vanaf_maand||'').slice(0,7) <= mk0.slice(0,7)
-              && (!b.tot_maand || String(b.tot_maand).slice(0,7) >= mk0.slice(0,7)))
-    .slice().sort((a,b) => getal(b.bedrag_pm) - getal(a.bedrag_pm));
-  const allePosten = f.budget.slice()
-    .sort((a,b) => String(b.vanaf_maand||'').localeCompare(String(a.vanaf_maand||''))
-                || getal(b.bedrag_pm) - getal(a.bedrag_pm));
+   Jaardoel — twee fouten uit de audit hier rechtgezet:
+   • "nog te factureren" telt alleen termijnen die dít jaar gepland staan;
+     eerder telde een termijn van februari 2027 mee voor het doel van 2026.
+   • conceptplaatsingen (fee nog niet bevestigd) tellen niet mee.        */
+function tabGeld(el, f){
+  if(f.demo){ el.innerHTML = demoLeeg('Geen geldgegevens in demo',
+    'Hier zie je normaal je kaspositie voor de komende 13 weken, het jaardoel en je vaste lasten.'); return; }
 
-  /* Bankmutaties per maand uit de CSV-import (fin_bank_tx). */
-  const txPerMaand = {};
-  for(const x of f.tx){
-    const k = monthKey(x.datum); if(!k) continue;
-    txPerMaand[k] = txPerMaand[k] || {in:0, uit:0, n:0};
-    txPerMaand[k].n++;
-    const bd = getal(x.bedrag);
-    if(bd > 0) txPerMaand[k].in += bd; else txPerMaand[k].uit += -bd;
-  }
-  const txRijen = Object.entries(txPerMaand).sort((a,b) => String(b[0]).localeCompare(String(a[0]))).slice(0,6)
-    .map(([k,v]) => `<tr><td><b>${H(mkLabel(k))}</b><div class="rowsub">${v.n} mutatie(s)</div></td>
-      <td class="n"><span class="num pos">${eur(v.in)}</span></td>
-      <td class="n"><span class="num neg">${eur(v.uit)}</span></td>
-      <td class="n">${signEur(v.in - v.uit)}</td></tr>`).join('');
+  const t = todayISO(), jaar = t.slice(0,4), m = +t.slice(5,7), d = +t.slice(8,10), mk = monthKey(t);
+  const saldo = f.saldi[0];
+  const wp = weekProjectie(f, 13);
+  const fx = flexStats(f), od = omzetDoel(f), k = kpis(f);
+
+  /* ── jaardoel ── */
+  const concepten = new Set(f.placements.filter(p => p.concept).map(p => p.id));
+  const gerealiseerd = od.omzetYtd + (Sn(f,'yuki_omzet_ytd',0) > 0 ? 0 : fx.ytd);   // Yuki-omzet bevat flex al
+  const nogDitJaar = f.installments.filter(i => i.status === 'te_factureren' && !concepten.has(i.placement_id)
+    && String(i.geplande_datum||'').slice(0,4) === jaar).reduce((s,i) => s + bedragVan(i), 0);
+  const restMnd = Math.max(0, 12 - m + 1 - d/30);
+  const flexRest = fx.maandRunRate * restMnd;
+  const doel = od.doel;
+  const tekort = Math.max(0, doel - gerealiseerd - nogDitJaar - flexRest);
+  const gemFee = k.gemFee || 8500;
+  const plNodig = tekort > 0 ? Math.ceil(tekort / gemFee) : 0;
+  const pctW = x => Math.max(0, Math.min(100, doel ? x / doel * 100 : 0));
+  const doelHtml = `
+    <div class="fin-doelbar" title="gefactureerd · gepland · flex rest van het jaar">
+      <i style="width:${pctW(gerealiseerd)}%"></i><i class="b" style="width:${pctW(nogDitJaar)}%"></i><i class="c" style="width:${pctW(flexRest)}%"></i></div>
+    <div class="fin-pot"><span><span class="fin-dot a"></span>Gefactureerd dit jaar${Sn(f,'yuki_omzet_ytd',0) > 0 ? ' (Yuki)' : ''}</span><b>${eur(gerealiseerd)}</b></div>
+    <div class="fin-pot"><span><span class="fin-dot b"></span>Nog te factureren dit jaar</span><b>${eur(nogDitJaar)}</b></div>
+    <div class="fin-pot"><span><span class="fin-dot c"></span>Flex rest van het jaar (verwacht)</span><b>${eur(flexRest)}</b></div>
+    <div class="fin-pot"><span><b>${tekort > 0 ? 'Nog nodig' : 'Doel gehaald met wat er ligt'}</b></span>
+      <b>${tekort > 0 ? `${eur(tekort)} <span class="meta">≈ ${plNodig} plaatsing${plNodig === 1 ? '' : 'en'}</span>` : '✓'}</b></div>
+    <p class="meta" style="margin:8px 0 0">Doel ${eur(doel)} · gemiddelde fee dit jaar ${eur(gemFee)} ·
+      <button type="button" class="lnk" data-inst>doel aanpassen</button></p>`;
+
+  /* ── kas 13 weken ── */
+  const kasRijen = wp.weeks.map(w => `<tr${w === wp.laagste ? ' class="fin-laagst"' : ''}>
+    <td class="num">${H(dKort(w.start))}${w === wp.laagste ? ' ' + chip('krapst','amber') : ''}</td>
+    <td class="n num">${w.in ? eur(w.in) : '—'}</td>
+    <td class="n num">${w.uit ? eur(w.uit) : '—'}</td>
+    <td class="n"><b class="num${w.saldo < 0 ? ' neg' : ''}">${eurN(w.saldo)}</b></td></tr>`).join('');
+
+  /* ── vaste lasten ── */
+  const lopend = f.budget.filter(b => !b.tot_maand || String(b.tot_maand).slice(0,7) >= mk.slice(0,7))
+    .sort((a,b) => getal(b.bedrag_pm) - getal(a.bedrag_pm));
+  const budgetNu = budgetVoorMaand(f, mk);
+  const periode = b => {
+    const van = String(b.vanaf_maand||'').slice(0,7), tot = b.tot_maand ? String(b.tot_maand).slice(0,7) : '';
+    if(van > mk.slice(0,7)) return 'vanaf ' + mkLabel(van + '-01');
+    return tot ? 't/m ' + mkLabel(tot + '-01') : '';
+  };
+  const lastRijen = lopend.map(b => `<tr class="clickable" data-budget="${H(b.id)}">
+    <td><b>${H(tekst(b.categorie))}</b>${b.note ? `<div class="rowsub">${H(b.note)}</div>` : ''}</td>
+    <td class="meta">${H(periode(b))}</td>
+    <td class="n num">${eur(getal(b.bedrag_pm))}</td></tr>`).join('');
+  const werkelijk = [3,2,1].map(i => addMonths(mk, -i)).map(mm => {
+    const a = actueelInfo(f, mm);
+    return `<span>${H(mkLabel(mm))}: <b class="num">${a ? eur(a.bedrag) : '—'}</b></span>`;
+  }).join(' · ');
 
   el.innerHTML = `
-    <div class="grid c3" style="margin-bottom:18px">
-      ${CRM.ui.kpi('Vaste lasten deze maand', eur(budgetVoorMaand(f, mk0)),
-        `${postenNu.length} budgetpost(en) actief`, 'accent')}
-      ${CRM.ui.kpi('Kosten YTD (werkelijk of budget)', eur(potjes(f).kostenYtd),
-        'zoals de winst-indicatie hem rekent')}
-      ${CRM.ui.kpi('Break-even', (() => { const be = breakEven(f);
-        return be.nodig == null ? '—' : num(be.nodig) + ' pl./mnd'; })(),
-        'plaatsingen per maand die deze kosten dekken')}
+    ${strip([
+      ['Banksaldo', saldo ? eur(getal(saldo.saldo)) : '—', saldo ? 'stand ' + H(dKort(saldo.datum)) : 'nog niet ingevuld'],
+      ['Krapste week', `<span class="${wp.laagste.saldo < 0 ? 'neg' : ''}">${eurN(wp.laagste.saldo)}</span>`, 'week van ' + H(dKort(wp.laagste.start))],
+      ['Vaste lasten', eur(budgetNu), 'per maand (budget)'],
+      ['Jaardoel', pct0(doel ? gerealiseerd / doel : 0), `${eur(gerealiseerd)} van ${eur(doel)}`]
+    ])}
+    <div class="grid c2 fin-geld">
+      ${kaart('Kas komende 13 weken', tabel('<th>Week van</th><th class="n">In</th><th class="n">Uit</th><th class="n">Saldo</th>', kasRijen),
+        {plat:true, voet:'Incl. btw. Alleen wat vastligt: termijnen, flex-gemiddelde, vaste lasten, btw-afdracht en aflossing — nieuwe plaatsingen zitten er nog niet in.'})}
+      <div class="stack">
+        ${kaart(`Jaardoel ${jaar}`, doelHtml)}
+        ${kaart('Vaste lasten', (lastRijen ? tabel('<th>Post</th><th></th><th class="n">Per maand</th>', lastRijen)
+            : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen vaste lasten','Voeg je maandelijkse kosten toe.')}</div>`)
+          + `<div class="fin-werkelijk meta">Werkelijk (Yuki) ${werkelijk}</div>`,
+          {plat:true, acties:'<button class="btn ghost sm" id="fin_budget_nieuw">+ Post</button>'})}
+      </div>
     </div>
+    <div id="fin_meta_blok" style="margin-top:16px">${CRM.ui.laden('Betalingen aan Meta ophalen…')}</div>`;
 
-    <div class="stack">
-      ${kaart('Budget vs. werkelijk — laatste 6 maanden', tabel(
-        '<th>Maand</th><th class="n">Budget</th><th class="n">Werkelijk</th><th class="n">Verschil</th>',
-        maanden.map(m => {
-          const bud = budgetVoorMaand(f, m);
-          const act = actueelInfo(f, m);
-          /* Verschil = budget − werkelijk: negatief (rood) is overschrijding.
-             De finance-app draait dit teken om (werkelijk − budget); dezelfde
-             uitkomst, maar hier volgen we de plus/min-regel van het CRM. */
-          const diff = act ? bud - act.bedrag : null;
-          return `<tr>
-            <td><b>${H(mkLabel(m))}</b>${m === mk0 ? '<div class="rowsub">lopende maand</div>' : ''}</td>
-            <td class="n num">${eur(bud)}</td>
-            <td class="n">${act ? `<span class="num">${eur(act.bedrag)}</span>${
-              act.yuki ? ' <span class="meta" title="Werkelijk totaal (Yuki) — leidend">✓ Yuki</span>' : ''}`
-              : '<span class="meta">nog niet bekend</span>'}</td>
-            <td class="n">${diff == null ? '<span class="meta">—</span>' : signEur(diff)}</td>
-          </tr>`;
-        }).join('')), {plat:true, acties: finLink('kosten','Openen in finance-app'),
-        voet:'Werkelijk = de regel "Werkelijk totaal (Yuki)" waar aanwezig (✓, automatisch per afgesloten maand), anders de som van de handmatige posten. Verschil = budget min werkelijk: negatief (rood) betekent overschrijding.'})}
-
-      ${kaart('Budgetposten', tabel(
-        '<th>Post</th><th class="n">Per maand</th><th class="n">Geldig</th><th>Status</th>',
-        allePosten.map(b => {
-          const geldigNu = String(b.vanaf_maand||'').slice(0,7) <= mk0.slice(0,7)
-            && (!b.tot_maand || String(b.tot_maand).slice(0,7) >= mk0.slice(0,7));
-          return `<tr${geldigNu ? '' : ' style="opacity:.6"'}>
-            <td><b>${H(tekst(b.categorie, 'Naamloze post'))}</b>${b.note ? `<div class="rowsub">${H(b.note)}</div>` : ''}</td>
-            <td class="n num">${eur(getal(b.bedrag_pm))}</td>
-            <td class="n"><span class="num meta">${H(mkLabel(b.vanaf_maand))} — ${
-              b.tot_maand ? H(mkLabel(b.tot_maand)) : 'doorlopend'}</span></td>
-            <td>${geldigNu ? chip('actief','green') : chip('buiten deze maand','')}</td></tr>`;
-        }).join(''), 'Geen budgetposten'),
-        {plat: !!allePosten.length,
-         acties:`<span class="meta">totaal ${eur(budgetVoorMaand(f, mk0))} p/m actief</span>`})}
-
-      ${kaart('Bankmutaties (uit de CSV-import)',
-        txRijen ? tabel('<th>Maand</th><th class="n">Bij</th><th class="n">Af</th><th class="n">Netto</th>', txRijen)
-          : CRM.ui.leeg('Nog geen transacties geïmporteerd','Importeer een bank-CSV op de Cashflow-pagina van de finance-app.'),
-        {plat: !!txRijen,
-         voet:'Handig om je werkelijke kosten en saldo te staven tegen wat de app verwacht.'})}
-
-      <div id="fin_meta_blok">${CRM.ui.laden('Meta-cijfers ophalen…')}</div>
-    </div>`;
-
-  /* De Meta-controle haalt twee marketingtabellen op en komt daarom ná
-     de rest binnen. Eigen try/catch: valt dit blok om, dan blijft het
-     kostenscherm gewoon staan. */
+  const herteken = () => tabGeld(el, f);
+  el.querySelectorAll('[data-inst]').forEach(b => b.onclick = () => instellingenPaneel(f));
+  el.querySelector('#fin_budget_nieuw').onclick = () => budgetVenster(f, null, herteken);
+  el.querySelectorAll('[data-budget]').forEach(tr => tr.onclick = () =>
+    budgetVenster(f, f.budget.find(b => String(b.id) === tr.dataset.budget), herteken));
   metaBlok(el, f);
+}
+
+/* ─── Venster: vaste last ───────────────────────────────────────── */
+function budgetVenster(f, b, klaar){
+  const mnd = iso => iso ? String(iso).slice(0,7) : '';
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${b ? 'Vaste last bewerken' : 'Nieuwe vaste last'}</div></div>
+    <div class="modal-b"><div class="f-grid">
+      <div class="f-row"><label for="bv_cat">Post</label><input id="bv_cat" value="${H(b ? b.categorie || '' : '')}" placeholder="bijv. Software"></div>
+      <div class="f-row"><label for="bv_bedrag">Bedrag per maand (€)</label><input id="bv_bedrag" type="number" step="0.01" value="${H(b ? getal(b.bedrag_pm) : '')}"></div>
+      <div class="f-row"><label for="bv_van">Vanaf</label><input id="bv_van" type="month" value="${H(mnd(b && b.vanaf_maand) || todayISO().slice(0,7))}"></div>
+      <div class="f-row"><label for="bv_tot">Tot en met <span class="meta">(leeg = doorlopend)</span></label><input id="bv_tot" type="month" value="${H(mnd(b && b.tot_maand))}"></div>
+    </div>
+    <div class="f-row"><label for="bv_note">Notitie</label><input id="bv_note" value="${H(b ? b.note || '' : '')}"></div></div>
+    <div class="modal-f">${b ? '<button class="btn ghost" id="bv_weg">Verwijderen</button><span class="spacer"></span>' : ''}
+      <button class="btn ghost" data-mclose>Annuleren</button><button class="btn" id="bv_ok">Opslaan</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      const q = s => m.querySelector(s);
+      const sluit = ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar(); } };
+      q('#bv_ok').onclick = () => {
+        const rij = {categorie: q('#bv_cat').value.trim(), bedrag_pm: getal(q('#bv_bedrag').value),
+          vanaf_maand: (q('#bv_van').value || todayISO().slice(0,7)) + '-01',
+          tot_maand: q('#bv_tot').value ? q('#bv_tot').value + '-01' : null, note: q('#bv_note').value.trim() || null};
+        if(!rij.categorie) return CRM.toast('Geef de post een naam', 'err');
+        finDoe(q('#bv_ok'), async () => {
+          if(b){ await finSchrijf('fin_costs_budget', q2 => q2.update(rij).eq('id', b.id)); Object.assign(b, rij); }
+          else{
+            const data = await finSchrijf('fin_costs_budget', q2 => q2.insert(rij).select());
+            f.budget.push((data && data[0]) || Object.assign({id: ++_mockId}, rij));
+          }
+        }, 'Vaste last opgeslagen', sluit);
+      };
+      if(q('#bv_weg')) q('#bv_weg').onclick = () => finDoe(q('#bv_weg'), async () => {
+        await finSchrijf('fin_costs_budget', q2 => q2.delete().eq('id', b.id));
+        f.budget = f.budget.filter(x => x !== b);
+      }, 'Vaste last verwijderd', sluit);
+    }});
+}
+
+/* ─── Paneel: instellingen (⚙) ──────────────────────────────────────
+   Alleen wat de vier schermen gebruiken. W&S-fees staan niet hier maar
+   per klant bij Commerciële afspraken — dat is de getekende bron.     */
+const INST_VELDEN = [
+  ['doel_omzet_jaar',       'Omzetdoel dit jaar (€)',                      'eur', 400000],
+  ['btw_pct',               'Btw (%)',                                     'pct', 0.21],
+  ['vpb_pct',               'Vpb-reservering (% van de winst)',            'pct', 0.19],
+  ['voorbelasting_pm',      'Btw op kosten per maand (€)',                 'eur', 0],
+  ['default_betaaltermijn', 'Standaard betaaltermijn (dagen)',             'int', 14],
+  ['waarschuwing_dgn',      'Factuur-herinnering (dagen vooruit)',         'int', 21],
+  ['stop_achterstand_mnd',  'Termijnen behouden na een stop (maanden)',    'int', 1],
+  ['flex_inkoop_factor',    'Standaard inkoopfactor flex (Pronkert)',      'num', 1.8]
+];
+function instellingenPaneel(f){
+  const toon = (key, type, std) => {
+    const v = S(f, key, null);
+    if(v == null || v === '') return type === 'pct' ? Math.round(std * 1000) / 10 : std;
+    return type === 'pct' ? Math.round(getal(v) * 1000) / 10 : getal(v);
+  };
+  const afspr = f.flexAfspr.slice().sort((a,b) => String(a.klant||'').localeCompare(String(b.klant||''), 'nl'));
+  CRM.drawer.open(`
+    <div class="drawer-h"><div style="flex:1"><div class="h2" style="font-size:17px">Instellingen</div>
+      <div class="meta" style="margin-top:3px">Finance — alleen voor jou</div></div>
+      <button class="btn ghost sm x" data-close>Sluiten</button></div>
+    <div class="drawer-b">
+      ${kaart('Doelen en percentages', `<div class="f-grid">${INST_VELDEN.map(([key, lbl, type, std]) =>
+        `<div class="f-row"><label for="in_${key}">${H(lbl)}</label>
+          <input type="number" step="any" id="in_${key}" data-key="${key}" data-type="${type}" value="${H(toon(key, type, std))}"></div>`).join('')}</div>
+        <div class="row tight"><span class="spacer"></span><button class="btn sm" id="in_ok">Opslaan</button></div>`)}
+      <div style="margin-top:14px">${kaart('Flex-afspraken per klant', afspr.length
+        ? tabel('<th>Klant</th><th class="n">Klantfactor</th><th class="n">Inkoop</th><th class="n">Overname na</th>',
+            afspr.map(a => `<tr class="clickable" data-fa="${H(a.id)}"><td><b>${H(tekst(a.klant))}</b></td>
+              <td class="n num">${a.factor != null ? num(getal(a.factor), 2) : '—'}</td>
+              <td class="n num">${a.inkoop_factor != null && a.inkoop_factor !== '' ? num(getal(a.inkoop_factor), 2) : '<span class="meta">standaard</span>'}</td>
+              <td class="n num">${a.overname_uren ? H(a.overname_uren) + ' u' : '—'}</td></tr>`).join(''))
+        : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen flex-afspraken','')}</div>`,
+        {plat:true, acties:'<button class="btn ghost sm" id="in_fa_nieuw">+ Afspraak</button>'})}</div>
+      <p class="meta" style="margin:14px 2px 0">W&amp;S-fees leg je per klant vast onder Commerciële afspraken op de klantkaart.
+        De Yuki-sync draait nog in de finance-app (<a href="${FIN_APP}" target="_blank" rel="noopener">openen ↗</a>) — open die af en toe
+        zodat werkelijke kosten en banksaldo uit Yuki binnenkomen.</p>
+    </div>`, {onOpen(dr){
+    const opnieuw = () => instellingenPaneel(f);
+    dr.querySelector('#in_ok').onclick = () => {
+      const wijz = [];
+      dr.querySelectorAll('[data-key]').forEach(inp => {
+        const ruw = inp.value.trim(); if(ruw === '') return;
+        const v = inp.dataset.type === 'pct' ? getal(ruw) / 100 : getal(ruw);
+        if(getal(S(f, inp.dataset.key, null), NaN) !== v) wijz.push({key: inp.dataset.key, value: v});
+      });
+      if(!wijz.length) return CRM.toast('Niets gewijzigd');
+      finDoe(dr.querySelector('#in_ok'), async () => {
+        await finSchrijf('fin_settings', q => q.upsert(wijz));
+        wijz.forEach(w => { f.settings[w.key] = w.value; });
+      }, 'Instellingen opgeslagen', ok => { if(ok){ CRM.drawer.close(); CRM.render(); } });
+    };
+    dr.querySelector('#in_fa_nieuw').onclick = () => flexAfspraakVenster(f, null, opnieuw);
+    dr.querySelectorAll('[data-fa]').forEach(tr => tr.onclick = () =>
+      flexAfspraakVenster(f, f.flexAfspr.find(a => String(a.id) === tr.dataset.fa), opnieuw));
+  }});
+}
+
+/* ─── Venster: flex-afspraak per klant ──────────────────────────────
+   De inkoopfactor mag leeg (dan geldt de standaard uit de instellingen) —
+   maar nooit als 0 opgeslagen: met inkoop 0 werd de hele klantprijs als
+   marge gerekend (audit 27 okt 2026).                                  */
+function flexAfspraakVenster(f, a, klaar){
+  const klanten = [...new Set(((CRM.state && CRM.state.clients) || []).map(k => k.naam).filter(Boolean))].sort((x,y) => x.localeCompare(y, 'nl'));
+  const w = v => H(v == null ? '' : v);
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">${a ? 'Flex-afspraak bewerken' : 'Nieuwe flex-afspraak'}</div></div>
+    <div class="modal-b"><div class="f-grid">
+      <div class="f-row"><label for="fa_klant">Klant</label><input id="fa_klant" list="fa_klanten" value="${w(a && a.klant)}">
+        <datalist id="fa_klanten">${klanten.map(k => `<option value="${H(k)}">`).join('')}</datalist></div>
+      <div class="f-row"><label for="fa_factor">Klantfactor</label><input id="fa_factor" type="number" step="0.01" value="${w(a && a.factor)}" placeholder="bijv. 2,35"></div>
+      <div class="f-row"><label for="fa_inkoop">Inkoopfactor Pronkert <span class="meta">(leeg = standaard)</span></label>
+        <input id="fa_inkoop" type="number" step="0.0001" value="${w(a && a.inkoop_factor)}"></div>
+      <div class="f-row"><label for="fa_ovn">Kosteloze overname na (uren)</label><input id="fa_ovn" type="number" step="1" value="${w(a && a.overname_uren)}"></div>
+    </div></div>
+    <div class="modal-f">${a ? '<button class="btn ghost" id="fa_weg">Verwijderen</button><span class="spacer"></span>' : ''}
+      <button class="btn ghost" data-mclose>Annuleren</button><button class="btn" id="fa_ok">Opslaan</button></div>`, {
+    onClose(){ klaar(); },
+    onOpen(m){
+      const q = s => m.querySelector(s);
+      const sluit = ok => { if(ok){ CRM.modal._onClose = null; CRM.modal.close(); klaar(); } };
+      q('#fa_ok').onclick = () => {
+        const inkoop = getalOfNull(q('#fa_inkoop').value);
+        const rij = {klant: q('#fa_klant').value.trim(), factor: getalOfNull(q('#fa_factor').value),
+          inkoop_factor: inkoop ? inkoop : null, overname_uren: getalOfNull(q('#fa_ovn').value)};
+        if(!rij.klant || !rij.factor) return CRM.toast('Klant en klantfactor zijn verplicht', 'err');
+        finDoe(q('#fa_ok'), async () => {
+          if(a){ await finSchrijf('fin_flex_afspraken', q2 => q2.update(rij).eq('id', a.id)); Object.assign(a, rij); }
+          else{
+            const data = await finSchrijf('fin_flex_afspraken', q2 => q2.insert(rij).select());
+            f.flexAfspr.push((data && data[0]) || Object.assign({id: ++_mockId}, rij));
+          }
+        }, 'Flex-afspraak opgeslagen', sluit);
+      };
+      if(q('#fa_weg')) q('#fa_weg').onclick = () => finDoe(q('#fa_weg'), async () => {
+        await finSchrijf('fin_flex_afspraken', q2 => q2.delete().eq('id', a.id));
+        f.flexAfspr = f.flexAfspr.filter(x => x !== a);
+      }, 'Flex-afspraak verwijderd', sluit);
+    }});
 }
 
 /* ─── Betaald aan Meta: het scherm ────────────────────────────
@@ -4015,400 +3899,14 @@ async function metaBlok(el, f){
   }
 }
 
-/* ═══ TAB: ADVIES ══════════════════════════════════════════════ */
-function tabAdvies(el, f){
-  if(f.demo){ el.innerHTML = demoLeeg('Geen advies in demo',
-    'De advies-motor rekent op je echte cijfers: buffer, btw-klap, klantconcentratie, uitval, fee-niveau en flex-dekking.'); return; }
-
-  const items = adviesEngine(f);
-  const cijfers = adviseurCijfers(f);
-  const ta = tariefAdvies(f);
-  const pf = pipelineForecast(f);
-  const kanalen = kanaalStats(f);
-  const kTot = kanalen.reduce((s,x) => s + x.omzet, 0) || 1;
-  const team = teamStats(f);
-  const rv = recruiterVoortgang(f);
-  const behoefte = targetInfo(f).aantalTarget || 8;
-
-  const ICO = {gevaar:'🔴', kans:'🟡', sterkte:'🟢'};
-  const KL  = {gevaar:'red', kans:'amber', sterkte:'green'};
-  const advKaart = it => `<div class="fin-adv u${it.urg}">
-    <div class="fin-adv-i">${ICO[it.cat] || '•'}</div>
-    <div class="fin-adv-b">
-      <div class="fin-adv-t"><b>${H(it.titel)}</b>${it.cijfer ? ' ' + chip(it.cijfer, KL[it.cat]) : ''}</div>
-      <p>${H(it.tekst)}</p>
-      ${it.actie ? `<p class="fin-adv-a">👉 ${H(it.actie)}</p>` : ''}
-    </div></div>`;
-  const sectie = (cat, titel) => {
-    const xs = items.filter(i => i.cat === cat);
-    return kaart(`${titel} (${xs.length})`,
-      xs.length ? `<div class="fin-advlijst">${xs.map(advKaart).join('')}</div>`
-                : `<div class="note ok">Niets gevonden — dat is hier goed nieuws.</div>`);
-  };
-
-  el.innerHTML = `
-    <div class="note info" style="margin-bottom:16px">
-      Live berekend uit je eigen cijfers, met branchenormen voor werving &amp; selectie en flex.
-      Elke kaart: wat er speelt, waarom het telt, en wat een adviseur zou doen.
-    </div>
-
-    ${kaart('De cijfers die een adviseur checkt', tabel(
-      '<th>Kengetal</th><th class="n">Waarde</th><th>Toelichting</th>',
-      cijfers.map(([l,v,s]) => `<tr><td>${H(l)}</td><td class="n"><b class="num">${H(v)}</b></td><td class="meta">${H(s)}</td></tr>`).join('')
-    ), {plat:true})}
-
-    <div class="stack" style="margin-top:16px">
-      ${sectie('gevaar','🔴 Gevaren')}
-      ${sectie('kans','🟡 Kansen')}
-      ${sectie('sterkte','🟢 Sterktes')}
-
-      ${belastingKaart(f)}
-
-      ${(() => {
-        /* Twee bronnen voor hetzelfde percentage. Het CRM rekent met de
-           afspraak; de losse finance-app rekent met fin_tarieven. Zolang
-           beide bestaan is het enige eerlijke antwoord: laten zien waar ze
-           uiteenlopen, zodat Tjeerd kiest welke waar is. */
-        const cf = tariefConflicten(f);
-        if(!cf.length) return '';
-        return `<div class="note warn">
-          <b>${cf.length} klant${cf.length===1?'':'en'} met twee verschillende percentages.</b>
-          Het CRM rekent met de commerciële afspraak (crm_afspraken); de losse
-          finance-app rekent met fin_tarieven. Ze zijn het hier niet eens:
-          <ul style="margin:8px 0 0;padding-left:18px">${cf.map(x =>
-            `<li>${H(x.klant)}${x.functie ? ' · ' + H(x.functie) : ''}: afspraak
-              <b class="num">${pctF(x.afspraak)}</b> · fin_tarieven
-              <b class="num">${pctF(x.tarief)}</b></li>`).join('')}</ul>
-          <div style="margin-top:8px">Zet het percentage op één plek — de afspraak — en laat
-          fin_tarieven daaruit volgen.</div></div>`;
-      })()}
-
-      ${ta.rows.length ? kaart('Tarief-adviseur — wat levert elke klant echt op', tabel(
-        `<th>Klant</th><th class="n">Plaatsingen ${H(todayISO().slice(0,4))}</th><th class="n">Netto omzet</th>`
-        + '<th class="n">Tarief</th><th class="n">Jouw gemiddelde</th><th class="n">Rek (op jaarbasis)</th>',
-        ta.rows.map(r => `<tr>
-          <td><b>${H(r.klant)}</b>${r.gestopt ? ' ' + chip(r.gestopt + '× gestopt','red') : ''}</td>
-          <td class="n num">${r.n}</td>
-          <td class="n num">${eur(r.netto)}</td>
-          <td class="n">${r.pct ? `<b class="num">${pctF(r.pct)}</b>` : chip('geen tarief','amber')}</td>
-          <td class="n num meta">${ta.bench ? pctF(ta.bench) : '—'}</td>
-          <td class="n">${r.potentie > 500 ? `<b class="num" style="color:var(--amber)">+${eur(r.potentie)}</b>`
-            : (r.pct ? '<span class="meta">marktconform</span>' : '<span class="meta">—</span>')}</td></tr>`).join('')
-      ), {plat:true, voet: (ta.rows[0] && ta.rows[0].potentie > 500)
-        ? `${ta.rows[0].klant} zit op ${pctF(ta.rows[0].pct)} waar je gewogen gemiddelde ${pctF(ta.bench)} is — naar het gemiddelde is dat ~${eur(ta.rows[0].potentie)} per jaar bij gelijk volume. Neem het mee in het volgende contractgesprek.`
-        : 'Geen klant zit noemenswaardig onder je gemiddelde tarief — netjes.'}) : ''}
-
-      ${kaart('Wat zit er in de pijplijn — live van het bord',
-        pf.rows.length ? tabel(
-          '<th>Kandidaat</th><th>Klant</th><th>Fase</th><th class="n">Kans</th><th class="n">Fee</th>'
-          + '<th class="n">Bruto gewogen</th><th class="n">Netto (na uitval)</th><th class="n">Cash verwacht</th>',
-          pf.rows.map(r => `<tr>
-            <td><b>${H(tekst(r.c.naam))}</b></td>
-            <td>${H(klantLabel(r.c.klant))}</td>
-            <td>${chip(tekst(faseVan(r.c), 'zonder fase'), r.kans >= .5 ? 'green' : r.kans >= .25 ? 'amber' : '')}</td>
-            <td class="n num">${pct0(r.kans)}</td>
-            <td class="n num">${eur(r.fee)}${r.feeEcht ? '' : ' <span class="meta">~</span>'}</td>
-            <td class="n num meta">${eur(r.gewogen)}</td>
-            <td class="n"><b class="num">${eur(r.netto)}</b></td>
-            <td class="n num">${H(mkLabel(r.cashMaand))}</td></tr>`).join('')
-        ) : CRM.ui.leeg('Geen actieve kandidaten in de W&S-funnel','Zodra er kandidaten op het bord staan, verschijnt hier de gewogen forecast.'),
-        {plat: !!pf.rows.length,
-         acties:`<span class="meta">gewogen <b>${num(pf.verwachtAantal)}</b> plaatsingen · bruto ${eur(pf.totaal)} → netto ${eur(pf.totaalNetto)} excl. btw</span>`,
-         voet:`Kans per fase: voorgesteld 5% · O&O 10% · 1e gesprek 20% · 2e gesprek 40% · meeloopdag 50% · in de wacht 50% · offer 65% · ondertekenen 75% (Intake telt niet mee). Bruto = kans × fee. Netto = ook na verwachte uitval (nu blijft ${pct0(pf.behoud)}). Om ${behoefte} plaatsing(en) per maand te halen moet de pijplijn dat tempo blijven voeden — nu staat er gewogen ${num(pf.verwachtAantal)} op de rol.`})}
-
-      ${ketenKaart()}
-
-      <div class="grid c2">
-        ${kaart('Wervingskanalen',
-          kanalen.length ? tabel('<th>Kanaal</th><th class="n">Plaatsingen</th><th class="n">Omzet (na uitval)</th><th class="n">Aandeel</th>',
-            kanalen.map(x => `<tr><td><b>${H(tekst(x.bron, 'Onbekend'))}</b></td><td class="n num">${x.n}</td>
-              <td class="n num">${eur(x.omzet)}</td><td class="n num">${pctF(x.omzet/kTot)}</td></tr>`).join(''))
-            : CRM.ui.leeg('Nog geen bronnen gekoppeld',''),
-          {plat: !!kanalen.length,
-           voet:'Bron per kandidaat komt van het pijplijnbord. Leg dit naast je advertentie-uitgaven (Kosten → Marketing) om te zien welk kanaal opschalen verdient.'})}
-
-        ${kaart('Team & snelheid', `
-          ${rv.rows.length ? `<div class="meta" style="margin-bottom:8px">Deze maand · maandtarget ${H(rv.tgt == null ? '—' : rv.tgt)}${
-            rv.rows.some(r => r.gelijkVerdeeld) ? ' — gelijk verdeeld' : ''}</div>
-          ${tabel('<th>Recruiter</th><th class="n">Deze maand</th><th class="n">Doel</th><th>Voortgang</th>',
-            rv.rows.map(r => { const p = r.doel ? Math.min(100, Math.round(r.gedaan/r.doel*100)) : 0;
-              const hit = r.doel && r.gedaan >= r.doel;
-              return `<tr><td><b>${H(tekst(r.rec))}</b></td>
-                <td class="n"><span class="num ${hit?'pos':''}">${r.gedaan}</span></td>
-                <td class="n num">${r.doel}</td>
-                <td style="min-width:110px">${CRM.ui.bar(p, hit ? 'green' : '')}</td></tr>`; }).join(''))}` : ''}
-          ${team.recruiters.length ? `<div class="meta" style="margin:14px 0 8px">Omzet YTD (na uitval)</div>
-          ${tabel('<th>Recruiter</th><th class="n">Plaatsingen</th><th class="n">Omzet</th>',
-            team.recruiters.map(r => `<tr><td><b>${H(r.rec)}</b></td><td class="n num">${r.n}</td>
-              <td class="n num">${eur(r.omzet)}</td></tr>`).join(''))}`
-            : CRM.ui.leeg('Nog geen recruiters gekoppeld','')}
-          ${team.timeToFill != null ? `<div class="fin-pot" style="margin-top:12px"><span>Gem. doorlooptijd bord → plaatsing</span><b>${team.timeToFill} dgn</b></div>` : ''}`)}
-      </div>
-    </div>`;
-
-  wireBelasting(el, f);
-  el.querySelectorAll('[data-ketstap]').forEach(b => b.onclick = () => {
-    _ketStap = (_ketStap === b.dataset.ketstap) ? '' : b.dataset.ketstap;
-    tabAdvies(el, f);
-  });
-}
-
-/* Belasting & DGA — signalering en rekenhulp, géén belastingadvies. */
-function belastingKaart(f){
-  const bel = belastingAdvies(f), F = bel.F;
-  if(!_sd) _sd = {bedrag:25000, box1: Math.round(bel.loonHeelJaar || F.gebruikelijkLoon)};
-  const rij = (l, v, sub) => `<div class="fin-pot"><span>${H(l)}${sub?`<br><span class="meta">${H(sub)}</span>`:''}</span><b>${v}</b></div>`;
-  return kaart('Belasting & DGA — je twee belastingen uit elkaar', `
-    <div class="grid c2">
-      <div class="fin-blok accent">
-        <div class="label">Btw · dit kwartaal ${H(bel.kwLabel)}</div>
-        <div class="big">${eur(bel.btwKwartaal)}</div>
-        <p class="meta">Opgebouwd t/m dag ${H(bel.dagenInKw)} van het kwartaal. Dit is een <b>lopende teller</b>,
-          geen rekening — doorgeefgeld (21% van klanten − voorbelasting ${eur(bel.voorbelasting)}), los van winst,
-          kosten en DGA-loon. De aangifte die je nú betaalt is het vórige, afgesloten kwartaal.</p>
-      </div>
-      <div class="fin-blok amber">
-        <div class="label">Vpb · winstbelasting ${H(F.jaar)}</div>
-        <div class="big">${eur(bel.vpbReservering)}</div>
-        <p class="meta">Reserveren over winst YTD ${eur(bel.winst)} (19%). Bepaald over je <b>hele jaar</b>
-          op 31 december — hier drukken DGA-loon en kosten op, niet op de btw.</p>
-      </div>
-    </div>
-
-    <div class="fin-blok" style="margin-top:14px">
-      <b>Gebruikelijkloon-check DGA</b>
-      ${bel.loonIngevuldOk
-        ? `<p class="meta">Op dit tempo boek je over ${H(F.jaar)} <b>${eur(bel.loonHeelJaar)}</b> aan DGA-loon
-             (${eur(bel.loonPm)}/mnd × ${H(12 - bel.startMnd + 1)} mnd vanaf ${H(MND[bel.startMnd-1])}).
-             Norm ${H(F.jaar)} = <b>${eur(F.gebruikelijkLoon)}</b>.
-             ${bel.loonTekort > 0
-               ? `<span class="neg">Tekort ~${eur(bel.loonTekort)}.</span> Bespreek met je boekhouder of je over heel ${H(F.jaar)} moet bijboeken — het gebruikelijk loon geldt voor het hele jaar dat je DGA bent, niet vanaf je startmaand.`
-               : 'Je zit op of boven de norm — netjes.'}</p>`
-        : `<p class="meta">Bruto DGA-loon en startmaand staan nog niet ingevuld
-             (Instellingen in de finance-app). Zodra dat er staat, checkt dit blok of je aan het
-             gebruikelijk loon van ${eur(F.gebruikelijkLoon)} komt.</p>`}
-    </div>
-
-    <div class="fin-blok" style="margin-top:14px">
-      <b>Meer loon uitkeren of in de BV laten (dividend)?</b>
-      ${tabel('<th>Route</th><th class="n">Belastingdruk (indicatie ' + H(F.jaar) + ')</th>',
-        `<tr><td>Loon uitkeren — box 1</td><td class="n num">${pctF(F.box1.schijf1)} tot ${eur(F.box1.grens1)} · ${pctF(F.box1.top)} daarboven</td></tr>
-         <tr><td>In BV laten → later dividend (box 2)</td><td class="n num">${pctF(bel.bvRouteTarief)} tot ${eur(F.box2.grens)} · ${pctF(1-(1-F.vpb.laag)*(1-F.box2.hoog))} daarboven</td></tr>`)}
-      <p class="meta" style="margin-top:10px">Vuistregel: de eerste ±${eur(F.box1.grens1)} salaris is vaak iets
-        voordeliger dan in de BV laten; dáárboven wint dividend meestal. Het is een verschuiving, geen gratis besparing.</p>
-      <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:12px">
-        <b>Netto-calculator</b> <span class="meta">— wat houd je echt over?</span>
-        <div id="fin_sd">${sdHtml()}</div>
-      </div>
-    </div>
-
-    <div class="fin-blok" style="margin-top:14px">
-      <b>Nog ${H(bel.mndTotEind)} maand${bel.mndTotEind === 1 ? '' : 'en'} om ${H(F.jaar)} te sturen</b>
-      <p class="meta">Vpb gaat over je jaarwinst op 31 december — vóór die datum kun je ${H(F.jaar)} nog
-        beïnvloeden. Bespreek met je boekhouder: gebruikelijk loon kloppend maken · investeringsaftrek (KIA)
-        vóór 31 dec · timing van kosten die je tóch moet maken · dividendruimte dit jaar of volgend jaar.</p>
-    </div>`,
-    {voet:'Signalering en rekenhulp, géén belastingadvies. Tarieven 2026; jouw situatie kan afwijken — de knopen hak je met je boekhouder door.'});
-}
-function sdHtml(){
-  const c = salarisDividendCalc(_sd.bedrag, _sd.box1);
-  return `
-    <div class="grid c2" style="margin:10px 0">
-      <label class="meta">Bedrag uit de BV halen (winst) €
-        <input id="sd_bedrag" type="number" min="0" step="1000" value="${H(_sd.bedrag)}"></label>
-      <label class="meta">Je huidige bruto jaarinkomen box 1 €
-        <input id="sd_box1" type="number" min="0" step="1000" value="${H(_sd.box1)}"></label>
-    </div>
-    <div class="grid c2">
-      <div class="fin-blok${c.beste==='salaris' ? ' accent' : ''}">
-        <div class="label">Als salaris (box 1)${c.beste==='salaris' ? ' ✓' : ''}</div>
-        <div class="big">${eur(c.nettoSalaris)}</div>
-        <p class="meta">netto (${pct0(c.pctSalaris)}) · belasting box 1 ${eur(c.box1Extra)}</p>
-      </div>
-      <div class="fin-blok${c.beste==='dividend' ? ' accent' : ''}">
-        <div class="label">Als dividend (Vpb + box 2)${c.beste==='dividend' ? ' ✓' : ''}</div>
-        <div class="big">${eur(c.nettoDividend)}</div>
-        <p class="meta">netto (${pct0(c.pctDividend)}) · Vpb ${eur(c.vpb)} + box 2 ${eur(c.box2)}</p>
-      </div>
-    </div>
-    <p class="meta" style="margin-top:10px">Voordeligst: <b>${H(c.beste)}</b> — scheelt netto ~<b>${eur(c.verschil)}</b>
-      op ${eur(c.winst)}. Indicatie zónder heffingskortingen en zónder het gebruikelijk-loon-minimum.</p>`;
-}
-function wireBelasting(el){
-  const wrap = el.querySelector('#fin_sd'); if(!wrap) return;
-  const bind = (id, veld) => { const inp = wrap.querySelector(id); if(!inp) return;
-    inp.oninput = e => {
-      _sd[veld] = Math.max(0, Number(e.target.value) || 0);
-      wrap.innerHTML = sdHtml(); wireBelasting(el);
-    };
-  };
-  bind('#sd_bedrag','bedrag'); bind('#sd_box1','box1');
-}
-
-/* Conversie-keten: voorstel → offer → plaatsing → blijver. */
-function ketenKaart(){
-  const ck = conversieKeten();
-  if(!ck.voorstellen) return kaart('Conversie-keten',
-    CRM.ui.leeg('Nog geen afgeronde trajecten op het bord',''));
-  const f1 = x => x == null ? '—' : num(x);
-  const p  = x => x == null ? '—' : pctF(x, 0);
-  const stap = (key, n, lbl) => `<button class="fin-stap${_ketStap===key?' on':''}" data-ketstap="${key}">
-    <span class="fin-stap-n">${H(n)}</span><span class="fin-stap-l">${H(lbl)}</span></button>`;
-  const lijst = _ketStap && ck.lijsten[_ketStap] ? ck.lijsten[_ketStap] : null;
-  const titelMap = {voorstellen:'Voorgesteld (in procedure genomen)', offers:'Offer-stadium bereikt',
-                    plaats:'Plaatsing (getekend)', blijft:'Blijft (niet gestopt)'};
-  return kaart('Conversie-keten — van voorstel tot blijvende plaatsing', `
-    <div class="grid c4" style="margin-bottom:14px">
-      ${CRM.ui.kpi('Voorstellen → 1 offer', f1(ck.voorPerOffer),
-        `${ck.offers} van ${ck.voorstellen} halen het offer-stadium (${p(ck.pctOffer)})`)}
-      ${CRM.ui.kpi('Offers → 1 plaatsing', f1(ck.offerPerPlaatsing),
-        `${ck.plaats} van ${ck.offers} tekenen (${p(ck.pctPlaats)})`)}
-      ${CRM.ui.kpi('Plaatsingen → 1 blijver', ck.blijft ? f1(deel(ck.plaats, ck.blijft)) : '—',
-        `${ck.blijft} van ${ck.plaats} blijven (${p(ck.pctBlijft)})`)}
-      ${CRM.ui.kpi('Voorstellen per blijver', f1(ck.voorPerBlijver),
-        `duurzaam (tijd afgemaakt): ${ck.duurzaam} van ${ck.plaats} (${p(ck.pctDuurzaam)})`, 'accent')}
-    </div>
-    <div class="fin-keten">
-      ${stap('voorstellen', ck.voorstellen, 'voorgesteld')}
-      <span class="fin-pijl">→ ${H(p(ck.pctOffer))}</span>
-      ${stap('offers', ck.offers, 'offer-stadium')}
-      <span class="fin-pijl">→ ${H(p(ck.pctPlaats))}</span>
-      ${stap('plaats', ck.plaats, 'getekend')}
-      <span class="fin-pijl">→ ${H(p(ck.pctBlijft))}</span>
-      ${stap('blijft', ck.blijft, 'blijft')}
-    </div>
-    ${lijst ? `<div style="margin-top:14px"><div class="meta" style="margin-bottom:6px">${H(titelMap[_ketStap])} — ${lijst.length}</div>
-      ${tabel('<th>Kandidaat</th><th>Klant</th><th>Functie</th><th>Recruiter</th><th>Uitkomst</th>',
-        lijst.slice().sort((a,b) => String(a.klant||'').localeCompare(String(b.klant||''))
-          || String(a.naam||'').localeCompare(String(b.naam||'')))
-          .map(c => {
-            let uit;
-            if(c.geplaatst_op || ['Contract getekend','Gestart'].includes(faseVan(c))){
-              uit = (faseVan(c) === 'Gestopt' || c.gestopt_op)
-                ? chip('gestopt' + (c.stop_categorie ? ' · ' + c.stop_categorie : ''), 'red')
-                : chip('geplaatst' + (faseVan(c) === 'Gestart' ? ' · gestart' : ''), 'green');
-            } else if(c.afval_type === 'offer_afgewezen'){
-              uit = chip('offer afgewezen' + (c.afval_categorie ? ' · ' + c.afval_categorie : ''), 'amber');
-            } else {
-              uit = chip('afgevallen' + (c.afval_categorie ? ' · ' + c.afval_categorie : ''), '');
-            }
-            return `<tr><td><b>${H(tekst(c.naam))}</b></td><td>${H(klantLabel(c.klant))}</td>
-              <td>${H(tekst(c.functie))}</td><td>${H(String(c.rec||'').trim() || '—')}</td><td>${uit}</td></tr>`;
-          }).join(''), 'Niemand in deze stap')}</div>`
-      : `<p class="meta" style="margin-top:10px">Klik op een stap voor de namen.</p>`}`,
-    {voet:'Uit je afgeronde trajecten op het bord (fase-historie + uitval-registratie). Offer-stadium = ooit In de wacht, Offer of Contract ondertekenen bereikt. Wordt scherper naarmate de fase-historie vult.'});
-}
-
-/* ═══ TAB: WINST & DOELEN ══════════════════════════════════════
-   Overgezet uit renderWinstDoelen() van de finance-app: jaardoel-GPS,
-   winst-doorrekening (omzet → winst → na Vpb → na lening → vrij) en de
-   investeringsbeslisser. Instellingen (omzetdoel, kostenbasis) blijven
-   in de finance-app; hier lees je de doorrekening.                     */
-function tabWinst(el, f){
-  if(f.demo){ el.innerHTML = demoLeeg('Geen winstdoorrekening in demo',
-    'Hier zie je normaal je omzetdoel, de winst-brug tot wat je overhoudt en de investeringsbeslisser.'); return; }
-
-  const od = omzetDoel(f), gps = jaardoelGps(f), w = winstDoorrekening(f);
-  const ic = investeringsCheck(f, {}), uk = uitkeerRuimte(f);
-  const be = breakEven(f);
-
-  const brug = [
-    ['Omzet (doel)', w.doel, ''],
-    [`− Kosten (${eur(w.kostenMaand)}/mnd × 12)`, -w.kostenJaar, ''],
-    ...(w.herinvest > 0 ? [['− Herinvesteren (extra aftrekbare kosten)', -w.herinvest, '']] : []),
-    ['= Winst vóór Vpb', w.winstVoorVpb, 'sum'],
-    ['− Vpb (19% tot €200k, 25,8% erboven)', -w.vpb, ''],
-    ['= Netto winst (na Vpb)', w.nettoWinst, 'sum'],
-    ['− Aflossing lening', -w.leningAflossing, ''],
-    ['= Vrij: uitkeren of investeren', w.vrij, 'sum']
-  ].map(([l,v,k]) => `<tr${k==='sum'?' class="fin-sum"':''}>
-      <td>${H(l)}</td><td class="n"><span class="num ${v<0?'neg':''}">${v<0?'−':''}${eur(Math.abs(v))}</span></td></tr>`).join('');
-
-  const gpsBlok = (titel, b) => b ? `<div class="fin-blok">
-      <b>${H(titel)}</b>
-      <div class="fin-pot"><span>Omzet nodig (excl. btw)</span><b>${eur(b.omzetNodig)}</b></div>
-      <div class="fin-pot"><span>waarvan kosten te dekken</span><b class="meta">${eur(b.kosten)}</b></div>
-      <div class="fin-pot"><span>Flex dekt (run-rate)</span><b>${eur(b.flexBij)}</b></div>
-      <div class="fin-pot"><span>W&amp;S nodig</span><b>${eur(b.wsNodig)}</b></div>
-      <div class="fin-pot"><span>= Plaatsingen</span><b>${num(b.plaats)} <span class="meta">(${num(b.perMnd)}/mnd)</span></b></div>
-    </div>` : '';
-
-  el.innerHTML = `
-    <div class="grid c4" style="margin-bottom:18px">
-      ${CRM.ui.kpi(`Omzet YTD ${H(od.jaar)}`, eur(od.omzetYtd),
-        `${pctF(od.pctDoel, 0)} van het doel ${eur(od.doel)} · op dit tempo ${eur(od.omzetRunRate)}/jaar`, 'accent')}
-      ${CRM.ui.kpi('Gecontracteerd', eur(od.gecontracteerd),
-        `voorzichtig (na uitval op latere termijnen): ${eur(od.gecontracteerdVoorzichtig)}`)}
-      ${CRM.ui.kpi('Ontvangen (kas)', eur(od.ontvangen),
-        `${eur(od.openstaand)} gefactureerd maar nog niet betaald`)}
-      ${CRM.ui.kpi('Plaatsingen nodig voor het doel',
-        od.plaatsingenNodig == null ? '—' : num(od.plaatsingenNodig, 0),
-        `${num(od.perMnd)} per maand bij gem. fee ${eur(od.gemFee)} · nu ${od.plaatsingenYtd} YTD`)}
-    </div>
-
-    <div class="stack">
-      ${kaart('Jaardoel-GPS', gps.doel == null
-        ? CRM.ui.leeg('Nog geen winstdoel ingesteld','Zet "doel_winst_jaar" in de finance-app om deze GPS te vullen.')
-        : `<div class="fin-pot"><span>Winstdoel dit jaar</span><b>${eur(gps.doel)}</b></div>
-           <div class="fin-pot"><span>Winst YTD (indicatie)</span><b>${eurN(gps.winstYtd)}</b></div>
-           <div class="fin-pot"><span>Nog te gaan</span><b>${eurN(gps.teGaan)}</b></div>
-           <div class="grid c2" style="margin-top:12px">
-             ${gpsBlok(`T/m 31 december (${gps.mndRest} mnd)`, gps.restJaar)}
-             ${gpsBlok('Komende 12 maanden', gps.rolling)}
-           </div>
-           <p class="meta" style="margin-top:10px">Huidig tempo: <b>${num(gps.tempo)}</b> plaatsingen/maand
-             (dit jaar). Break-even ligt op ${be.nodig == null ? '—' : num(be.nodig)} plaatsingen/maand.</p>`)}
-
-      ${kaart('Winst-doorrekening — van omzet tot wat je overhoudt', `
-        <p class="meta">Kostenbasis <b>${eur(w.basisKosten)}</b>${
-          w.extraLoon > 0 ? ` + ${eur(w.extraLoon)} extra loon = <b>${eur(w.kostenMaand)}</b>` : ''}/mnd ·
-          bron: <b>${H(w.kostenBron)}</b>.</p>
-        ${tabel('<th>Stap</th><th class="n">Bedrag</th>', brug)}
-        <div class="grid c2" style="margin-top:14px">
-          ${CRM.ui.kpi('Winstmarge (vóór Vpb)', pctF(w.winstmarge),
-            `${eur(w.winstVoorVpb)} winst ÷ ${eur(w.doel)} omzet`)}
-          ${CRM.ui.kpi('Netto winstmarge (na Vpb)', pctF(w.nettoMarge),
-            `${eur(w.nettoWinst)} netto ÷ ${eur(w.doel)} omzet`, 'accent')}
-        </div>
-        <div class="fin-blok" style="margin-top:14px">
-          <b>Wat levert 1 extra plaatsing op?</b>
-          ${tabel('<th>Post</th><th class="n">Bedrag</th>',
-            `<tr><td>Gemiddelde fee</td><td class="n num">${eur(w.gemFee)}</td></tr>
-             <tr><td>− Marketing/sourcing per plaatsing</td><td class="n"><span class="num neg">−${eur(w.mktPerPl)}</span></td></tr>
-             <tr><td>− Uitval-risico (${pct0(w.stopPct)} stopt)</td><td class="n"><span class="num neg">−${eur(w.uitvalPerPl)}</span></td></tr>
-             <tr class="fin-sum"><td>= Marginale winst per extra plaatsing</td><td class="n"><b class="num pos">${eur(w.marginaleWinstPl)}</b> <span class="meta">(${pct0(w.marginaleMargePl)})</span></td></tr>`)}
-          <p class="meta" style="margin-top:10px">Je gemiddelde marge (~${pct0(w.winstmarge)}) bevat
-            álle vaste kosten. Eén <b>extra</b> plaatsing kost alleen sourcing + uitvalrisico — je vaste kosten
-            zijn al betaald. Daarom is de marginale marge ~${pct0(w.marginaleMargePl)}.</p>
-        </div>
-        <div class="grid c2" style="margin-top:14px">
-          ${CRM.ui.kpi('Als dividend uitkeren (box 2)', eur(w.dividendNetto), `netto privé, na box 2 ${eur(w.box2)}`)}
-          ${CRM.ui.kpi('Of herinvesteren in het bedrijf', eur(w.vrij), 'volledig herinvesteren (geen box 2)')}
-        </div>`,
-        {voet:'Btw staat hier bewust niet in — dat is doorgeefgeld en verlaagt je winst niet. De lening is geen kostenpost maar een balanspost; hij verlaagt wél je vrije cash. Omzetdoel en kostenbasis stel je in de finance-app in.'})}
-
-      ${kaart('Uitkeer-planner & investeringsruimte', `
-        <div class="fin-pot"><span>Laagste cashpunt komende 12 mnd</span><b>${eurN(uk.laagste)} <span class="meta">(${H(uk.laagsteLabel||'—')})</span></b></div>
-        <div class="fin-pot"><span>Aan te houden: buffer + Vpb-pot</span><b>${eur(uk.buffer)} + ${eur(uk.vpb)}</b></div>
-        <div class="fin-pot"><span>Nu veilig uit te keren / af te lossen</span><b class="${uk.ruimte>0?'pos':'neg'}">${eurN(uk.ruimte)}</b></div>
-        <div class="fin-pot"><span>Cashbuffer in maanden vaste lasten</span><b>${num(ic.bufferVoorMnd)} mnd <span class="meta">(norm 3–6)</span></b></div>
-        <div class="fin-pot"><span>Runway zónder nieuwe W&amp;S</span><b>${ic.r.runway >= 12 ? '12+' : ic.r.runway} mnd</b></div>
-        <div class="fin-pot"><span>Break-even vóór extra lasten</span><b>${ic.breakEvenVoor == null ? '—' : num(ic.breakEvenVoor) + ' pl./mnd'}</b></div>`,
-        {voet:'Ruimte = laagste projectie-saldo − veiligheidsbuffer − Vpb-reservering. Geplande aflossingen zitten al in de projectie. De wat-als-schuiven (extra uitkeren, investering doorrekenen) staan in de finance-app.',
-         acties: finLink('cashflow','Investering doorrekenen in de finance-app')})}
-    </div>`;
-}
-
 /* ═══ Registratie ══════════════════════════════════════════════ */
 const RENDERERS = {
-  vandaag: tabVandaag, advies: tabAdvies, plaatsingen: tabPlaatsingen,
-  facturatie: tabFacturatie, flex: tabFlex, cashflow: tabCashflow,
-  winst: tabWinst, kosten: tabKosten
+  vandaag: tabVandaag, plaatsingen: tabPlaatsingen, geld: tabGeld, flex: tabFlex
 };
 
 CRM.registerModule('finance', {
   title:'Finance', icon:'€',
-  onderschrift:'Alle cijfers uit de finance-app — dezelfde formules, dezelfde uitkomsten',
+  onderschrift:'Wat er te doen is, je plaatsingen, je geld en flex — alleen voor jou',
   adminOnly:true,
 
   async render(mount, acties){
@@ -4421,11 +3919,13 @@ CRM.registerModule('finance', {
       return;
     }
     acties.innerHTML = `
-      <button class="btn sub" id="fin_verniew" title="Cijfers opnieuw ophalen">↻ Vernieuwen</button>
-      <a class="btn ghost" href="${FIN_APP}" target="_blank" rel="noopener">Finance-app openen ↗</a>`;
+      <button class="btn ghost" id="fin_inst">⚙ Instellingen</button>
+      <button class="btn sub" id="fin_verniew" title="Cijfers opnieuw ophalen">↻ Vernieuwen</button>`;
     const vBtn = document.getElementById('fin_verniew');
     if(vBtn) vBtn.onclick = async () => { _fin = null; _meta = null; CRM.toast('Financiële cijfers vernieuwen…'); CRM.render(); };
 
+    /* Een oud tabblad (advies, cashflow, …) uit een eerdere sessie bestaat niet meer. */
+    if(!RENDERERS[_tab]) _tab = 'vandaag';
     mount.innerHTML = CRM.ui.laden('Financiële gegevens ophalen…');
     let f = null, laadFout = null;
     try{ f = await finLaad(); }
@@ -4479,6 +3979,8 @@ CRM.registerModule('finance', {
       </div>
       <div id="fin_body"></div>`;
 
+    const iBtn = document.getElementById('fin_inst');
+    if(iBtn) iBtn.onclick = () => instellingenPaneel(f);
     const opnieuw = mount.querySelector('#fin_opnieuw');
     if(opnieuw) opnieuw.onclick = () => { _fin = null; _meta = null; CRM.render(); };
 
