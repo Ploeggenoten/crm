@@ -3335,7 +3335,7 @@ function tabFlex(el, f, compact){
 
   const perWeek = () => {
     if(!pwk.rijen.length) return kaart('Per week', CRM.ui.leeg('Nog geen margefacturen ingelezen',
-      'De weekroutine leest ze elke zaterdag uit de mail. Je kunt er ook zelf een inlezen.'), {acties: knopInlezen});
+      'De weekroutine leest ze elke vrijdag om 17:00 uit de mail. Je kunt er ook zelf een inlezen.'), {acties: knopInlezen});
     const cel = c => c ? `<span class="num">${eur(c.marge)}</span><div class="rowsub num">${num(c.uren,1)} u</div>`
                        : '<span class="meta">—</span>';
     const kop = '<th>Week</th>' + pwk.kolommen.map(k => `<th class="n">${H(k.naam)}</th>`).join('') + '<th class="n">Totaal</th>';
@@ -3389,6 +3389,9 @@ function tabFlex(el, f, compact){
               ${r.cid ? `<button class="btn ghost sm" data-naarkand="${H(r.cid)}">Kandidaatkaart</button>` : ''}</div>`).join(''),
           {plat:true});
       })()}
+      ${!Object.keys(overnameLijst(f)).length && pf.some(r => !r.overname) ? `<div class="note info" style="margin-bottom:12px">
+          Overname-uren per klant vastleggen: ${H(Object.entries(OVERNAME_TJEERD).map(([k,u]) => k + ' ' + u).join(' · '))}.
+          <button class="btn sm" id="fin_overname_vast" style="margin-left:8px">Vastleggen</button></div>` : ''}
       ${pfMist.length ? kaart(`Voor een exacte marge mist nog (${pfMist.length})`,
         pfMist.map(r => `<div class="fin-todo urg"><div class="t"><b>${H(r.naam)}</b> <span class="meta">· ${H(klantLabel(r.klant))}</span>
             <div class="w">${H(r.mist.filter(m => !m.klein).map(m => m.wat).join(' · ') || r.mist.map(m => m.wat).join(' · '))}</div></div>
@@ -3398,7 +3401,7 @@ function tabFlex(el, f, compact){
       ${kaart(`Flex-portefeuille · ${pf.length} flexkracht${pf.length === 1 ? '' : 'en'}`, pf.length
         ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt / overname</th><th class="n">Nog te verdienen</th><th class="n">Overname ±</th>',
             pf.map(r => `<tr${r.compleet ? '' : ' class="fin-onvolledig"'}><td><b>${H(r.naam)}</b><div class="rowsub">${H(klantLabel(r.klant))}${r.nieuw ? ' · net getekend' : ''}</div></td>
-              <td class="n num">${r.margeUur ? eur2(r.margeUur) : '—'}${r.margeUur ? `<div class="rowsub" title="${H('Uurloon ' + eur2(r.uurloon) + ' × (klantfactor ' + num(r.klantfactor, 2) + ' − inkoop ' + num(r.inkoop, 3) + ', ' + r.inkoopBron + ')' + (r.klantfactorBron ? ' · klantfactor uit ' + r.klantfactorBron : ''))}">${num(r.klantfactor, 2)} − ${num(r.inkoop, 2)}</div>` : ''}</td>
+              <td class="n num">${r.margeUur ? eur2(r.margeUur) : '—'}${r.margeUur ? `<div class="rowsub" title="${H('Uurloon ' + eur2(r.uurloon) + ' × (klantfactor ' + num(r.klantfactor, 2) + ' − inkoop ' + num(r.inkoop, 3) + ', ' + r.inkoopBron + ')' + (r.klantfactorBron ? ' · klantfactor uit ' + r.klantfactorBron : ''))}">${/eigen margefacturen/.test(r.inkoopBron) ? 'uit facturen' : num(r.klantfactor, 2) + ' − ' + num(r.inkoop, 2)}</div>` : ''}</td>
               <td class="n num">${Math.round(r.gewerkt)} / ${r.overname ? Math.round(r.overname) + ' u' : '?'}
                 ${r.overname ? `<div class="fin-waardebar" style="margin-top:4px"><i style="width:${Math.min(100, r.gewerkt / r.overname * 100)}%"></i></div>` : ''}</td>
               <td class="n">${r.compleet ? `<b class="num">${eur(r.rest)}</b>` : '<span class="meta">mist gegevens</span>'}</td>
@@ -3411,12 +3414,15 @@ function tabFlex(el, f, compact){
     </div>`;
 
   el.querySelectorAll('#fin_marge_in').forEach(b => b.onclick = () => openMargeImport(f));
+  const ov = el.querySelector('#fin_overname_vast');
+  if(ov) ov.onclick = () => finDoe(ov, () => overnameBewaren(f, Object.assign({}, OVERNAME_TJEERD)),
+    'Overname-uren per klant vastgelegd', ok => ok && tabFlex(el, f, compact));
   el.querySelectorAll('[data-naarkand]').forEach(b => b.onclick = () => CRM.ga('kandidaten', {id: b.dataset.naarkand}));
   el.querySelectorAll('[data-naarklant]').forEach(b => b.onclick = () => CRM.ga('klanten', {id: b.dataset.naarklant}));
 }
 
 /* ─── Margefactuur inlezen ──────────────────────────────────────
-   Normaal doet de weekroutine dit vanzelf (elke zaterdag, uit de mail). Dit
+   Normaal doet de weekroutine dit vanzelf (elke vrijdag 17:00, uit de mail). Dit
    scherm is de terugval: open de PDF, selecteer alles, plak het hier.
 
    De tekst gaat naar dezelfde Edge Function die de routine gebruikt, zodat het
@@ -3885,7 +3891,9 @@ const nmbrsStand = f => {
    • klantfactor:   flexplaatsing → factuurtarief op de kandidaatkaart (÷ uurloon)
                     → afspraak Uitzenden op de klantkaart → flex-afspraak
    • overname-uren: flexplaatsing → afspraak Uitzenden → flex-afspraak
-   • inkoopfactor:  Pronkert-factuur → margefactuur van een collega bij
+   • inkoopfactor:  per klant ALTIJD dezelfde, los van het uurloon (Tjeerd:
+                    "een inkoopprijs is altijd hetzelfde als die van een andere
+                    kandidaat"). Eigen margefactuur → margefactuur van een collega bij
                     dezelfde klant (zelfde factorschema) → kostprijsberekening met de CAO en
                     contractfase uit de afspraak Uitzenden (zelfde als de
                     kandidaatkaart) → flex-afspraak → CAO van de klant met
@@ -3894,13 +3902,15 @@ const nmbrsStand = f => {
    Ontbreekt uurloon of klantfactor, dan is er GEEN marge: de flexkracht
    telt niet mee in de totalen en `mist` zegt wat er ingevuld moet worden. */
 function flexWaarde(f, fp, c){
-  let uurloon = null, klantfactor = null, inkoop = null, overname = null, urenPw = null, gewerkt = null, inkoopBron = '';
+  let uurloon = null, klantfactor = null, inkoop = null, overname = null, urenPw = null, gewerkt = null, inkoopBron = '', fpInkoop = null;
   const mist = [];
   if(fp){
     const b = flexPlBerekening(f, fp);
     uurloon = getalOfNull(fp.uurloon); klantfactor = getalOfNull(fp.klantfactor);
     overname = getalOfNull(fp.overname_uren); gewerkt = b.gewerkteUren;
-    inkoop = getalOfNull(fp.inkoop_factor); if(inkoop) inkoopBron = 'factuur Pronkert';
+    /* De op de flexplaatsing opgeslagen inkoop kan een standaardwaarde zijn;
+       die komt pas ná de factuur van een collega bij dezelfde klant. */
+    fpInkoop = getalOfNull(fp.inkoop_factor);
     urenPw = getalOfNull(fp.uren_pw);
   }
   const klant = (fp && fp.klant) || (c && c.klant) || '';
@@ -3930,6 +3940,7 @@ function flexWaarde(f, fp, c){
       const fi = inkoopUitFacturen(f, klant);
       if(fi){ inkoop = fi.factor; inkoopBron = 'margefactuur ' + fi.naam + ' (zelfde klant)'; }
     }
+    if(!inkoop && fpInkoop){ inkoop = fpInkoop; inkoopBron = 'flexplaatsing'; }
     if(!inkoop && uurloon && cao && fase && CRM.kostprijsfactor){
       const kp = CRM.kostprijsfactor(cao, fase, uurloon);
       if(kp){ inkoop = kp.kostprijsfactor; inkoopBron = 'kostprijs ' + cao + ', ' + fase; }
@@ -3937,12 +3948,14 @@ function flexWaarde(f, fp, c){
   }
   const fiKlant = inkoopUitFacturen(f, klant);
   if(!inkoop && fiKlant){ inkoop = fiKlant.factor; inkoopBron = 'margefactuur ' + fiKlant.naam + ' (zelfde klant)'; }
+  if(!inkoop && fpInkoop){ inkoop = fpInkoop; inkoopBron = 'flexplaatsing'; }
   const fa = flexAfspraakVoor(f, klant);
   if(fa){
     klantfactor = klantfactor || getalOfNull(fa.factor);
     overname = overname || getalOfNull(fa.overname_uren);
     if(!inkoop && getalOfNull(fa.inkoop_factor)){ inkoop = getalOfNull(fa.inkoop_factor); inkoopBron = 'flex-afspraak'; }
   }
+  if(!overname) overname = overnameKlant(f, klant);
   /* Klantfactor nog onbekend: wat de klant volgens de margefactuur van een
      collega werkelijk per uur betaalt (tarief ÷ uurloon). Echte data, geen schatting. */
   let klantfactorBron = '';
@@ -3951,9 +3964,7 @@ function flexWaarde(f, fp, c){
      factureert? Dan is er iets mis met het uurloon, de factor of de afspraak. */
   const afwijking = (fiKlant && !eigen && !(fp && fp.marge_werkelijk != null)) ? [
       (klantfactor && fiKlant.klantfactor && Math.abs(klantfactor - fiKlant.klantfactor) > 0.05)
-        ? `klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}` : '',
-      (inkoop && Math.abs(inkoop - fiKlant.factor) > 0.01)
-        ? `inkoop ${num(inkoop, 3)}, bij ${fiKlant.naam} ${num(fiKlant.factor, 3)}` : ''
+        ? `klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}` : ''
     ].filter(Boolean) : [];
   const kl = ((CRM.state && CRM.state.clients) || []).find(k => CRM.zelfdeKlant ? CRM.zelfdeKlant(k.naam, klant) : k.naam === klant);
   if(!inkoop && uurloon && kl && kl.cao && CRM.kostprijsfactor){
@@ -3979,6 +3990,31 @@ function flexWaarde(f, fp, c){
           rest: compleet ? margeUur * restUren : null,
           bron: !compleet ? 'onvolledig' : (inkoopBron === 'factuur Pronkert' ? 'factuur' : 'afspraak'),
           einde: restUren ? addDays(todayISO(), Math.round(restUren / urenPw * 7)) : null};
+}
+
+/* ─── Overname-uren per klant ───────────────────────────────────────
+   Na zoveel gewerkte uren mag de klant een flexkracht kosteloos overnemen.
+   Tjeerd, 27 okt 2026: Burg Siroop 1560, Omefa 1560, Thermon 1200,
+   Staalduinen 1560, Proponent 1200. Opgeslagen in fin_settings (één
+   sleutel, geen databasewijziging); aan te passen onder ⚙ Instellingen.
+   Klantnamen matchen op woorden ("Omefa" ↔ "Omefa European plastics &
+   tooling"). Een afspraak Uitzenden of flexplaatsing gaat voor.       */
+const OVERNAME_KEY = 'flex_overname_per_klant';
+const OVERNAME_TJEERD = {'Burg Siroop':1560, 'Omefa':1560, 'Thermon':1200, 'Staalduinen':1560, 'Proponent':1200};
+const naamWoorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .split(/[^a-z0-9]+/).filter(w => w.length > 2 && !['b.v','bv','the','van','der','den'].includes(w));
+const overnameLijst = f => { const v = S(f, OVERNAME_KEY, null); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; };
+function overnameKlant(f, klant){
+  const w = naamWoorden(klant);
+  for(const [k, u] of Object.entries(overnameLijst(f))){
+    const kw = naamWoorden(k);
+    if(kw.length && kw.every(x => w.includes(x)) && getal(u)) return getal(u);
+  }
+  return null;
+}
+async function overnameBewaren(f, lijst){
+  await finSchrijf('fin_settings', q => q.upsert({key: OVERNAME_KEY, value: lijst}));
+  f.settings[OVERNAME_KEY] = lijst;
 }
 
 /* De echte inkoopfactor van Pronkert bij een klant, uit de margefactuur
@@ -4477,6 +4513,13 @@ function instellingenPaneel(f){
               <td class="n num">${a.overname_uren ? H(a.overname_uren) + ' u' : '—'}</td></tr>`).join(''))
         : `<div style="padding:18px 22px">${CRM.ui.leeg('Nog geen flex-afspraken','')}</div>`,
         {plat:true, acties:'<button class="btn ghost sm" id="in_fa_nieuw">+ Afspraak</button>'})}</div>
+      <div style="margin-top:14px">${kaart('Overname-uren per klant (flex)', `<div class="f-grid">${
+        [...Object.entries(overnameLijst(f)), ['', '']].map(([k, u], i) => `<div class="f-row"><label>Klant</label>
+          <input data-ovk="${i}" value="${H(k)}" placeholder="bijv. Thermon"></div>
+          <div class="f-row"><label>Uren tot kosteloze overname</label>
+          <input data-ovu="${i}" type="number" step="1" value="${H(u)}" placeholder="1560"></div>`).join('')}</div>
+        <div class="row tight"><span class="meta">Leeg een klant om hem te verwijderen.</span><span class="spacer"></span>
+          <button class="btn sm" id="in_ov_ok">Opslaan</button></div>`)}</div>
       <p class="meta" style="margin:14px 2px 0">W&amp;S-fees leg je per klant vast onder Commerciële afspraken op de klantkaart.
         Nmbrs (banksaldo, kosten per post, omzet) ververst vanzelf zodra je Finance opent — laatst: ${H(nmbrsStand(f))}.</p>
     </div>`, {onOpen(dr){
@@ -4493,6 +4536,14 @@ function instellingenPaneel(f){
         await finSchrijf('fin_settings', q => q.upsert(wijz));
         wijz.forEach(w => { f.settings[w.key] = w.value; });
       }, 'Instellingen opgeslagen', ok => { if(ok){ CRM.drawer.close(); CRM.render(); } });
+    };
+    dr.querySelector('#in_ov_ok').onclick = () => {
+      const lijst = {};
+      dr.querySelectorAll('[data-ovk]').forEach(inp => {
+        const k = inp.value.trim(), u = getal(dr.querySelector(`[data-ovu="${inp.dataset.ovk}"]`).value);
+        if(k && u) lijst[k] = u;
+      });
+      finDoe(dr.querySelector('#in_ov_ok'), () => overnameBewaren(f, lijst), 'Overname-uren opgeslagen', ok => ok && opnieuw());
     };
     dr.querySelector('#in_fa_nieuw').onclick = () => flexAfspraakVenster(f, null, opnieuw);
     dr.querySelectorAll('[data-fa]').forEach(tr => tr.onclick = () =>
