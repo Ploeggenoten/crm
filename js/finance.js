@@ -3969,7 +3969,9 @@ CRM.finFlexOvername = async () => {
     let verwacht = null;
     if(wkn != null){ const d = new Date(); d.setDate(d.getDate() + Math.round(wkn*7));
       verwacht = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-    return {naam: x.naam || '?', klant: x.klant || '', resterendUren: b.resterendUren,
+    /* fin_flex_plaatsingen bewaart de naam in 'kandidaat', niet 'naam' —
+       daardoor stond er in het overname-blok altijd "?" (27 okt 2026). */
+    return {naam: x.kandidaat || x.naam || '?', klant: x.klant || '', resterendUren: b.resterendUren,
             overnameUren: b.overnameUren, verwacht};
   }).filter(Boolean).sort((a,b) => String(a.verwacht||'9999').localeCompare(String(b.verwacht||'9999')));
 };
