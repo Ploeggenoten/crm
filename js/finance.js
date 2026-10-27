@@ -521,7 +521,15 @@ function flexPerWeekKracht(f, nWeken){
    Gewogen over de normale uren: overwerk en de reserveringen (eindejaars-
    uitkering, atv) lopen op een eigen, lagere factor en zouden het beeld
    vertroebelen. Hun marge telt wél mee in het bedrag en het percentage.   */
+const _flexFactorenCache = new WeakMap();
 function flexFactoren(f){
+  const sleutel = f.flexRegels || [];
+  if(_flexFactorenCache.has(sleutel)) return _flexFactorenCache.get(sleutel);
+  const uit = flexFactorenBereken(f);
+  _flexFactorenCache.set(sleutel, uit);
+  return uit;
+}
+function flexFactorenBereken(f){
   const per = new Map();
   (f.flexRegels||[]).forEach(r => {
     const sleutel = flexSleutel(r);
@@ -3867,7 +3875,8 @@ const nmbrsStand = f => {
    • klantfactor:   flexplaatsing → factuurtarief op de kandidaatkaart (÷ uurloon)
                     → afspraak Uitzenden op de klantkaart → flex-afspraak
    • overname-uren: flexplaatsing → afspraak Uitzenden → flex-afspraak
-   • inkoopfactor:  Pronkert-factuur → kostprijsberekening met de CAO en
+   • inkoopfactor:  Pronkert-factuur → margefactuur van een collega bij
+                    dezelfde klant (zelfde factorschema) → kostprijsberekening met de CAO en
                     contractfase uit de afspraak Uitzenden (zelfde als de
                     kandidaatkaart) → flex-afspraak → CAO van de klant met
                     Fase 1/2 (startfase van een nieuwe uitzendkracht)
@@ -3898,10 +3907,18 @@ function flexWaarde(f, fp, c){
     if(!klantfactor){ const pv = CRM.fee.pctVoor(c ? feeKand(c) : {functie: (fp && fp.functie) || ''}, ruw); klantfactor = pv && pv.pct ? Number(pv.pct) : null; }
     if(!overname) overname = a.overname_uren || null;
     const cao = ruw.cao || a.cao, fase = ruw.contractfase || a.contractfase;
+    if(!inkoop){
+      const fi = inkoopUitFacturen(f, klant);
+      if(fi){ inkoop = fi.factor; inkoopBron = 'margefactuur ' + fi.naam + ' (zelfde klant)'; }
+    }
     if(!inkoop && uurloon && cao && fase && CRM.kostprijsfactor){
       const kp = CRM.kostprijsfactor(cao, fase, uurloon);
       if(kp){ inkoop = kp.kostprijsfactor; inkoopBron = 'kostprijs ' + cao + ', ' + fase; }
     }
+  }
+  if(!inkoop){
+    const fi = inkoopUitFacturen(f, klant);
+    if(fi){ inkoop = fi.factor; inkoopBron = 'margefactuur ' + fi.naam + ' (zelfde klant)'; }
   }
   const fa = flexAfspraakVoor(f, klant);
   if(fa){
@@ -3929,6 +3946,27 @@ function flexWaarde(f, fp, c){
           rest: compleet ? margeUur * restUren : null,
           bron: !compleet ? 'onvolledig' : (inkoopBron === 'factuur Pronkert' ? 'factuur' : 'afspraak'),
           einde: restUren ? addDays(todayISO(), Math.round(restUren / urenPw * 7)) : null};
+}
+
+/* De echte inkoopfactor van Pronkert bij een klant, uit de margefactuur
+   van een flexkracht die daar al werkt. Pronkert rekent per klant met een
+   vast factorschema (bijv. BEROEPS1 bij Staalduinen: 1,764), los van het
+   uurloon — dus een nieuwe kandidaat bij dezelfde klant krijgt dezelfde
+   factor. Exacter dan het CAO-model: bij Staalduinen gaf dat 1,831 en
+   daarmee 11% te weinig marge (week 42, Radjkoemar). Klantnamen verschillen
+   per bron ("Transport gebrs. van Staalduinen B.V." vs "Staalduinen"):
+   alle woorden van de CRM-naam moeten in de Pronkert-naam staan.       */
+function inkoopUitFacturen(f, klant){
+  const woorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .split(/[^a-z0-9]+/).filter(w => w.length > 2 && !['b.v','bv','the','van','der','den'].includes(w));
+  const zoek = woorden(klant);
+  if(!zoek.length) return null;
+  const kandidaten = flexFactoren(f).filter(k => k.inkoopfactor && (
+    (k.plaatsing && k.plaatsing.klant && (CRM.zelfdeKlant ? CRM.zelfdeKlant(k.plaatsing.klant, klant) : k.plaatsing.klant === klant))
+    || (() => { const w = woorden(k.klant); return zoek.every(z => w.includes(z)); })()));
+  if(!kandidaten.length) return null;
+  const k = kandidaten.sort((a,b) => String(b.laatste).localeCompare(String(a.laatste)))[0];
+  return {factor: k.inkoopfactor, naam: k.naam, week: k.laatste};
 }
 
 /* Alle flexkrachten die nu lopen: de flexplaatsingen in Finance, plus wie
