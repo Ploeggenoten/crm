@@ -912,6 +912,8 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
             <button type="button" class="chip btn-like" data-tksnel="7">1 week</button>
             <button type="button" class="chip btn-like" data-tksnel="14">2 weken</button>
             <button type="button" class="chip btn-like" data-tksnel="m">1 maand</button>
+            <button type="button" class="chip btn-like" data-tksnel="m2">2 maanden</button>
+            <button type="button" class="chip btn-like" data-tksnel="m3">3 maanden</button>
           </div></div>
         <!-- Een tijd erbij. Zonder tijd staat "Tomasz voorbereiden" ergens op
              morgen en weet je niet of dat vóór of ná het gesprek van 10:00
@@ -935,7 +937,14 @@ CRM.taakModal = (opts = {}) => new Promise(res => {
       const isoLokaal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
       m.querySelectorAll('[data-tksnel]').forEach(b => b.onclick = () => {
         const d = new Date();
-        if(b.dataset.tksnel === 'm') d.setMonth(d.getMonth() + 1);
+        if(/^m\d?$/.test(b.dataset.tksnel)){
+          /* 'm' = 1 maand, 'm2' = 2, 'm3' = 3. Op de laatste dag van de maand
+             niet doorrollen: 31 jan + 1 maand is 28 feb, niet 3 mrt. */
+          const dag = d.getDate();
+          d.setDate(1);
+          d.setMonth(d.getMonth() + (Number(b.dataset.tksnel.slice(1)) || 1));
+          d.setDate(Math.min(dag, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+        }
         else d.setDate(d.getDate() + Number(b.dataset.tksnel));
         m.querySelector('#tk_datum').value = isoLokaal(d);
         m.querySelectorAll('[data-tksnel]').forEach(x => x.classList.toggle('sel', x === b));
