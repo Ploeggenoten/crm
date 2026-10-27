@@ -4068,12 +4068,12 @@ function flexPortefeuille(f){
     if(c && c.gestopt_op) continue;
     if(fp.pipeline_candidate_id) gekoppeld.add(fp.pipeline_candidate_id);
     namen.add(String(fp.kandidaat||'').trim().toLowerCase());
-    rijen.push({naam: tekst(fp.kandidaat), klant: fp.klant, cid: c && c.id, start: fp.start || (c && c.geplaatst_op), ...flexWaarde(f, fp, c)});
+    rijen.push({naam: tekst(fp.kandidaat), klant: fp.klant, cid: c && c.id, start: fp.start || (c && (c.start || c.geplaatst_op)), ...flexWaarde(f, fp, c)});
   }
   for(const c of cands()){
     if(!isFlexType(c.type) || !isPlaced(c) || c.gestopt_op) continue;
     if(gekoppeld.has(c.id) || namen.has(String(c.naam||'').trim().toLowerCase())) continue;
-    rijen.push({naam: tekst(c.naam), klant: c.klant, cid: c.id, start: c.geplaatst_op, nieuw: true, ...flexWaarde(f, null, c)});
+    rijen.push({naam: tekst(c.naam), klant: c.klant, cid: c.id, start: c.start || c.geplaatst_op, nieuw: true, ...flexWaarde(f, null, c)});
   }
   return rijen.sort((a,b) => (a.compleet ? 0 : 1) - (b.compleet ? 0 : 1) || String(a.einde||'9999').localeCompare(String(b.einde||'9999')));
 }
@@ -4147,6 +4147,49 @@ function waardeKaart(f){
     {plat:true, voet:'Wat je in een maand tekent, ook als het geld later binnenkomt: W&S-fee + flex-marge tot de kosteloze overname (uurloon × (klantfactor − inkoopfactor) × overname-uren). Flexkrachten zonder volledige gegevens tellen niet mee — zie Flex. "Nodig" = je kosten in die maand.'});
 }
 
+/* ─── Gewerkt, nog niet gefactureerd ───────────────────────────────
+   Pronkert factureert een week na het werk en betaalt een maand later.
+   Wat er tussen de laatst gefactureerde week en vandaag gewerkt is — of
+   tot de stopdatum, voor wie gestopt is — komt dus nog binnen (Tjeerd,
+   27 okt 2026: "als er een kandidaat gestopt is, krijgen wij dat geld nu
+   nog"). Per persoon: werkdagen in die periode × uren per dag × de marge
+   per uur (eigen facturen, anders de voorspelling), in de maand van het
+   werk. Wie nog op geen enkele factuur staat telt vanaf zijn startdatum. */
+function flexOnderweg(f, werk7){
+  const t = todayISO();
+  const woorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w => w.length > 1);
+  const stops = [...f.flexPl.filter(x => x.gestopt_op).map(x => ({n: woorden(x.kandidaat), d: x.gestopt_op})),
+                 ...cands().filter(c => c.gestopt_op).map(c => ({n: woorden(c.naam), d: String(c.gestopt_op).slice(0,10)}))];
+  const stopVan = naam => { const roep = woorden(naam)[0]; const s2 = stops.find(x => roep && x.n.includes(roep)); return s2 ? s2.d : null; };
+  /* werkdagen (ma–vr) van `van` t/m `tot` die in werkmaand werk7 vallen */
+  const dagenIn = (van, tot) => { let n = 0; for(let d = van; d <= tot; d = addDays(d, 1)){
+      if(String(d).slice(0,7) !== werk7) continue;
+      const wd = new Date(d + 'T12:00:00').getDay(); if(wd >= 1 && wd <= 5) n++; } return n; };
+  let som = 0;
+  const gedaan = new Set(), pf = flexPortefeuille(f);
+  /* 1. wie al op een factuur staat: vanaf de week na de laatste factuur */
+  for(const k of flexFactoren(f)){
+    if(!k.laatste || !k.margePerUur) continue;
+    const roep = woorden(k.naam)[0]; if(roep) gedaan.add(roep);
+    const stop = stopVan(k.naam);
+    const tot = stop && stop < t ? stop : t;
+    const van = addDays(k.laatste, 7);
+    if(van > tot) continue;
+    const pr = pf.find(r => woorden(r.naam).includes(roep));
+    const urenPerDag = ((pr && pr.urenPw) || 40) / 5;
+    som += dagenIn(van, tot) * urenPerDag * k.margePerUur;
+  }
+  /* 2. wie nog op geen enkele factuur staat: vanaf de start (voorspelde marge) */
+  for(const r of pf){
+    if(!r.margeUur || r.echt || !r.start) continue;
+    if(woorden(r.naam).some(w => gedaan.has(w))) continue;
+    const van = String(r.start).slice(0,10);
+    if(van > t) continue;
+    som += dagenIn(van, t) * (r.urenPw / 5) * r.margeUur;
+  }
+  return som;
+}
+
 /* Wat komt er in een maand ECHT binnen — "we moeten onszelf niet rijk
    rekenen; ik moet exact weten wat we binnenkrijgen" (Tjeerd, 27 okt 2026).
    • W&S: termijnen met een betaaldatum in die maand (werkelijk ontvangen);
@@ -4176,11 +4219,11 @@ function binnenMaand(f, mk7){
   const vorig7 = String(addMonths(mk7 + '-01', -1)).slice(0,7);
   let flexEcht = 0, flexVerwacht = 0;
   if(vorig7 < nu7) flexEcht = flexMaand(f, vorig7);                       // margefacturen van vorige maand
-  else if(vorig7 === nu7){ flexEcht = flexMaand(f, nu7); flexVerwacht = flexUitPortefeuille(f, nu7); }
+  else if(vorig7 === nu7){ flexEcht = flexMaand(f, nu7); flexVerwacht = flexOnderweg(f, nu7) + flexUitPortefeuille(f, nu7); }
   else flexVerwacht = flexUitPortefeuille(f, vorig7);
-  /* Lopende maand: wat al binnen is telt als echt; de flex van vorige
-     maand komt deze maand binnen. */
-  if(mk7 === nu7){ flexEcht = flexMaand(f, vorig7); flexVerwacht = 0; }
+  /* Lopende maand: wat al gefactureerd is telt als echt; werk van vorige
+     maand dat nog niet op een factuur stond komt er als verwacht bij. */
+  if(mk7 === nu7){ flexEcht = flexMaand(f, vorig7); flexVerwacht = flexOnderweg(f, vorig7); }
   return {mk7, wsEcht, wsVerwacht, flexEcht, flexVerwacht,
           echt: wsEcht + flexEcht, verwacht: wsVerwacht + flexVerwacht, totaal: wsEcht + flexEcht + wsVerwacht + flexVerwacht};
 }
