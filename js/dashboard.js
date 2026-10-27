@@ -2043,6 +2043,9 @@ CRM.registerModule('dashboard', {
         else if(ent==='kandidaat') CRM.ga('kandidaten',{id:ref});
         else if(ent==='lead') CRM.ga('recruitment',{id:ref});
         else if(ent==='linkedin') linkedinLijst(r.dataset.meld);
+        /* Dagstatus van een routine (lead-radar-functie, modus 'melding'); ref
+           'radar' = de Leadradar zelf, dan daarheen. */
+        else if(ent==='routine'){ if(ref==='radar') CRM.ga('sales',{tab:'radar'}); }
         else{
           /* Meldingen zonder eigen kaart gaan meestal over een taak die een
              collega je heeft gegeven ("Tjerk heeft je een taak gegeven: …").

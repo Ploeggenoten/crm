@@ -236,6 +236,24 @@ Deno.serve(async (req) => {
     return antwoord({ ok: true, rijen });
   }
 
+  // Modus 'melding': de routines (leadradar, LinkedIn) zetten hun dagstatus
+  // bij "Voor jou" op het dashboard. Pushmeldingen kwamen niet aan zolang
+  // Remote Control uit staat, en Tjeerd wil zien of een routine stilviel
+  // zonder de sessies te openen. Alleen met de cron-sleutel. (27 okt 2026)
+  if (body.melding) {
+    if (cronKey !== Deno.env.get("CRON_SECRET")) return antwoord({ error: "alleen voor routines" }, 403);
+    const m = body.melding as Record<string, unknown>;
+    const tekst = String(m.tekst ?? "").trim().slice(0, 500);
+    if (!tekst) return antwoord({ error: "tekst ontbreekt" }, 400);
+    const { error } = await service.from("crm_meldingen").insert({
+      id: "md" + Date.now() + Math.floor(Math.random() * 10000),
+      voor: "Tjeerd", van: String(m.van ?? "Routine").slice(0, 60), soort: "systeem",
+      tekst, entiteit: "routine", ref: String(m.ref ?? "").slice(0, 40),
+      gelezen: false, created_at: new Date().toISOString(),
+    });
+    return error ? antwoord({ error: error.message }, 500) : antwoord({ ok: true });
+  }
+
   // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
   // rows: [{bedrijf, plaats?, functies?, vacatures?, url?, bron?, notitie?, concepten?}]
   if (Array.isArray(body.import)) {
