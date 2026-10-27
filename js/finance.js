@@ -1052,7 +1052,9 @@ function acties(f){
       continue;
     }
     const st = placementStats(f, p);
+    const hold = opHold(f, p.id);
     for(const i of st.ins){
+      if(hold) break;                    // bewust on hold: geen factuur- of betaalactie
       if(i.status==='te_factureren' && i.geplande_datum){
         const dd = daysBetween(t, i.geplande_datum);
         if(dd == null) continue;
@@ -1240,7 +1242,7 @@ function weekProjectie(f, weken){
       weeks[wi].items.push({label, bedrag: kant==='uit' ? -bedrag : bedrag});
     }
   };
-  for(const p of f.placements) for(const inst of instOf(f, p.id)){
+  for(const p of f.placements) for(const inst of (opHold(f, p.id) ? [] : instOf(f, p.id))){
     if(inst.status==='betaald' || inst.status==='vervallen') continue;
     let dat = null;
     if(inst.status==='te_factureren' && inst.geplande_datum) dat = addDays(inst.geplande_datum, getal(p.betaaltermijn_dgn)||14);
@@ -2098,6 +2100,31 @@ async function plWijzig(p, patch){
   Object.assign(p, patch);
 }
 
+/* ─── Facturatie on hold ───────────────────────────────────────────
+   Soms factureer je bewust (nog) niet: de kandidaat is ziek, of er loopt
+   iets met de klant. Dat is geen gemiste factuur en geen te late betaling
+   (Tjeerd, 27 okt 2026). Een plaatsing on hold telt dus niet als gemist
+   of te laat, staat niet in Te doen en niet in de kasprojectie, maar wél
+   zichtbaar in een eigen groep met de reden en een knop Hervatten.
+   Opgeslagen als één sleutel in fin_settings ({P020: {reden, sinds}}),
+   zodat er geen databasewijziging nodig is.                          */
+const HOLD_KEY = 'facturatie_on_hold';
+const holdLijst = f => { const v = S(f, HOLD_KEY, null); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; };
+const opHold = (f, pid) => holdLijst(f)[pid] || null;
+async function zetHold(f, p, reden){
+  const nieuw = Object.assign({}, holdLijst(f));
+  if(reden) nieuw[p.id] = {reden, sinds: todayISO()}; else delete nieuw[p.id];
+  await finSchrijf('fin_settings', q => q.upsert({key: HOLD_KEY, value: nieuw}));
+  f.settings[HOLD_KEY] = nieuw;
+}
+async function vraagHold(f, p, klaar){
+  const reden = await CRM.vraag(`Facturatie van ${tekst(p.kandidaat)} on hold`, {
+    hint: 'Je factureert bewust (nog) niet. Waarom? Dan weet je het straks nog.',
+    placeholder: 'Kandidaat ziek', knop: 'On hold zetten'});
+  if(!reden) return klaar && klaar();
+  finDoe(null, () => zetHold(f, p, reden), `${tekst(p.kandidaat)} staat on hold`, () => klaar && klaar());
+}
+
 /* Gefactureerd / betaald afvinken — zelfde regels als de ✓-knoppen in de
    finance-app: de datum is vandaag, en wie direct op betaald springt
    krijgt de geplande datum als factuurdatum. */
@@ -2299,6 +2326,7 @@ function plPaneel(f, pid, herteken){
         ${g.actief ? chip('garantie t/m ' + dKort(g.tot), 'purple') : ''}
         ${g.vervangingNodig ? chip('vervanging leveren', 'red') : ''}
         ${p.vervangen_door ? chip('vervangen door ' + p.vervangen_door, 'green') : ''}
+        ${opHold(f, p.id) ? chip(`facturatie on hold sinds ${dKort(opHold(f, p.id).sinds)} · ${opHold(f, p.id).reden}`, 'amber') : ''}
       </div>
       <div class="grid c4">
         ${CRM.ui.kpi('Fee (vastgelegd)', eur(getalOfNull(p.fee_excl)), 'excl. btw', 'accent')}
@@ -2324,6 +2352,8 @@ function plPaneel(f, pid, herteken){
       <span class="spacer"></span>
       <button class="btn ghost sm" id="fd_edit">Bewerken</button>
       ${g.vervangingNodig ? `<button class="btn ghost sm" id="fd_verv">Vervanging geleverd…</button>` : ''}
+      ${opHold(f, p.id) ? `<button class="btn ghost sm" id="fd_hold">Facturatie hervatten</button>`
+        : `<button class="btn ghost sm" id="fd_hold">Facturatie on hold…</button>`}
       ${!p.gestopt_op ? `<button class="btn ghost sm" id="fd_stop">Kandidaat gestopt…</button>` : ''}
       ${p.concept ? `<button class="btn" id="fd_ok">✓ Fee klopt — bevestigen</button>` : ''}
     </div>`, {onOpen(dr){
@@ -2375,6 +2405,9 @@ function plPaneel(f, pid, herteken){
       () => plWijzig(p, {concept:false}), `${p.id} bevestigd — dit is nu de officiële fee`, opnieuw);
     q('#fd_edit').onclick = () => plFormulier(f, {p}, opnieuw);
     if(q('#fd_stop')) q('#fd_stop').onclick = () => stopVenster(f, p, opnieuw);
+    q('#fd_hold').onclick = () => opHold(f, p.id)
+      ? finDoe(q('#fd_hold'), () => zetHold(f, p, null), `Facturatie van ${tekst(p.kandidaat)} hervat`, opnieuw)
+      : vraagHold(f, p, opnieuw);
     if(q('#fd_verv')) q('#fd_verv').onclick = async () => {
       const wie = await CRM.vraag('Wie is de vervanger?', {hint:'Naam of plaatsingsnummer van de kosteloze vervanging.', knop:'Vastleggen'});
       if(!wie) return opnieuw();
@@ -2610,9 +2643,10 @@ function tabPlaatsingen(el, f){
   const k = kpis(f), t = todayISO();
   const plById = Object.fromEntries(f.placements.map(p => [p.id, p]));
   const nGemist = f.installments.filter(i => i.status === 'te_factureren' && i.geplande_datum && i.geplande_datum < t
+    && !opHold(f, i.placement_id)
     && plById[i.placement_id] && !plById[i.placement_id].concept).length;
   const nTeLaat = f.installments.filter(i => {
-    if(i.status !== 'gefactureerd') return false;
+    if(i.status !== 'gefactureerd' || opHold(f, i.placement_id)) return false;
     const vv = plById[i.placement_id] && vervaldatum(i, plById[i.placement_id]);
     return vv && vv < t;
   }).length;
@@ -2768,6 +2802,7 @@ function tekenPlTabel(el, f){
 const ACTIE_GROEPEN = [
   {k:'nu',          lbl:'Nu factureren',              open:true,  rand:'olijf'},
   {k:'laat',        lbl:'Te laat betaald',            open:true,  rand:'rood'},
+  {k:'hold',        lbl:'On hold',                    open:false},
   {k:'wacht',       lbl:'Wacht op betaling',          open:false},
   {k:'komend',      lbl:'Komende 30 dagen',           open:false},
   {k:'later',       lbl:'Later',                      open:false},
@@ -2795,6 +2830,11 @@ function deelIn(f, t){
       continue;
     }
     if(i.status === 'vervallen'){ x.datum = i.geplande_datum; g.geannuleerd.push(x); continue; }
+    const hold = opHold(f, p.id);
+    if(hold && (i.status === 'te_factureren' || i.status === 'gefactureerd')){
+      x.hold = hold; x.datum = i.status === 'gefactureerd' ? vervaldatum(i, p) : i.geplande_datum;
+      g.hold.push(x); continue;
+    }
     if(i.status === 'gefactureerd'){
       if(!i.factuurdatum){ x.reden = 'datum'; g.nu.push(x); continue; }
       x.datum = vervaldatum(i, p);
@@ -2819,7 +2859,7 @@ function deelIn(f, t){
   const opDatum = (a,b) => String(a.datum||'').localeCompare(String(b.datum||''));
   g.nu.sort((a,b) => (a.datum ? 1 : 0) - (b.datum ? 1 : 0) || opDatum(a,b));
   g.laat.sort((a,b) => b.dagen - a.dagen);
-  g.wacht.sort(opDatum); g.komend.sort(opDatum); g.later.sort(opDatum);
+  g.wacht.sort(opDatum); g.komend.sort(opDatum); g.later.sort(opDatum); g.hold.sort(opDatum);
   g.afgerond.sort((a,b) => opDatum(b,a)); g.geannuleerd.sort((a,b) => opDatum(b,a));
   /* Rekencheck: elke termijn telt precies één keer. */
   const geteld = Object.values(g).reduce((s,a) => s + a.length, 0) + over.length + afgehandeld;
@@ -2857,6 +2897,7 @@ function actieLijst(el, f, herteken){
   };
 
   const status = x => {
+    if(x.hold) return chip('on hold · ' + x.hold.reden, 'amber');
     if(x.reden === 'concept') return chip('concept — fee bevestigen', '');
     if(x.reden === 'datum')   return chip('datum ontbreekt', '');
     if(x.i.status === 'gefactureerd') return x.dagen ? chip(x.dagen + ' d te laat', 'red') : `<span class="meta">vervalt</span>`;
@@ -2869,6 +2910,7 @@ function actieLijst(el, f, herteken){
     return `<span class="meta">geen factuur</span>`;
   };
   const knop = x => {
+    if(x.hold) return `<button class="btn ghost sm" data-ac="hervat">Hervatten</button>`;
     if(x.reden === 'concept') return `<button class="btn ghost sm" data-ac="paneel">Fee bevestigen</button>`;
     if(x.i.status === 'te_factureren') return `<button class="btn sm" data-ac="fact">Gefactureerd ✓</button>`;
     if(x.i.status === 'gefactureerd' && !x.i.factuurdatum) return `<button class="btn ghost sm" data-ac="paneel">Datum invullen</button>`;
@@ -2885,7 +2927,8 @@ function actieLijst(el, f, herteken){
         <button class="btn ghost sm" data-kies="${H(t)}">vandaag</button>
         <input type="date" class="fin-ac-datum" max="${H(t)}" value="">
         <span class="meta fin-ac-vv"></span>
-        <button class="btn ghost sm" data-kies="annuleer">Annuleren</button></td></tr>` : '';
+        <button class="btn ghost sm" data-kies="annuleer">Annuleren</button>
+        <span class="meta" style="margin-left:10px">of</span> <button class="btn ghost sm" data-kies="hold">bewust niet — on hold</button></td></tr>` : '';
     return `<tr class="fin-ac-rij${n ? ' gedimd' : ''}" data-iid="${H(x.i.id)}" data-pid="${H(x.p.id)}" data-groep="${groep}">
       <td class="num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="datum" title="Klik om de datum te wijzigen">${datumCel}</span>` : datumCel}</td>
       <td class="fin-ac-wie">${H(klantLabel(x.p.klant))} <span class="meta">· ${H(tekst(x.p.kandidaat))}</span></td>
@@ -2906,6 +2949,7 @@ function actieLijst(el, f, herteken){
     const vooruit = ['wacht','komend','later'].includes(gr.k);
     const sub = gr.k === 'nu' ? ` · t/m ${H(dKort(d.zondag))}`
       : gr.k === 'laat' ? ' · langst open bovenaan'
+      : gr.k === 'hold' ? ' · ' + H([...new Set(rijen.map(x => tekst(x.p.kandidaat) + ' (' + x.hold.reden + ')'))].join(', '))
       : (!open && eerst && vooruit) ? ` · eerstvolgende ${H(dKort(eerst.datum))}` : '';
     const kop = `<tr class="fin-ac-grp${gr.rand ? ' ' + gr.rand : ''}" data-grp="${gr.k}">
       <td colspan="4">${gr.open ? '' : (open ? '▾ ' : '▸ ')}<b>${H(gr.lbl)}</b><span class="meta">${sub}</span></td>
@@ -2925,7 +2969,7 @@ function actieLijst(el, f, herteken){
       ${!d.klopt || d.over.length ? `<div class="note err" style="margin-bottom:10px">${d.over.length} termijn${d.over.length === 1 ? '' : 'en'} niet in te delen
         (geen plaatsing of onbekende status) — controleer: ${H(d.over.map(i => (i.placement_id||'?') + ' t' + (i.termijn_nr||'?')).join(', '))}</div>` : ''}
       <div class="card"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl">
-        <colgroup><col style="width:74px"><col><col style="width:92px"><col style="width:96px"><col style="width:150px"><col style="width:140px"></colgroup>
+        <colgroup><col style="width:84px"><col><col style="width:100px"><col style="width:104px"><col style="width:200px"><col style="width:150px"></colgroup>
         <tbody>${blokken}</tbody></table></div></div>
     </div>`;
 
@@ -2969,6 +3013,7 @@ function actieLijst(el, f, herteken){
       e.stopPropagation();
       const a = b.dataset.ac;
       if(a === 'paneel') return plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
+      if(a === 'hervat') return finDoe(b, () => zetHold(f, x.p, null), `${tekst(x.p.kandidaat)} hervat`, () => opnieuw());
       if(a === 'paid') return afvinken(x, 'betaald', null, tr.dataset.groep, b);
       if(a === 'fact'){
         /* Gemist: de echte factuurdatum kiezen, niet stil "vandaag". */
@@ -3000,9 +3045,10 @@ function actieLijst(el, f, herteken){
       afvinken(x, 'gefactureerd', inp.value, keuze.previousElementSibling.dataset.groep, null);
     };
     keuze.querySelectorAll('[data-kies]').forEach(b => {
-      b.onmouseenter = () => b.dataset.kies !== 'annuleer' && toonVv(b.dataset.kies);
+      b.onmouseenter = () => !['annuleer','hold'].includes(b.dataset.kies) && toonVv(b.dataset.kies);
       b.onclick = () => {
         if(b.dataset.kies === 'annuleer'){ _gemistOpen = null; return opnieuw(); }
+        if(b.dataset.kies === 'hold'){ _gemistOpen = null; return vraagHold(f, x.p, opnieuw); }
         afvinken(x, 'gefactureerd', b.dataset.kies, keuze.previousElementSibling.dataset.groep, b);
       };
     });
@@ -3086,6 +3132,7 @@ document.addEventListener('visibilitychange', () => {
    Hetzelfde termijnschema, gegroepeerd per maand of per klant, met de
    afvinkknoppen per regel. De cijferbalk staat al boven in Plaatsingen. */
 function facturatieLijst(el, f, herteken){
+  el.classList.add('fin-pm');
 
   const btw = 1 + Sn(f,'btw_pct',0.21);
   const t = todayISO();
@@ -3120,13 +3167,14 @@ function facturatieLijst(el, f, herteken){
       const vv = vervaldatum(i, p);
       const late = (i.status==='gefactureerd' && vv && vv < t) ? daysBetween(vv, t) : 0;
       const missed = i.status==='te_factureren' && i.geplande_datum && i.geplande_datum < t;
-      const st = {
+      const hold = opHold(f, p.id) && (i.status === 'te_factureren' || i.status === 'gefactureerd');
+      const st = hold ? chip('on hold · ' + opHold(f, p.id).reden, 'amber') : {
         te_factureren: missed ? chip('GEMIST','red') : chip('te factureren','amber'),
         gefactureerd:  late ? chip(late + ' dgn te laat','red') : chip('wacht op betaling','blue'),
         betaald:       chip('betaald','green'),
         vervallen:     chip('vervallen','red')
       }[i.status] || chip(i.status || '—');
-      const knop = i.status==='te_factureren' ? `<button class="btn sm" data-fa="fact" data-iid="${H(i.id)}">Gefactureerd ✓</button>`
+      const knop = hold ? '' : i.status==='te_factureren' ? `<button class="btn sm" data-fa="fact" data-iid="${H(i.id)}">Gefactureerd ✓</button>`
                  : i.status==='gefactureerd'  ? `<button class="btn sm" data-fa="paid" data-iid="${H(i.id)}">Betaald ✓</button>` : '';
       return `<tr class="clickable" data-pid="${H(p.id)}"${i.status==='vervallen' ? ' style="opacity:.55"' : ''}>
         <td class="num">${i.geplande_datum ? H(dKort(i.geplande_datum)) : '—'}</td>

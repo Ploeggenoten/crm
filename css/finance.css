@@ -177,9 +177,9 @@ table.tbl tr.fin-meta-uit td:first-child{position:relative}
 @media (max-width:760px){ .fin-strip .v{font-size:17px} .fin-todo{flex-wrap:wrap} }
 
 /* ── Facturatie "Op actie" (27 okt 2026) ─────────────────────────────
-   Eén smalle tabel, groepen naar wat er moet gebeuren. Max ±1080px zodat
-   hij op een breed scherm niet uitrekt; de knop staat naast het bedrag. */
-.fin-ac{max-width:1080px}
+   Eén tabel, groepen naar wat er moet gebeuren. Schermbreed, maar alleen
+   de klant/kandidaat-kolom groeit mee: datum, bedrag, status en knop
+   hebben een vaste breedte en blijven dus bij elkaar staan. */
 .fin-ac-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
 .fin-ac-top .searchbox{flex:0 1 300px}
 .fin-ac-tbl{table-layout:fixed}
@@ -209,5 +209,15 @@ tr.fin-ac-keuze input[type=date]{width:150px;height:28px;font-size:12.5px;displa
 .fin-schema input[type=date]{width:auto}
 .fin-schema-vb{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12.5px;color:var(--txt-2)}
 .fin-schema-vb b{color:var(--ink)}
-.fin-smal{max-width:1080px}
 .fin-ac-tbl td:first-child{white-space:nowrap}
+
+/* Per maand: zelfde idee — vaste kolommen, alleen "Kandidaat" groeit. */
+.fin-pm .tbl{table-layout:fixed}
+.fin-pm .tbl th:nth-child(1), .fin-pm .tbl td:nth-child(1){width:84px;white-space:nowrap}
+.fin-pm .tbl th:nth-child(2), .fin-pm .tbl td:nth-child(2){width:100px}
+.fin-pm .tbl th:nth-child(4), .fin-pm .tbl td:nth-child(4),
+.fin-pm .tbl th:nth-child(5), .fin-pm .tbl td:nth-child(5){width:104px}
+.fin-pm .tbl th:nth-child(6), .fin-pm .tbl td:nth-child(6){width:96px}
+.fin-pm .tbl th:nth-child(7), .fin-pm .tbl td:nth-child(7){width:190px}
+.fin-pm .tbl th:nth-child(8), .fin-pm .tbl td:nth-child(8){width:150px}
+.fin-ac-tbl td .chip, .fin-pm .tbl td .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
