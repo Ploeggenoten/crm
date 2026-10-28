@@ -4439,6 +4439,31 @@ async function faseWissel(id, fase){
      venster ook te lezen als vastleggen ("Plaatsing van X bij Y vastleggen")
      en niet als verhuizen ("X → Contract getekend"). Zelfde poortwachters,
      andere vraag. */
+  /* ─── Alles wat Finance nodig heeft, bij het tekenen ──────────────
+     "Als we een plaatsing aanmaken, zet een AM dit allemaal in de
+     kandidatenkaart, zodat alles in de finance-tab goed gaat" — verplicht,
+     geen uitzondering (Tjeerd, 28 okt 2026). Dus in dít venster, niet
+     "later op de kaart": W&S de toeslagen die de fee-grondslag nodig heeft,
+     Flex uurloon, uren en wat de klant per uur betaalt. */
+  const WS_KOLOM = {vtPct:'vt_pct', toeslagPct:'toeslag_pct', ejuPct:'eju_pct', overigPct:'overig_pct'};
+  const wsMist = (() => {
+    if(!vraagStart || !CRM.fee) return [];
+    try{
+      const wsAfspraak = CRM.fee.voorKlant(c.klant, CRM.todayISO(), 'ws');
+      return (CRM.fee.watMist(Object.assign({}, c, {type:'W&S'}), wsAfspraak) || []).filter(x => WS_KOLOM[x.veld]);
+    }catch(e){ return []; }
+  })();
+  /* De omrekenfactor uit de afspraak Uitzenden, als die er is en klopt —
+     dan rekent het venster het factuurtarief alvast voor. */
+  const flexFactor = (() => {
+    if(!vraagStart || !CRM.fee) return null;
+    try{
+      const ua = CRM.fee.voorKlant(c.klant, CRM.todayISO(), 'uitzenden');
+      const pv = ua ? CRM.fee.pctVoor(c, ua) : null;
+      const x = pv && pv.pct != null ? Number(pv.pct) : null;
+      return (x >= 1.2 && x <= 4) ? x : null;
+    }catch(e){ return null; }
+  })();
   const kop = vraagKlant ? h(c.naam) + ' voorstellen'
     : vraagStart ? 'Plaatsing van ' + h(c.naam) + (c.klant ? ' bij ' + h(c.klant) : '') + ' vastleggen'
     : h(c.naam) + ' → ' + h(fase);
@@ -4463,11 +4488,25 @@ async function faseWissel(id, fase){
             <option value="W&S"${(c.type||'W&S')==='W&S'?' selected':''}>W&amp;S — werving en selectie, fee ineens</option>
             <option value="Flex"${c.type==='Flex'?' selected':''}>Flex — de opbrengst loopt via gewerkte uren</option>
           </select>
-          <div class="hint">Bepaalt of hier een fee bij hoort. Bij Flex rekent het systeem bewust geen fee — het maandloon
-            is dan niet van toepassing, dat vul je straks op de kandidaatkaart aan met uurloon en uren.</div></div>` : ''}
+          <div class="hint">Bepaalt of hier een fee bij hoort. Bij Flex rekent het systeem met uurloon, uren en wat de klant per uur betaalt.</div></div>` : ''}
       ${vraagLoon || vraagStart ? `<div class="f-row" id="fw_loonrij" style="${vraagStart && c.type==='Flex' ? 'display:none' : ''}">
           <label for="fw_loon">Bruto maandloon (€)</label>
           <input type="number" id="fw_loon" min="0" step="50" value="${c.maandloon?h(c.maandloon):''}"></div>` : ''}
+      ${vraagStart && wsMist.length ? `<div id="fw_wsrij" style="${c.type==='Flex' ? 'display:none' : ''}">
+          <div class="f-grid">${wsMist.map(x => `<div class="f-row"><label for="fw_${h(x.veld)}">${h(x.label)} (%)</label>
+            <input type="number" id="fw_${h(x.veld)}" min="0" step="0.1" value="${c[x.veld] != null ? h(c[x.veld]) : ''}"></div>`).join('')}</div>
+        </div>` : ''}
+      ${vraagStart ? `<div id="fw_flexrij" style="${c.type==='Flex' ? '' : 'display:none'}">
+          <div class="f-grid">
+            <div class="f-row"><label for="fw_uurloon">Bruto uurloon (€)</label>
+              <input type="number" id="fw_uurloon" min="0" step="0.01" value="${c.uurloon != null ? h(c.uurloon) : ''}"></div>
+            <div class="f-row"><label for="fw_uren">Uren per week</label>
+              <input type="number" id="fw_uren" min="1" max="60" step="1" value="${c.uren != null ? h(c.uren) : ''}"></div>
+            <div class="f-row"><label for="fw_tarief">Factuurtarief per uur (€)</label>
+              <input type="number" id="fw_tarief" min="0" step="0.01" value="${c.tarief != null ? h(c.tarief) : ''}">
+              <span class="hint" id="fw_factor">${flexFactor ? 'Afspraak met de klant: factor ' + String(flexFactor).replace('.', ',') : 'Wat de klant per uur betaalt (uurloon × factor).'}</span></div>
+          </div>
+        </div>` : ''}
       <div class="f-row"><label for="fw_actie">Volgende actie (optioneel)</label>
         <input type="text" id="fw_actie" value="${h(c.volgendeActie||'')}" placeholder="Bijv. bevestiging sturen"></div>
       <div class="note err" id="fw_err" style="display:none"></div>
@@ -4482,9 +4521,24 @@ async function faseWissel(id, fase){
          dan naar de kandidatenkaart doorverwezen worden"). */
       const typeSel = m.querySelector('#fw_type');
       const loonRij = m.querySelector('#fw_loonrij');
+      const wsRij = m.querySelector('#fw_wsrij'), flexRij = m.querySelector('#fw_flexrij');
       if(typeSel) typeSel.onchange = () => {
-        if(loonRij) loonRij.style.display = typeSel.value === 'Flex' ? 'none' : '';
+        const fl = typeSel.value === 'Flex';
+        if(loonRij) loonRij.style.display = fl ? 'none' : '';
+        if(wsRij) wsRij.style.display = fl ? 'none' : '';
+        if(flexRij) flexRij.style.display = fl ? '' : 'none';
       };
+      const ul = m.querySelector('#fw_uurloon'), tf = m.querySelector('#fw_tarief'), fh = m.querySelector('#fw_factor');
+      const factorTekst = () => {
+        if(!ul || !tf || !fh) return;
+        /* Kent het CRM de factor van de klant, dan het tarief alvast voorrekenen. */
+        if(flexFactor && +ul.value > 0 && !tf.dataset.zelf) tf.value = (Math.round(+ul.value * flexFactor * 100) / 100).toFixed(2);
+        const f = +ul.value > 0 && +tf.value > 0 ? +tf.value / +ul.value : null;
+        fh.textContent = f ? `= factor ${f.toFixed(2).replace('.', ',')}${f < 1.2 || f > 4 ? ' — dat kan niet, een factor ligt tussen 1,2 en 4' : ''}`
+          : (flexFactor ? 'Afspraak met de klant: factor ' + String(flexFactor).replace('.', ',') : 'Wat de klant per uur betaalt (uurloon × factor).');
+      };
+      if(ul) ul.addEventListener('input', factorTekst);
+      if(tf) tf.addEventListener('input', () => { tf.dataset.zelf = '1'; factorTekst(); });
       m.querySelector('#fw_ok').onclick = async () => {
         const err = m.querySelector('#fw_err');
         const zeg = t => { err.style.display=''; err.textContent = t; };
@@ -4522,6 +4576,22 @@ async function faseWissel(id, fase){
           if(!val('loon')) return zeg('Vul het bruto maandloon in — nodig voor ' + feeUitleg + '.');
           extra.maandloon = +val('loon');
         }
+        if(vraagStart && !isFlex){
+          for(const x of wsMist){
+            const v = val(x.veld);
+            if(v === '') return zeg(`Vul "${String(x.label).replace(/\s*\(vul 0 in.*\)$/, '')}" in — 0 als die er niet is.`);
+            extra[WS_KOLOM[x.veld]] = +v;
+          }
+        }
+        if(vraagStart && isFlex){
+          const ul2 = +val('uurloon'), ur2 = +val('uren'), tf2 = +val('tarief');
+          if(!(ul2 > 0)) return zeg('Vul het bruto uurloon in.');
+          if(!(ur2 > 0)) return zeg('Vul het aantal uren per week in.');
+          if(!(tf2 > 0)) return zeg('Vul het factuurtarief per uur in — wat de klant per uur betaalt.');
+          const fct = tf2 / ul2;
+          if(fct < 1.2 || fct > 4) return zeg(`Factuurtarief ÷ uurloon = factor ${fct.toFixed(2).replace('.', ',')}. Een factor ligt tussen 1,2 en 4 — controleer de bedragen.`);
+          extra.uurloon = ul2; extra.uren = ur2; extra.tarief = tf2;
+        }
         let doel = fase;
         if(fase === 'Contract getekend' && extra.start && extra.start <= CRM.todayISO()) doel = 'Gestart';
         CRM.modal.close();
@@ -4530,8 +4600,7 @@ async function faseWissel(id, fase){
            marge op rekent (uurloon, uren, tarief) staan nog niet ingevuld —
            dat kan alleen op de kandidaatkaart. Direct doorsturen scheelt
            zelf op zoek moeten naar waar dat veld staat. */
-        if(vraagStart && isFlex){
-          CRM.toast(`${c.naam} vastgelegd — vul nu uurloon en uren aan`, 'ok');
+        if(false){
           /* Niet meteen navigeren: CRM.modal.close() hierboven zette al een
              history.back() in gang (overlayStapEraf, js/core.js) om de
              geschiedenisstap van het venster op te ruimen. Die is async —
