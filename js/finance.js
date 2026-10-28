@@ -2662,26 +2662,79 @@ let _plSoort = 'alles', _inboxAlles = false;
 function binnenKaart(f, soort){
   const t = todayISO(), nu7 = t.slice(0,7);
   const mnd = [-3,-2,-1,0,1,2,3,4,5,6].map(i => String(addMonths(monthKey(t), i)).slice(0,7));
-  const kolom = soort === 'ws' ? ['W&S'] : soort === 'flex' ? ['Flex'] : ['W&S', 'Flex', 'Totaal'];
+  const fk = flexKasstroom(f);
+  /* Flex in drie stukken: al gefactureerd/binnen, verwacht van wie al werkt,
+     en wie getekend heeft maar nog niet startte. Die laatste telt NIET in het
+     totaal — daar is nog geen uur gewerkt (niet rijk rekenen). */
+  const kolom = soort === 'ws' ? ['W&S']
+    : soort === 'flex' ? ['Gefactureerd', 'Verwacht · werkt al', 'Nog niet gestart', 'Totaal flex']
+    : ['W&S', 'Flex', 'Nog niet gestart', 'Totaal'];
+  const bedrag = (x, extra) => x ? `<span class="num${extra || ''}">${eur(x)}</span>` : '<span class="meta">—</span>';
   const rij = mk7 => {
-    const b = binnenMaand(f, mk7), prog = mk7 > nu7, nu = mk7 === nu7;
-    const cel = (echt, verwacht) => {
-      const tot = echt + verwacht;
-      return `<td class="n"><span class="num${prog ? '' : ''}">${tot ? eur(tot) : '—'}</span>${
-        nu && verwacht ? `<div class="rowsub">waarvan ${eur(verwacht)} nog verwacht</div>` : ''}</td>`;
-    };
-    const ws = cel(b.wsEcht, b.wsVerwacht), fl = cel(b.flexEcht, b.flexVerwacht);
-    const tot = `<td class="n"><b class="num">${eur(b.totaal)}</b></td>`;
+    const b = binnenMaand(f, mk7), m = fk.maand(mk7), prog = mk7 > nu7, nu = mk7 === nu7;
+    const ws = b.wsEcht + b.wsVerwacht, flex = b.flexEcht + b.flexVerwacht;
+    const sub = (echt, verwacht) => nu && verwacht && echt ? `<div class="rowsub">${eur(echt)} al binnen</div>` : '';
+    const cellen = soort === 'ws'
+      ? `<td class="n">${bedrag(ws)}${sub(b.wsEcht, b.wsVerwacht)}</td>`
+      : soort === 'flex'
+      ? `<td class="n">${bedrag(m.binnen + m.gefactureerd)}${m.binnen && m.gefactureerd ? `<div class="rowsub">${eur(m.binnen)} al binnen</div>` : ''}</td>
+         <td class="n">${bedrag(m.verwacht)}</td>
+         <td class="n">${bedrag(m.nieuw, ' meta')}</td>
+         <td class="n"><b class="num">${eur(flex)}</b></td>`
+      : `<td class="n">${bedrag(ws)}${sub(b.wsEcht, b.wsVerwacht)}</td>
+         <td class="n">${bedrag(flex)}${sub(b.flexEcht, b.flexVerwacht)}</td>
+         <td class="n">${bedrag(m.nieuw, ' meta')}</td>
+         <td class="n"><b class="num">${eur(b.totaal)}</b>${m.nieuw ? `<div class="rowsub">${eur(b.totaal + m.nieuw)} als de nieuwe starten</div>` : ''}</td>`;
     return `<tr class="${prog ? 'fin-prog' : ''}${nu ? ' fin-nu' : ''}">
-      <td><b>${H(mkLabel(mk7 + '-01'))}</b> <span class="meta">${nu ? 'tot nu' : prog ? 'verwacht' : 'binnen'}</span></td>
-      ${soort === 'ws' ? ws : soort === 'flex' ? fl : ws + fl + tot}</tr>`;
+      <td><b>${H(mkLabel(mk7 + '-01'))}</b> <span class="meta">${nu ? 'deze maand' : prog ? 'verwacht' : 'binnen'}</span></td>${cellen}</tr>`;
   };
   const inn = nogTeInnen(f);
+  const r = fk.real;
+  const ritme = `Flex: elke margefactuur ±${fk.termijn} dagen na de factuurdatum (zondag van de werkweek); vooruit met ${pct0(r.pct)} van de contracturen${
+    r.voldoende ? ` (gemeten over ${r.weken} volle werkweken)` : ' (nog te weinig weken gemeten)'} en zonder feestdagen, tot de overname.`;
   return kaart('Wat komt er binnen per maand',
     tabel('<th>Maand</th>' + kolom.map(k => `<th class="n">${H(k)}</th>`).join(''),
       mnd.map(rij).join('')),
     {plat:true, acties: inn.n && soort !== 'flex' ? `<span class="meta">nog te innen (te laat): <b class="neg num">${eur(inn.bedrag)}</b></span>` : '',
-     voet:'Excl. btw. Binnen = echt ontvangen (W&S: betaalde termijnen; flex: uitbetaling Pronkert, een maand na het werk). Verwacht = wat er al ligt: W&S op de vervaldatum, flex van je huidige flexkrachten tot hun overname. Geen nieuwe plaatsingen, geen te late betalingen.'});
+     voet: (soort === 'flex' ? '' : 'Excl. btw. W&S: betaalde termijnen, vooruit op de vervaldatum; te laat betaald telt pas als het binnen is. ')
+       + ritme + ' "Nog niet gestart" = getekend, nog geen uur gewerkt — telt niet in het totaal.'});
+}
+
+/* ─── Kaart: per flexkracht per maand ───────────────────────────────
+   Iemand start → eerste factuur → eerste geld → wat er daarna elke
+   maand binnenkomt, tot de overname. Wie stopte staat erin zolang er nog
+   geld van hem onderweg is. */
+function flexKalenderKaart(f){
+  const t = todayISO(), nu7 = t.slice(0,7);
+  const fk = flexKasstroom(f);
+  const mnd = [0,1,2,3,4,5].map(i => String(addMonths(monthKey(t), i)).slice(0,7));
+  const komt = p => p.posten.filter(x => x.mk7 >= nu7 && x.soort !== 'binnen');
+  const rijen = fk.personen.filter(p => p.mist || komt(p).length)
+    .map(p => {
+      const toekomst = komt(p);
+      const eerste = toekomst.slice().sort((a,b) => a.datum.localeCompare(b.datum))[0];
+      const perMaand = mk7 => toekomst.filter(x => x.mk7 === mk7).reduce((s,x) => s + x.bedrag, 0);
+      const status = p.gestopt ? `gestopt ${dKort(p.gestopt)} · laatste dagen komen nog`
+        : p.nieuw ? `start ${dKort(p.start)}` : 'werkt';
+      const marge = p.margeUur ? `${eur2(p.margeUur)}/u ${p.echt ? 'factuur' : 'voorspeld'}` : '';
+      return {p, eerste, totaal: toekomst.reduce((s,x) => s + x.bedrag, 0), html: `<tr${p.mist ? ' class="fin-onvolledig"' : ''}>
+        <td><b>${H(p.naam)}</b><div class="rowsub">${H([klantLabel(p.klant), status, marge].filter(Boolean).join(' · '))}</div></td>
+        <td class="n">${p.mist ? '<span class="meta">mist gegevens</span>' : eerste ? `<span class="num">${H(dKort(eerste.datum))}</span>${
+          p.nieuw && eerste.week ? `<div class="rowsub">1e week ${H(dKort(eerste.week))}</div>` : ''}` : '—'}</td>
+        ${mnd.map(mk7 => { const v = perMaand(mk7); return `<td class="n">${v ? `<span class="num${p.nieuw ? ' meta' : ''}">${eur(v)}</span>` : '<span class="meta">—</span>'}</td>`; }).join('')}
+        <td class="n">${p.einde && !p.gestopt ? H(dKort(p.einde)) : '—'}</td></tr>`};
+    })
+    .sort((a,b) => (a.p.mist ? 1 : 0) - (b.p.mist ? 1 : 0) || (a.p.nieuw ? 1 : 0) - (b.p.nieuw ? 1 : 0) || b.totaal - a.totaal);
+  if(!rijen.length) return '';
+  const som = mk7 => { const m = fk.maand(mk7); return m.gefactureerd + m.verwacht; };
+  const somNieuw = mk7 => fk.maand(mk7).nieuw;
+  const voet = `<tr class="fin-scheiding"><td colspan="${mnd.length + 3}"></td></tr>
+    <tr><td><b>Totaal flex</b><div class="rowsub">wie al werkt</div></td><td></td>${mnd.map(mk7 => `<td class="n"><b class="num">${eur(som(mk7))}</b></td>`).join('')}<td></td></tr>
+    ${mnd.some(mk7 => somNieuw(mk7)) ? `<tr><td>+ nog niet gestart</td><td></td>${mnd.map(mk7 => `<td class="n"><span class="num meta">${somNieuw(mk7) ? eur(somNieuw(mk7)) : '—'}</span></td>`).join('')}<td></td></tr>` : ''}`;
+  return kaart('Flex per persoon — wanneer komt het geld binnen',
+    tabel(`<th>Flexkracht</th><th class="n">Eerste geld</th>${mnd.map(mk7 => `<th class="n">${H(mkLabel(mk7 + '-01'))}</th>`).join('')}<th class="n">Overname ±</th>`,
+      rijen.map(r => r.html).join('') + voet),
+    {plat:true, voet:`Per week: werkdagen zonder feestdagen × uren per week ÷ 5 × ${pct0(fk.real.pct)} (gemeten realisatie) × marge per uur. Factuur op de zondag van de werkweek, geld ±${fk.termijn} dagen later — de termijn staat onder ⚙. Al gefactureerd telt met het echte factuurbedrag. Na de overname rekenen we niets meer.`});
 }
 
 function tabPlaatsingen(el, f){
@@ -3358,7 +3411,10 @@ function tabFlex(el, f, compact){
   const dekt = kostenNu ? fx.maandRunRate / kostenNu : null;
   const perKracht = margePerFlexkracht(f);
   const tekortFlex = Math.max(0, kostenNu - fx.maandRunRate);
-  const pf = flexPortefeuille(f);
+  /* Overnamedatum uit de kasstroom (met gemeten realisatie en feestdagen),
+     zodat portefeuille en kalender dezelfde datum tonen. */
+  const kasEinde = new Map(flexKasstroom(f).personen.filter(p => p.einde).map(p => [p.naam, p.einde]));
+  const pf = flexPortefeuille(f).map(r => kasEinde.has(r.naam) ? {...r, einde: kasEinde.get(r.naam)} : r);
   const pfOk = pf.filter(r => r.compleet), pfMist = pf.filter(r => !r.compleet);
   const nogTe = pfOk.reduce((s2,r) => s2 + r.rest, 0);
   const laatsteEinde = pfOk.reduce((m2,r) => (r.einde || '') > m2 ? r.einde : m2, '');
@@ -3403,6 +3459,7 @@ function tabFlex(el, f, compact){
           ${r.mist.some(m => m.waar === 'kandidaat') && r.cid ? `<button class="btn ghost sm" data-naarkand="${H(r.cid)}">Kandidaatkaart</button>` : ''}
           ${r.mist.some(m => m.waar === 'klant') ? `<button class="btn ghost sm" data-naarklant="${H(r.klantId)}">Klantkaart</button>` : ''}</div>`).join(''),
         {plat:true, voet:'Zonder deze gegevens rekent het CRM niets — deze flexkrachten tellen niet mee in "nog te verdienen", de prognose of de getekende waarde. Uurloon en uren vul je op de kandidaatkaart (Contract & salaris), de klantfactor en overname-uren bij de klant onder Commerciële afspraken → Uitzenden, de CAO op de klantkaart.'}) : ''}
+      ${flexKalenderKaart(f)}
       ${kaart(`Flex-portefeuille · ${pf.length} flexkracht${pf.length === 1 ? '' : 'en'}`, pf.length
         ? tabel('<th>Flexkracht</th><th class="n">Marge/uur</th><th class="n">Gewerkt / overname</th><th class="n">Nog te verdienen</th><th class="n">Overname ±</th>',
             pf.map(r => `<tr${r.compleet ? '' : ' class="fin-onvolledig"'}><td><b>${H(r.naam)}</b><div class="rowsub">${H(klantLabel(r.klant))}${r.nieuw ? ' · net getekend' : ''}</div></td>
@@ -3417,7 +3474,7 @@ function tabFlex(el, f, compact){
         : CRM.ui.leeg('Geen lopende flexkrachten', 'Ze verschijnen vanzelf vanuit het bord (Contract getekend, type Flex).'),
         {plat: !!pf.length, voet:'Potentieel, niet binnen: marge per uur × de uren tot de kosteloze overname. "Voorspelling" = uurloon × (klantfactor − inkoopfactor), met de inkoop van een collega bij dezelfde klant. Zodra iemands eigen margefactuur binnen is staat er "factuur": dan geldt de werkelijke marge per uur, altijd. Na de overname rekenen we niets meer.'})}
       ${compact ? '' : kaart('Flex binnen naast je kosten', tabel('<th>Maand</th><th class="n">Uitbetaald door Pronkert</th><th class="n">Kosten bedrijf</th><th class="n">Flex dekt</th>', maandRijen),
-        {plat:true, voet:`Wat Pronkert in die maand uitbetaalt = de marge van het werk in de maand ervoor. Verdiend dit jaar (werkweken): ${eur(fx.ytd)}.`})}
+        {plat:true, voet:`Wat Pronkert in die maand uitbetaalt: elke margefactuur ±${flexKasstroom(f).termijn} dagen na de factuurdatum. Verdiend dit jaar (werkweken): ${eur(fx.ytd)}.`})}
       ${compact ? '' : perWeek()}
     </div>`;
 
@@ -3813,10 +3870,6 @@ function nmbrsMaanden(f){
   });
 }
 
-/* Flex-marge in een maand (uit de margefacturen van Pronkert). */
-const flexMaand = (f, mk7) => f.flexWeken.filter(w => String(w.week||'').slice(0,7) === mk7)
-  .reduce((s,w) => s + getal(w.bedrag), 0);
-
 /* Wat levert één flexkracht gemiddeld per maand op? Uit de lopende
    flexplaatsingen; zonder gegevens een voorzichtige €1.400. */
 function margePerFlexkracht(f){
@@ -4091,26 +4144,6 @@ function flexPortefeuille(f){
   return rijen.sort((a,b) => (a.compleet ? 0 : 1) - (b.compleet ? 0 : 1) || String(a.einde||'9999').localeCompare(String(b.einde||'9999')));
 }
 
-/* Flex-marge die de portefeuille in een maand oplevert: per persoon
-   uren × marge, tot de overname bereikt is. Wie er nu niet is, telt
-   niet mee — de prognose laat dus zien wanneer flex terugloopt. */
-function flexUitPortefeuille(f, mk7){
-  const t = todayISO(), H = 52/12;
-  let som = 0;
-  for(const r of flexPortefeuille(f)){
-    if(!r.margeUur) continue;                                   // geen marge bekend → niet meetellen
-    let rest = r.restUren != null ? r.restUren : Math.max(0, 1040 - r.gewerkt);   // onbekende overname: voorzichtig 1040 u
-    for(let i = 0; i < 24 && rest > 0; i++){
-      const m = String(addMonths(monthKey(t), i)).slice(0,7);
-      const deel = i === 0 ? Math.max(0, 1 - (+t.slice(8,10)) / 30) : 1;
-      const uren = Math.min(rest, r.urenPw * H * deel);
-      rest -= uren;
-      if(m === mk7){ som += uren * r.margeUur; break; }
-    }
-  }
-  return som;
-}
-
 /* Getekende waarde in een maand: W&S-fees (netto, na vervallen termijnen)
    + flex-waarde van wie die maand tekende. Wie stopte, telt mee met wat
    er werkelijk verdiend is. Board-kandidaten die nog niet in Finance zijn
@@ -4160,47 +4193,198 @@ function waardeKaart(f){
     {plat:true, voet:'Wat je in een maand tekent, ook als het geld later binnenkomt: W&S-fee + flex-marge tot de kosteloze overname (uurloon × (klantfactor − inkoopfactor) × overname-uren). Flexkrachten zonder volledige gegevens tellen niet mee — zie Flex. "Nodig" = je kosten in die maand.'});
 }
 
-/* ─── Gewerkt, nog niet gefactureerd ───────────────────────────────
-   Pronkert factureert een week na het werk en betaalt een maand later.
-   Wat er tussen de laatst gefactureerde week en vandaag gewerkt is — of
-   tot de stopdatum, voor wie gestopt is — komt dus nog binnen (Tjeerd,
-   27 okt 2026: "als er een kandidaat gestopt is, krijgen wij dat geld nu
-   nog"). Per persoon: werkdagen in die periode × uren per dag × de marge
-   per uur (eigen facturen, anders de voorspelling), in de maand van het
-   werk. Wie nog op geen enkele factuur staat telt vanaf zijn startdatum. */
-function flexOnderweg(f, werk7){
+/* ═══ FLEX-KASSTROOM: wanneer komt welk geld binnen ═══════════════
+   "Iemand start — wanneer komt er dan geld binnen, en hoeveel per maand?"
+   (Tjeerd, 28 okt 2026). Het ritme van Pronkert:
+     werkweek (ma–vr) → margefactuur gedateerd op de zondag van die week,
+     per mail een week later → uitbetaling ±30 dagen na de factuurdatum.
+   Werk uit de laatste week van oktober komt dus pas begin december binnen.
+   De termijn staat onder ⚙ (flex_betaaltermijn, standaard 30 dagen).
+
+   Per post (één factuur of één voorspelde week) één betaaldatum:
+   • binnen       — factuur, betaaldatum voorbij (volgens het ritme; de bank
+                    bevestigt het niet apart)
+   • gefactureerd — factuur, betaaldatum nog niet bereikt
+   • verwacht     — gewerkt of nog te werken, nog niet gefactureerd, door
+                    iemand die al begonnen is
+   • nieuw        — wie getekend heeft maar nog niet gestart is: apart, want
+                    daar is nog geen uur gewerkt
+   Vooruit rekent het met de GEMETEN realisatie (gewerkte ÷ contracturen
+   uit alle margefacturen: ziekte, vakantie) en de feestdagen eraf — niet
+   rijk rekenen. Tot de kosteloze overname; daarna niets meer.           */
+const FLEX_BETAAL_KEY = 'flex_betaaltermijn';
+const _feestCache = {};
+function feestdagen(j){
+  if(_feestCache[j]) return _feestCache[j];
+  /* Pasen (Meeus/Jones/Butcher) */
+  const a = j % 19, b = Math.floor(j / 100), c = j % 100, d = Math.floor(b / 4), e = b % 4,
+        g = Math.floor((8 * b + 13) / 25), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4,
+        l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 19 * l) / 433),
+        mnd = Math.floor((h + l - 7 * m + 90) / 25), dag = (h + l - 7 * m + 33 * mnd + 19) % 32;
+  const pasen = `${j}-${String(mnd).padStart(2,'0')}-${String(dag).padStart(2,'0')}`;
+  const koning = new Date(j + '-04-27T12:00:00').getDay() === 0 ? `${j}-04-26` : `${j}-04-27`;
+  const lijst = [`${j}-01-01`, addDays(pasen, 1), koning, addDays(pasen, 39), addDays(pasen, 50), `${j}-12-25`, `${j}-12-26`];
+  if(j % 5 === 0) lijst.push(`${j}-05-05`);                       // Bevrijdingsdag: in lustrumjaren vrij
+  return (_feestCache[j] = new Set(lijst));
+}
+const isFeestdag = d => feestdagen(+String(d).slice(0,4)).has(String(d).slice(0,10));
+const maandagVan = iso => { const d = new Date(String(iso).slice(0,10) + 'T12:00:00'); return addDays(iso, -((d.getDay() + 6) % 7)); };
+/* werkdagen (ma–vr, geen feestdag) van `van` t/m `tot` */
+function werkdagen(van, tot){
+  let n = 0;
+  for(let d = van; d && d <= tot; d = addDays(d, 1)){
+    const wd = new Date(d + 'T12:00:00').getDay();
+    if(wd >= 1 && wd <= 5 && !isFeestdag(d)) n++;
+  }
+  return n;
+}
+const flexWoorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split(/[^a-z0-9]+/).filter(w => w.length > 1);
+
+/* Contracturen per week van iemand op de margefactuur (op roepnaam). */
+function contractUren(f, pf, roep){
+  if(!roep) return null;
+  const r = pf.find(x => flexWoorden(x.naam).includes(roep));
+  if(r && r.urenPw) return r.urenPw;
+  const fp = f.flexPl.find(x => flexWoorden(x.kandidaat).includes(roep) && getalOfNull(x.uren_pw));
+  if(fp) return getalOfNull(fp.uren_pw);
+  const c = cands().find(x => isFlexType(x.type) && flexWoorden(x.naam).includes(roep) && getalOfNull(x.uren));
+  return c ? getalOfNull(c.uren) : null;
+}
+
+/* Iedereen die op een margefactuur staat: per persoon de gewerkte uren per
+   week en de eerste/laatste factuurweek. */
+function flexPersonen(f){
+  const per = new Map();
+  for(const r of f.flexRegels || []){
+    const wk = String(r.week||'').slice(0,10); if(!wk) continue;
+    const sl = flexSleutel(r);
+    const p = per.get(sl) || {sleutel: sl, naam: tekst(r.roepnaam,'') || tekst(r.naam,''), klant: tekst(r.klant,''),
+      roep: flexWoorden(r.roepnaam || r.naam)[0], weken: new Map(), eerste: wk, laatste: wk};
+    p.weken.set(wk, (p.weken.get(wk) || 0) + getal(r.uren));
+    if(wk < p.eerste) p.eerste = wk; if(wk > p.laatste) p.laatste = wk;
+    if(!p.klant && tekst(r.klant,'')) p.klant = tekst(r.klant,'');
+    per.set(sl, p);
+  }
+  return [...per.values()];
+}
+
+/* Gemeten realisatie: hoeveel van de contracturen er echt gewerkt wordt.
+   Alleen volle weken: niet de startweek, niet de stopweek, niet een week
+   met een feestdag (die gaan in de prognose apart van de dagen af). Een
+   week zonder factuurregel tussen de eerste en de laatste = 0 uur (vakantie,
+   ziek). Wie geen bekende contracturen heeft telt niet mee. Nooit boven 100%. */
+function flexRealisatie(f, pf, stopVan){
+  let uren = 0, contract = 0, n = 0;
+  for(const p of flexPersonen(f)){
+    const cu = contractUren(f, pf, p.roep);
+    if(!cu) continue;
+    const stop = stopVan(p.roep);
+    for(let wk = addDays(p.eerste, 7); wk <= p.laatste; wk = addDays(wk, 7)){
+      if(stop && addDays(wk, 4) >= stop) break;
+      if(werkdagen(wk, addDays(wk, 4)) < 5) continue;
+      uren += p.weken.get(wk) || 0; contract += cu; n++;
+    }
+  }
+  const gemeten = contract ? uren / contract : null;
+  return {pct: n >= 6 && gemeten ? Math.min(1, gemeten) : 1, gemeten, weken: n, voldoende: n >= 6};
+}
+
+const _kasCache = new WeakMap();
+function flexKasstroom(f){
   const t = todayISO();
-  const woorden = x => String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w => w.length > 1);
-  const stops = [...f.flexPl.filter(x => x.gestopt_op).map(x => ({n: woorden(x.kandidaat), d: x.gestopt_op})),
-                 ...cands().filter(c => c.gestopt_op).map(c => ({n: woorden(c.naam), d: String(c.gestopt_op).slice(0,10)}))];
-  const stopVan = naam => { const roep = woorden(naam)[0]; const s2 = stops.find(x => roep && x.n.includes(roep)); return s2 ? s2.d : null; };
-  /* werkdagen (ma–vr) van `van` t/m `tot` die in werkmaand werk7 vallen */
-  const dagenIn = (van, tot) => { let n = 0; for(let d = van; d <= tot; d = addDays(d, 1)){
-      if(String(d).slice(0,7) !== werk7) continue;
-      const wd = new Date(d + 'T12:00:00').getDay(); if(wd >= 1 && wd <= 5) n++; } return n; };
-  let som = 0;
-  const gedaan = new Set(), pf = flexPortefeuille(f);
-  /* 1. wie al op een factuur staat: vanaf de week na de laatste factuur */
-  for(const k of flexFactoren(f)){
-    if(!k.laatste || !k.margePerUur) continue;
-    const roep = woorden(k.naam)[0]; if(roep) gedaan.add(roep);
-    const stop = stopVan(k.naam);
-    const tot = stop && stop < t ? stop : t;
-    const van = addDays(k.laatste, 7);
-    if(van > tot) continue;
-    const pr = pf.find(r => woorden(r.naam).includes(roep));
-    const urenPerDag = ((pr && pr.urenPw) || 40) / 5;
-    som += dagenIn(van, tot) * urenPerDag * k.margePerUur;
+  const stempel = t + JSON.stringify([S(f, FLEX_BETAAL_KEY, null), overnameLijst(f), (f.flexPl||[]).length,
+    (f.flexRegels||[]).length, (f.flexAfspr||[]).length]);
+  const c0 = _kasCache.get(f);
+  if(c0 && c0.stempel === stempel) return c0.uit;
+
+  const T = Math.round(getal(S(f, FLEX_BETAAL_KEY, 30))) || 30;
+  const betaal = fd => addDays(fd, T);
+  const stops = [...f.flexPl.filter(x => x.gestopt_op).map(x => ({n: flexWoorden(x.kandidaat), d: String(x.gestopt_op).slice(0,10)})),
+                 ...cands().filter(c => c.gestopt_op).map(c => ({n: flexWoorden(c.naam), d: String(c.gestopt_op).slice(0,10)}))];
+  const stopVan = roep => { const s2 = roep && stops.find(x => x.n.includes(roep)); return s2 ? s2.d : null; };
+  const pf = flexPortefeuille(f);
+  const real = flexRealisatie(f, pf, stopVan);
+  const posten = [];
+  const personen = new Map();          // sleutel → persoonsregel voor de kalender
+  const persoon = (sleutel, basis) => { if(!personen.has(sleutel)) personen.set(sleutel, {sleutel, ...basis, posten: []}); return personen.get(sleutel); };
+  const boek = (p, post) => { posten.push(post); if(p) p.posten.push(post); };
+
+  /* 1. wat al gefactureerd is: per persoon per factuur één betaling */
+  const fac = new Map();
+  for(const r of f.flexRegels || []){
+    const wk = String(r.week||'').slice(0,10); if(!wk) continue;
+    const fd = String(r.factuurdatum || addDays(wk, 6)).slice(0,10);
+    const k = flexSleutel(r) + '|' + (r.factuur || wk);
+    const x = fac.get(k) || {sleutel: flexSleutel(r), naam: tekst(r.roepnaam,'') || tekst(r.naam,''), roep: flexWoorden(r.roepnaam || r.naam)[0],
+      klant: tekst(r.klant,''), factuur: r.factuur, fd, bedrag: 0};
+    x.bedrag += getal(r.marge); if(fd < x.fd) x.fd = fd;
+    fac.set(k, x);
   }
-  /* 2. wie nog op geen enkele factuur staat: vanaf de start (voorspelde marge) */
+  /* Een pf-regel hoort bij een factuurpersoon als zijn roepnaam in de CRM-naam staat. */
+  const pfVan = roep => roep ? pf.find(r => flexWoorden(r.naam).includes(roep)) : null;
+  for(const x of fac.values()){
+    const r = pfVan(x.roep), b = betaal(x.fd);
+    const p = persoon(r ? 'pf:' + r.naam : x.sleutel, {naam: r ? r.naam : x.naam, klant: r ? r.klant : x.klant, cid: r && r.cid});
+    boek(p, {datum: b, mk7: b.slice(0,7), bedrag: x.bedrag, soort: b <= t ? 'binnen' : 'gefactureerd', factuurdatum: x.fd, factuur: x.factuur});
+  }
+  /* oude weken die alleen als weektotaal bestaan (vóór de factuurregels) */
+  const metRegels = new Set((f.flexRegels||[]).map(r => String(r.week||'').slice(0,10)));
+  for(const w of f.flexWeken){
+    const wk = String(w.week||'').slice(0,10); if(!wk || metRegels.has(wk)) continue;
+    const b = betaal(addDays(wk, 6));
+    boek(null, {datum: b, mk7: b.slice(0,7), bedrag: getal(w.bedrag), soort: b <= t ? 'binnen' : 'gefactureerd', factuurdatum: addDays(wk, 6)});
+  }
+
+  /* 2. vooruit: per week de voorspelde marge, met de betaaldatum erbij */
+  const fp0 = flexPersonen(f);
+  const horizon = addMonths(t, 24);
+  const vooruit = (p, {roep, start, stop, margeUur, urenPw, rest, nieuw}) => {
+    const laatste = (fp0.find(x => x.roep && x.roep === roep) || {}).laatste;
+    let ma = laatste ? addDays(laatste, 7) : maandagVan(start);
+    for(let i = 0; i < 130 && rest > 0.01 && ma <= horizon; i++, ma = addDays(ma, 7)){
+      if(stop && ma > stop) break;
+      const van = start && start > ma ? start : ma;
+      const tot = stop && stop < addDays(ma, 4) ? stop : addDays(ma, 4);
+      const uren = Math.min(rest, werkdagen(van, tot) * urenPw / 5 * real.pct);
+      if(uren <= 0) continue;
+      rest -= uren;
+      let b = betaal(addDays(ma, 6)); if(b < t) b = t;    // te laat gefactureerd: komt nu
+      const soort = nieuw ? 'nieuw' : 'verwacht';
+      boek(p, {datum: b, mk7: b.slice(0,7), bedrag: uren * margeUur, uren, week: ma, soort});
+    }
+    return addDays(ma, -3);                                // ±vrijdag van de laatste week
+  };
+  const mist = [];
   for(const r of pf){
-    if(!r.margeUur || r.echt || !r.start) continue;
-    if(woorden(r.naam).some(w => gedaan.has(w))) continue;
-    const van = String(r.start).slice(0,10);
-    if(van > t) continue;
-    som += dagenIn(van, t) * (r.urenPw / 5) * r.margeUur;
+    const roep = flexWoorden(r.naam)[0];
+    const start = String(r.start || '').slice(0,10) || null;
+    const p = persoon('pf:' + r.naam, {naam: r.naam, klant: r.klant, cid: r.cid});
+    Object.assign(p, {margeUur: r.margeUur, echt: r.echt, urenPw: r.urenPw, start, overname: r.overname,
+      nieuw: !!(start && start > t), compleet: r.compleet});
+    if(!r.margeUur || !r.overname){ mist.push(r); p.mist = true; continue; }
+    if(!start && !(fp0.find(x => x.roep === roep))){ mist.push(r); p.mist = true; p.geenStart = true; continue; }
+    /* overname gaat over gewerkte uren; wat al gewerkt maar nog niet gefactureerd is telt mee in de loop */
+    p.einde = vooruit(p, {roep, start, stop: null, margeUur: r.margeUur, urenPw: r.urenPw, rest: r.restUren, nieuw: p.nieuw});
   }
-  return som;
+  /* wie gestopt is maar nog niet helemaal gefactureerd: de laatste dagen komen nog */
+  for(const x of fp0){
+    const stop = stopVan(x.roep);
+    if(!stop || addDays(x.laatste, 7) > stop) continue;
+    const k = flexFactoren(f).find(k2 => flexWoorden(k2.naam)[0] === x.roep);
+    if(!k || !k.margePerUur) continue;
+    const p = persoon(x.sleutel, {naam: x.naam, klant: x.klant});
+    p.gestopt = stop;
+    vooruit(p, {roep: x.roep, start: null, stop, margeUur: k.margePerUur, urenPw: contractUren(f, pf, x.roep) || 40, rest: 1e9, nieuw: false});
+  }
+
+  const uit = {posten, personen: [...personen.values()], real, termijn: T, mist,
+    maand: mk7 => {
+      const s = {binnen: 0, gefactureerd: 0, verwacht: 0, nieuw: 0};
+      posten.forEach(x => { if(x.mk7 === mk7) s[x.soort] += x.bedrag; });
+      return s;
+    }};
+  _kasCache.set(f, {stempel, uit});
+  return uit;
 }
 
 /* Wat komt er in een maand ECHT binnen — "we moeten onszelf niet rijk
@@ -4209,9 +4393,9 @@ function flexOnderweg(f, werk7){
      vooruit: de vervaldatum (gefactureerd) of geplande datum + betaaltermijn
      (nog te factureren). Te late betalingen tellen NIET mee in de
      prognose — die staan apart als "nog te innen".
-   • Flex: Pronkert betaalt de marge een maand later uit; wat in maand m
-     binnenkomt is de marge die in maand m−1 is verdiend. Vooruit: de
-     huidige flexkrachten tot hun overname, geen nieuwe.
+   • Flex: Pronkert betaalt elke margefactuur ±30 dagen na de factuurdatum
+     (zondag van de werkweek). Vooruit: de huidige flexkrachten tot hun
+     overname; wie getekend heeft maar nog niet startte staat apart.
    Alles excl. btw, zoals Nmbrs. Concepten en on hold tellen niet mee.  */
 function binnenMaand(f, mk7){
   const t = todayISO(), nu7 = t.slice(0,7);
@@ -4229,15 +4413,11 @@ function binnenMaand(f, mk7){
     else if(i.status === 'te_factureren' && i.geplande_datum){ const vv = addDays(i.geplande_datum, getal(p.betaaltermijn_dgn) || 14); if(vv >= t) op = vv; }
     if(op && op.slice(0,7) === mk7) wsVerwacht += bedragVan(i);
   }
-  const vorig7 = String(addMonths(mk7 + '-01', -1)).slice(0,7);
-  let flexEcht = 0, flexVerwacht = 0;
-  if(vorig7 < nu7) flexEcht = flexMaand(f, vorig7);                       // margefacturen van vorige maand
-  else if(vorig7 === nu7){ flexEcht = flexMaand(f, nu7); flexVerwacht = flexOnderweg(f, nu7) + flexUitPortefeuille(f, nu7); }
-  else flexVerwacht = flexUitPortefeuille(f, vorig7);
-  /* Lopende maand: wat al gefactureerd is telt als echt; werk van vorige
-     maand dat nog niet op een factuur stond komt er als verwacht bij. */
-  if(mk7 === nu7){ flexEcht = flexMaand(f, vorig7); flexVerwacht = flexOnderweg(f, vorig7); }
-  return {mk7, wsEcht, wsVerwacht, flexEcht, flexVerwacht,
+  /* Flex: per factuur ±30 dagen na de factuurdatum (zie flexKasstroom).
+     Wie nog niet gestart is staat apart (flexNieuw) en telt niet in het totaal. */
+  const fk = flexKasstroom(f).maand(mk7);
+  const flexEcht = fk.binnen, flexVerwacht = fk.gefactureerd + fk.verwacht, flexNieuw = fk.nieuw;
+  return {mk7, wsEcht, wsVerwacht, flexEcht, flexVerwacht, flexNieuw, flexGefactureerd: fk.gefactureerd,
           echt: wsEcht + flexEcht, verwacht: wsVerwacht + flexVerwacht, totaal: wsEcht + flexEcht + wsVerwacht + flexVerwacht};
 }
 
@@ -4279,7 +4459,7 @@ function maandKaart(f){
     return `<tr class="${prog ? 'fin-prog' : ''}${nu ? ' fin-nu' : ''}">
       <td><b>${H(mkLabel(mk7 + '-01'))}</b>${nu ? ' <span class="meta">tot nu</span>' : prog ? ' <span class="meta">verwacht</span>' : ''}</td>
       <td class="n num">${eur(ws)}</td>
-      <td class="n num">${eur(flex)}</td>
+      <td class="n num">${eur(flex)}${b.flexNieuw ? `<div class="rowsub">+ ${eur(b.flexNieuw)} nog niet gestart</div>` : ''}</td>
       <td class="n"><b class="num">${eur(b.totaal)}</b>${omzet != null ? `<div class="rowsub">omzet Nmbrs ${eur(omzet)}</div>` : ''}</td>
       <td class="n num">${eur(k.b)} <span class="meta">${k.bron === 'Nmbrs' ? '' : 'begroot'}</span></td>
       <td class="n">${nodig}</td></tr>`;
@@ -4291,7 +4471,7 @@ function maandKaart(f){
     + terug.map(rij).join('') + rij(nu7) + `<tr class="fin-scheiding"><td colspan="6"></td></tr>` + vooruit.map(rij).join(''));
   return kaart('Wat komt er echt binnen', body, {plat:true,
     acties:`${inn.n ? `<span class="meta">nog te innen (te laat): <b class="neg num">${eur(inn.bedrag)}</b> · </span>` : ''}<span class="meta">Nmbrs ${H(nmbrsStand(f))}</span> <button class="btn ghost sm" id="fin_nmbrs">↻ Nmbrs</button>`,
-    voet:`Excl. btw. Binnen W&S = betaalde termijnen (vooruit: op de vervaldatum). Binnen flex = uitbetaling Pronkert, een maand na het werk (vooruit: je huidige flexkrachten tot hun overname — geen nieuwe). Te late betalingen tellen niet mee tot ze binnen zijn. "Om kosten te dekken" rekent met je gemiddelde fee (${eur(fee)}) en ${eur(perKracht)} marge per flexkracht per maand.`});
+    voet:`Excl. btw. Binnen W&S = betaalde termijnen (vooruit: op de vervaldatum). Binnen flex = uitbetaling Pronkert, ±${flexKasstroom(f).termijn} dagen na elke margefactuur (vooruit: je huidige flexkrachten tot hun overname, met de gemeten realisatie; wie nog niet startte telt niet mee). Te late betalingen tellen niet mee tot ze binnen zijn. "Om kosten te dekken" rekent met je gemiddelde fee (${eur(fee)}) en ${eur(perKracht)} marge per flexkracht per maand.`});
 }
 
 /* ─── Kaart: kostenbewaking ───────────────────────────────────────── */
@@ -4537,7 +4717,9 @@ const INST_VELDEN = [
   ['stop_achterstand_mnd',  'Termijnen behouden na een stop (maanden)', 'int', 1,
     'Stopt een kandidaat, dan factureer je nog deze maanden na de stopdatum; de termijnen daarna vervallen.'],
   ['flex_inkoop_factor',    'Standaard inkoopfactor flex (Pronkert)',   'num', 1.8,
-    'Wat Pronkert per uur rekent (× uurloon) als een flex-afspraak geen eigen inkoopfactor heeft.']
+    'Wat Pronkert per uur rekent (× uurloon) als een flex-afspraak geen eigen inkoopfactor heeft.'],
+  ['flex_betaaltermijn',    'Pronkert betaalt na factuurdatum (dagen)', 'int', 30,
+    'Elke margefactuur wordt zoveel dagen na de factuurdatum (zondag van de werkweek) uitbetaald. Hiermee rekent "wat komt er binnen" voor flex.']
 ];
 function instellingenPaneel(f){
   const toon = (key, type, std) => {
