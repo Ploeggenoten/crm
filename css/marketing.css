@@ -265,3 +265,56 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
   .mkt-cp-kies{width:100%}
   .mkt-cp-kies select{flex:1 1 100%}
 }
+
+/* ── Bryans Prestatie-blokken (28 okt 2026): meters, video, agent-advies, spelregels ──
+   Drie kleuren met dezelfde grenzen als de agent: goed (olijf), twijfel (amber), slecht (rood). */
+.mkt-tbl td.m-goed{color:var(--olive);background:color-mix(in srgb,var(--olive) 12%,transparent);font-weight:700}
+.mkt-tbl td.m-matig{color:color-mix(in srgb,#c98a14 75%,#000);background:color-mix(in srgb,#c98a14 14%,transparent);font-weight:700}
+.mkt-tbl td.m-slecht{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent);font-weight:700}
+
+.mkt-rl{overflow-x:auto;margin-bottom:14px}
+.mkt-rl table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mkt-rl th,.mkt-rl td{padding:6px 10px;text-align:center;border-bottom:1px solid var(--line)}
+.mkt-rl thead th{background:var(--bg-2,#f6f7f2);vertical-align:top;font-weight:600}
+.mkt-rl thead th span{display:block;font-size:11px;font-weight:400;color:var(--txt-2)}
+.mkt-rl tbody th{text-align:left;white-space:nowrap}
+.mkt-rl tbody td{font-weight:700}
+.mkt-rl tr.m-goed>*{background:color-mix(in srgb,var(--olive) 12%,#fff);color:var(--olive)}
+.mkt-rl tr.m-matig>*{background:color-mix(in srgb,#c98a14 14%,#fff);color:color-mix(in srgb,#c98a14 75%,#000)}
+.mkt-rl tr.m-slecht>*{background:color-mix(in srgb,var(--red) 10%,#fff);color:var(--red);border-bottom:0}
+
+.mkt-vtbl tr.mkt-vcamp td{background:var(--ink);color:#fff;font-weight:700;letter-spacing:.02em;text-transform:uppercase;font-size:12px;padding:7px 12px}
+.mkt-vtbl tr.mkt-vset td{background:color-mix(in srgb,var(--olive) 9%,#fff)}
+.mkt-vtbl tr.mkt-vad td:first-child{padding-left:30px;position:relative}
+.mkt-vtbl tr.mkt-vad td:first-child::before{content:"";position:absolute;left:14px;top:0;bottom:50%;width:9px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2)}
+.mkt-vcurve{display:inline-flex;align-items:flex-end;gap:2px;height:24px}
+.mkt-vcurve i{width:7px;background:#6fa03c;border-radius:2px 2px 0 0}
+
+.mkt-ar-kort{font-size:14px;line-height:1.5;background:color-mix(in srgb,var(--olive) 8%,#fff);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.mkt-ar-camps{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;margin-bottom:12px}
+.mkt-ar-camp{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;font-size:12.5px;border:1px solid var(--line);border-radius:9px;padding:6px 9px}
+.mkt-ar-camp .meta{flex-basis:100%}
+.mkt-ar-lbl{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;border-radius:999px;padding:1px 8px;color:#fff;background:#8a917c}
+.mkt-ar-lbl.m-goed{background:var(--olive)}.mkt-ar-lbl.m-matig{background:#c98a14}.mkt-ar-lbl.m-slecht{background:var(--red)}
+.mkt-ar-groep{margin:12px 0}
+.mkt-ar-groep>.label{margin-bottom:6px}
+.mkt-ar-kaart{border:1px solid var(--line);border-left:5px solid #8a917c;border-radius:10px;padding:8px 11px;margin-bottom:7px;font-size:13px;line-height:1.45;display:flex;flex-direction:column;gap:3px}
+.mkt-ar-kaart.m-slecht{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,#fff)}
+.mkt-ar-kaart.m-matig{border-left-color:#c98a14;background:color-mix(in srgb,#c98a14 5%,#fff)}
+.mkt-ar-kaart.m-goed{border-left-color:var(--olive);background:color-mix(in srgb,var(--olive) 5%,#fff)}
+.mkt-ar-kk{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mkt-ar-doen{background:#fff;border:1px dashed var(--line-2);border-radius:7px;padding:4px 8px;margin:2px 0 4px}
+.mkt-ar-blok{border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-top:8px;font-size:13px}
+.mkt-ar-blok ul{margin:4px 0 0;padding-left:18px}
+.mkt-ar-blok.strat{background:color-mix(in srgb,var(--olive) 8%,#fff)}
+.mkt-ar-blok.vraag{background:color-mix(in srgb,#c98a14 8%,#fff)}
+.mkt-ar-blok textarea{width:100%;margin-top:6px}
+
+.mkt-sr>summary{cursor:pointer;list-style:none}
+.mkt-sr>summary::-webkit-details-marker{display:none}
+.mkt-sr>summary .h2::before{content:"▸ ";color:var(--txt-2)}
+.mkt-sr[open]>summary .h2::before{content:"▾ "}
+.mkt-sr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;font-size:12.5px}
+.mkt-sr-grid ul{margin:4px 0 12px;padding-left:18px}
+.mkt-sr-grid li{margin:3px 0}
+.mkt-sr-grid .tbl{font-size:12px;margin:4px 0}

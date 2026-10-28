@@ -70,6 +70,11 @@
     campagnes:[], campagnesFout:null,
     cpPer:'d7', cpVan:'', cpTot:'', cpAlleen:true, cpSort:{k:'besteed', dir:-1},
     cpCache:new Map(), syncBezig:false,
+    /* Bryans Prestatie-blokken (28 okt): videocijfers per advertentie of per
+       campagne, en het rapport van de Meta-campagne-agent (ad-guard v4).
+       rapporten = null zolang mkt_agent_rapport niet te lezen is. */
+    vidPer:'advertentie', cpVideo:true,
+    rapporten:null, arIdx:0, agentBezig:false,
     taakTekst:new Map(),            // advies → taaktekst, per render opnieuw gevuld
     badge:0, mount:null, actiesEl:null
   };
@@ -228,7 +233,7 @@
          herkent en wegschrijft — één getal per maand, leesbaar voor het hele
          team. De banktransacties zelf (fin_bank_tx en alle andere fin_-tabellen)
          raken we niet aan en mogen we ook niet lezen; die blijven bij Finance. */
-      const [a,b,c,d,e,f,g,k] = await Promise.all([
+      const [a,b,c,d,e,f,g,k,ar] = await Promise.all([
         veilig(CRM.sb.from('mkt_meta_stats').select('*').order('datum',{ascending:false}).limit(3000)),
         veilig(CRM.sb.from('mkt_ad_besluiten').select('*').order('created_at',{ascending:false})),
         veilig(CRM.sb.from('mkt_posts').select('*')),
@@ -243,7 +248,9 @@
         /* Status, budget en kant-en-klare periodecijfers per campagne, gevuld
            door meta-sync (migratie-campagnes.sql). Ontbreekt de tabel, dan
            telt het campagne-overzicht gewoon op uit de dagregels. */
-        veilig(CRM.sb.from('mkt_meta_campagnes').select('*'))
+        veilig(CRM.sb.from('mkt_meta_campagnes').select('*')),
+        /* Eén rij per run van ad-guard v4: het hele advies van de agent. */
+        veilig(CRM.sb.from('mkt_agent_rapport').select('*').order('created_at',{ascending:false}).limit(15))
       ]);
       M.meta = a.rows; M.metaFout = a.fout;
       M.besluiten = b.rows;
@@ -253,6 +260,7 @@
       M.betaald = f.rows; M.betaaldFout = f.fout;
       M.campKlant = g.rows;
       M.campagnes = k.rows; M.campagnesFout = k.fout;
+      M.rapporten = ar.fout ? null : ar.rows;
       M.cpCache = new Map();
       M.geladen = true;
       telBadge();
@@ -1152,6 +1160,17 @@
     const sync = root.querySelector('#mkt_sync'), herstel = root.querySelector('#mkt_herstel');
     if(sync) sync.onclick = () => metaSync();
     if(herstel) herstel.onclick = () => metaSync(90);
+    CRM.$$('[data-vidper]', root).forEach(b => b.onclick = () => { M.vidPer = b.dataset.vidper; teken(); });
+    const arKies = root.querySelector('#mkt_ar_kies');
+    if(arKies) arKies.onchange = () => { M.arIdx = Number(arKies.value); teken(); };
+    const arRun = root.querySelector('#mkt_ar_run');
+    if(arRun) arRun.onclick = runAgent;
+    const arOps = root.querySelector('#mkt_ar_opslaan');
+    if(arOps) arOps.onclick = () => arAntwoord(root.querySelector('#mkt_ar_antw').value.trim());
+    CRM.$$('[data-artaak]', root).forEach(b => b.onclick = () => {
+      const w = M.rapporten?.[M.arIdx]?.rapport?.waarschuwingen?.[Number(b.dataset.artaak)];
+      if(w){ b.disabled = true; adviesNaarTaak(arTaakTekst(w)); }
+    });
     CRM.$$('[data-uit]', root).forEach(r => r.onclick = () => {
       const k = r.dataset.uit;
       M.open.has(k) ? M.open.delete(k) : M.open.add(k);
@@ -1280,11 +1299,13 @@
     const k = van + '|' + tot;
     if(M.cpCache.has(k)) return;
     M.cpCache.set(k, 'laden');
-    let velden = 'datum,campagne,uitgegeven,impressies,kliks,link_kliks,leads';
+    const VIDEO = ',video_3s,video_p25,video_p50,video_p75,video_p95,thruplays,video_plays,video_tijd_sec';
+    let velden = 'datum,campagne,advertentieset,advertentie,uitgegeven,impressies,kliks,link_kliks,leads' + (M.cpVideo ? VIDEO : '');
     const rijen = [];
     for(let i = 0; i < 20000; i += 1000){
       const r = await veilig(CRM.sb.from('mkt_meta_stats').select(velden)
         .gte('datum', van).lte('datum', tot).order('datum').range(i, i + 999));
+      if(r.fout && velden.includes('video_3s')){ M.cpVideo = false; velden = velden.replace(VIDEO, ''); i -= 1000; continue; }
       if(r.fout && velden.includes('link_kliks')){ velden = velden.replace(',link_kliks', ''); i -= 1000; continue; }
       if(r.fout){ M.cpCache.set(k, {fout:r.fout}); if(M.tab === 'prestatie') teken(); return; }
       rijen.push(...r.rows);
@@ -1351,6 +1372,7 @@
     x.cpc = x.link_kliks ? x.besteed / x.link_kliks : null;
     x.cpl = x.resultaten ? x.besteed / x.resultaten : null;
     x.cpm = x.weergaven ? x.besteed / x.weergaven * 1000 : null;
+    x.doorzet = x.link_kliks ? x.resultaten / x.link_kliks : null;
     x.geenLink = x.weergaven > 0 && !x.link_kliks;
     return x;
   }
@@ -1372,6 +1394,32 @@
     const recent = M.meta.some(r => campNaam(r) === c.naam && (r.datum||'') >= isoT(1) && N(r.uitgegeven) > 0);
     return `<span class="mkt-cst ${recent ? 'aan' : 'uit'} afgeleid" title="Afgeleid uit de uitgaven van gisteren en vandaag — de echte status komt met de campagnetabel van meta-sync"><span class="dot"></span>${recent ? 'Gaf uit' : 'Geen uitgaven'}</span>`;
   }
+
+  /* ── Meters uit Bryans agent-instructie (§5) ──
+     Drie kleuren in plaats van goed/fout: goed, twijfel en slecht, met
+     dezelfde grenzen als de agent hanteert. `laag` = lager is beter. Onder
+     de 1.000 weergaven kleuren we niet: dan zegt een percentage nog niets. */
+  const METERS = {
+    cpl:       {laag:true,  goed:5,    matig:10,    t:'Kosten per resultaat: < € 5 goed · € 5–10 twijfel · > € 10 slecht'},
+    ctr:       {laag:false, goed:0.02, matig:0.015, t:'Link-CTR: > 2% goed · 1,5–2% twijfel · < 1,5% slecht'},
+    cpc:       {laag:true,  goed:0.8,  matig:1,     t:'Link-CPC: < € 0,80 goed · € 0,80–1 twijfel · > € 1 slecht'},
+    doorzet:   {laag:false, goed:0.17, matig:0.10,  t:'Doorzet (resultaten ÷ linkklikken): ≥ 17% goed · 10–17% twijfel · < 10% slecht', gelijk:true},
+    frequentie:{laag:true,  goed:2,    matig:2.5,   t:'Frequentie: < 2 goed · 2–2,5 twijfel · > 2,5 slecht'},
+    cpm:       {laag:true,  goed:15,   matig:18,    t:'CPM: € 11–15 normaal · € 15–18 hoog · > € 18 dure doelgroep'},
+    hookrate:  {laag:false, goed:0.22, matig:0.15,  t:'Hookrate (3-sec ÷ weergaven): > 22% goed · 15–22% twijfel · < 15% slecht'},
+    vasthoud:  {laag:false, goed:0.35, matig:0.28,  t:'Vasthoudrate (ThruPlays ÷ 3-sec): > 35% goed · 28–35% twijfel · < 28% slecht'}
+  };
+  function meterKl(k, v, weergaven){
+    const m = METERS[k];
+    if(!m || v == null || isNaN(v) || (weergaven != null && weergaven < KADER.minWeergaven)) return '';
+    const kl = m.laag ? (v < m.goed ? 'goed' : v <= m.matig ? 'matig' : 'slecht')
+                      : (v > m.goed || (m.gelijk && v >= m.goed) ? 'goed' : v >= m.matig ? 'matig' : 'slecht');
+    return `m-${kl}`;
+  }
+  const meterTd = (k, v, weergaven, inhoud) => {
+    const kl = meterKl(k, v, weergaven);
+    return `<td class="n num ${kl}"${kl ? ` title="${h(METERS[k].t)}"` : ''}>${inhoud}</td>`;
+  };
 
   function campagnesHtml(){
     if(!M.meta.length && !(M.campagnes||[]).length) return '';
@@ -1395,23 +1443,23 @@
 
     const leeg = '<span class="meta">—</span>';
     const eu = n => n == null ? leeg : CRM.euro(n, 2);
-    const genoeg = r => r.weergaven >= KADER.minWeergaven;
-    /* Goed = olijf, slecht = rood (.pos/.neg); te weinig data = geen kleur. */
-    const kader = (r, w, goed) => w == null || !genoeg(r) ? '' : (goed ? 'pos' : 'neg');
+    const pc = n => n == null ? leeg : CRM.pct(n * 100, 2);
+    const freq = n => n ? n.toLocaleString('nl-NL', {maximumFractionDigits:2}) : leeg;
     const cellen = r => `
         <td class="n num">${r.budget_dag ? `${CRM.euro(r.budget_dag)}<div class="rowsub">${r.budget_type === 'sets' ? 'per dag · sets' : 'per dag'}</div>`
           : r.budget_looptijd ? `${CRM.euro(r.budget_looptijd)}<div class="rowsub">looptijd</div>` : leeg}</td>
         <td class="n num">${CRM.euro(r.besteed, 2)}</td>
         <td class="n num">${fmtN(r.resultaten)}</td>
-        <td class="n num ${kader(r, r.cpl, r.cpl < KADER.cpl)}">${eu(r.cpl)}</td>
-        <td class="n num ${kader(r, r.ctr, r.ctr > KADER.ctr)}">${r.ctr == null ? leeg : CRM.pct(r.ctr * 100, 2)}</td>
-        <td class="n num ${kader(r, r.cpc, r.cpc < KADER.cpc)}">${eu(r.cpc)}</td>
-        <td class="n num">${eu(r.cpm)}</td>
+        ${meterTd('cpl', r.cpl, r.weergaven, eu(r.cpl))}
+        ${meterTd('ctr', r.ctr, r.weergaven, pc(r.ctr))}
+        ${meterTd('doorzet', r.doorzet, r.weergaven, pc(r.doorzet))}
+        ${meterTd('cpc', r.cpc, r.weergaven, eu(r.cpc))}
+        ${meterTd('cpm', r.cpm, r.weergaven, eu(r.cpm))}
         <td class="n num">${r.bereik == null ? leeg : fmtN(r.bereik)}</td>
-        <td class="n num">${r.frequentie ? r.frequentie.toLocaleString('nl-NL', {maximumFractionDigits:2}) : leeg}</td>`;
+        ${meterTd('frequentie', r.frequentie || null, r.weergaven, freq(r.frequentie))}`;
     const kop = (k, lbl, cls = 'n') =>
       `<th class="sortable ${cls}" data-cps="${k}">${h(lbl)}${s.k === k ? (s.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`;
-    const KOL = 11;
+    const KOL = 12;
 
     let body;
     if(D.laden) body = `<tr><td colspan="${KOL}" class="meta" style="text-align:center">Dagregels voor deze periode ophalen…</td></tr>`;
@@ -1447,7 +1495,7 @@
           <thead><tr>
             ${kop('label', 'Campagne', '')}<th>Status</th>
             ${kop('budget_dag', 'Budget')}${kop('besteed', 'Besteed')}${kop('resultaten', 'Resultaten')}
-            ${kop('cpl', 'Kosten per resultaat')}${kop('ctr', 'CTR (link)')}${kop('cpc', 'CPC (link)')}
+            ${kop('cpl', 'Kosten per resultaat')}${kop('ctr', 'CTR (link)')}${kop('doorzet', 'Doorzet')}${kop('cpc', 'CPC (link)')}
             ${kop('cpm', 'CPM')}${kop('bereik', 'Bereik')}${kop('frequentie', 'Frequentie')}
           </tr></thead>
           <tbody>${body}</tbody>
@@ -1456,10 +1504,11 @@
             <td class="n num">${budgetTot ? `${CRM.euro(budgetTot)}<div class="rowsub">per dag</div>` : ''}</td>
             <td class="n num">${CRM.euro(tot.besteed, 2)}</td>
             <td class="n num">${fmtN(tot.resultaten)}</td>
-            <td class="n num ${kader(tot, tot.cpl, tot.cpl < KADER.cpl)}">${eu(tot.cpl)}</td>
-            <td class="n num ${kader(tot, tot.ctr, tot.ctr > KADER.ctr)}">${tot.ctr == null ? leeg : CRM.pct(tot.ctr * 100, 2)}</td>
-            <td class="n num ${kader(tot, tot.cpc, tot.cpc < KADER.cpc)}">${eu(tot.cpc)}</td>
-            <td class="n num">${eu(tot.cpm)}</td><td></td><td></td>
+            ${meterTd('cpl', tot.cpl, tot.weergaven, eu(tot.cpl))}
+            ${meterTd('ctr', tot.ctr, tot.weergaven, pc(tot.ctr))}
+            ${meterTd('doorzet', tot.doorzet, tot.weergaven, pc(tot.doorzet))}
+            ${meterTd('cpc', tot.cpc, tot.weergaven, eu(tot.cpc))}
+            ${meterTd('cpm', tot.cpm, tot.weergaven, eu(tot.cpm))}<td></td><td></td>
           </tr></tfoot>` : ''}
         </table>
       </div>
@@ -1468,7 +1517,7 @@
           ${D.bron === 'meta' ? 'cijfers zoals Meta ze voor deze periode levert'
             : 'opgeteld uit de dagregels; bereik en frequentie zijn niet op te tellen'}${
           verborgen.length ? ` · ${verborgen.length} gepauzeerde campagne${verborgen.length === 1 ? '' : 's'} met uitgaven verborgen` : ''}.
-          Kleur volgens 2·1·5: link-CTR boven 2%, link-CPC onder € 1, kosten per resultaat onder € 5 — vanaf 1.000 weergaven.${
+          Groen, oranje en rood volgens de meters van de agent (zie Spelregels) — vanaf 1.000 weergaven. Doorzet = resultaten ÷ linkklikken.${
           geenLink ? ' Een streepje bij CTR/CPC: voor die regels zijn nog geen link-kliks bekend — herstel 90 dagen om ze aan te vullen.' : ''}${
           laatst ? ` Bijgewerkt ${h(CRM.geleden(laatst))}.` : ''}</span>
         <div class="row tight">
@@ -1715,14 +1764,254 @@
       ${voetnoot}</div>`;
   }
 
+  /* ═══ BRYANS PRESTATIE-BLOKKEN (28 okt 2026) ═══════════════════
+     Overgenomen uit het marketingbord: videocijfers, het advies van de
+     Meta-campagne-agent en de spelregels waarmee die agent oordeelt. De
+     grenzen staan één keer in METERS; de tabellen kleuren ermee. */
+
+  /* ── Video-prestaties: hoe lang blijven mensen kijken? ──
+     Zelfde periode en "Actief"-keuze als Lopende campagnes. De cijfers komen
+     uit de dagregels (meta-sync vult de videokolommen per advertentie). */
+  function videoRijen(van, tot){
+    if(cpGedekt(van)) return M.meta.filter(r => (r.datum||'') >= van && (r.datum||'') <= tot);
+    const c = M.cpCache.get(van + '|' + tot);
+    if(!c){ cpLaad(van, tot); return null; }
+    return Array.isArray(c) ? c : null;
+  }
+  const RICHTLIJN = {
+    hookrate:['Hookrate', '3-sec-weergaven ÷ weergaven — pakt de opening?', '> 22%', '15–22%', '< 15%'],
+    vasthoud:['Vasthoudrate', 'ThruPlays ÷ 3-sec — kijken ze door?', '> 35%', '28–35%', '< 28%'],
+    ctr:     ['CTR (link)', 'linkklikken ÷ weergaven', '> 2%', '1,5–2%', '< 1,5%'],
+    cpc:     ['CPC (link)', 'kosten per linkklik', '< € 0,80', '€ 0,80–1', '> € 1'],
+    cpl:     ['CPL', 'kosten per lead', '< € 5', '€ 5–10', '> € 10']
+  };
+  function richtlijnHtml(keys){
+    const rij = (kl, label, i) => `<tr class="m-${kl}"><th>${label}</th>${keys.map(k => `<td>${h(RICHTLIJN[k][i])}</td>`).join('')}</tr>`;
+    return `<div class="mkt-rl"><table>
+      <thead><tr><th></th>${keys.map(k => `<th><b>${h(RICHTLIJN[k][0])}</b><span>${h(RICHTLIJN[k][1])}</span></th>`).join('')}</tr></thead>
+      <tbody>${rij('goed','Goed',2)}${rij('matig','Twijfel',3)}${rij('slecht','Slecht',4)}</tbody></table></div>`;
+  }
+  function videoHtml(){
+    if(!M.meta.length) return '';
+    const [van, tot] = cpBereik();
+    const rijen = videoRijen(van, tot);
+    const heeftVideo = M.cpVideo && (rijen == null || !rijen.length || rijen.some(r => 'video_3s' in r));
+    const kaart = (body, f = '') => `<div class="card mkt-kaart">
+      <div class="card-h"><div class="h2">Video-prestaties</div>
+        <div class="seg" role="group" aria-label="Per advertentie of campagne">
+          <button data-vidper="advertentie" class="${M.vidPer === 'advertentie' ? 'on' : ''}">Per advertentie</button>
+          <button data-vidper="campagne" class="${M.vidPer === 'campagne' ? 'on' : ''}">Per campagne</button>
+        </div></div>${body}${f}</div>`;
+    if(!heeftVideo) return kaart(`<div class="card-b"><p class="sub" style="margin:0">De videocijfers verschijnen zodra
+      meta-sync met de videovelden live staat (migratie-video.sql is al gedraaid).</p></div>`);
+
+    /* Alleen campagnes die aanstaan, als "Actief" bij Lopende campagnes aan staat. */
+    const aanNu = M.cpAlleen && (M.campagnes||[]).length
+      ? new Set(M.campagnes.filter(c => c.aan === true || c.status === 'ACTIVE').map(c => String(c.naam||'').trim())) : null;
+    const leegV = () => ({imp:0, v3:0, p25:0, p50:0, p75:0, p95:0, tp:0, plays:0, sec:0, lk:0, leads:0});
+    const tel = (v, r) => { v.imp += N(r.impressies); v.v3 += N(r.video_3s); v.p25 += N(r.video_p25); v.p50 += N(r.video_p50);
+      v.p75 += N(r.video_p75); v.p95 += N(r.video_p95); v.tp += N(r.thruplays); v.plays += N(r.video_plays);
+      v.sec += N(r.video_tijd_sec); v.lk += N(r.link_kliks || r.kliks); v.leads += N(r.leads); };
+    const per = new Map();
+    (rijen||[]).filter(r => !aanNu || aanNu.has(campNaam(r))).forEach(r => {
+      const k = M.vidPer === 'campagne' ? campNaam(r) : `${campNaam(r)}|${r.advertentieset||''}|${r.advertentie||''}`;
+      if(!per.has(k)) per.set(k, {campagne:campNaam(r), set:r.advertentieset||'', ad:r.advertentie||'', ...leegV()});
+      tel(per.get(k), r);
+    });
+    const lijst = [...per.values()].filter(v => v.v3 > 0).sort((a,b) => b.v3 - a.v3);
+    const pc = n => CRM.pct(n * 100, 2);
+    const tijd = s => { s = Math.round(s); return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; };
+    /* Kijkcurve: van 3 sec naar 95% als balkjes — waar haken ze af? */
+    const curve = v => `<span class="mkt-vcurve" title="Van wie 3 sec keek: ${[['25%',v.p25],['50%',v.p50],['75%',v.p75],['95%',v.p95]]
+      .map(([t,n]) => `${t}: ${pc(n/v.v3)}`).join(' · ')}">${[v.v3,v.p25,v.p50,v.p75,v.p95]
+      .map(n => `<i style="height:${Math.max(2, Math.round(n/v.v3*22))}px"></i>`).join('')}</span>`;
+    const cellen = v => `
+        ${meterTd('hookrate', v.imp ? v.v3/v.imp : null, null, v.imp ? `<b>${pc(v.v3/v.imp)}</b>` : '—')}
+        <td class="n num">${fmtN(v.v3)}</td><td class="n num">${fmtN(v.p25)}</td><td class="n num">${fmtN(v.p50)}</td>
+        <td class="n num">${fmtN(v.p75)}</td><td class="n num">${fmtN(v.p95)}</td>
+        <td>${curve(v)}</td>
+        <td class="n num">${fmtN(v.tp)}</td>
+        ${meterTd('vasthoud', v.v3 ? v.tp/v.v3 : null, null, v.v3 ? pc(v.tp/v.v3) : '—')}
+        <td class="n num">${v.plays ? tijd(v.sec/v.plays) : '—'}</td>
+        ${meterTd('ctr', v.imp ? v.lk/v.imp : null, null, v.imp ? pc(v.lk/v.imp) : '—')}
+        <td class="n num"><b>${fmtN(v.leads)}</b></td>`;
+    const KOL = 13;
+    let body;
+    if(rijen == null) body = `<tr><td colspan="${KOL}" class="meta" style="text-align:center">Videocijfers ophalen…</td></tr>`;
+    else if(!lijst.length) body = `<tr><td colspan="${KOL}" class="meta" style="text-align:center">Geen videoweergaven in deze periode.</td></tr>`;
+    else if(M.vidPer === 'campagne') body = lijst.map(v => `<tr><td><b>${h(v.campagne)}</b></td>${cellen(v)}</tr>`).join('');
+    else {
+      /* Per advertentie: gegroepeerd onder campagne › advertentieset, met het
+         settotaal als kopregel. */
+      const sets = new Map();
+      lijst.forEach(v => {
+        const k = v.campagne + '|' + v.set;
+        if(!sets.has(k)) sets.set(k, {campagne:v.campagne, set:v.set, ads:[], ...leegV()});
+        const g = sets.get(k); g.ads.push(v);
+        Object.keys(leegV()).forEach(x => g[x] += v[x]);
+      });
+      const groepen = [...sets.values()].sort((a,b) => a.campagne.localeCompare(b.campagne, 'nl') || b.v3 - a.v3);
+      body = groepen.map((g, i) => `${i === 0 || groepen[i-1].campagne !== g.campagne
+          ? `<tr class="mkt-vcamp"><td colspan="${KOL}">${h(g.campagne)}</td></tr>` : ''}
+        <tr class="mkt-vset"><td><b>${h(g.set || '(geen set)')}</b> <span class="meta">· ${g.ads.length} video${g.ads.length > 1 ? "'s" : ''}</span></td>${cellen(g)}</tr>
+        ${g.ads.map(v => `<tr class="mkt-vad"><td>${h(v.ad)}</td>${cellen(v)}</tr>`).join('')}`).join('');
+    }
+    const bereik = van === tot ? CRM.fmtDateShort(van) : `${CRM.fmtDateShort(van)} t/m ${CRM.fmtDateShort(tot)}`;
+    return kaart(`
+      <div class="card-b" style="padding-bottom:0">${richtlijnHtml(['hookrate','vasthoud','ctr','cpc','cpl'])}</div>
+      <div class="tblwrap" style="border:none;border-radius:0">
+        <table class="tbl mkt-tbl mkt-cptbl mkt-vtbl">
+          <thead><tr><th>${M.vidPer === 'campagne' ? 'Campagne' : 'Advertentie'}</th>
+            <th class="n" title="3-sec-weergaven ÷ weergaven">Hookrate</th><th class="n">3 sec</th>
+            <th class="n">Tot 25%</th><th class="n">Tot 50%</th><th class="n">Tot 75%</th><th class="n">Tot 95%</th>
+            <th>Kijkcurve</th><th class="n">ThruPlays</th><th class="n" title="ThruPlays ÷ 3-sec-weergaven">Vasthoudrate</th>
+            <th class="n">Gem. kijktijd</th><th class="n">CTR (link)</th><th class="n">Resultaten</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`, `<div class="card-f"><span class="meta"><span class="num">${h(bereik)}</span> · periode kies je bij Lopende campagnes${
+        aanNu ? ' · alleen campagnes die aanstaan' : ''}. Kijkcurve: hoe vlakker, hoe beter. Valt hij vóór 25% hard weg, dan
+        verliest het midden de kijker; hookrate laag maar vasthoudrate goed → alleen de eerste 3 seconden vervangen.</span></div>`);
+  }
+
+  /* ── Advies van de agent (ad-guard v4) ──
+     Eén rapport per run: kort oordeel, oordeel per campagne, waarschuwingen
+     per niveau, strategisch punt en een vraag die je hier beantwoordt — de
+     agent leest het antwoord bij de volgende run. */
+  const AR_NIVEAU = {actie_vandaag:['Actie vandaag','slecht'], let_op:['Let op','matig'], goed:['Goed','goed'], te_vroeg:['Te vroeg','grijs']};
+  const AR_OORDEEL = {Opschalen:'goed', Houden:'goed', Monitoren:'matig', Pauzeren:'matig', Stoppen:'slecht', 'Te vroeg':'grijs'};
+  const arTaakTekst = w => `Meta · ${w.advertentie || w.advertentieset || w.campagne}: ${w.actie}`.slice(0, 200);
+  function agentRapportHtml(){
+    const R = M.rapporten;
+    if(R === null) return '';
+    const datum = r => new Date(r.created_at).toLocaleString('nl-NL', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    const kop = `<div class="card-h"><div class="h2">Advies van de agent</div>
+      <div class="row tight">
+        ${R.length > 1 ? `<select id="mkt_ar_kies" aria-label="Kies een run">${R.map((r,i) =>
+          `<option value="${i}"${i === M.arIdx ? ' selected' : ''}>${h(datum(r))}${i === 0 ? ' (nieuwste)' : ''}</option>`).join('')}</select>` : ''}
+        <button class="btn ghost sm" id="mkt_ar_run"${M.agentBezig ? ' disabled' : ''}>${M.agentBezig ? 'Agent rekent… (2–4 min)' : 'Nieuw advies maken'}</button>
+      </div></div>`;
+    if(!R.length) return `<div class="card mkt-kaart">${kop}<div class="card-b"><p class="sub" style="margin:0">Nog geen advies.
+      De agent maakt elke ochtend om 08:00 een nieuw advies, of klik op Nieuw advies maken (duurt 2 à 4 minuten).</p></div></div>`;
+    const rij = R[Math.min(M.arIdx, R.length - 1)], a = rij.rapport || {};
+    if(a.fout) return `<div class="card mkt-kaart">${kop}<div class="card-b"><div class="note err" style="margin:0">Deze run is mislukt: ${h(a.fout)}</div></div></div>`;
+    const waar = w => [w.campagne, w.advertentieset, w.advertentie].filter(Boolean).map(h).join(' › ');
+    const label = (o) => `<span class="mkt-ar-lbl m-${AR_OORDEEL[o] || 'grijs'}">${h(o || '—')}</span>`;
+    const kaart = (w, i) => `<div class="mkt-ar-kaart m-${(AR_NIVEAU[w.niveau]||[])[1] || 'grijs'}">
+        <div class="mkt-ar-kk">${label(w.oordeel)}<b>${waar(w)}</b></div>
+        <div><b>Reden:</b> ${h(w.reden || '')}</div>
+        <div><b>Diagnose:</b> ${h(w.diagnose || '')}</div>
+        <div class="mkt-ar-doen"><b>Doen:</b> ${h(w.actie || '')}</div>
+        <div>${staatAlsTaak(arTaakTekst(w)) ? '<span class="meta">✓ staat in Mijn week</span>'
+          : `<button class="btn ghost sm" data-artaak="${i}">Als taak</button>`}</div>
+      </div>`;
+    const ws = (a.waarschuwingen || []).map((w, i) => [w, i]);
+    const groepen = Object.keys(AR_NIVEAU).map(n => {
+      const g = ws.filter(([w]) => w.niveau === n);
+      return g.length ? `<div class="mkt-ar-groep"><div class="label">${h(AR_NIVEAU[n][0])} <span class="num">(${g.length})</span></div>
+        ${g.map(([w, i]) => kaart(w, i)).join('')}</div>` : '';
+    }).join('');
+    return `<div class="card mkt-kaart mkt-ar">${kop}<div class="card-b">
+      ${a.kort_oordeel ? `<div class="mkt-ar-kort">${h(a.kort_oordeel)}</div>` : ''}
+      ${(a.campagnes || []).length ? `<div class="mkt-ar-camps">${a.campagnes.map(c => `<div class="mkt-ar-camp">${label(c.oordeel)}<b>${h(c.campagne)}</b>
+        ${c.toelichting ? `<span class="meta">${h(c.toelichting)}</span>` : ''}</div>`).join('')}</div>` : ''}
+      ${groepen}
+      ${a.strategisch_punt ? `<div class="mkt-ar-blok strat"><b>Strategisch punt van de week</b><div>${h(a.strategisch_punt)}</div></div>` : ''}
+      ${(rij.uitgevoerd || []).length ? `<div class="mkt-ar-blok"><b>Automatisch uitgevoerd</b><ul>${rij.uitgevoerd.map(x => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}
+      ${(a.niet_beoordeeld || []).length ? `<div class="mkt-ar-blok meta"><b>Niet kunnen beoordelen</b><ul>${a.niet_beoordeeld.map(x => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}
+      ${a.vraag ? `<div class="mkt-ar-blok vraag"><b>Vraag van de agent</b><div>${h(a.vraag)}</div>
+        <textarea id="mkt_ar_antw" rows="3" placeholder="Jouw antwoord, bijv. nabelcijfers: 'Staalduinen: 12 nagebeld, 4 geschikt (2 geen vervoer, …)'">${h(rij.antwoord || '')}</textarea>
+        <div class="row tight" style="margin-top:6px"><button class="btn ghost sm" id="mkt_ar_opslaan">Antwoord opslaan</button>
+          <span class="meta">${rij.antwoord_op ? `✓ opgeslagen ${h(CRM.geleden(rij.antwoord_op))}${rij.antwoord_door ? ` door ${h(rij.antwoord_door)}` : ''} — de agent neemt dit mee bij de volgende run`
+            : 'De agent leest je antwoord bij de volgende run.'}</span></div></div>` : ''}
+    </div></div>`;
+  }
+  /* ad-guard antwoordt meteen (202) en rekent op de achtergrond door; het
+     rapport verschijnt als nieuwe rij in mkt_agent_rapport. We kijken elke
+     tien seconden, maximaal acht minuten. */
+  async function runAgent(){
+    if(CRM.demo){ CRM.toast('In demo-modus wordt de agent niet aangeroepen'); return; }
+    if(M.agentBezig) return;
+    M.agentBezig = true; teken();
+    CRM.toast('De agent leest de cijfers — dat duurt 2 à 4 minuten, je kunt gewoon doorwerken');
+    const start = new Date(Date.now() - 5000).toISOString();
+    try{
+      const {data, error} = await CRM.sb.functions.invoke('ad-guard?force=1');
+      if(error || data?.error){ CRM.toast('Agent-run mislukt: ' + (data?.error || error?.message || 'onbekende fout'), 'err'); }
+      else {
+        for(let i = 0; i < 48; i++){
+          await new Promise(r => setTimeout(r, 10000));
+          const r = await veilig(CRM.sb.from('mkt_agent_rapport').select('*').gt('created_at', start).limit(1));
+          if(!r.rows.length) continue;
+          M.bezig = null; M.geladen = false; await laad(); M.arIdx = 0;
+          const a = r.rows[0].rapport || {};
+          CRM.toast(a.fout ? 'Agent-run mislukt: ' + a.fout : `Nieuw advies: ${(a.waarschuwingen||[]).length} punten`, a.fout ? 'err' : 'ok');
+          M.agentBezig = false; teken(); return;
+        }
+        CRM.toast('Na 8 minuten nog geen advies — probeer het later opnieuw', 'err');
+      }
+    }catch(e){ CRM.fout('Agent niet bereikbaar', e); }
+    M.agentBezig = false; teken();
+  }
+  async function arAntwoord(antwoord){
+    const rij = M.rapporten?.[M.arIdx]; if(!rij) return;
+    const upd = {antwoord, antwoord_op:new Date().toISOString(), antwoord_door:CRM.me()};
+    if(!CRM.demo){
+      const {error} = await CRM.sb.from('mkt_agent_rapport').update(upd).eq('id', rij.id);
+      if(error) return CRM.fout('Antwoord opslaan mislukt', error);
+    }
+    Object.assign(rij, upd);
+    CRM.toast('Antwoord opgeslagen — de agent neemt het mee bij de volgende run', 'ok');
+    teken();
+  }
+
+  /* ── Spelregels van de agent: uitklapbaar, zodat iedereen ziet waarop hij oordeelt ── */
+  function spelregelsHtml(){
+    return `<details class="card mkt-kaart mkt-sr"><summary class="card-h"><div class="h2">Spelregels van de agent</div>
+      <span class="meta">meters, beslisregels en diagnoses</span></summary>
+      <div class="card-b mkt-sr-grid">
+        <div><div class="label">Meters</div>
+          <table class="tbl"><thead><tr><th>Meter</th><th>Goed</th><th>Twijfel</th><th>Slecht</th></tr></thead><tbody>
+          <tr><td>CPL</td><td>&lt; € 5</td><td>€ 5–10</td><td>&gt; € 10</td></tr>
+          <tr><td>Link-CTR</td><td>&gt; 2%</td><td>1,5–2%</td><td>&lt; 1,5%</td></tr>
+          <tr><td>Link-CPC</td><td>&lt; € 0,80</td><td>€ 0,80–1</td><td>&gt; € 1</td></tr>
+          <tr><td>Doorzet</td><td>≥ 17%</td><td>10–17%</td><td>&lt; 10%</td></tr>
+          <tr><td>Frequentie</td><td>&lt; 2</td><td>2–2,5</td><td>&gt; 2,5</td></tr>
+          <tr><td>Hookrate</td><td>&gt; 22%</td><td>15–22%</td><td>&lt; 15%</td></tr>
+          <tr><td>Vasthoudrate</td><td>&gt; 35%</td><td>28–35%</td><td>&lt; 28%</td></tr>
+          <tr><td>CPM</td><td>€ 11–15</td><td>€ 15–18</td><td>&gt; € 18</td></tr></tbody></table>
+          <p class="meta">Doorzet = leads ÷ linkklikken · Hookrate = 3-sec ÷ weergaven · Vasthoudrate = ThruPlays ÷ 3-sec.
+          Zodra er nabelcijfers zijn, is <b>kosten per geschikte lead</b> de belangrijkste meter.</p></div>
+        <div><div class="label">Eerst genoeg data</div><ul>
+          <li>Klik/hook: € 15 besteed én 1.000 weergaven</li><li>CPL/doorzet: 3 dagen live én 10 leads</li>
+          <li>Winnaar: 3–4 dagen, 10–15 leads per advertentie én significant verschil (z-toets, |z| ≥ 1,96)</li>
+          <li>Trend: minimaal 5 dagen · dag 1 is geen conclusie</li></ul>
+          <div class="label">Beslisregels</div><ul>
+          <li><b>Stoppen</b> (advertentie): CTR &lt; 1,5% of CPC &gt; € 1 <i>én</i> CPL &gt; € 10 (of 0 leads na € 20). Dure klik maar CPL ≤ € 10 → Houden.</li>
+          <li><b>Pauzeren</b> (set/campagne): budget naar € 8–10, niet uitzetten. Meer dan 7 dagen uit = opnieuw leerfase.</li>
+          <li><b>Opschalen</b>: CPL &lt; € 5 en doorzet ≥ 17% over 3–4 dagen en 10–15 leads, <i>én</i> nabelcijfers tonen geschikte leads → extra set van € 30 of nieuw concept; niet één set ophogen (max 20% per stap, eens per 2–3 dagen). Boven € 30–35 per set daalt de leadkwaliteit.</li></ul></div>
+        <div><div class="label">Diagnoses</div><ul>
+          <li>CTR laag, frequentie &lt; 2 → opening pakt niet → nieuwe hook</li>
+          <li>Hookrate goed, CTR laag → midden/einde video herzien</li>
+          <li>Hookrate laag, vasthoudrate goed → alleen eerste 3 sec vervangen</li>
+          <li>CTR ≥ 25% onder startwaarde + frequentie &gt; 2,5 → beeld versleten → nieuw concept</li>
+          <li>CTR daalt + CPM ≥ 20% hoger + frequentie &gt; 2 → doelgroep raakt op</li>
+          <li>CTR goed, doorzet &lt; 10% → video/tekst/formulier sluiten niet aan (functietitel exact gelijk?)</li>
+          <li>CPM &gt; € 18 → dure doelgroep: beoordelen op CPL, niet op klik</li>
+          <li>Bestedingsgraad &lt; 60% → budget gaat niet op: nieuw concept of grotere straal</li></ul></div>
+      </div></details>`;
+  }
+
   function prestatieHtml(adv, verborgenAdv){
-    if(!M.meta.length) return campagnesHtml() + (M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : leegMeta());
+    if(!M.meta.length) return campagnesHtml() + agentRapportHtml() + (M.metaFout ? foutBlok('De Meta-cijfers', M.metaFout) : leegMeta());
     const rows = zichtbareRijen();
     const s = stat(rows);
     const laatst = M.meta[0]?.synced_at ? CRM.fmtDate(M.meta[0].synced_at) : '';
     const leeg = !rows.length;
     return `
       ${campagnesHtml()}
+      ${videoHtml()}
+      ${agentRapportHtml()}
+      ${spelregelsHtml()}
       ${filterBalkHtml()}
       ${leeg ? `<div class="card mkt-kaart"><div class="card-b">${CRM.ui.leeg(
           'Geen advertentiecijfers in deze selectie',
@@ -3051,6 +3340,17 @@
       {c:'Good Life Foods',               s:'Operator',            a:'Testimonial — Marek, operator',       sp:7,   cpc:0.34, ctr:0.007, lr:0.035},
       {c:'Regio Zuid-Holland — algemeen', s:'Technische dienst',   a:'Doorgroeien naar TD-monteur',         sp:11,  cpc:0.36, ctr:0.014, lr:0.030, rl:0.25}
     ];
+    /* Drie video-advertenties met een eigen kijkprofiel: één met een sterke
+       opening, één die vasthoudt en één die meteen wegklikt. */
+    const VIDEO = {'Video van de werkvloer':[0.27,0.42], 'Testimonial — Marek, operator':[0.13,0.38], 'Doorgroeien naar TD-monteur':[0.19,0.24]};
+    const demoVideo = (x, imp) => {
+      const v = VIDEO[x.a]; if(!v) return {};
+      const v3 = Math.round(imp * v[0] * (0.9 + 0.2*rnd())), plays = Math.round(v3 * 1.6);
+      const p25 = Math.round(v3 * (0.45 + v[1]*0.6)), p50 = Math.round(p25 * (0.55 + v[1]*0.5));
+      const p75 = Math.round(p50 * 0.7), p95 = Math.round(p75 * 0.6);
+      return {video_3s:v3, video_p25:p25, video_p50:p50, video_p75:p75, video_p95:p95,
+        thruplays:Math.round(v3 * v[1]), video_plays:plays, video_tijd_sec:plays * (4 + v[1]*14)};
+    };
     const rijen = [];
     /* Vier maanden historie: zonder meerdere maanden valt er niets te
        vergelijken en zou het Rendement-tabblad één cohort tonen. */
@@ -3076,6 +3376,7 @@
              zeven weken terug ontbreken ze, zoals in productie vóór de
              link_kliks-migratie — dan zie je hoe het overzicht dat toont. */
           link_kliks: d > 50 ? 0 : Math.round(kliks * (0.8 + 0.25*rnd())),
+          ...demoVideo(x, imp),
           synced_at:new Date(Date.now()-3*3600e3).toISOString()});
       });
     }
@@ -3114,6 +3415,24 @@
       });
       return {...c, aan:c.status !== 'PAUSED', budget_looptijd:null, cijfers, synced_at:gesynct};
     });
+    /* Eén rapport van de Meta-campagne-agent, zoals ad-guard v4 het schrijft. */
+    M.rapporten = [{id:'ar1', created_at:new Date(Date.now()-2*3600e3).toISOString(), uitgevoerd:[], antwoord:'', antwoord_op:null,
+      rapport:{
+        kort_oordeel:'Starcuisine draagt het account: video van de werkvloer levert leads onder € 5. Good Life Foods verliest geld op een testimonial die niemand vasthoudt.',
+        campagnes:[
+          {campagne:'Starcuisine — Bodegraven', oordeel:'Houden', toelichting:'CPL € 3,90, doorzet 21% — wacht op nabelcijfers vóór opschalen.'},
+          {campagne:'Good Life Foods', oordeel:'Stoppen', toelichting:'CTR 0,7% en CPL boven € 10 na ruim € 20.'},
+          {campagne:'Proponent — Rotterdam', oordeel:'Monitoren', toelichting:'Leads drogen op sinds deze week.'}],
+        waarschuwingen:[
+          {niveau:'actie_vandaag', oordeel:'Stoppen', campagne:'Good Life Foods', advertentieset:'Operator', advertentie:'Testimonial — Marek, operator',
+           reden:'Link-CTR 0,7% en CPL € 12,40 na € 49 besteed.', diagnose:'Hookrate 13%: de opening pakt niet.', actie:'Advertentie pauzeren en een nieuwe hook testen met het salaris in beeld.'},
+          {niveau:'let_op', oordeel:'Monitoren', campagne:'Proponent — Rotterdam', advertentieset:'Orderpicker', advertentie:'Carrousel — machines en shifts',
+           reden:'Geen leads in de laatste 7 dagen.', diagnose:'Frequentie 2,7: de doelgroep raakt op.', actie:'Straal vergroten of nieuw concept klaarzetten.'},
+          {niveau:'goed', oordeel:'Houden', campagne:'Starcuisine — Bodegraven', advertentieset:'Productiemedewerker', advertentie:'Video van de werkvloer',
+           reden:'CPL € 3,90 en hookrate 27%.', diagnose:'Opening en verhaal werken allebei.', actie:'Laten lopen; opschalen pas na nabelcijfers.'}],
+        strategisch_punt:'Video wint van foto op alle meters. Maak de volgende twee concepten als video van de werkvloer.',
+        niet_beoordeeld:['Van Vliet Zoetwaren — nog in beoordeling bij Meta'],
+        vraag:'Hoeveel van de Starcuisine-leads van vorige week zijn nagebeld, en hoeveel waren geschikt?'}}];
     /* Drie besluiten: één genegeerd advies (die advertentie zwijgt nu), één
        stopbesluit waar nog geld doorheen loopt (de bewaking moet aanslaan) en
        één advies van de agent dat nog gelezen moet worden. */
