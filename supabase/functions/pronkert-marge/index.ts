@@ -60,7 +60,10 @@ function maandagVan(jaar: number, week: number) {
 // "Overwerkuren 150%" - zonder "Loon" en met het toeslagpercentage erachter.
 // Een exacte lijst ving die tweede niet, waardoor Alains 8,5 overwerkuren in
 // week 35 wegvielen uit de urentelling (6 sep 2026).
-const GEWERKT = ["normale uren", "overwerkuren"];
+// Ploegentoeslag is ook gewerkte tijd: bij Rick staan zijn uren in week 41
+// alleen als "Ploegentoeslag" op de factuur, zonder losse normale-urenregel.
+// Zonder deze term telde hij 0 uur terwijl de marge wel binnenkwam (28 okt 2026).
+const GEWERKT = ["normale uren", "overwerkuren", "ploegentoeslag"];
 const isGewerkt = (soort: string) => {
   const s = String(soort ?? "").trim().toLowerCase();
   return GEWERKT.some((u) => s.includes(u));
@@ -82,11 +85,17 @@ const VOET = /(Factuurnummer\s+\d+\.\s*Transporteren pagina\s+\d+|Getransporteer
 // In beide vormen is het laatste bedrag de regelmarge; alleen het urenveld
 // verschilt. Vorm A staat als eerste in de alternatie, zodat een regel met
 // ": 8:00," daar terechtkomt en niet half door vorm B wordt opgeslokt.
+//
+//   vorm C (sinds factuur 272159, 18 okt 2026) - als vorm B, maar de kop mist
+//     "Factuur <nr>" en de regel mist de datum na de week:
+//     "R. Jansen (Rick), Reg.nr. 123, Operator Week 41-2026 Ploegentoeslag, ..."
+//   Daarom zijn kopnummer en datum optioneel; de naam moet dan wel met een
+//   hoofdletter beginnen, zodat er geen losse tekst voor de kop wordt opgeslokt.
 const BLOK = new RegExp(
-  "Factuur (?<fnr>\\d+) (?<pnaam>[^,]+?\\([^)]+\\)), Reg\\.nr\\. (?<reg>\\d+), (?<functie>.+?)(?= Week |$)" +
+  "(?:Factuur (?<fnr>\\d+) )?(?<pnaam>[A-Z][^,()]*?\\([^)]+\\)), Reg\\.nr\\. (?<reg>\\d+), (?<functie>.+?)(?= Week |$)" +
   "|Week (?<wk>\\d+)-(?<jr>\\d{4}) (?<dat>\\d{2}-\\d{2}-\\d{4}) (?<soort>[^:]+?): (?<uren>-?\\d+:\\d+)," +
   "(?<rest>[\\s\\S]*?) (?<basis>-?[\\d.]*\\d,\\d{2}) 2 (?<bedrag>-?[\\d.]*\\d,\\d{2})" +
-  "|Week (?<nwk>\\d+)-(?<njr>\\d{4}) (?<ndat>\\d{2}-\\d{2}-\\d{4}) (?<nsoort>[^:,]+?)," +
+  "|Week (?<nwk>\\d+)-(?<njr>\\d{4}) (?:(?<ndat>\\d{2}-\\d{2}-\\d{4}) )?(?<nsoort>[^:,]+?)," +
   "(?<nrest>[\\s\\S]*?) (?<naantal>-?[\\d.]*\\d,\\d{2}) (?<nper>-?[\\d.]*\\d,\\d{2}) 2 (?<nbedrag>-?[\\d.]*\\d,\\d{2})",
   "g",
 );
@@ -105,17 +114,17 @@ export function leesFactuur(ruw: string) {
 
   for (const m of schoon.matchAll(BLOK)) {
     const g = m.groups!;
-    if (g.fnr) {
+    if (g.pnaam) {
       const nm = g.pnaam.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
       kop = {
-        deelfactuur: g.fnr, regnr: g.reg, functie: (g.functie || "").trim(),
+        deelfactuur: g.fnr || factuur, regnr: g.reg, functie: (g.functie || "").trim(),
         naam: nm ? nm[1].trim() : g.pnaam.trim(), roepnaam: nm ? nm[2].trim() : "",
       };
       continue;
     }
     if (!kop) continue;                       // regel zonder kop: overslaan, niet gokken
     // Welke vorm we te pakken hebben zie je aan welke groepen gevuld zijn:
-    // vorm A vult 'soort', vorm B vult 'nsoort'. Daarna loopt alles gelijk.
+    // vorm A vult 'soort', vorm B/C vullen 'nsoort' (C zonder datum).
     const isA = g.soort != null;
     const soort = ((isA ? g.soort : g.nsoort) || "").trim();
     const rest = (isA ? g.rest : g.nrest) || "";
@@ -123,12 +132,13 @@ export function leesFactuur(ruw: string) {
     const wk = isA ? g.wk : g.nwk, jr = isA ? g.jr : g.njr;
     const bedrag = isA ? g.bedrag : g.nbedrag;
     const uit = (p: RegExp) => { const x = rest.match(p); return x ? getal(x[1]) : null; };
-    const [d, mm, jj] = (isA ? g.dat : g.ndat).split("-");
+    const dat = isA ? g.dat : g.ndat;   // vorm C: geen datum -> maandag van de week
+    const maandag = maandagVan(Number(jr), Number(wk));
     const uurloon = uit(/uurloon \u20ac ([\d.,]+)/), tarief = uit(/(?:basis)?tarief \u20ac ([\d.,]+)/);
     regels.push({
-      factuur, factuurdatum, bron: "pdf", vorm: isA ? "A" : "B", ...kop,
-      week: Number(wk), jaar: Number(jr), weekmaandag: maandagVan(Number(jr), Number(wk)),
-      datum: `${jj}-${mm}-${d}`, soort,
+      factuur, factuurdatum, bron: "pdf", vorm: isA ? "A" : (dat ? "B" : "C"), ...kop,
+      week: Number(wk), jaar: Number(jr), weekmaandag: maandag,
+      datum: dat ? `${dat.slice(6)}-${dat.slice(3, 5)}-${dat.slice(0, 2)}` : maandag, soort,
       uren: isGewerkt(soort) ? uren : 0, uren_regel: uren,
       uurloon, tarief, factor: uit(/factor ([\d.,]+)/), klant: "",
       // Omzet naar de klant staat niet apart op de factuur maar volgt uit
