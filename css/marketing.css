@@ -318,3 +318,19 @@ table.tbl tbody tr.mkt-op > td:first-child{box-shadow:inset 2px 0 0 var(--olive)
 .mkt-sr-grid ul{margin:4px 0 12px;padding-left:18px}
 .mkt-sr-grid li{margin:3px 0}
 .mkt-sr-grid .tbl{font-size:12px;margin:4px 0}
+
+/* Advies per advertentie: per campagne een tabel, regel gekleurd naar niveau */
+.mkt-ar-cblok{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.mkt-ar-ckop{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:9px 12px;background:var(--bg-2,#f6f7f2);border-bottom:1px solid var(--line)}
+.mkt-ar-ckop .meta{flex-basis:100%}
+.mkt-ar-tbl td{vertical-align:top}
+.mkt-ar-tbl tr.mkt-ar-r:not(.mkt-ar-tekst)>td{border-bottom:0;padding-bottom:2px}
+.mkt-ar-tbl tr.mkt-ar-tekst>td{padding-top:0}
+.mkt-ar-tregel{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;white-space:normal}
+.mkt-ar-tbl .mkt-ar-wat{font-size:12.5px;line-height:1.45;max-width:80ch}
+.mkt-ar-tbl tr.mkt-ar-r>td:first-child{border-left:4px solid #8a917c}
+.mkt-ar-tbl tr.mkt-ar-r.m-slecht>td:first-child{border-left-color:var(--red)}
+.mkt-ar-tbl tr.mkt-ar-r.m-matig>td:first-child{border-left-color:#c98a14}
+.mkt-ar-tbl tr.mkt-ar-r.m-goed>td:first-child{border-left-color:var(--olive)}
+.mkt-ar-tbl .mkt-ar-doen{margin:4px 0 0}
+.mkt-ar-tbl tr:not(.mkt-ar-tekst)>td:nth-child(2){min-width:190px}

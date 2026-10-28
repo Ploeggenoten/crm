@@ -288,7 +288,7 @@
      vacatureWerk) en te zwak om iemand elke dag een cijfer voor te geven. */
   function telBadge(){
     try{
-      M.badge = adviezen().length + agentGroepen().length + nagPosts().length
+      M.badge = adviezen().length + nagPosts().length
               + openTaken().length + vacatureWerk().online.length;
     }
     catch(e){ M.badge = 0; }
@@ -310,28 +310,9 @@
       return (b.status||'open') === 'open';
     }) || null;
   }
-  /* Adviezen die de mediabuyer-agent zelf in de tabel heeft gezet. Die stonden
-     hier tot nu toe ongelezen in de database: de agent schrijft ze, maar het
-     CRM liet ze niet zien. */
-  function agentAdviezen(){
-    return M.besluiten.filter(b => ['advies','budget'].includes(b.besluit)
-      && (b.status||'open') === 'open' && !configRij(b));
-  }
-  /* De agent draait elke dag en schrijft over hetzelfde onderwerp (campagne +
-     set/advertentie + soort) gewoon een nieuw advies bij. Het oudere is dan
-     achterhaald: we tonen per onderwerp alleen het nieuwste en onthouden de
-     oudere in `ouder`, zodat "Gezien" de hele groep in één keer afrondt. */
-  function agentGroepen(){
-    const groepen = new Map();
-    agentAdviezen().slice()
-      .sort((a,b) => String(b.created_at||'').localeCompare(String(a.created_at||'')))
-      .forEach(b => {
-        const k = `${b.campagne||''}|${b.advertentie||''}|${b.besluit}`;
-        if(!groepen.has(k)) groepen.set(k, {...b, ouder:[]});
-        else groepen.get(k).ouder.push(b);
-      });
-    return [...groepen.values()];
-  }
+  /* De losse agent-adviezen uit mkt_ad_besluiten (met het robotje) staan
+     sinds 28 okt niet meer op het scherm: het rapport van de agent geeft per
+     advertentie een oordeel, en twee lijsten van dezelfde agent was dubbel. */
 
   /* `rijen` is standaard álles: de badge en het tabblad tellen de adviezen
      van het hele account. Het scherm geeft de op klant gefilterde rijen mee,
@@ -546,7 +527,7 @@
      Daarmee verdwijnt de regel van de lijst in plaats van dat hij eeuwig
      blijft staan. */
   /* `ids` mag een komma-lijst zijn: "Gezien" bij een agent-advies rondt ook
-     de oudere adviezen over hetzelfde onderwerp af (zie agentGroepen). De id's
+     de oudere adviezen over hetzelfde onderwerp af. De id's
      gaan als de echte waarden uit de rijen naar de database, niet als tekst. */
   async function rondAf(ids){
     const lijst = String(ids).split(',');
@@ -573,12 +554,6 @@
      de eerstvolgende werkdag). Zo staat het in Bryans weekplanner. De kolommen
      gebied en duur_min bestaan pas na de takenmigratie van het marketingbord;
      ontbreken ze, dan slaan we de taak kaal op in plaats van niets op te slaan. */
-  function adviesAlsTaak(b){
-    const note = String(b.note||'').replace(/^🤖\s*/, '');
-    const doen = (note.match(/Doen:\s*([^\n]+)/) || [])[1];
-    const kern = (doen || note.split('\n')[0] || b.advertentie || '').trim().replace(/\s+/g, ' ');
-    return `Meta${b.campagne ? ' · ' + b.campagne : ''}: ${kern}`.slice(0, 160);
-  }
   const waakhondAlsTaak = a =>
     `Meta${a.campagne ? ' · ' + a.campagne : ''}: ${a.titel}${a.advertentie && a.advertentie !== '(hele campagne)' ? ' — ' + a.advertentie : ''}`.slice(0, 160);
   const staatAlsTaak = tekst => (M.taken||[]).some(t => !t.klaar && t.tekst === tekst);
@@ -1024,7 +999,7 @@
        "Geen content of advertentie" is een afleiding op namen; die zou de
        teller opblazen met werk waarvan we niet zeker zijn. */
     const TABS = [
-      {k:'prestatie', t:'Prestatie', n:adv.length + agentGroepen().length},
+      {k:'prestatie', t:'Prestatie', n:adv.length},
       {k:'keten',     t:'Rendement', n:0},
       {k:'content',   t:'Content',   n:nag.length + werk.length},
       {k:'kanalen',   t:'Kanalen',   n:0},
@@ -1168,7 +1143,8 @@
     const arOps = root.querySelector('#mkt_ar_opslaan');
     if(arOps) arOps.onclick = () => arAntwoord(root.querySelector('#mkt_ar_antw').value.trim());
     CRM.$$('[data-artaak]', root).forEach(b => b.onclick = () => {
-      const w = M.rapporten?.[M.arIdx]?.rapport?.waarschuwingen?.[Number(b.dataset.artaak)];
+      const r = M.rapporten?.[M.arIdx]?.rapport || {}, k = b.dataset.artaak;
+      const w = (k[0] === 'a' ? r.advertenties : r.waarschuwingen)?.[Number(k.slice(1))];
       if(w){ b.disabled = true; adviesNaarTaak(arTaakTekst(w)); }
     });
     CRM.$$('[data-uit]', root).forEach(r => r.onclick = () => {
@@ -1902,9 +1878,14 @@
         <div><b>Diagnose:</b> ${h(w.diagnose || '')}</div>
         <div class="mkt-ar-doen"><b>Doen:</b> ${h(w.actie || '')}</div>
         <div>${staatAlsTaak(arTaakTekst(w)) ? '<span class="meta">✓ staat in Mijn week</span>'
-          : `<button class="btn ghost sm" data-artaak="${i}">Als taak</button>`}</div>
+          : `<button class="btn ghost sm" data-artaak="w${i}">Als taak</button>`}</div>
       </div>`;
-    const ws = (a.waarschuwingen || []).map((w, i) => [w, i]);
+    /* Nieuwe rapporten geven per advertentie een oordeel. Dan is dat het
+       overzicht, per campagne gegroepeerd; de waarschuwingen over één
+       advertentie vallen erin op (hun diagnose komt bij de regel), en alleen
+       wat over een hele set of campagne gaat blijft als losse kaart staan. */
+    const perAd = (a.advertenties || []).length > 0;
+    const ws = (a.waarschuwingen || []).map((w, i) => [w, i]).filter(([w]) => !perAd || !w.advertentie);
     const groepen = Object.keys(AR_NIVEAU).map(n => {
       const g = ws.filter(([w]) => w.niveau === n);
       return g.length ? `<div class="mkt-ar-groep"><div class="label">${h(AR_NIVEAU[n][0])} <span class="num">(${g.length})</span></div>
@@ -1912,9 +1893,10 @@
     }).join('');
     return `<div class="card mkt-kaart mkt-ar">${kop}<div class="card-b">
       ${a.kort_oordeel ? `<div class="mkt-ar-kort">${h(a.kort_oordeel)}</div>` : ''}
-      ${(a.campagnes || []).length ? `<div class="mkt-ar-camps">${a.campagnes.map(c => `<div class="mkt-ar-camp">${label(c.oordeel)}<b>${h(c.campagne)}</b>
+      ${perAd ? arPerAdvertentie(a, rij, label) + (groepen ? `<div class="label" style="margin-top:16px">Op set- en campagneniveau</div>${groepen}` : '') : ''}
+      ${!perAd && (a.campagnes || []).length ? `<div class="mkt-ar-camps">${a.campagnes.map(c => `<div class="mkt-ar-camp">${label(c.oordeel)}<b>${h(c.campagne)}</b>
         ${c.toelichting ? `<span class="meta">${h(c.toelichting)}</span>` : ''}</div>`).join('')}</div>` : ''}
-      ${groepen}
+      ${perAd ? '' : groepen}
       ${a.strategisch_punt ? `<div class="mkt-ar-blok strat"><b>Strategisch punt van de week</b><div>${h(a.strategisch_punt)}</div></div>` : ''}
       ${(rij.uitgevoerd || []).length ? `<div class="mkt-ar-blok"><b>Automatisch uitgevoerd</b><ul>${rij.uitgevoerd.map(x => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}
       ${(a.niet_beoordeeld || []).length ? `<div class="mkt-ar-blok meta"><b>Niet kunnen beoordelen</b><ul>${a.niet_beoordeeld.map(x => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}
@@ -1925,6 +1907,58 @@
             : 'De agent leest je antwoord bij de volgende run.'}</span></div></div>` : ''}
     </div></div>`;
   }
+  /* Per campagne een tabel: elke advertentie met het oordeel van de agent,
+     de cijfers van de 7 dagen vóór de run (t/m de dag ervoor) en de reden
+     en actie. Slechtste eerst, zodat wat aandacht vraagt bovenaan staat. */
+  const AR_VOLGORDE = ['actie_vandaag', 'let_op', 'goed', 'te_vroeg'];
+  function arPerAdvertentie(a, rij, label){
+    const dag = String(rij.created_at || '').slice(0, 10) || CRM.todayISO();
+    const d = new Date(dag + 'T12:00'), iso = n => { const x = new Date(d); x.setDate(x.getDate() - n); return x.toLocaleDateString('sv-SE'); };
+    const van = iso(7), tot = iso(1);
+    const cijfers = new Map();
+    M.meta.filter(r => (r.datum||'') >= van && (r.datum||'') <= tot).forEach(r => {
+      const k = `${campNaam(r)}|${r.advertentieset||''}|${r.advertentie||''}`;
+      if(!cijfers.has(k)) cijfers.set(k, {besteed:0, weergaven:0, link_kliks:0, resultaten:0});
+      const x = cijfers.get(k);
+      x.besteed += N(r.uitgegeven); x.weergaven += N(r.impressies); x.link_kliks += N(r.link_kliks); x.resultaten += N(r.leads);
+    });
+    const diagnose = ad => (a.waarschuwingen || []).find(w => w.advertentie === ad.advertentie
+      && w.campagne === ad.campagne && (!w.advertentieset || w.advertentieset === ad.advertentieset))?.diagnose || '';
+    const ads = a.advertenties.map((x, i) => ({...x, i}));
+    const camps = [...new Set([...(a.campagnes || []).map(c => c.campagne), ...ads.map(x => x.campagne)])]
+      .filter(c => ads.some(x => x.campagne === c));
+    const rang = x => { const n = AR_VOLGORDE.indexOf(x.niveau); return n < 0 ? 9 : n; };
+    const leeg = '<span class="meta">—</span>';
+    return camps.map(cn => {
+      const c = (a.campagnes || []).find(x => x.campagne === cn);
+      const rijen = ads.filter(x => x.campagne === cn).sort((p, q) => rang(p) - rang(q));
+      return `<div class="mkt-ar-cblok">
+        <div class="mkt-ar-ckop">${c ? label(c.oordeel) : ''}<b>${h(cn)}</b>${c?.toelichting ? `<span class="meta">${h(c.toelichting)}</span>` : ''}</div>
+        <div class="tblwrap" style="border:none;border-radius:0"><table class="tbl mkt-tbl mkt-ar-tbl">
+          <thead><tr><th>Oordeel</th><th>Advertentie</th><th class="n">Besteed</th><th class="n">Resultaten</th>
+            <th class="n" title="Kosten per resultaat">CPL</th><th class="n" title="Link-CTR">CTR</th><th class="n" title="Resultaten ÷ linkklikken">Doorzet</th></tr></thead>
+          <tbody>${rijen.map(x => {
+            const m = cijfers.get(`${x.campagne}|${x.advertentieset}|${x.advertentie}`);
+            const f = m ? afgeleid({...m}) : null, dg = diagnose(x);
+            const tekst = arTaakTekst(x);
+            return `<tr class="mkt-ar-r m-${(AR_NIVEAU[x.niveau]||[])[1] || 'grijs'}">
+              <td>${label(x.oordeel)}</td>
+              <td><b>${h(x.advertentie)}</b><div class="rowsub">${h(x.advertentieset)}</div></td>
+              <td class="n num">${f ? CRM.euro(f.besteed, 2) : leeg}</td>
+              <td class="n num">${f ? fmtN(f.resultaten) : leeg}</td>
+              ${f ? meterTd('cpl', f.cpl, f.weergaven, f.cpl == null ? leeg : CRM.euro(f.cpl, 2)) : `<td class="n">${leeg}</td>`}
+              ${f ? meterTd('ctr', f.ctr, f.weergaven, f.ctr == null ? leeg : CRM.pct(f.ctr * 100, 2)) : `<td class="n">${leeg}</td>`}
+              ${f ? meterTd('doorzet', f.doorzet, f.weergaven, f.doorzet == null ? leeg : CRM.pct(f.doorzet * 100, 1)) : `<td class="n">${leeg}</td>`}
+            </tr>
+            <tr class="mkt-ar-r mkt-ar-tekst m-${(AR_NIVEAU[x.niveau]||[])[1] || 'grijs'}"><td></td><td colspan="6"><div class="mkt-ar-tregel">
+              <div class="mkt-ar-wat"><div>${h(x.reden || '')}${dg ? ` <span class="meta">Diagnose: ${h(dg)}</span>` : ''}</div>
+                <div class="mkt-ar-doen"><b>Doen:</b> ${h(x.actie || '')}</div></div>
+              ${staatAlsTaak(tekst) ? '<span class="meta">✓ in Mijn week</span>' : `<button class="btn ghost sm" data-artaak="a${x.i}">Als taak</button>`}
+            </div></td></tr>`; }).join('')}</tbody></table></div></div>`;
+    }).join('') + `<p class="meta" style="margin:6px 0 0">Cijfers: ${h(CRM.fmtDateShort(van))} t/m ${h(CRM.fmtDateShort(tot))}, de 7 dagen vóór deze run.
+      Kleur volgens de meters van de agent, vanaf 1.000 weergaven.</p>`;
+  }
+
   /* ad-guard antwoordt meteen (202) en rekent op de achtergrond door; het
      rapport verschijnt als nieuwe rij in mkt_agent_rapport. We kijken elke
      tien seconden, maximaal acht minuten. */
@@ -2194,7 +2228,6 @@
 
   function adviesHtml(adv, verborgen){
     if(!M.meta.length) return '';
-    const alleAgent = agentGroepen();
     M.taakTekst = new Map();
     /* Knop "Als taak", of de melding dat hij er al staat. De tekst zelf gaat
        via een sleutel (zelfde patroon als drill), niet als attribuut. */
@@ -2203,51 +2236,24 @@
       const k = 't' + M.taakTekst.size; M.taakTekst.set(k, tekst);
       return `<button class="btn ghost sm" data-advtaak="${k}" title="Als taak in Mijn week zetten (eerstvolgende werkdag, 15 min, Ads)">Als taak</button>`;
     };
-    /* Ook de adviezen van de agent horen bij een campagne, en dus bij een
-       klant. Staat er geen campagne bij, dan valt het advies aan niemand toe
-       te rekenen en blijft het staan — verbergen zou het onvindbaar maken. */
-    const agent = M.klant
-      ? alleAgent.filter(b => !String(b.campagne||'').trim()
-          || (M.klant === '__niet__' ? !klantVan(b).kkey : klantVan(b).kkey === M.klant))
-      : alleAgent;
-    verborgen = (verborgen || 0) + (alleAgent.length - agent.length);
     /* Wat het klantfilter wegneemt zeggen we erbij. Anders lijkt het alsof er
        geen adviezen zijn terwijl ze alleen bij een andere klant staan. */
     const gefilterd = verborgen > 0
       ? `<div class="rowsub" style="margin-top:4px"><span class="num">${fmtN(verborgen)}</span>
          ${verborgen===1?'advies staat':'adviezen staan'} bij een andere klant en ${verborgen===1?'is':'zijn'} nu verborgen.</div>` : '';
-    if(!adv.length && !agent.length) return `<div class="note ok" style="margin-bottom:18px">Geen openstaande advertentie-adviezen${
+    if(!adv.length) return `<div class="note ok" style="margin-bottom:18px">Geen openstaande advertentie-adviezen${
       M.klant ? ` voor ${h(klantLabel())}` : ''} — alles loopt binnen de bandbreedte.${gefilterd}</div>`;
     /* Rood = ingrijpen, oranje = urgentie/waarschuwing, olijf = positief
        (zelfde betekenis als .pos elders in de app). */
     const kleurVar = {red:'var(--red)', amber:'var(--amber)', green:'var(--olive)'};
     const knop = (a, keuze, tekst) =>
       `<button class="btn ghost sm" data-bes="${h(keuze)}|${h(a.advertentie)}|${h(a.campagne)}">${h(tekst)}</button>`;
-    /* De mediabuyer-agent schrijft zijn eigen bevindingen in dezelfde tabel.
-       Die stonden hier nooit op het scherm — een advies dat niemand leest is
-       geen advies. */
-    const agentRij = b => `
-      <div class="mkt-advies">
-        <span class="dot" style="background:var(--blue)"></span>
-        <div class="mkt-a-t">
-          <div><b>${b.besluit === 'budget' ? 'Budgetadvies' : 'Advies van de agent'}</b>
-            <span class="meta">— ${h(b.advertentie)}${b.campagne?` · ${h(b.campagne)}`:''}</span></div>
-          <div class="meta">${h(b.note || 'Geen toelichting meegegeven.')}</div>
-          <div class="meta">${h(b.door || 'agent')} · ${h(CRM.geleden(b.created_at))}${b.ouder.length
-            ? ` · vervangt ${b.ouder.length} ouder${b.ouder.length === 1 ? ' advies' : 'e adviezen'} hierover` : ''}</div>
-        </div>
-        <div class="row tight mkt-a-k">
-          ${taakKnop(adviesAlsTaak(b))}
-          <button class="btn ghost sm" data-afrond="${h([b.id, ...b.ouder.map(o => o.id)].join(','))}"${b.ouder.length
-            ? ` title="Rondt ook de ${b.ouder.length} oudere adviezen over dit onderwerp af"` : ''}>Gezien</button>
-        </div>
-      </div>`;
-    const aantal = adv.length + agent.length;
+    const aantal = adv.length;
     return `<div class="card" style="margin-bottom:18px">
       <div class="card-h"><div class="h2">Adviezen</div>
         <span class="meta">${aantal===1?'1 advertentie vraagt':aantal+' advertenties vragen'} om een besluit${
           verborgen > 0 ? ` · ${fmtN(verborgen)} verborgen door het klantfilter` : ''}</span></div>
-      <div>${agent.map(agentRij).join('')}${adv.map(a => `
+      <div>${adv.map(a => `
         <div class="mkt-advies">
           <span class="dot" style="background:${kleurVar[a.kleur]}"></span>
           <div class="mkt-a-t">
@@ -3430,6 +3436,19 @@
            reden:'Geen leads in de laatste 7 dagen.', diagnose:'Frequentie 2,7: de doelgroep raakt op.', actie:'Straal vergroten of nieuw concept klaarzetten.'},
           {niveau:'goed', oordeel:'Houden', campagne:'Starcuisine — Bodegraven', advertentieset:'Productiemedewerker', advertentie:'Video van de werkvloer',
            reden:'CPL € 3,90 en hookrate 27%.', diagnose:'Opening en verhaal werken allebei.', actie:'Laten lopen; opschalen pas na nabelcijfers.'}],
+        advertenties:[
+          {campagne:'Starcuisine — Bodegraven', advertentieset:'Productiemedewerker', advertentie:'Video van de werkvloer', oordeel:'Houden', niveau:'goed',
+           reden:'Goedkoopste leads van het account: CPL € 3,90 en hookrate 27%.', actie:'Laten lopen; opschalen pas na nabelcijfers.'},
+          {campagne:'Starcuisine — Bodegraven', advertentieset:'Productiemedewerker', advertentie:'Salaris in beeld — € 2.750 + toeslag', oordeel:'Monitoren', niveau:'let_op',
+           reden:'CTR 2,1% maar doorzet 12%: klikkers haken af in het formulier.', actie:'Functietitel in video en formulier gelijktrekken.'},
+          {campagne:'Starcuisine — Bodegraven', advertentieset:'Heftruckchauffeur', advertentie:'Direct starten, wekelijks betaald', oordeel:'Te vroeg', niveau:'te_vroeg',
+           reden:'Nog geen 10 leads deze week.', actie:'Niets aanpassen; donderdag opnieuw beoordelen.'},
+          {campagne:'Good Life Foods', advertentieset:'Operator', advertentie:'Testimonial — Marek, operator', oordeel:'Stoppen', niveau:'actie_vandaag',
+           reden:'Link-CTR 0,7% en CPL € 12,40 na € 49 besteed.', actie:'Pauzeren en een nieuwe hook testen met het salaris in beeld.'},
+          {campagne:'Proponent — Rotterdam', advertentieset:'Orderpicker', advertentie:'Carrousel — machines en shifts', oordeel:'Monitoren', niveau:'let_op',
+           reden:'Geen leads in de laatste 7 dagen bij frequentie 2,7.', actie:'Straal vergroten of nieuw concept klaarzetten.'},
+          {campagne:'Proponent — Rotterdam', advertentieset:'Orderpicker', advertentie:'Foto — heftruck in de hal', oordeel:'Houden', niveau:'goed',
+           reden:'Doorzet 18% en CPL onder € 6.', actie:'Laten lopen.'}],
         strategisch_punt:'Video wint van foto op alle meters. Maak de volgende twee concepten als video van de werkvloer.',
         niet_beoordeeld:['Van Vliet Zoetwaren — nog in beoordeling bij Meta'],
         vraag:'Hoeveel van de Starcuisine-leads van vorige week zijn nagebeld, en hoeveel waren geschikt?'}}];
