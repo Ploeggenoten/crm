@@ -491,9 +491,10 @@ CRM.outlook = {
        overvolle maand niet een antwoord van honderden kilobytes oplevert. */
     const top = Math.min(400, Math.max(25, Math.ceil(dagen) * 8));
     try{
-      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,location,onlineMeeting,webLink,attendees`,
+      const d = await graph(`/me/calendarView?startDateTime=${nu.toISOString()}&endDateTime=${tot.toISOString()}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,location,onlineMeeting,webLink,attendees,isOrganizer`,
         { headers:{ Prefer:'outlook.timezone="W. Europe Standard Time"' } }, false);
       return (d?.value||[]).map(e => ({
+        id: e.id, organisator: e.isOrganizer !== false,
         titel: e.subject, start: e.start?.dateTime, eind: e.end?.dateTime,
         locatie: e.location?.displayName || '', link: e.webLink,
         online: e.onlineMeeting?.joinUrl || '',
@@ -539,6 +540,38 @@ CRM.outlook = {
     }
     window.open(composeUrl({titel:opts.titel, start, eind, body:opts.body, locatie:opts.locatie, deelnemers:opts.deelnemers}), '_blank', 'noopener');
     return {via:'deeplink'};
+  },
+
+  /* Afspraak aanpassen of weghalen vanaf de klantkaart (Tjeerd, 29 okt
+     2026: "regel dat ik vanuit hier afspraken kan inplannen, verwijderen en
+     aanpassen"). Calendars.ReadWrite zit al in MS_KERN.
+     Wijzigen kan alleen bij je eigen afspraken; genodigden krijgen de
+     wijziging dan vanzelf van Outlook. */
+  async afspraakWijzig(id, opts){
+    if(!(CRM.outlook.beschikbaar() && _account) || !id) return false;
+    const start = combineer(opts.datum, opts.tijd);
+    const eind  = new Date(start.getTime() + (opts.duurMin || 45)*60000);
+    await graph('/me/events/' + encodeURIComponent(id), {method:'PATCH', body:{
+      subject: opts.titel,
+      start:{ dateTime: isoLokaal(start), timeZone:'W. Europe Standard Time' },
+      end:  { dateTime: isoLokaal(eind),  timeZone:'W. Europe Standard Time' },
+      location: {displayName: opts.locatie || ''}
+    }});
+    return true;
+  },
+  /* Weghalen. Eigen afspraak mét genodigden → annuleren (zij krijgen een
+     afzegging, met je bericht). Eigen afspraak zonder genodigden → gewoon
+     verwijderen, er gaat niets de deur uit. Afspraak van een ander → afslaan,
+     de organisator krijgt je afmelding. */
+  async afspraakWeg(id, {organisator = true, genodigden = 0, bericht = ''} = {}){
+    if(!(CRM.outlook.beschikbaar() && _account) || !id) return false;
+    const pad = '/me/events/' + encodeURIComponent(id);
+    try{
+      if(!organisator) await graph(pad + '/decline', {method:'POST', body:{sendResponse:true, comment:bericht}});
+      else if(genodigden) await graph(pad + '/cancel', {method:'POST', body:{comment:bericht}});
+      else await graph(pad, {method:'DELETE'});
+    }catch(e){ if(e.status !== 404) throw e; }   // al weg in Outlook = ook goed
+    return true;
   },
 
   /* Taak in Microsoft To Do. opts: {titel, datum, notities}. Zonder koppeling:

@@ -1104,7 +1104,8 @@ function kopHtml(k, c){
 function afsprakenBlokHtml(){
   if(!CRM.outlook?.verbonden?.()) return '';
   return `<div class="card kl-railkaart kl-r-ag" id="ag_kaart" hidden>
-    <div class="card-h"><div class="h2">Komende afspraken</div></div>
+    <div class="card-h"><div class="h2">Komende afspraken</div><span class="spacer"></span>
+      <button type="button" class="lnk" id="ag_nieuw">+ Afspraak</button></div>
     <div class="card-b" id="ag_lijst"></div></div>`;
 }
 
@@ -1121,7 +1122,9 @@ function railAfspraken(root, k){
     const raak = (idx.get(k.naam) || []).slice(0, 5);
     if(!raak.length){ kaart.hidden = true; return; }
     kaart.hidden = false;
-    lijst.innerHTML = `<div class="kl-afspraken">${raak.map(e => {
+    const nieuw = kaart.querySelector('#ag_nieuw');
+    if(nieuw) nieuw.onclick = () => planModal(k);
+    lijst.innerHTML = `<div class="kl-afspraken">${raak.map((e, i) => {
       const dt = new Date(e.start);
       const wanneer = isNaN(dt) ? '' : CRM.fmtDateShort(e.start) + ' · ' +
         dt.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
@@ -1129,9 +1132,80 @@ function railAfspraken(root, k){
       return `<div class="kl-afspraak">
         <b class="trunc">${h(e.titel||'Afspraak')}</b>
         <div class="meta num">${h(wanneer)}${waar ? ' · ' + h(waar) : ''}</div>
+        ${e.id ? `<div class="kl-ag-acties">
+          ${e.organisator ? `<button type="button" class="lnk" data-agwijzig="${i}">aanpassen</button>` : ''}
+          <button type="button" class="lnk" data-agweg="${i}">${e.organisator ? 'verwijderen' : 'afslaan'}</button>
+          ${/^https:\/\//.test(String(e.link||'')) ? `<a class="lnk" href="${h(e.link)}" target="_blank" rel="noopener">Outlook ↗</a>` : ''}
+        </div>` : ''}
       </div>`;
     }).join('')}</div>`;
+    lijst.querySelectorAll('[data-agwijzig]').forEach(b => b.onclick = () => afspraakAanpassen(k, raak[Number(b.dataset.agwijzig)]));
+    lijst.querySelectorAll('[data-agweg]').forEach(b => b.onclick = () => afspraakWeghalen(k, raak[Number(b.dataset.agweg)]));
   }).catch(e => console.warn('agenda klantkaart', e));
+}
+
+/* Aanpassen: datum, tijd, duur, onderwerp en locatie. Genodigden krijgen
+   de wijziging vanzelf van Outlook (dat zeggen we er ook bij). */
+function afspraakAanpassen(k, e){
+  if(!e || !e.id) return;
+  const lok = String(e.start || '');
+  const datum = lok.slice(0, 10), tijd = lok.slice(11, 16);
+  const duur = Math.max(15, Math.round((new Date(e.eind) - new Date(e.start)) / 60000) || 45);
+  const anderen = (e.deelnemers || []).filter(a => a.toLowerCase() !== String(CRM.outlook.accountNaam()).toLowerCase());
+  CRM.modal.open(`
+    <div class="modal-h"><div class="h2">Afspraak aanpassen</div>
+      <p class="sub" style="margin:6px 0 0">${h(k.naam)}</p></div>
+    <div class="modal-b">
+      <div class="f-row"><label>Onderwerp</label><input type="text" id="ka_titel" value="${h(e.titel||'')}"></div>
+      <div class="f-grid">
+        <div class="f-row"><label>Datum</label><input type="date" id="ka_datum" value="${h(datum)}"></div>
+        <div class="f-row"><label>Tijd</label><input type="time" id="ka_tijd" value="${h(tijd)}"></div>
+        <div class="f-row"><label>Duur</label><select id="ka_duur">${[...new Set([...DUREN, duur])].sort((a,b)=>a-b).map(n =>
+          `<option value="${n}"${n===duur?' selected':''}>${n} minuten</option>`).join('')}</select></div>
+        <div class="f-row"><label>Locatie</label><input type="text" id="ka_loc" value="${h(e.online ? '' : (e.locatie||''))}"
+          ${e.online ? 'placeholder="Teams"' : ''}></div>
+      </div>
+      ${anderen.length ? `<p class="meta" style="margin:8px 0 0">${anderen.length === 1 ? 'De genodigde krijgt' : `De ${anderen.length} genodigden krijgen`} de wijziging vanzelf van Outlook.</p>` : ''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+      <button class="btn" id="ka_ok">Opslaan</button></div>`, {onOpen(m){
+    m.querySelector('#ka_ok').onclick = async ev => {
+      const v = s => m.querySelector(s).value.trim();
+      if(!v('#ka_datum')) return CRM.toast('Kies een datum','err');
+      const knop = ev.currentTarget; knop.disabled = true;
+      try{
+        await CRM.outlook.afspraakWijzig(e.id, {titel:v('#ka_titel') || e.titel, datum:v('#ka_datum'),
+          tijd:v('#ka_tijd') || '10:00', duurMin:Number(v('#ka_duur')) || duur,
+          locatie: e.online && !v('#ka_loc') ? (e.locatie || '') : v('#ka_loc')});
+        CRM.modal.close();
+        await CRM.logActiviteit('klant', k.naam, 'gesprek',
+          `Afspraak verzet: ${v('#ka_titel') || e.titel} naar ${CRM.fmtDate(v('#ka_datum'))} ${v('#ka_tijd')}`);
+        CRM.toast('Afspraak aangepast in je agenda','ok');
+        verversAfspraken(k); CRM.render();
+      }catch(err){ knop.disabled = false; CRM.fout('Aanpassen mislukt', err); }
+    };
+  }});
+}
+
+/* Verwijderen (eigen afspraak) of afslaan (afspraak van een ander). Wie er
+   een bericht van krijgt, staat in de vraag — geen verrassingen. */
+async function afspraakWeghalen(k, e){
+  if(!e || !e.id) return;
+  const ik = String(CRM.outlook.accountNaam()).toLowerCase();
+  const anderen = (e.deelnemers || []).filter(a => a.toLowerCase() !== ik);
+  const wieKrijgt = !e.organisator ? 'De organisator krijgt je afmelding.'
+    : anderen.length ? `${anderen.length === 1 ? anderen[0] + ' krijgt' : `De ${anderen.length} genodigden krijgen`} een afzegging.`
+    : 'Er gaat geen bericht naar iemand: er staan geen genodigden op.';
+  const ok = await CRM.bevestig(e.organisator ? 'Afspraak verwijderen?' : 'Afspraak afslaan?',
+    `${e.titel || 'Afspraak'} · ${CRM.fmtDateShort(e.start)}. ${wieKrijgt}`);
+  if(!ok) return;
+  try{
+    await CRM.outlook.afspraakWeg(e.id, {organisator:e.organisator, genodigden:anderen.length});
+    await CRM.logActiviteit('klant', k.naam, 'gesprek',
+      `Afspraak ${e.organisator ? 'verwijderd' : 'afgeslagen'}: ${e.titel || 'Afspraak'} op ${CRM.fmtDate(String(e.start).slice(0,10))}`);
+    CRM.toast(e.organisator ? 'Afspraak verwijderd' : 'Afspraak afgeslagen','ok');
+    verversAfspraken(k); CRM.render();
+  }catch(err){ CRM.fout('Weghalen mislukt', err); }
 }
 /* ─── Rail: mailwisseling met de hele organisatie ─────────────────
    Tjeerd (4 aug 2026): "je kijkt eerst altijd op de klantenkaart, dat is

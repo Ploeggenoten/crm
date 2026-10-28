@@ -527,3 +527,6 @@ a.ob-i:hover b{text-decoration:underline}
 details.kl-vac{box-shadow:var(--sh-2)}
 .kl-vaclink{cursor:pointer}
 .kl-vaclink:hover{color:var(--olive);text-decoration:underline}
+/* Aanpassen/verwijderen onder een komende afspraak (29 okt 2026) */
+.kl-ag-acties{display:flex;gap:12px;margin-top:3px;font-size:11.5px}
+.kl-ag-acties .lnk{font-size:11.5px}
