@@ -2379,7 +2379,7 @@ function plPaneel(f, pid, herteken){
       ${g.vervangingNodig ? `<button class="btn ghost sm" id="fd_verv">Vervanging geleverd…</button>` : ''}
       ${opHold(f, p.id) ? `<button class="btn ghost sm" id="fd_hold">Facturatie hervatten</button>`
         : `<button class="btn ghost sm" id="fd_hold">Facturatie on hold…</button>`}
-      ${!p.gestopt_op ? `<button class="btn ghost sm" id="fd_stop">Kandidaat gestopt…</button>` : ''}
+      <button class="btn ghost sm" id="fd_stop">${p.gestopt_op ? 'Stop aanpassen…' : 'Kandidaat gestopt…'}</button>
       ${p.concept ? `<button class="btn" id="fd_ok">✓ Fee klopt — bevestigen</button>` : ''}
     </div>`, {onOpen(dr){
     const q = s => dr.querySelector(s);
@@ -2520,33 +2520,85 @@ function termijnBewerken(f, p, inst, klaar){
     }});
 }
 
-/* ─── Venster: kandidaat gestopt ─────────────────────────────────── */
+/* ─── Venster: kandidaat gestopt ───────────────────────────────────
+   Per open termijn kies je zelf: factureren (eventueel een ander bedrag)
+   of laten vallen — of je zet de hele facturatie on hold als je het nog
+   niet weet (Tjeerd, 29 okt 2026: "als iemand gestopt is moet ik kunnen
+   kiezen: facturatie laten vallen, on hold, aanpassen"). Voorstel: wat
+   ná de stopdatum + de ingestelde maanden valt, vervalt. Ook te openen
+   voor wie al gestopt is (stop aanpassen).                            */
 function stopVenster(f, p, klaar, voorstelDatum){
   const g = garantie(f, p), mnd = Sn(f,'stop_achterstand_mnd',1);
+  const open = instOf(f, p.id).filter(i => i.status === 'te_factureren' || (p.gestopt_op && i.status === 'vervallen'))
+    .sort((a,b) => (a.termijn_nr||0) - (b.termijn_nr||0));
+  const hold = opHold(f, p.id);
+  const standaard = (i, datum) => { const grens = addMonths(datum, mnd); return i.geplande_datum && i.geplande_datum > grens ? 'vallen' : 'fact'; };
   CRM.modal.open(`
-    <div class="modal-h"><div class="h2">Kandidaat gestopt · ${H(tekst(p.kandidaat))}</div></div>
+    <div class="modal-h"><div class="h2">${p.gestopt_op ? 'Stop aanpassen' : 'Kandidaat gestopt'} · ${H(tekst(p.kandidaat))}</div>
+      <p class="sub" style="margin:6px 0 0">${H(klantLabel(p.klant))} · ${H(p.id)} · fee ${H(eur(getal(p.fee_excl)))}</p></div>
     <div class="modal-b">
       <div class="f-row"><label for="sv_datum">Gestopt op</label>
-        <input type="date" id="sv_datum" value="${H(voorstelDatum || todayISO())}"></div>
-      <p class="meta" style="margin:4px 0 0">${g.tot ? `Garantie loopt t/m ${H(dOf(g.tot))} — stopt hij daarvoor, dan lever je een kosteloze vervanging.`
-        : 'Geen garantie op deze plaatsing.'} Open termijnen ná de stopdatum + ${H(mnd)} maand vervallen.</p>
+        <input type="date" id="sv_datum" value="${H(p.gestopt_op || voorstelDatum || todayISO())}"></div>
+      <p class="meta" style="margin:4px 0 10px">${g.tot ? `Garantie loopt t/m ${H(dOf(g.tot))} — stopt hij daarvoor, dan lever je een kosteloze vervanging.`
+        : 'Geen garantie op deze plaatsing.'}</p>
+      ${open.length ? `
+      <div class="h2" style="font-size:14px;margin:6px 0 6px">Wat doe je met de open termijnen?</div>
+      <div style="margin-bottom:6px">
+        <button type="button" class="btn ghost sm" data-alle="vallen">Alles laten vallen</button>
+        <button type="button" class="btn ghost sm" data-alle="fact">Alles factureren</button>
+        <button type="button" class="btn ghost sm" data-alle="std">Voorstel (na stop + ${H(mnd)} mnd vervalt)</button>
+      </div>
+      <table class="tbl"><tbody>${open.map(i => `<tr data-iid="${H(i.id)}">
+        <td class="num">t${H(tekst(i.termijn_nr,'?'))}</td>
+        <td class="num">${H(dKort(i.geplande_datum))}</td>
+        <td class="n"><input type="number" step="0.01" class="sv_bedrag" value="${H(bedragVan(i))}" style="width:110px"></td>
+        <td><select class="sv_keuze"><option value="fact">Factureren</option><option value="vallen">Laten vallen</option></select></td></tr>`).join('')}
+      </tbody></table>` : '<p class="meta">Geen open termijnen meer.</p>'}
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="sv_hold"${hold ? ' checked' : ''}>
+        Facturatie on hold — ik weet het nog niet (niets wordt gefactureerd tot je hervat)</label>
+      <div class="f-row" id="sv_holdwrap" style="${hold ? '' : 'display:none'}"><label for="sv_reden">Reden</label>
+        <input id="sv_reden" value="${H(hold ? hold.reden : '')}" placeholder="Gestopt — overleg met klant"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn danger" id="sv_ok">Verwerken</button></div>`, {
     onClose(){ klaar(); },
     onOpen(m){
-      m.querySelector('#sv_ok').onclick = () => {
-        const datum = m.querySelector('#sv_datum').value;
+      const q = s2 => m.querySelector(s2);
+      const rijen = [...m.querySelectorAll('tr[data-iid]')].map(tr => ({tr, i: open.find(x => String(x.id) === tr.dataset.iid)}));
+      const zetStd = () => rijen.forEach(r => { r.tr.querySelector('.sv_keuze').value =
+        (r.i.status === 'vervallen' && p.gestopt_op) ? 'vallen' : standaard(r.i, q('#sv_datum').value || todayISO()); });
+      zetStd();
+      q('#sv_datum').oninput = () => { if(!p.gestopt_op) zetStd(); };
+      m.querySelectorAll('[data-alle]').forEach(b => b.onclick = () => {
+        if(b.dataset.alle === 'std') return zetStd();
+        rijen.forEach(r => r.tr.querySelector('.sv_keuze').value = b.dataset.alle);
+      });
+      q('#sv_hold').onchange = e => { q('#sv_holdwrap').style.display = e.target.checked ? '' : 'none'; };
+      q('#sv_ok').onclick = () => {
+        const datum = q('#sv_datum').value;
         if(!datum) return CRM.toast('Kies de stopdatum', 'err');
-        let n = 0;
-        finDoe(m.querySelector('#sv_ok'), async () => {
-          await plWijzig(p, {gestopt_op: datum});
-          const weg = stopImpact(f, p);
-          for(const i of weg) await markeer(i, 'vervallen');
-          n = weg.length;
+        const holdAan = q('#sv_hold').checked, reden = q('#sv_reden').value.trim();
+        if(holdAan && !reden) return CRM.toast('Vul een reden in voor on hold', 'err');
+        let nVal = 0, nFact = 0;
+        finDoe(q('#sv_ok'), async () => {
+          if(p.gestopt_op !== datum) await plWijzig(p, {gestopt_op: datum});
+          for(const r of rijen){
+            const keuze = r.tr.querySelector('.sv_keuze').value;
+            const bedrag = getalOfNull(r.tr.querySelector('.sv_bedrag').value);
+            if(keuze === 'vallen'){ if(r.i.status !== 'vervallen') await markeer(r.i, 'vervallen'); nVal++; }
+            else {
+              const patch = {};
+              if(r.i.status === 'vervallen') patch.status = 'te_factureren';
+              if(bedrag != null && bedrag !== bedragVan(r.i)) patch.bedrag_excl = bedrag;
+              if(Object.keys(patch).length) await instWijzig(r.i, patch);
+              nFact++;
+            }
+          }
+          if(holdAan && (!opHold(f, p.id) || opHold(f, p.id).reden !== reden)) await zetHold(f, p, reden);
+          if(!holdAan && opHold(f, p.id)) await zetHold(f, p, null);
         }, null, ok => {
           if(!ok) return;
-          CRM.toast(`${tekst(p.kandidaat)} gestopt — ${n} termijn${n === 1 ? '' : 'en'} vervallen`, 'ok');
+          CRM.toast(`${tekst(p.kandidaat)} gestopt — ${nFact} te factureren, ${nVal} laten vallen${holdAan ? ', facturatie on hold' : ''}`, 'ok');
           CRM.modal._onClose = null; CRM.modal.close(); klaar();
         });
       };
@@ -3158,7 +3210,8 @@ function actieLijst(el, f, herteken){
   /* On hold rechtstreeks vanuit de lijst (Tjeerd, 29 okt 2026: "kandidaat
      ziek, ik factureer niet — on hold-knop bij de facturatielijst"). */
   const holdKnop = x => (!x.hold && x.reden !== 'concept' && (x.i.status === 'te_factureren' || x.i.status === 'gefactureerd'))
-    ? ` <button class="btn ghost sm fin-ac-hold" data-ac="hold" title="Facturatie van ${H(tekst(x.p.kandidaat))} on hold zetten (bijv. ziek)">⏸</button>` : '';
+    ? ` <button class="btn ghost sm fin-ac-hold" data-ac="hold" title="Facturatie van ${H(tekst(x.p.kandidaat))} on hold zetten (bijv. ziek)">⏸</button>`
+      + (x.i.status === 'te_factureren' ? ` <button class="btn ghost sm" data-ac="vallen" title="Deze termijn niet factureren (laten vallen)">✕</button>` : '') : '';
   const knop = x => {
     if(x.hold) return `<button class="btn ghost sm" data-ac="hervat">Hervatten</button>`;
     if(x.reden === 'concept') return `<button class="btn ghost sm" data-ac="paneel">Fee bevestigen</button>`;
@@ -3181,7 +3234,7 @@ function actieLijst(el, f, herteken){
         <span class="meta" style="margin-left:10px">of</span> <button class="btn ghost sm" data-kies="hold">bewust niet — on hold</button></td></tr>` : '';
     return `<tr class="fin-ac-rij${n ? ' gedimd' : ''}" data-iid="${H(x.i.id)}" data-pid="${H(x.p.id)}" data-groep="${groep}">
       <td class="num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="datum" title="Klik om de datum te wijzigen">${datumCel}</span>` : datumCel}</td>
-      <td class="fin-ac-wie">${H(klantLabel(x.p.klant))} <span class="meta">· ${H(tekst(x.p.kandidaat))}</span></td>
+      <td class="fin-ac-wie">${H(klantLabel(x.p.klant))} <span class="meta">· ${H(tekst(x.p.kandidaat))}</span>${x.p.gestopt_op ? ` ${chip('gestopt ' + dKort(x.p.gestopt_op), 'amber')}` : ''}</td>
       <td class="num meta">${H(x.p.id)} t${H(tekst(x.i.termijn_nr,'?'))}</td>
       <td class="n num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="bedrag" title="Klik om het bedrag te wijzigen">${eur(bedragVan(x.i))}</span>` : eur(bedragVan(x.i))}</td>
       <td>${n ? `<span class="pos">✓ ${H(n.tekst)}</span>` : status(x)}</td>
@@ -3219,7 +3272,7 @@ function actieLijst(el, f, herteken){
       ${!d.klopt || d.over.length ? `<div class="note err" style="margin-bottom:10px">${d.over.length} termijn${d.over.length === 1 ? '' : 'en'} niet in te delen
         (geen plaatsing of onbekende status) — controleer: ${H(d.over.map(i => (i.placement_id||'?') + ' t' + (i.termijn_nr||'?')).join(', '))}</div>` : ''}
       <div class="card"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl">
-        <colgroup><col style="width:84px"><col><col style="width:100px"><col style="width:104px"><col style="width:200px"><col style="width:190px"></colgroup>
+        <colgroup><col style="width:84px"><col><col style="width:100px"><col style="width:104px"><col style="width:200px"><col style="width:220px"></colgroup>
         <tbody>${blokken}</tbody></table></div></div>
     </div>`;
 
@@ -3265,6 +3318,11 @@ function actieLijst(el, f, herteken){
       if(a === 'paneel') return plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
       if(a === 'hervat') return finDoe(b, () => zetHold(f, x.p, null), `${tekst(x.p.kandidaat)} hervat`, () => opnieuw());
       if(a === 'hold') return vraagHold(f, x.p, opnieuw);
+      if(a === 'vallen'){
+        if(!await CRM.bevestig(`Termijn ${x.i.termijn_nr} van ${tekst(x.p.kandidaat)} laten vallen?`,
+          `${eur(bedragVan(x.i))} wordt niet gefactureerd. Terugzetten kan in het plaatsingspaneel (herstellen).`, {knop:'Laten vallen'})) return;
+        return finDoe(b, () => markeer(x.i, 'vervallen'), `Termijn ${x.i.termijn_nr} laten vallen`, () => opnieuw());
+      }
       if(a === 'paid') return afvinken(x, 'betaald', null, tr.dataset.groep, b);
       if(a === 'fact'){
         /* Gemist: de echte factuurdatum kiezen, niet stil "vandaag". */
