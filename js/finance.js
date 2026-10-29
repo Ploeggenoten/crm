@@ -2530,6 +2530,21 @@ async function zetStopBesloten(f, p){
   await finSchrijf('fin_settings', q => q.upsert({key: STOP_KEY, value: nieuw}));
   f.settings[STOP_KEY] = nieuw;
 }
+/* Afwijkende klantfactor die Tjeerd gecontroleerd heeft ({naam: {factor, op}}).
+   Een andere functie bij dezelfde klant kan een eigen factor hebben (Liselotte
+   2,40 naast Lucindy 2,50 bij Omefa, 29 okt 2026). Wijzigt de factor later,
+   dan komt de melding terug.                                          */
+const FACTOR_OK_KEY = 'factorcontrole_ok';
+const factorOk = f => { const v = S(f, FACTOR_OK_KEY, null); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; };
+const factorAfwijking = (f, r) => (r.afwijking || []).filter(x => {
+  const ok = factorOk(f)[r.naam];
+  return !(ok && /factureert Pronkert/.test(x) && Math.abs(getal(ok.factor) - getal(r.klantfactor)) < 0.005);
+});
+async function zetFactorOk(f, r){
+  const nieuw = Object.assign({}, factorOk(f), {[r.naam]: {factor: r.klantfactor, op: todayISO()}});
+  await finSchrijf('fin_settings', q => q.upsert({key: FACTOR_OK_KEY, value: nieuw}));
+  f.settings[FACTOR_OK_KEY] = nieuw;
+}
 function stopTeBeslissen(f){
   const bes = stopBesloten(f);
   return f.placements.filter(p => p.gestopt_op && !p.concept && bes[p.id] !== p.gestopt_op && !opHold(f, p.id)
@@ -3652,7 +3667,7 @@ function tabFlex(el, f, compact){
       ${bijnaOver.map(r => `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} (nog ${Math.round(r.resterendUren)} u)`).join(' · ')}.
       Nu is het moment voor een vervolgafspraak.</div>` : ''}
     <div class="stack">
-      ${(() => { const los = factuurZonderPortefeuille(f, pf); const afw = pf.filter(r => r.afwijking && r.afwijking.length);
+      ${(() => { const los = factuurZonderPortefeuille(f, pf); const afw = pf.map(r => ({...r, afwijking: factorAfwijking(f, r)})).filter(r => r.afwijking.length);
         if(!los.length && !afw.length) return '';
         return kaart('Controle tegen de margefacturen',
           los.map(k => `<div class="fin-todo urg"><div class="t"><b>${H(k.naam)}</b> <span class="meta">· ${H(k.klant || '')}</span>
@@ -3660,6 +3675,7 @@ function tabFlex(el, f, compact){
           + afw.map(r => `<div class="fin-todo urg"><div class="t"><b>${H(r.naam)}</b> <span class="meta">· ${H(klantLabel(r.klant))}</span>
               <div class="w">${H(r.afwijking.join(' · '))}. Controleer uurloon, factuurtarief en de afspraak Uitzenden.</div></div>
               ${r.mist.some(m => m.waar === 'klant') || r.afwijking.some(x => /afspraak|percentage/.test(x)) ? `<button class="btn ghost sm" data-naarklant="${H(r.klantId)}">Klantkaart</button>` : ''}
+              ${r.afwijking.some(x => /factureert Pronkert/.test(x)) ? `<button class="btn sm" data-factorok="${H(r.naam)}" title="Factor gecontroleerd — melding weg zolang deze factor blijft">Klopt</button>` : ''}
               ${r.cid ? `<button class="btn ghost sm" data-naarkand="${H(r.cid)}">Kandidaatkaart</button>` : ''}</div>`).join(''),
           {plat:true});
       })()}
@@ -3684,6 +3700,10 @@ function tabFlex(el, f, compact){
   if(ov) ov.onclick = () => finDoe(ov, () => overnameBewaren(f, Object.assign({}, OVERNAME_TJEERD)),
     'Overname-uren per klant vastgelegd', ok => ok && tabFlex(el, f, compact));
   el.querySelectorAll('[data-naarkand]').forEach(b => b.onclick = () => CRM.ga('kandidaten', {id: b.dataset.naarkand}));
+  el.querySelectorAll('[data-factorok]').forEach(b => b.onclick = () => {
+    const r = flexPortefeuille(f).find(x => x.naam === b.dataset.factorok);
+    if(r) finDoe(b, () => zetFactorOk(f, r), `Factor ${num(r.klantfactor, 2)} voor ${r.naam} goedgekeurd`, ok => ok && tabFlex(el, f, compact));
+  });
   el.querySelectorAll('[data-flexvul]').forEach(b => b.onclick = () => {
     const r = flexPortefeuille(f).find(x => x.naam === b.dataset.flexvul);
     if(r) flexAanvullen(f, r, () => CRM.render());
