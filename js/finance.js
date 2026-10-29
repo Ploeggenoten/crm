@@ -2520,6 +2520,22 @@ function termijnBewerken(f, p, inst, klaar){
     }});
 }
 
+/* Welke stops al besloten zijn ({P048: '2026-10-29'}): fin_settings, geen
+   databasewijziging. Een stop zonder besluit met nog open termijnen komt
+   bovenaan Facturatie te staan tot je kiest (Tjeerd, 29 okt 2026).    */
+const STOP_KEY = 'stop_besloten';
+const stopBesloten = f => { const v = S(f, STOP_KEY, null); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; };
+async function zetStopBesloten(f, p){
+  const nieuw = Object.assign({}, stopBesloten(f), {[p.id]: p.gestopt_op || todayISO()});
+  await finSchrijf('fin_settings', q => q.upsert({key: STOP_KEY, value: nieuw}));
+  f.settings[STOP_KEY] = nieuw;
+}
+function stopTeBeslissen(f){
+  const bes = stopBesloten(f);
+  return f.placements.filter(p => p.gestopt_op && !p.concept && bes[p.id] !== p.gestopt_op && !opHold(f, p.id)
+    && instOf(f, p.id).some(i => i.status === 'te_factureren' || i.status === 'gefactureerd'));
+}
+
 /* ─── Venster: kandidaat gestopt ───────────────────────────────────
    Per open termijn kies je zelf: factureren (eventueel een ander bedrag)
    of laten vallen — of je zet de hele facturatie on hold als je het nog
@@ -2529,10 +2545,11 @@ function termijnBewerken(f, p, inst, klaar){
    voor wie al gestopt is (stop aanpassen).                            */
 function stopVenster(f, p, klaar, voorstelDatum){
   const g = garantie(f, p), mnd = Sn(f,'stop_achterstand_mnd',1);
-  const open = instOf(f, p.id).filter(i => i.status === 'te_factureren' || (p.gestopt_op && i.status === 'vervallen'))
+  const open = instOf(f, p.id).filter(i => i.status === 'te_factureren' || i.status === 'gefactureerd' || (p.gestopt_op && i.status === 'vervallen'))
     .sort((a,b) => (a.termijn_nr||0) - (b.termijn_nr||0));
   const hold = opHold(f, p.id);
-  const standaard = (i, datum) => { const grens = addMonths(datum, mnd); return i.geplande_datum && i.geplande_datum > grens ? 'vallen' : 'fact'; };
+  const standaard = (i, datum) => { if(i.status === 'gefactureerd') return 'fact';
+    const grens = addMonths(datum, mnd); return i.geplande_datum && i.geplande_datum > grens ? 'vallen' : 'fact'; };
   CRM.modal.open(`
     <div class="modal-h"><div class="h2">${p.gestopt_op ? 'Stop aanpassen' : 'Kandidaat gestopt'} · ${H(tekst(p.kandidaat))}</div>
       <p class="sub" style="margin:6px 0 0">${H(klantLabel(p.klant))} · ${H(p.id)} · fee ${H(eur(getal(p.fee_excl)))}</p></div>
@@ -2550,9 +2567,11 @@ function stopVenster(f, p, klaar, voorstelDatum){
       </div>
       <table class="tbl"><tbody>${open.map(i => `<tr data-iid="${H(i.id)}">
         <td class="num">t${H(tekst(i.termijn_nr,'?'))}</td>
-        <td class="num">${H(dKort(i.geplande_datum))}</td>
-        <td class="n"><input type="number" step="0.01" class="sv_bedrag" value="${H(bedragVan(i))}" style="width:110px"></td>
-        <td><select class="sv_keuze"><option value="fact">Factureren</option><option value="vallen">Laten vallen</option></select></td></tr>`).join('')}
+        <td class="num">${H(dKort(i.geplande_datum))}${i.status === 'gefactureerd' ? `<div class="rowsub">al gefactureerd ${H(dKort(i.factuurdatum))}</div>` : ''}</td>
+        <td class="n"><input type="number" step="0.01" class="sv_bedrag" value="${H(bedragVan(i))}" style="width:110px"${i.status === 'gefactureerd' ? ' disabled' : ''}></td>
+        <td><select class="sv_keuze">${i.status === 'gefactureerd'
+          ? '<option value="fact">Laten staan (wordt betaald)</option><option value="vallen">Laten vallen (crediteren)</option>'
+          : '<option value="fact">Factureren</option><option value="vallen">Laten vallen</option>'}</select></td></tr>`).join('')}
       </tbody></table>` : '<p class="meta">Geen open termijnen meer.</p>'}
       <label class="check" style="margin-top:12px"><input type="checkbox" id="sv_hold"${hold ? ' checked' : ''}>
         Facturatie on hold — ik weet het nog niet (niets wordt gefactureerd tot je hervat)</label>
@@ -2596,6 +2615,7 @@ function stopVenster(f, p, klaar, voorstelDatum){
           }
           if(holdAan && (!opHold(f, p.id) || opHold(f, p.id).reden !== reden)) await zetHold(f, p, reden);
           if(!holdAan && opHold(f, p.id)) await zetHold(f, p, null);
+          await zetStopBesloten(f, p);
         }, null, ok => {
           if(!ok) return;
           CRM.toast(`${tekst(p.kandidaat)} gestopt — ${nFact} te factureren, ${nVal} laten vallen${holdAan ? ', facturatie on hold' : ''}`, 'ok');
@@ -3214,6 +3234,7 @@ function actieLijst(el, f, herteken){
       + (x.i.status === 'te_factureren' ? ` <button class="btn ghost sm" data-ac="vallen" title="Deze termijn niet factureren (laten vallen)">✕</button>` : '') : '';
   const knop = x => {
     if(x.hold) return `<button class="btn ghost sm" data-ac="hervat">Hervatten</button>`;
+    if(x.p.gestopt_op && stopTeBeslissen(f).includes(x.p)) return `<button class="btn sm" data-ac="stop">Gestopt — kiezen…</button>`;
     if(x.reden === 'concept') return `<button class="btn ghost sm" data-ac="paneel">Fee bevestigen</button>`;
     if(x.i.status === 'te_factureren') return `<button class="btn sm" data-ac="fact">Gefactureerd ✓</button>`;
     if(x.i.status === 'gefactureerd' && !x.i.factuurdatum) return `<button class="btn ghost sm" data-ac="paneel">Datum invullen</button>`;
@@ -3269,6 +3290,18 @@ function actieLijst(el, f, herteken){
           · te laat + gemist <b class="num${vb.achter ? ' neg' : ''}">${eur(vb.achter)}</b>
           · <button type="button" class="lnk" id="fin_ac_kas">kas per week</button></span>
       </div>
+      ${(() => { const sb = stopTeBeslissen(f); if(!sb.length) return '';
+        return `<div class="card" style="margin-bottom:10px;border-color:var(--amber,#d9a441)"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl"><tbody>
+          <tr class="fin-ac-grp"><td colspan="4"><b>Gestopt — kies wat je factureert</b><span class="meta"> · factureren, bedrag aanpassen, laten vallen of on hold</span></td>
+            <td colspan="2" class="n meta">${sb.length}</td></tr>
+          ${sb.map(p => { const o = instOf(f, p.id).filter(i => i.status === 'te_factureren' || i.status === 'gefactureerd');
+            return `<tr><td class="num">${H(dKort(p.gestopt_op))}</td>
+              <td class="fin-ac-wie">${H(klantLabel(p.klant))} <span class="meta">· ${H(tekst(p.kandidaat))}</span></td>
+              <td class="num meta">${H(p.id)}</td>
+              <td class="n num">${eur(o.reduce((s2,i) => s2 + bedragVan(i), 0))}</td>
+              <td><span class="meta">${o.length} open termijn${o.length === 1 ? '' : 'en'}${o.some(i => i.status === 'gefactureerd') ? ' · waarvan al gefactureerd' : ''}</span></td>
+              <td class="n"><button class="btn sm" data-stopkies="${H(p.id)}">Kiezen…</button></td></tr>`; }).join('')}
+        </tbody></table></div></div>`; })()}
       ${!d.klopt || d.over.length ? `<div class="note err" style="margin-bottom:10px">${d.over.length} termijn${d.over.length === 1 ? '' : 'en'} niet in te delen
         (geen plaatsing of onbekende status) — controleer: ${H(d.over.map(i => (i.placement_id||'?') + ' t' + (i.termijn_nr||'?')).join(', '))}</div>` : ''}
       <div class="card"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl">
@@ -3281,6 +3314,10 @@ function actieLijst(el, f, herteken){
   zoek.addEventListener('input', CRM.debounce(e => { _actieZoek = e.target.value; opnieuw();
     const z2 = el.querySelector('#fin_ac_zoek'); if(z2){ z2.focus(); z2.setSelectionRange(z2.value.length, z2.value.length); } }, 250));
   el.querySelector('#fin_ac_kas').onclick = () => { _tab = 'geld'; CRM.render(); };
+  el.querySelectorAll('[data-stopkies]').forEach(b => b.onclick = () => {
+    const p = f.placements.find(x => x.id === b.dataset.stopkies);
+    if(p) stopVenster(f, p, () => { _netAf.clear(); herteken(); });
+  });
   el.querySelectorAll('.fin-ac-grp').forEach(tr => tr.onclick = () => {
     const k = tr.dataset.grp, gr = ACTIE_GROEPEN.find(x => x.k === k);
     if(gr.open) return;
@@ -3318,6 +3355,7 @@ function actieLijst(el, f, herteken){
       if(a === 'paneel') return plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
       if(a === 'hervat') return finDoe(b, () => zetHold(f, x.p, null), `${tekst(x.p.kandidaat)} hervat`, () => opnieuw());
       if(a === 'hold') return vraagHold(f, x.p, opnieuw);
+      if(a === 'stop') return stopVenster(f, x.p, () => { _netAf.clear(); herteken(); });
       if(a === 'vallen'){
         if(!await CRM.bevestig(`Termijn ${x.i.termijn_nr} van ${tekst(x.p.kandidaat)} laten vallen?`,
           `${eur(bedragVan(x.i))} wordt niet gefactureerd. Terugzetten kan in het plaatsingspaneel (herstellen).`, {knop:'Laten vallen'})) return;
