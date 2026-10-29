@@ -3155,6 +3155,10 @@ function actieLijst(el, f, herteken){
     if(x.i.status === 'betaald') return `<span class="meta">betaald</span>`;
     return `<span class="meta">geen factuur</span>`;
   };
+  /* On hold rechtstreeks vanuit de lijst (Tjeerd, 29 okt 2026: "kandidaat
+     ziek, ik factureer niet — on hold-knop bij de facturatielijst"). */
+  const holdKnop = x => (!x.hold && x.reden !== 'concept' && (x.i.status === 'te_factureren' || x.i.status === 'gefactureerd'))
+    ? ` <button class="btn ghost sm fin-ac-hold" data-ac="hold" title="Facturatie van ${H(tekst(x.p.kandidaat))} on hold zetten (bijv. ziek)">⏸</button>` : '';
   const knop = x => {
     if(x.hold) return `<button class="btn ghost sm" data-ac="hervat">Hervatten</button>`;
     if(x.reden === 'concept') return `<button class="btn ghost sm" data-ac="paneel">Fee bevestigen</button>`;
@@ -3181,7 +3185,7 @@ function actieLijst(el, f, herteken){
       <td class="num meta">${H(x.p.id)} t${H(tekst(x.i.termijn_nr,'?'))}</td>
       <td class="n num">${bewerkbaar(x) ? `<span class="fin-ed" data-ed="bedrag" title="Klik om het bedrag te wijzigen">${eur(bedragVan(x.i))}</span>` : eur(bedragVan(x.i))}</td>
       <td>${n ? `<span class="pos">✓ ${H(n.tekst)}</span>` : status(x)}</td>
-      <td class="n">${n ? `<button type="button" class="lnk" data-ac="ongedaan">ongedaan</button>` : knop(x)}</td>
+      <td class="n" style="white-space:nowrap">${n ? `<button type="button" class="lnk" data-ac="ongedaan">ongedaan</button>` : knop(x) + holdKnop(x)}</td>
     </tr>${keuze}`;
   };
 
@@ -3215,7 +3219,7 @@ function actieLijst(el, f, herteken){
       ${!d.klopt || d.over.length ? `<div class="note err" style="margin-bottom:10px">${d.over.length} termijn${d.over.length === 1 ? '' : 'en'} niet in te delen
         (geen plaatsing of onbekende status) — controleer: ${H(d.over.map(i => (i.placement_id||'?') + ' t' + (i.termijn_nr||'?')).join(', '))}</div>` : ''}
       <div class="card"><div class="tblwrap" style="border:none"><table class="tbl fin-ac-tbl">
-        <colgroup><col style="width:84px"><col><col style="width:100px"><col style="width:104px"><col style="width:200px"><col style="width:150px"></colgroup>
+        <colgroup><col style="width:84px"><col><col style="width:100px"><col style="width:104px"><col style="width:200px"><col style="width:190px"></colgroup>
         <tbody>${blokken}</tbody></table></div></div>
     </div>`;
 
@@ -3260,6 +3264,7 @@ function actieLijst(el, f, herteken){
       const a = b.dataset.ac;
       if(a === 'paneel') return plPaneel(f, x.p.id, () => { _netAf.clear(); herteken(); });
       if(a === 'hervat') return finDoe(b, () => zetHold(f, x.p, null), `${tekst(x.p.kandidaat)} hervat`, () => opnieuw());
+      if(a === 'hold') return vraagHold(f, x.p, opnieuw);
       if(a === 'paid') return afvinken(x, 'betaald', null, tr.dataset.groep, b);
       if(a === 'fact'){
         /* Gemist: de echte factuurdatum kiezen, niet stil "vandaag". */
