@@ -254,7 +254,10 @@ const Sn = (f, key, fallback=0) => getal(S(f, key, fallback), fallback);
    (snake_case) zodat elke formule letterlijk overeenkomt met calc.js.
    Enige aanpassing: de eerste fase heet in het CRM 'Intake' waar de
    finance-app nog 'Voorselectie' kent — dat loopt via CRM.faseNorm.     */
-const cands = () => (CRM.state && CRM.state.cands) ? CRM.state.cands : [];
+/* _candFilter: alleen tijdens het tekenen van Plaatsingen met een klantfilter
+   (tabPlaatsingen) — daarbuiten altijd alle kandidaten. */
+let _candFilter = null;
+const cands = () => { const a = (CRM.state && CRM.state.cands) ? CRM.state.cands : []; return _candFilter ? a.filter(_candFilter) : a; };
 const faseVan = c => CRM.faseNorm ? CRM.faseNorm(c && c.fase) : (c && c.fase);
 const PLACED_FASES = ['Contract getekend','Gestart'];
 const isPlaced = c => PLACED_FASES.includes(faseVan(c));
@@ -2801,9 +2804,46 @@ function flexKalenderKaart(f){
     {plat:true, voet:`Per week: werkdagen zonder feestdagen × uren per week ÷ 5 × ${pct0(fk.real.pct)} (gemeten realisatie) × marge per uur. Factuur op de zondag van de werkweek, geld ±${fk.termijn} dagen later — de termijn staat onder ⚙. Al gefactureerd telt met het echte factuurbedrag. Na de overname rekenen we niets meer.`});
 }
 
+/* ─── Filter op klant (Tjeerd, 29 okt 2026: "overzichtelijker") ─────
+   Eén keuze bovenaan Plaatsingen; alles op het tabblad volgt: cijferbalk,
+   binnen per maand, W&S-lijst, flex. Klantnamen worden gegroepeerd zoals
+   overal in het CRM (CRM.normKlant). Flex-factuurregels horen bij de klant
+   van de kandidaat op het bord (roepnaam), anders de naam op de factuur. */
+let _plKlant = '';
+const klantSleutel = k => CRM.normKlant ? CRM.normKlant(k) : String(k||'').toLowerCase();
+function plKlanten(f){
+  const namen = new Map();
+  const erbij = k => { const s2 = klantSleutel(k); if(s2 && !namen.has(s2)) namen.set(s2, String(k).trim()); };
+  f.placements.forEach(p => erbij(p.klant));
+  f.flexPl.forEach(p => erbij(p.klant));
+  cands().filter(c => isFlexType(c.type) && (isPlaced(c) || c.gestopt_op)).forEach(c => erbij(c.klant));
+  return [...namen.entries()].sort((a,b) => a[1].localeCompare(b[1], 'nl'));
+}
+function filterOpKlant(f, sl){
+  const hoort = k => klantSleutel(k) === sl;
+  const pl = f.placements.filter(p => hoort(p.klant)), ids = new Set(pl.map(p => p.id));
+  const regelKlant = r => { const k = bordKlant({naam: r.roepnaam || r.naam}); return k || r.klant; };
+  return Object.assign({}, f, {
+    placements: pl,
+    installments: f.installments.filter(i => ids.has(i.placement_id)),
+    flexPl: f.flexPl.filter(p => hoort(p.klant)),
+    flexRegels: (f.flexRegels || []).filter(r => hoort(regelKlant(r))),
+    flexWeken: []                                   // oude weektotalen hebben geen klant
+  });
+}
+
 function tabPlaatsingen(el, f){
   if(f.demo){ el.innerHTML = demoLeeg('Geen plaatsingen in demo',
     'Hier zie je normaal al je plaatsingen — W&S en flex — met wat ze per maand opleveren.'); return; }
+  const klanten = plKlanten(f);
+  if(_plKlant && !klanten.some(([s2]) => s2 === _plKlant)) _plKlant = '';
+  if(!_plKlant) return tabPlaatsingenTeken(el, f, f, klanten);
+  const fv = filterOpKlant(f, _plKlant);
+  _candFilter = c => klantSleutel(c.klant) === _plKlant;
+  try{ tabPlaatsingenTeken(el, f, fv, klanten); } finally { _candFilter = null; }
+}
+
+function tabPlaatsingenTeken(el, fAlles, f, klanten){
 
   const t = todayISO(), nu7 = t.slice(0,7);
   const b0 = binnenMaand(f, nu7);
@@ -2837,6 +2877,10 @@ function tabPlaatsingen(el, f){
         <button data-s="ws"${_plSoort === 'ws' ? ' class="on"' : ''}>W&amp;S</button>
         <button data-s="flex"${_plSoort === 'flex' ? ' class="on"' : ''}>Flex</button>
       </div>
+      <select id="fin_pl_klant" style="width:auto;max-width:260px" title="Filter op klant">
+        <option value="">Alle klanten</option>
+        ${klanten.map(([s2, n]) => `<option value="${H(s2)}"${s2 === _plKlant ? ' selected' : ''}>${H(n)}</option>`).join('')}
+      </select>
       <span class="spacer"></span>
       <button class="btn sub sm" id="fin_pl_nieuw">+ W&amp;S-plaatsing</button>
     </div>
@@ -2865,27 +2909,30 @@ function tabPlaatsingen(el, f){
       ${_plSoort !== 'ws' ? '<div id="fin_flexdeel"></div>' : ''}
     </div>`;
 
-  const herteken = () => tabPlaatsingen(el, f);
+  const herteken = () => tabPlaatsingen(el, fAlles);
   el.querySelectorAll('#fin_pl_soort button').forEach(b => b.onclick = () => { _plSoort = b.dataset.s; herteken(); });
-  el.querySelector('#fin_pl_nieuw').onclick = () => plFormulier(f, {}, herteken);
+  el.querySelector('#fin_pl_klant').onchange = e => { _plKlant = e.target.value; herteken(); };
+  el.querySelector('#fin_pl_nieuw').onclick = () => plFormulier(fAlles, {}, herteken);
   const meer = el.querySelector('#fin_inbox_meer');
   if(meer) meer.onclick = () => { _inboxAlles = !_inboxAlles; herteken(); };
   el.querySelectorAll('[data-afronden]').forEach(b => b.onclick = () => {
     const c = cands().find(x => String(x.id) === b.dataset.afronden);
-    if(c) plFormulier(f, {c}, herteken);
+    if(c) plFormulier(fAlles, {c}, herteken);
   });
   el.querySelectorAll('[data-nietfact]').forEach(b => b.onclick = async () => {
     const c = cands().find(x => String(x.id) === b.dataset.nietfact); if(!c) return;
     if(!await CRM.bevestig(`${tekst(c.naam)} niet factureren?`,
       'Hij verdwijnt uit deze lijst en wordt geen plaatsing in Finance.', {knop:'Niet factureren'})) return;
-    finDoe(b, () => niemandFactureren(f, c.id), `${tekst(c.naam)} staat op niet factureren`, herteken);
+    finDoe(b, () => niemandFactureren(fAlles, c.id), `${tekst(c.naam)} staat op niet factureren`, herteken);
   });
   const sel = el.querySelector('#fin_pl_filter');
   if(sel){
     sel.value = [...sel.options].some(o => o.value === _filter) ? _filter : 'alle';
-    el.querySelector('#fin_pl_zoek').addEventListener('input', CRM.debounce(e => { _zoek = e.target.value; tekenPlTabel(el, f); }, 200));
-    sel.onchange = e => { _filter = e.target.value; tekenPlTabel(el, f); };
-    tekenPlTabel(el, f);
+    /* de lijst werkt op de échte gegevens (panelen schrijven erin); het
+       klantfilter zit in tekenPlTabel zelf */
+    el.querySelector('#fin_pl_zoek').addEventListener('input', CRM.debounce(e => { _zoek = e.target.value; tekenPlTabel(el, fAlles); }, 200));
+    sel.onchange = e => { _filter = e.target.value; tekenPlTabel(el, fAlles); };
+    tekenPlTabel(el, fAlles);
   }
   const flexDeel = el.querySelector('#fin_flexdeel');
   if(flexDeel) tabFlex(flexDeel, f, _plSoort === 'alles');
@@ -2933,6 +2980,7 @@ function tekenPlTabel(el, f){
   const z = _zoek.trim().toLowerCase();
   const rows = f.placements
     .filter(p => {
+      if(_plKlant && klantSleutel(p.klant) !== _plKlant) return false;
       if(z && ![p.kandidaat, p.klant, p.functie].some(v => String(v||'').toLowerCase().includes(z))) return false;
       if(_filter==='alle') return true;
       if(_filter==='concept') return !!p.concept;
