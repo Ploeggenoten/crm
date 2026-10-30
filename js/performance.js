@@ -196,7 +196,7 @@ function cijfers(p){
   const gestopt  = cs.filter(c => teltAlsStop(c) && inP(c.gestoptOp,p));
   /* Cohort voor duurzaamheid: iedereen die in deze periode getekend heeft,
      inclusief wie later gestopt is. */
-  const cohort = cs.filter(c => inP(c.geplaatstOp,p) && (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt')));
+  const cohort = cs.filter(c => inP(c.geplaatstOp,p) && CRM.teltAlsPlaatsing(c));   // zonder gestopte vervangers
   const instroom  = cs.filter(c => inP(c.since,p));
   const afgevallen= cs.filter(c => CRM.faseIs(c.fase,'Afgevallen') && inP(laatsteBeweging(c),p));
   return {cs, getekend, gestopt, cohort, instroom, afgevallen, netto:getekend.length-gestopt.length};
@@ -1183,9 +1183,11 @@ function zorgAfspraken(klaar){
    later gestopt. Exact de definitie van het bord (CRM.plaatsingenMaand) —
    inclusief de ZZP-uitzondering: een korte klus telt niet mee, zie
    CRM.zzpTeltAlsPlaatsing (data.js). */
-const isPlaatsing = c => !!kort(c.geplaatstOp) &&
-  (CRM.faseIn(c.fase, CRM.PLACED) || CRM.faseIs(c.fase,'Gestopt')) &&
-  (c.type !== 'ZZP' || CRM.zzpTeltAlsPlaatsing(c));
+/* Nu ook echt dezelfde: een gestopte VERVANGER (inwisselaar) is geen eigen
+   plaatsing en dus ook geen eigen stopper — zijn voorganger telde al. Rute
+   Santos (Henri, verving Kees Jorna) stond hier wel als stopper in de
+   stoppersratio en de duurzaamheid (Tjeerd, 30 okt 2026). */
+const isPlaatsing = c => CRM.teltAlsPlaatsing(c);
 
 /* Waaróm een plaatsing geen fee heeft. Vier van de vijf redenen zijn geen
    fout maar een feit: flex verdient per uur, een vervanger onder garantie
