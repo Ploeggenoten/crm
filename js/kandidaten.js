@@ -1101,7 +1101,11 @@ const CONTRACT_VELDEN = [
    (naam: Tjeerd, 7 aug 2026). */
 const perUur = v => v == null || v === '' ? '' : '€' + Number(v).toFixed(2).replace('.', ',') + ' p/uur';
 const FLEX_VELDEN = [
-  {k:'uurloon',      lbl:'Bruto uurloon',   t:'number', toon:perUur},
+  {k:'uurloon',      lbl:'Bruto uurloon',   t:'number', toon:perUur, hint:'kaal, zonder ploegentoeslag'},
+  /* Pronkert betaalt de toeslag bovenop het kale uurloon en factureert de
+     klant daar ook de factor over — de marge per uur stijgt mee (Roberto bij
+     Burg Siroop: trede 8 + 11,1%; Tjeerd, 30 okt 2026). */
+  {k:'toeslagPct',   lbl:'Ploegentoeslag',  t:'number', toon:v => v ? CRM.pct(v, 1) : '', hint:'% bovenop het kale uurloon — leeg = geen'},
   /* Wat er werkelijk gefactureerd wordt. Vul je dit in, dan rekent de kaart
      de marge daarmee uit in plaats van met de factor uit de afspraak — dat
      is wat je écht verdient (naam: Tjeerd, 7 aug 2026). */

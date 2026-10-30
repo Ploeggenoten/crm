@@ -550,7 +550,9 @@ function flexFactorenBereken(f){
     /* Tariefopbouw per week bijhouden en straks de LAATSTE week nemen: op de
        kaart hoort te staan wat er nú geldt, niet een gemiddelde over maanden
        waarin een tariefwijziging wegvalt. */
-    if(String(r.soort||'').trim().toLowerCase() === 'loon normale uren' && getal(r.uren)){
+    /* Pronkert zet de uren van wie in ploegen werkt soms alleen op de regel
+       "Ploegentoeslag" (Rick, Burg Siroop) — zelfde uurloon, tarief en factor. */
+    if(['loon normale uren','ploegentoeslag'].includes(String(r.soort||'').trim().toLowerCase()) && getal(r.uren)){
       const u = getal(r.uren);
       const w = k.weken.get(wk) || {nu:0, loon:0, tar:0, fac:0};
       w.nu += u; w.loon += getal(r.uurloon)*u; w.tar += getal(r.tarief)*u; w.fac += getal(r.factor)*u;
@@ -2810,8 +2812,8 @@ function portefeuilleKaart(f, pf){
         <div class="rowsub">${H(klantLabel(r.klant))}${r.nieuwGroep && r.start ? (r.start > t ? ' · start ' + H(dKort(r.start)) : ' · gestart ' + H(dKort(r.start)) + ', nog geen factuur') : ''}</div></td>
       <td class="n num">${r.margeUur ? eur2(r.margeUur) : '—'}${r.margeUur ? `<div class="rowsub" title="${H(r.echt
           ? 'Werkelijke marge per gewerkt uur uit de eigen margefacturen (leidend).' + (r.margeVoorspeld ? ' Voorspeld was ' + eur2(r.margeVoorspeld) + '.' : '')
-          : 'Voorspelling: uurloon ' + eur2(r.uurloon) + (r.uurloonBron ? ' (' + r.uurloonBron + ')' : '') + ' × (klantfactor ' + num(r.klantfactor, 2) + ' uit ' + r.klantfactorBron + ' − inkoop ' + num(r.inkoop, 3) + ' uit ' + r.inkoopBron + ')')}">${
-          r.echt ? 'factuur' : `voorspeld · ${num(r.klantfactor, 2)} − ${num(r.inkoop, 2)}`}</div>` : ''}</td>
+          : 'Voorspelling: uurloon ' + eur2(r.uurloon) + (r.uurloonBron ? ' (' + r.uurloonBron + ')' : '') + (r.toeslag ? ' + ' + num(r.toeslag, 1) + '% ploegentoeslag' : '') + ' × (klantfactor ' + num(r.klantfactor, 2) + ' uit ' + r.klantfactorBron + ' − inkoop ' + num(r.inkoop, 3) + ' uit ' + r.inkoopBron + ')')}">${
+          r.echt ? 'factuur' : `voorspeld · ${num(r.klantfactor, 2)} − ${num(r.inkoop, 2)}${r.toeslag ? ' · +' + num(r.toeslag, 1) + '%' : ''}`}</div>` : ''}</td>
       <td class="n num">${Math.round(r.gewerkt)} / ${r.overname ? Math.round(r.overname) + ' u' : '?'}
         ${r.overname ? `<div class="fin-waardebar" style="margin-top:4px"><i style="width:${Math.min(100, r.gewerkt / r.overname * 100)}%"></i></div>` : ''}</td>
       <td class="n">${r.verdiend ? `<span class="num pos">${eur(r.verdiend)}</span>` : '<span class="meta">—</span>'}</td>
@@ -4239,8 +4241,12 @@ function flexWaarde(f, fp, c, alleenVoorspelling){
   const overname = (fp && getalOfNull(fp.overname_uren)) || (a && a.overname_uren) || (fa && getalOfNull(fa.overname_uren))
     || overnameKlant(f, klant) || null;
 
-  /* de voorspelling */
-  const margeVoorspeld = (uurloon && klantfactor && inkoop) ? (klantfactor - inkoop) * uurloon : null;
+  /* de voorspelling — over het uurloon mét ploegentoeslag: Pronkert betaalt
+     de toeslag bovenop het kale uurloon en de klant betaalt er de factor over
+     (margefacturen Rick, Burg Siroop: 11,1%). De factoren zelf blijven op het
+     kale uurloon, zoals op de factuur. */
+  const toeslag = (c && getalOfNull(c.toeslag_pct)) || 0;
+  const margeVoorspeld = (uurloon && klantfactor && inkoop) ? (klantfactor - inkoop) * uurloon * (1 + toeslag / 100) : null;
 
   /* de werkelijkheid: eigen margefacturen — leidend zodra ze er zijn */
   const eigen = alleenVoorspelling ? null : eigenFactuur(f, (fp && fp.kandidaat) || (c && c.naam) || '', klant);
@@ -4266,7 +4272,7 @@ function flexWaarde(f, fp, c, alleenVoorspelling){
       && Math.abs(klantfactor - fiKlant.klantfactor) > 0.05)
     ? [`klantfactor ${num(klantfactor, 2)}, bij ${fiKlant.naam} factureert Pronkert ${num(fiKlant.klantfactor, 2)}`] : [];
   geweigerd.forEach(g => afwijking.push(`klantfactor ${g} is geen factor (tussen 1,2 en 4) — staat daar een fee-percentage? Niet meegerekend`));
-  return {uurloon, uurloonBron, klantfactor, klantfactorBron, inkoop, inkoopBron, afwijking, overname, urenPw, gewerkt, restUren,
+  return {uurloon, uurloonBron, toeslag, klantfactor, klantfactorBron, inkoop, inkoopBron, afwijking, overname, urenPw, gewerkt, restUren,
           margeUur, margeVoorspeld, echt: !!echt, compleet, mist, klantId: kl ? kl.naam : klant,
           totaal: compleet ? margeUur * overname : null,
           rest: compleet ? margeUur * restUren : null,
@@ -4295,6 +4301,8 @@ function flexAanvullen(f, r, klaar){
       <div class="f-row"><label for="fv_uren">Uren per week</label><input id="fv_uren" type="number" step="0.5" value="${w((fp && fp.uren_pw) || (c && c.uren) || '')}" placeholder="40"></div>
       <div class="f-row"><label for="fv_uurloon">Bruto uurloon (€)</label><input id="fv_uurloon" type="number" step="0.01" value="${w(r.uurloon ? Math.round(r.uurloon * 100) / 100 : '')}"></div>
       <div class="f-row"><label for="fv_maand">of bruto maandloon (€)</label><input id="fv_maand" type="number" step="1" placeholder="rekent het uurloon uit"></div>
+      <div class="f-row"><label for="fv_toesl">Ploegentoeslag (%)</label><input id="fv_toesl" type="number" step="0.1" value="${w(c && c.toeslag_pct != null ? c.toeslag_pct : '')}" placeholder="leeg = geen">
+        <div class="meta" style="margin-top:4px">Uur- en maandloon kaal invullen; de toeslag komt er hier bovenop.</div></div>
       <div class="f-row"><label for="fv_tarief">Factuurtarief per uur (€)</label><input id="fv_tarief" type="number" step="0.01" value="${w(c && c.tarief || '')}"
         placeholder="${kfVast ? 'leeg = factor ' + num(kfVast, 2) + ' uit ' + H(r.klantfactorBron) : 'wat de klant per uur betaalt'}"></div>
       <div class="f-row"><label for="fv_ovn">Looptijd tot kosteloze overname (uren)</label><input id="fv_ovn" type="number" step="10" value="${w(r.overname || '')}">
@@ -4308,7 +4316,7 @@ function flexAanvullen(f, r, klaar){
       const reken = () => {
         const uren = v('#fv_uren') || 40;
         if(v('#fv_maand')) q('#fv_uurloon').value = (v('#fv_maand') * 3 / 13 / uren).toFixed(2);
-        const ul = v('#fv_uurloon'), tf = v('#fv_tarief'), ovn = v('#fv_ovn'), start = q('#fv_start').value;
+        const ul = v('#fv_uurloon'), tf = v('#fv_tarief'), ovn = v('#fv_ovn'), start = q('#fv_start').value, ts = v('#fv_toesl') || 0;
         const kf = tf && ul ? tf / ul : kfVast;
         /* inkoop: wat het CRM al weet; zonder collega-factuur de kostprijstool met dit uurloon */
         let ink = r.inkoop, inkBron = r.inkoopBron;
@@ -4324,19 +4332,19 @@ function flexAanvullen(f, r, klaar){
           : '<b>Inkoopfactor onbekend:</b> er werkte nog niemand bij deze klant en de klant heeft geen CAO. Zet de CAO op de klantkaart, dan rekent de kostprijstool van Pronkert hem uit.');
         if(kf && (kf < 1.2 || kf > 4)) regels.push(`<span class="neg">Tarief ÷ uurloon = factor ${num(kf, 2)} — een factor ligt tussen 1,2 en 4.</span>`);
         else if(ul && kf && ink){
-          const mu = ul * (kf - ink), pm = mu * uren * real * 52 / 12;
+          const mu = ul * (1 + ts / 100) * (kf - ink), pm = mu * uren * real * 52 / 12;
           const zo = start ? addDays(maandagVan(start), 6) : null;
-          regels.push(`Marge <b>${eur2(mu)}</b> per uur (factor ${num(kf, 2)} − ${num(ink, 2)}) · ±<b>${eur(pm)}</b> per maand bij ${pct0(real)} van ${num(uren, 0)} u`
+          regels.push(`Marge <b>${eur2(mu)}</b> per uur (factor ${num(kf, 2)} − ${num(ink, 2)}${ts ? ', over ' + eur2(ul * (1 + ts / 100)) + ' incl. ' + num(ts, 1) + '% toeslag' : ''}) · ±<b>${eur(pm)}</b> per maand bij ${pct0(real)} van ${num(uren, 0)} u`
             + (zo ? `<br>Eerste factuur ${H(dKort(zo))}, eerste geld rond <b>${H(dKort(addDays(zo, T)))}</b>` : '')
             + (ovn ? ` · tot de overname ±<b>${eur(mu * ovn)}</b>` : ''));
         } else regels.push('<span class="meta">Vul uurloon (of maandloon) en tarief in om de marge te zien.</span>');
         q('#fv_uit').innerHTML = regels.join('<br>');
       };
-      ['#fv_start','#fv_uren','#fv_uurloon','#fv_maand','#fv_tarief','#fv_ovn'].forEach(id => q(id).oninput = reken);
+      ['#fv_start','#fv_uren','#fv_uurloon','#fv_maand','#fv_toesl','#fv_tarief','#fv_ovn'].forEach(id => q(id).oninput = reken);
       q('#fv_uurloon').addEventListener('input', () => { q('#fv_maand').value = ''; });
       reken();
       q('#fv_ok').onclick = () => {
-        const start = q('#fv_start').value || null, uren = v('#fv_uren'), ul = v('#fv_uurloon'), tf = v('#fv_tarief'), ovn = v('#fv_ovn');
+        const start = q('#fv_start').value || null, uren = v('#fv_uren'), ul = v('#fv_uurloon'), tf = v('#fv_tarief'), ovn = v('#fv_ovn'), ts = v('#fv_toesl');
         if(!start) return CRM.toast('Vul de startdatum in', 'err');
         if(!(ul > 0)) return CRM.toast('Vul het bruto uurloon of maandloon in', 'err');
         if(!(uren > 0)) return CRM.toast('Vul de uren per week in', 'err');
@@ -4345,7 +4353,7 @@ function flexAanvullen(f, r, klaar){
         if(!(ovn > 0)) return CRM.toast('Vul de looptijd (overname-uren) in', 'err');
         finDoe(q('#fv_ok'), async () => {
           if(c){
-            const patch = {start, uren, uurloon: Math.round(ul * 100) / 100};
+            const patch = {start, uren, uurloon: Math.round(ul * 100) / 100, toeslag_pct: ts || null};
             if(tf) patch.tarief = tf;
             Object.assign(c, patch);
             if(!CRM.demo && !CRM._finMock){
@@ -4631,7 +4639,7 @@ function flexKasstroom(f){
   const t = todayISO();
   const stempel = t + JSON.stringify([S(f, FLEX_BETAAL_KEY, null), overnameLijst(f), (f.flexPl||[]).length,
     (f.flexRegels||[]).length, f.flexAfspr, f.flexPl,
-    cands().filter(c => isFlexType(c.type)).map(c => [c.id, c.fase, c.klant, c.uurloon, c.uren, c.tarief, c.maandloon, c.start, c.gestopt_op])]);
+    cands().filter(c => isFlexType(c.type)).map(c => [c.id, c.fase, c.klant, c.uurloon, c.uren, c.tarief, c.maandloon, c.toeslag_pct, c.start, c.gestopt_op])]);
   const c0 = _kasCache.get(f);
   if(c0 && c0.stempel === stempel) return c0.uit;
 
