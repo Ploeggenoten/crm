@@ -4464,6 +4464,13 @@ async function faseWissel(id, fase){
       return (x >= 1.2 && x <= 4) ? x : null;
     }catch(e){ return null; }
   })();
+  /* Flex: wat al op de kaart staat niet opnieuw vragen. Staat er alleen een
+     maandloon (zoals bij Roberto Polanen: €3.509,41 kaal), dan rekent het
+     venster het uurloon voor: × 3 ÷ 13 ÷ uren per week (Tjeerd, 30 okt 2026:
+     "is dit niet dubbel nu?"). Uurloon is altijd kaal; de ploegentoeslag
+     staat ernaast, Finance rekent hem in de marge mee. */
+  const ulUitMaand = uren => c.maandloon ? Math.round(c.maandloon * 3 / 13 / (uren || 40) * 100) / 100 : null;
+  const ulStart = c.uurloon != null && c.uurloon !== '' ? c.uurloon : ulUitMaand(+c.uren || 40);
   const kop = vraagKlant ? h(c.naam) + ' voorstellen'
     : vraagStart ? 'Plaatsing van ' + h(c.naam) + (c.klant ? ' bij ' + h(c.klant) : '') + ' vastleggen'
     : h(c.naam) + ' → ' + h(fase);
@@ -4498,10 +4505,14 @@ async function faseWissel(id, fase){
         </div>` : ''}
       ${vraagStart ? `<div id="fw_flexrij" style="${c.type==='Flex' ? '' : 'display:none'}">
           <div class="f-grid">
-            <div class="f-row"><label for="fw_uurloon">Bruto uurloon (€)</label>
-              <input type="number" id="fw_uurloon" min="0" step="0.01" value="${c.uurloon != null ? h(c.uurloon) : ''}"></div>
+            <div class="f-row"><label for="fw_uurloon">Bruto uurloon, kaal (€)</label>
+              <input type="number" id="fw_uurloon" min="0" step="0.01" value="${ulStart != null ? h(ulStart) : ''}"${c.uurloon == null && c.maandloon ? ' data-uitmaand="1"' : ''}>
+              <span class="hint" id="fw_ulhint">${c.uurloon == null && c.maandloon ? 'Uit het maandloon op de kaart (' + h(CRM.euro(c.maandloon)) + ' × 3 ÷ 13 ÷ uren per week)' : 'Zonder ploegentoeslag'}</span></div>
             <div class="f-row"><label for="fw_uren">Uren per week</label>
-              <input type="number" id="fw_uren" min="1" max="60" step="1" value="${c.uren != null ? h(c.uren) : ''}"></div>
+              <input type="number" id="fw_uren" min="1" max="60" step="1" value="${c.uren != null && c.uren !== '' ? h(c.uren) : (c.maandloon && c.uurloon == null ? 40 : '')}"></div>
+            <div class="f-row"><label for="fw_toeslag">Ploegentoeslag (%)</label>
+              <input type="number" id="fw_toeslag" min="0" max="100" step="0.1" value="${c.toeslagPct != null ? h(c.toeslagPct) : ''}" placeholder="leeg = geen">
+              <span class="hint">Bovenop het kale uurloon — telt mee in de marge.</span></div>
             <div class="f-row"><label for="fw_tarief">Factuurtarief per uur (€)</label>
               <input type="number" id="fw_tarief" min="0" step="0.01" value="${c.tarief != null ? h(c.tarief) : ''}">
               <span class="hint" id="fw_factor">${flexFactor ? 'Afspraak met de klant: factor ' + String(flexFactor).replace('.', ',') : 'Wat de klant per uur betaalt (uurloon × factor).'}</span></div>
@@ -4537,7 +4548,11 @@ async function faseWissel(id, fase){
         fh.textContent = f ? `= factor ${f.toFixed(2).replace('.', ',')}${f < 1.2 || f > 4 ? ' — dat kan niet, een factor ligt tussen 1,2 en 4' : ''}`
           : (flexFactor ? 'Afspraak met de klant: factor ' + String(flexFactor).replace('.', ',') : 'Wat de klant per uur betaalt (uurloon × factor).');
       };
-      if(ul) ul.addEventListener('input', factorTekst);
+      if(ul) ul.addEventListener('input', () => { delete ul.dataset.uitmaand; const hn = m.querySelector('#fw_ulhint'); if(hn) hn.textContent = 'Zonder ploegentoeslag'; factorTekst(); });
+      /* Uurloon uit het maandloon rekent mee met de uren, tot je het zelf typt. */
+      const urenIn = m.querySelector('#fw_uren');
+      if(urenIn && ul) urenIn.addEventListener('input', () => { if(ul.dataset.uitmaand && +urenIn.value > 0){ ul.value = ulUitMaand(+urenIn.value); factorTekst(); } });
+      factorTekst();
       if(tf) tf.addEventListener('input', () => { tf.dataset.zelf = '1'; factorTekst(); });
       m.querySelector('#fw_ok').onclick = async () => {
         const err = m.querySelector('#fw_err');
@@ -4591,6 +4606,8 @@ async function faseWissel(id, fase){
           const fct = tf2 / ul2;
           if(fct < 1.2 || fct > 4) return zeg(`Factuurtarief ÷ uurloon = factor ${fct.toFixed(2).replace('.', ',')}. Een factor ligt tussen 1,2 en 4 — controleer de bedragen.`);
           extra.uurloon = ul2; extra.uren = ur2; extra.tarief = tf2;
+          const ts2 = val('toeslag');
+          extra.toeslag_pct = ts2 === '' ? null : +ts2;
         }
         let doel = fase;
         if(fase === 'Contract getekend' && extra.start && extra.start <= CRM.todayISO()) doel = 'Gestart';
