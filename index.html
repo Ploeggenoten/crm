@@ -44,8 +44,12 @@
 <link rel="stylesheet" href="css/pva.css?v=20260810h4">
 <link rel="stylesheet" href="css/dictee.css?v=20260817a">
 <!-- Glas als laatste: moet module-stijlen kunnen overschrijven (alleen met body.glas). -->
-<link rel="stylesheet" href="css/glas.css?v=20261026h">
+<link rel="stylesheet" href="css/glas.css?v=20261102a">
 
+<!-- Glas staat vanaf de eerste pixel aan. core.js zet de klasse pas bij de
+     eerste render (CRM.glasAan); daarvóór — inloggen, herladen, data laden —
+     zag je de oude donkergroene stijl (Tjeerd, 2 nov 2026). -->
+<body class="glas">
 <!-- ─── Login ────────────────────────────────────────────────── -->
 <div id="loginscreen" style="display:none">
   <div class="lbox">
