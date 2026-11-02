@@ -1714,8 +1714,9 @@ async function mailVerversen(mount, stil){
 const ROUTINES = [
   {van:['Leadradar'],                    naam:'Leadradar',        wanneer:'werkdagen 06:45', dagen:[1,2,3,4,5], uur:6,  min:45, marge:4},
   {van:['LinkedIn-routine','LinkedIn'],  naam:'LinkedIn-netwerk', wanneer:'werkdagen 08:15', dagen:[1,2,3,4,5], uur:8,  min:15, marge:3},
-  {van:['Pronkert'],                     naam:'Pronkert flex',    wanneer:'vrijdag 17:00',   dagen:[5],         uur:17, min:0,  marge:4},
-  {van:['Maandritueel'],                 naam:'Maandritueel',     wanneer:'de 1e, 09:00',    maanddag:1,        uur:9,  min:0,  marge:8}
+  {van:['Pronkert'],                     naam:'Pronkert flex',    wanneer:'vrijdag 17:00',   dagen:[5],         uur:17, min:0,  marge:4}
+  /* Maandritueel finance uitgezet op 2 nov 2026: Tjeerd doet dat zelf.
+     Een maandroutine zou zo: {…, maanddag:1, uur:9, min:0, marge:8}. */
 ];
 const isRoutineMelding = m => m && m.entiteit === 'routine';
 /* Het laatste geplande moment waarvan de melding inmiddels binnen had moeten zijn. */
