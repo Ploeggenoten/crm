@@ -529,12 +529,15 @@ a.mail-rij:hover{background:#f7f9f1;text-decoration:none}
 /* Team: vijf losse uitsneden, absoluut geplaatst over de volle breedte. */
 .dk-team{position:relative;height:300px;margin:0 -26px;pointer-events:none}
 .dk-team img{position:absolute;bottom:-210px;height:490px;width:auto;filter:drop-shadow(0 16px 30px rgba(0,0,0,.22))}
+/* Gelijk verdeeld (2 nov 2026, Tjeerd: "rechts meer witruimte dan links"):
+   twee links, Peter in het midden, drie rechts; de doos vult de linkerrand.
+   Elke uitsnede staat met het midden van de persoon op zijn plek. */
 .dk-team .t-doos{left:0;z-index:1}
-.dk-team .t-daan{left:17%;height:430px;bottom:-160px;z-index:2}
-.dk-team .t-helm{left:30%;height:480px;z-index:3}
-.dk-team .t-peter{left:50%;transform:translateX(-50%);height:400px;bottom:-150px;z-index:4}
-.dk-team .t-hamer{right:21%;height:480px;z-index:2}
-.dk-team .t-food{right:0;height:500px;z-index:1}
+.dk-team .t-helm{left:32%;transform:translateX(-50%);height:480px;z-index:3}
+.dk-team .t-peter{left:48.5%;transform:translateX(-50%);height:460px;bottom:-170px;z-index:5}
+.dk-team .t-daan{left:62.5%;transform:translateX(-50%);height:430px;bottom:-160px;z-index:4}
+.dk-team .t-hamer{left:76.5%;transform:translateX(-50%);height:440px;bottom:-180px;z-index:2}
+.dk-team .t-food{right:0;height:500px;z-index:3}
 
 /* Het paneel. De lichtbreking langs de rand zet js/dashboard.js erbij
    (lensOpPaneel); dit is het matglas waar het op terugvalt. */
@@ -603,21 +606,19 @@ button.cp-c:focus-visible{outline:2px solid var(--olive-l);outline-offset:4px}
 /* Laptop: iets kleiner en dichter naar de randen, anders schuift
    Peter Ploeg over de hamer heen. */
 @media (max-width:1600px){
-  .dk-team .t-doos,.dk-team .t-helm,.dk-team .t-hamer{height:430px;bottom:-180px}
+  .dk-team .t-doos,.dk-team .t-helm{height:430px;bottom:-180px}
+  .dk-team .t-hamer{height:395px;bottom:-150px}
   .dk-team .t-food{height:440px;bottom:-180px}
-  .dk-team .t-daan{height:385px;bottom:-135px;left:16%}
-  .dk-team .t-helm{left:29%}
-  .dk-team .t-hamer{right:17%}
-  .dk-team .t-peter{height:330px;bottom:-110px}
+  .dk-team .t-daan{height:385px;bottom:-135px}
+  .dk-team .t-peter{height:380px;bottom:-125px}
 }
 /* Smal: team kleiner, cockpitstrook onder elkaar. */
 @media (max-width:1200px){
   .dk-team{height:220px}
-  .dk-team .t-doos,.dk-team .t-helm,.dk-team .t-hamer,.dk-team .t-food{height:360px;bottom:-150px}
-  .dk-team .t-peter{height:270px;bottom:-100px}
-  .dk-team .t-daan{height:322px;bottom:-112px;left:22%}
-  .dk-team .t-helm{left:35%}
-  .dk-team .t-peter{left:55%}
+  .dk-team .t-doos,.dk-team .t-helm,.dk-team .t-food{height:360px;bottom:-150px}
+  .dk-team .t-hamer{height:330px;bottom:-120px}
+  .dk-team .t-peter{height:310px;bottom:-110px}
+  .dk-team .t-daan{height:322px;bottom:-112px}
   .cp-strook{flex-wrap:wrap;gap:16px 24px}
   .cp-sep{display:none}
   .cp-c{flex:1 1 220px}
@@ -627,7 +628,7 @@ button.cp-c:focus-visible{outline:2px solid var(--olive-l);outline-offset:4px}
   .dk-team{height:150px;margin:0 -12px}
   .dk-team .t-doos,.dk-team .t-food{height:230px;bottom:-90px}
   .dk-team .t-helm,.dk-team .t-hamer,.dk-team .t-daan{display:none}
-  .dk-team .t-peter{height:190px;bottom:-70px}
+  .dk-team .t-peter{height:220px;bottom:-78px}
   .dk-paneel{padding:14px;border-radius:22px}
 }
 

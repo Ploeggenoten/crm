@@ -1354,13 +1354,13 @@ async function cockpitPosts(mount){
 /* De uitsneden, op volgorde van links naar rechts. Tjeerd (doos)
    staat tegen de linkerrand zodat de afgesneden doos aansluit, Tjerk
    (haarnetje) helemaal rechts, Peter Ploeg in het midden. Daan (witte
-   helm) kwam er op 2 nov 2026 bij, links naast Tjeerd. */
+   helm) kwam er op 2 nov 2026 bij, rechts van Peter. */
 function teamHTML(){
   return `<div class="dk-team" aria-hidden="true">
-    <img class="t-doos" src="assets/team/doos.webp" alt="">
-    <img class="t-daan" src="assets/team/daan.webp" alt="">
+    <img class="t-doos" src="assets/team/doos.webp?v=20261102" alt="">
     <img class="t-helm" src="assets/team/helm.webp" alt="">
     <img class="t-peter" src="assets/team/peter.webp" alt="">
+    <img class="t-daan" src="assets/team/daan.webp" alt="">
     <img class="t-hamer" src="assets/team/hamer.webp" alt="">
     <img class="t-food" src="assets/team/food.webp" alt="">
   </div>`;
