@@ -1702,8 +1702,94 @@ async function mailVerversen(mount, stil){
 }
 
 /* ═══ RECHTERKOLOM ═══════════════════════════════════════════════ */
+/* ─── Routines op een rij (alleen eigenaar) ───────────────────────
+   Tjeerd, 2 nov 2026: "ik wil alle routines op een rijtje hebben, elke
+   ochtend, in het CRM". De routines schrijven aan het eind één regel via
+   ~/ploeggenoten-leadradar/melding.sh → crm_meldingen (entiteit 'routine').
+   Eerste teken = de stand: ✅ gelukt · ⏸ wacht op Tjeerd · ⚠️ half · ❌ mislukt.
+   Een routine die vastloopt of niet draait (Mac uit, geen internet) kan
+   zelf niets melden — daarom kijkt dit blok ook naar de klok: is er na het
+   geplande tijdstip + marge geen melding, dan wordt de regel rood.
+   Tijden gelijk houden met ~/.claude/scheduled-tasks/<naam>. */
+const ROUTINES = [
+  {van:['Leadradar'],                    naam:'Leadradar',        wanneer:'werkdagen 06:45', dagen:[1,2,3,4,5], uur:6,  min:45, marge:4},
+  {van:['LinkedIn-routine','LinkedIn'],  naam:'LinkedIn-netwerk', wanneer:'werkdagen 08:15', dagen:[1,2,3,4,5], uur:8,  min:15, marge:3},
+  {van:['Pronkert'],                     naam:'Pronkert flex',    wanneer:'vrijdag 17:00',   dagen:[5],         uur:17, min:0,  marge:4},
+  {van:['Maandritueel'],                 naam:'Maandritueel',     wanneer:'de 1e, 09:00',    maanddag:1,        uur:9,  min:0,  marge:8}
+];
+const isRoutineMelding = m => m && m.entiteit === 'routine';
+/* Het laatste geplande moment waarvan de melding inmiddels binnen had moeten zijn. */
+function laatsteSlot(r, nu){
+  for(let i = 0; i < 45; i++){
+    const d = new Date(nu); d.setDate(d.getDate() - i); d.setHours(r.uur, r.min, 0, 0);
+    const dag = r.maanddag ? d.getDate() === r.maanddag : r.dagen.includes(d.getDay());
+    if(dag && d.getTime() + r.marge*3600e3 <= nu.getTime()) return d;
+  }
+  return null;
+}
+const wanneerKort = iso => {
+  const d = new Date(iso), nu = new Date();
+  const tijd = d.toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'});
+  if(d.toDateString() === nu.toDateString()) return 'vandaag ' + tijd;
+  const gister = new Date(nu); gister.setDate(nu.getDate() - 1);
+  if(d.toDateString() === gister.toDateString()) return 'gisteren ' + tijd;
+  return d.toLocaleDateString('nl-NL', {weekday:'short', day:'numeric', month:'short'});
+};
+let _rout = null, _routOp = 0;
+async function routinesLezen(){
+  if(_rout && Date.now() - _routOp < 5*60e3) return _rout;
+  if(CRM.demo){
+    const uur = (dag, u) => { const d = new Date(); d.setDate(d.getDate() - dag); d.setHours(u, 30, 0, 0); return d.toISOString(); };
+    _rout = {ok:true, rijen:[
+      {van:'Leadradar', tekst:'⚠️ Leadradar: maar 2 sterke leads (doel 10). Florensis 72, Keune 66.', created_at:uur(0, 7)},
+      {van:'LinkedIn-routine', tekst:'⏸ 20 verzoeken wachten op je "stuur" in de routine-sessie.', created_at:uur(0, 8)},
+      {van:'Pronkert', tekst:'✅ Week 42: €2.976 (6 flexkrachten).', created_at:uur(10, 17)}
+    ]};
+  } else {
+    try{
+      const r = await CRM.sb.from('crm_meldingen').select('van,tekst,created_at')
+        .eq('entiteit', 'routine').order('created_at', {ascending:false}).limit(150);
+      _rout = r.error ? {ok:false} : {ok:true, rijen:r.data || []};
+    }catch(e){ _rout = {ok:false}; }
+  }
+  _routOp = Date.now();
+  return _rout;
+}
+function routineStand(r, rijen, nu){
+  const laatste = rijen.find(m => r.van.includes(m.van));
+  const slot = laatsteSlot(r, nu);
+  if(!laatste) return {kleur:'rood', tekst:'Nog nooit gemeld in het CRM', wanneer:''};
+  const tekst = String(laatste.tekst || '');
+  if(slot && new Date(laatste.created_at) < slot)
+    return {kleur:'rood', tekst:`Geen melding na ${slot.toLocaleDateString('nl-NL', {weekday:'short', day:'numeric', month:'short'})} — niet gedraaid of vastgelopen`,
+      wanneer:wanneerKort(laatste.created_at)};
+  const kleur = /^\s*(❌|✖)/.test(tekst) ? 'rood' : /^\s*(⏸|⚠)/.test(tekst) ? 'oranje' : 'groen';
+  return {kleur, tekst:tekst.replace(/^\s*(✅|❌|✖|⏸️?|⚠️?)\s*/u, ''), wanneer:wanneerKort(laatste.created_at)};
+}
+function routinesHTML(m){
+  let inhoud;
+  if(!m) inhoud = '<div class="meta">Laden…</div>';
+  else if(!m.ok) inhoud = '<div class="meta">De meldingen zijn nu niet te lezen.</div>';
+  else {
+    const nu = new Date();
+    inhoud = ROUTINES.map(r => {
+      const s = routineStand(r, m.rijen, nu);
+      return `<div class="rt-rij">
+        <span class="rt-stip ${s.kleur}"></span>
+        <div class="rt-t"><b>${h(r.naam)}</b> <span class="meta">${h(r.wanneer)}</span>
+          <span class="rt-tekst">${h(s.tekst)}</span></div>
+        <span class="rt-w meta num">${h(s.wanneer)}</span></div>`;
+    }).join('');
+  }
+  return `<div class="dash-sec"><div class="label sec-kop">Routines</div>
+    <div class="card"><div class="card-b rt-b">${inhoud}</div></div></div>`;
+}
+const routinesPlek = () => dashRol() === 'eigenaar'
+  ? `<div id="dash_routines">${routinesHTML(_rout && Date.now() - _routOp < 5*60e3 ? _rout : null)}</div>` : '';
+
 function meldingenBlok(){
-  const ms = CRM.mijnMeldingen();
+  /* De dagstatus van routines staat bij de eigenaar in het blok Routines, niet hier. */
+  const ms = CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m)));
   if(!ms.length) return '';
   return `<div class="dash-sec"><div class="label sec-kop">Voor jou</div>
     <div class="card meld-card"><div class="card-b meld-b">
@@ -1911,7 +1997,7 @@ function kolomRechts(){
     return meldingenBlok() + mailPlek()
       + `<div id="dash_posten">${_mkt ? postenHTML(_mkt)
       : `<div class="dash-sec"><div class="label sec-kop">Vandaag posten</div><div class="card"><div class="card-b zij-b"><div class="meta">Laden…</div></div></div></div>`}</div>`;
-  return meldingenBlok() + mailPlek() + hotBlok();
+  return routinesPlek() + meldingenBlok() + mailPlek() + hotBlok();
 }
 
 /* Onder de agenda, in dezelfde baan: hoe jij ervoor staat. Dat blok stond
@@ -1934,7 +2020,7 @@ CRM.registerModule('dashboard', {
     const nu = VANDAAG(), mij = CRM.me();
     const openTaken = (CRM.state.taken||[]).filter(t =>
       !t.klaar && (!t.voor || t.voor===mij) && kort(t.datum) && kort(t.datum) <= nu).length;
-    return CRM.mijnMeldingen().length + openTaken;
+    return CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m))).length + openTaken;
   }catch(e){ return 0; } },
 
   render(mount, acties){
@@ -2050,6 +2136,10 @@ CRM.registerModule('dashboard', {
     /* Glas: lichtbreking op het paneel zodra het zijn maat heeft, en
        opnieuw als de agenda of mail later inhoud bijlaadt. */
     cockpitPosts(mount);
+    if(dashRol() === 'eigenaar') routinesLezen().then(m => {
+      const el = document.getElementById('dash_routines');
+      if(el && CRM.view === 'dashboard') el.innerHTML = routinesHTML(m);
+    }).catch(() => {});
     const paneel = document.getElementById('dk_paneel');
     if(paneel && window.ResizeObserver){
       const ro = new ResizeObserver(() => { if(!document.body.contains(paneel)) return ro.disconnect(); lensOpPaneel(paneel); });
