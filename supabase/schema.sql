@@ -745,7 +745,7 @@ create policy crm_docs_verwijderen on storage.objects for delete to authenticate
 --              hele script liep daarop stuk (1 aug 2026). De app kijkt ook
 --              alleen naar rol === 'admin' en noemt al het andere "Teamlid",
 --              dus 'am' betekent hier simpelweg "gewone gebruiker".
---   functie  = welk dashboard krijg je: am | recruiter | marketeer.
+--   functie  = welk dashboard krijg je: am | recruiter | marketeer | sales.
 --
 -- Rajesh is dus functie 'recruiter' met rol 'am', en Bryan functie
 -- 'marketeer' met rol 'am'. Dat leest raar, maar het is de tabel die dat zo
@@ -762,7 +762,7 @@ select u.id, v.naam, v.email, v.functie, v.rol
     ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'am'),
     ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'am'),
     ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'am'),
-    ('daan@ploeggenoten.nl',        'Daan',   'am',        'am')
+    ('daan@ploeggenoten.nl',        'Daan',   'sales',     'am')
   ) as v(email, naam, functie, rol)
   join auth.users u on lower(u.email) = v.email
 on conflict (id) do update

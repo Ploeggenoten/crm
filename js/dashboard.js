@@ -1147,12 +1147,18 @@ function meterSVG(n, doel, vanTekst){
      eigenaar   → overzicht, sales en ondernemerschap (Tjeerd)
      am         → kandidaten en de eigen klanten (Tjerk, Rajesh; ook recruiter)
      marketeer  → marketing (Bryan)
+     sales      → sales en accountmanagement, géén plaatsingen (Daan, sinds
+                  2 nov 2026: "zowel sales stats als kandidaten")
    De eigenaar wordt herkend aan canSeeMoney(), de rest aan profiel.functie
    (Instellingen → Gebruikers). */
 function dashRol(){
   if(CRM.canSeeMoney && CRM.canSeeMoney()) return 'eigenaar';
-  return (CRM.profile?.functie || 'am') === 'marketeer' ? 'marketeer' : 'am';
+  const f = CRM.profile?.functie || 'am';
+  return f === 'marketeer' || f === 'sales' ? f : 'am';
 }
+/* Wie deelt het maandtarget voor plaatsingen? Marketeer en sales plaatsen
+   niet; tellen ze mee, dan krijgt elke recruiter een te klein aandeel. */
+const telPlaatsers = () => (CRM.state.profiles||[]).filter(p => !['marketeer','sales'].includes(p.functie||'am')).length || 1;
 
 const strook = vak => `<div class="cp-strook">${vak.filter(Boolean).map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
 const vakGetal = ({label, n, van, pil, pilOr, extra = '', mod, tab, titel}) => {
@@ -1212,7 +1218,7 @@ function cockpitAM(){
   const mijn = cs.filter(c => c.rec === mij);
   const get  = mijn.filter(c => kort(c.geplaatstOp).slice(0,7) === mk && CRM.teltAlsPlaatsing(c)).length;
   const stop = mijn.filter(c => CRM.teltAlsStop(c) && kort(c.gestoptOp).slice(0,7) === mk).length;
-  const ams = (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
+  const ams = telPlaatsers();
   const aandeel = Math.max(1, Math.round((CRM.maandTarget ? CRM.maandTarget() : 8) / ams * 10) / 10);
   const netto = get - stop;
 
@@ -1262,6 +1268,59 @@ function cockpitMarketeer(){
   ]);
 }
 
+/* ── Sales en accountmanagement: eigen bellen + pijplijn + kandidaten bij eigen klanten ──
+   Dezelfde salesmeter als de eigenaar (die telt al per persoon), maar zonder
+   teamplaatsingen: Daan wordt niet op plaatsingen afgerekend. */
+const mijnKlantNamen = () => { const mij = CRM.me(); return new Set((CRM.state.clients||[]).filter(k => k.eigenaar === mij).map(k => k.naam)); };
+const kandidatenBijMijnKlanten = () => { const kl = mijnKlantNamen();
+  return CRM.kandidaten().filter(c => kl.has(c.klant) && CRM.isActiefLopend(c) && !CRM.PLACED.includes(c.fase)); };
+const GESPREK_FASES = ['Eerste gesprek','Tweede gesprek','Meeloopdag','Offer','Contract ondertekenen'];
+function cockpitSales(){
+  const SM = CRM.salesmeter;
+  const t = SM ? SM.tel() : null, d = t && t.doel;
+  const o = SM ? SM.opvolgen() : {n:0, verlopen:0};
+  const mij = CRM.me(), ma = weekVan(), vak = [];
+  if(d){
+    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Koud bellen vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
+      regels:[`<b class="num">${t.gesproken}</b> gesproken${t.gesproken ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / t.gesproken))}` : ''}`,
+              `<b class="num">${t.week}</b> / ${d.belDag*5} deze week`]}));
+    const nog = Math.max(0, d.afsprWeek - t.afspraken);
+    vak.push(vakGetal({label:'Afspraken nieuwe leads', n:t.afspraken, van:d.afsprWeek, pil:nog ? `nog ${nog} vóór vr` : 'doel gehaald',
+      extra:`<span class="cp-dots">${Array.from({length:d.afsprWeek}, (_, i) => `<i class="${i < t.afspraken ? 'v' : ''}"></i>`).join('')}</span>`}));
+  }
+  vak.push(`<div class="cp-c"><span class="cp-l">Opvolgen vandaag</span>
+    <span class="cp-rij"><span class="cp-big num">${o.n}</span>
+      ${o.verlopen ? `<span class="cp-pil or">${o.verlopen} verlopen</span>` : ''}</span>
+    <button type="button" class="cp-belronde" data-mod="sales" data-tab="opvolg">${o.n ? '📞 Start belronde' : 'Naar opvolgingen'}</button></div>`);
+  const mijnKl = (CRM.state.clients||[]).filter(k => k.eigenaar === mij);
+  const traject = mijnKl.filter(k => (CRM.SALES_ACTIEF||[]).includes(k.fase)).length;
+  const nieuw = mijnKl.filter(k => k.aangemaakt && kort(k.aangemaakt) >= ma).length;
+  vak.push(vakGetal({label:'Jouw pijplijn', n:traject, pil:nieuw ? `+${nieuw} deze week` : 'niets nieuws', pilOr:!nieuw,
+    extra:`<span class="cp-s">jouw klanten in traject</span>`, mod:'sales', tab:'pijplijn', titel:'Naar de klantpijplijn'}));
+  const kl = mijnKlantNamen();
+  const inProces = kandidatenBijMijnKlanten();
+  const gesprek = inProces.filter(c => GESPREK_FASES.includes(c.fase)).length;
+  const vacs = (CRM.state.vacs||[]).filter(v => kl.has(v.klant) && (v.status||'Open') === 'Open');
+  const posities = vacs.reduce((n, v) => n + (Number(v.aantal)||1), 0);
+  vak.push(vakGetal({label:'Kandidaten bij jouw klanten', n:inProces.length, pil:gesprek ? `${gesprek} in gesprek` : 'niemand in gesprek', pilOr:!gesprek,
+    extra:`<span class="cp-s">${vacs.length} open ${vacs.length === 1 ? 'vacature' : 'vacatures'} · ${posities} posities</span>`, mod:'kandidaten', titel:'Naar Kandidaten'}));
+  return strook(vak);
+}
+/* Onder de agenda: wie er bij jouw klanten in een traject zit. In gesprek
+   eerst, "In de wacht" achteraan — die staat hoog in de fasevolgorde maar
+   vraagt vandaag niets van je. */
+function kandidatenKlantenBlok(){
+  const rang = c => GESPREK_FASES.includes(c.fase) ? 2 : c.fase === 'In de wacht' ? 0 : 1;
+  const lijst = kandidatenBijMijnKlanten()
+    .sort((a,b) => rang(b) - rang(a) || CRM.faseIdx(b.fase) - CRM.faseIdx(a.fase) || String(b.since||'').localeCompare(String(a.since||'')));
+  const rijen = lijst.slice(0,6).map(c => `<div class="zij-rij klik" data-mod="kandidaten" data-id="${h(c.id)}">
+      <div class="zij-t"><b>${h(c.naam)}</b><span class="zij-s">${h(c.klant)}${c.functie ? ' · ' + h(c.functie) : ''}</span></div>
+      <span class="zij-w">${h(c.fase)}</span></div>`).join('');
+  return `<div class="dash-sec"><div class="label sec-kop">Kandidaten bij jouw klanten</div>
+    <div class="card"><div class="card-b zij-b">${rijen || '<div class="meta">Nog niemand in een traject bij jouw klanten.</div>'}
+      ${lijst.length > 6 ? `<div class="meta" style="margin-top:6px">en nog ${lijst.length - 6}</div>` : ''}</div></div></div>`;
+}
+
 /* Uitrol in stappen (Tjeerd, 26 okt 2026: "push eerst de versie voor mij
    alleen"). Zolang ROL_STROOK_AAN uit staat, zien accountmanagers en de
    marketeer de basisstrook: opvolgen vandaag + het team. Aanzetten = deze
@@ -1279,7 +1338,7 @@ const rolActief = () => dashRol() === 'eigenaar' || ROL_STROOK_AAN;
 function cockpitHTML(){
   const r = dashRol();
   if(!rolActief()) return cockpitBasis();
-  return r === 'eigenaar' ? cockpitEigenaar() : r === 'marketeer' ? cockpitMarketeer() : cockpitAM();
+  return r === 'eigenaar' ? cockpitEigenaar() : r === 'marketeer' ? cockpitMarketeer() : r === 'sales' ? cockpitSales() : cockpitAM();
 }
 /* De posts staan in mkt_posts en worden pas op verzoek gelezen. */
 async function cockpitPosts(mount){
@@ -1750,7 +1809,7 @@ function maandBlok(){
   const stop = cs.filter(c => c.rec===mij && teltAlsStop(c) && kort(c.gestoptOp).slice(0,7)===mk).length;
   const netto = get - stop;
   const target = CRM.maandTarget();
-  const ams = (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
+  const ams = telPlaatsers();
   /* Naar boven afronden zou 3 × 3 = 9 geven bij een teamtarget van 8:
      iedereen haalt zijn doel en het team niet. Naar beneden geeft 3 × 2 = 6
      en dan is het team klaar terwijl er nog twee te gaan zijn. Daarom geen
@@ -1863,7 +1922,8 @@ function kolomRechts(){
    Een marketeer wordt niet op plaatsingen afgerekend; die krijgt hier de
    waakhond uit Marketing. */
 function kolomOnderAgenda(){
-  return (CRM.profile?.functie||'am') === 'marketeer' ? waakhondBlok() : maandBlok();
+  const f = CRM.profile?.functie||'am';
+  return f === 'marketeer' ? waakhondBlok() : f === 'sales' ? kandidatenKlantenBlok() : maandBlok();
 }
 
 /* ═══ REGISTRATIE ════════════════════════════════════════════════ */

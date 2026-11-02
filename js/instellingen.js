@@ -117,7 +117,7 @@ function sectieTargets(){
 /* ─── Team en rollen (openAdmin van het bord) ─────────────────── */
 const ROLLEN = [['am','Account Manager'],['admin','Beheerder']];
 /* Functie stuurt de dashboard-variant (marketeer krijgt een eigen kolom). */
-const FUNCTIES = [['am','AM'],['recruiter','Recruiter'],['marketeer','Marketeer']];
+const FUNCTIES = [['am','AM'],['recruiter','Recruiter'],['marketeer','Marketeer'],['sales','Sales']];
 const heeftMail = p => !!String(p && p.email || '').trim();
 /* Grof maar genoeg: we willen tikfouten als "bryan@ploeggenoten" tegenhouden,
    niet de RFC naspelen. */
