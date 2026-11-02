@@ -254,6 +254,112 @@ Deno.serve(async (req) => {
     return error ? antwoord({ error: error.message }, 500) : antwoord({ ok: true });
   }
 
+  // ── Werkenbij-wacht (2 nov 2026) ─────────────────────────────
+  // Tjeerd: "alle werkenbij-sites checken of ze nieuwe vacatures hebben,
+  // zodat ik een alert krijg en kan opbellen — ook in het dashboard en de
+  // salespijplijn." De ochtendroutine haalt de pagina's op (werkenbij.py op de
+  // Mac); de VERGELIJKING gebeurt hier, zodat er één waarheid is over wat al
+  // gezien was. Tabellen: crm_werkenbij + crm_vacature_signalen
+  // (supabase/werkenbij.sql). Alleen met de cron-sleutel.
+  const WACHT_FASES = ["Afgerond", "Suspect", "Prospect", "In afwachting kennismaking", "Gesprek ingepland",
+    "Voorstel gedaan", "SWO gestuurd", "Onderhandeling", "Project uitgesteld"];
+  const wachtSleutel = (s: unknown) => String(s ?? "").toLowerCase()
+    .replace(/\b(b\.?v\.?|n\.?v\.?|holding|groep|group|nederland)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+
+  // Modus 'werkenbij_lijst': welke bedrijven bewaken we, met de bekende pagina.
+  if (body.werkenbij_lijst) {
+    if (cronKey !== Deno.env.get("CRON_SECRET")) return antwoord({ error: "alleen voor routines" }, 403);
+    const [kl, radar, wb] = await Promise.all([
+      service.from("clients").select("id,naam,fase,eigenaar,website,plaats").limit(5000),
+      service.from("crm_leadradar").select("id,bedrijf,plaats,url").eq("status", "toegevoegd").limit(5000),
+      service.from("crm_werkenbij").select("*").limit(5000),
+    ]);
+    if (wb.error) return antwoord({ error: "tabel crm_werkenbij ontbreekt — draai supabase/werkenbij.sql" }, 500);
+    const pagina = new Map((wb.data ?? []).map((r: Record<string, unknown>) => [String(r.sleutel), r]));
+    const uit = new Map<string, Record<string, unknown>>();
+    for (const k of (kl.data ?? []) as Record<string, unknown>[]) {
+      if (!WACHT_FASES.includes(String(k.fase ?? ""))) continue;
+      const s = wachtSleutel(k.naam); if (!s) continue;
+      uit.set(s, { sleutel: s, bedrijf: k.naam, klant_id: k.id, fase: k.fase, eigenaar: k.eigenaar || "Tjeerd",
+        website: k.website || "", plaats: k.plaats || "" });
+    }
+    for (const r of (radar.data ?? []) as Record<string, unknown>[]) {
+      const s = wachtSleutel(r.bedrijf); if (!s || uit.has(s)) continue;
+      uit.set(s, { sleutel: s, bedrijf: r.bedrijf, klant_id: null, fase: "Radar (opgepakt)", eigenaar: "Tjeerd",
+        website: "", plaats: r.plaats || "" });
+    }
+    const rijen = [...uit.values()].map((b) => {
+      const p = pagina.get(String(b.sleutel)) as Record<string, unknown> | undefined;
+      return { ...b, url: p?.url ?? "", status: p?.status ?? "nog_zoeken",
+        aantal: Array.isArray(p?.titels) ? (p!.titels as unknown[]).length : 0, gecheckt_op: p?.gecheckt_op ?? null };
+    });
+    return antwoord({ ok: true, rijen });
+  }
+
+  // Modus 'werkenbij_stand': [{bedrijf, url, status, titels:[{titel,url?}]}].
+  // Eerste keer = nulmeting (geen alerts). Daarna is elke titel die er gisteren
+  // niet stond een signaal voor de eigenaar van de klant.
+  if (Array.isArray(body.werkenbij_stand)) {
+    if (cronKey !== Deno.env.get("CRON_SECRET")) return antwoord({ error: "alleen voor routines" }, 403);
+    const { data: kl } = await service.from("clients").select("id,naam,eigenaar").limit(5000);
+    const klant = new Map(((kl ?? []) as Record<string, unknown>[]).map((k) => [wachtSleutel(k.naam), k]));
+    const normTitel = (t: unknown) => String(t ?? "").toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    const nieuw: Record<string, unknown>[] = [];
+    let bijgewerkt = 0;
+    for (const r of body.werkenbij_stand as Record<string, unknown>[]) {
+      const s = wachtSleutel(r.bedrijf); if (!s) continue;
+      const k = klant.get(s) as Record<string, unknown> | undefined;
+      const { data: oud } = await service.from("crm_werkenbij").select("*").eq("sleutel", s).maybeSingle();
+      /* 'fout' = site even onbereikbaar. Dan blijft de vorige stand staan:
+         anders telt morgen alles als nieuw, of verdwijnt de nulmeting. */
+      const fout = String(r.status ?? "") === "fout";
+      const status = fout ? String(oud?.status ?? "nog_zoeken") : String(r.status ?? "ok");
+      const titels = (Array.isArray(r.titels) ? r.titels : []).map((t: unknown) =>
+        typeof t === "string" ? { titel: t } : t as Record<string, unknown>)
+        .filter((t: Record<string, unknown>) => String(t.titel ?? "").trim()).slice(0, 200);
+      const rij: Record<string, unknown> = { sleutel: s, bedrijf: String(r.bedrijf), klant_id: k?.id ?? oud?.klant_id ?? null,
+        url: String(r.url ?? oud?.url ?? ""), status, gecheckt_op: new Date().toISOString() };
+      if (status === "ok" && !fout) {
+        rij.titels = titels;
+        const eerder = Array.isArray(oud?.titels) && oud!.status === "ok";
+        if (eerder) {
+          const gezien = new Set((oud!.titels as Record<string, unknown>[]).map((t) => normTitel(t.titel)));
+          const voor = String(k?.eigenaar || "Tjeerd");
+          for (const t of titels) {
+            if (gezien.has(normTitel(t.titel))) continue;
+            const sig = { id: "vs" + Date.now() + Math.floor(Math.random() * 100000), bedrijf: String(r.bedrijf),
+              klant_id: k?.id ?? null, functie: String(t.titel).slice(0, 160), url: String(t.url ?? rij.url).slice(0, 500),
+              voor, status: "nieuw" };
+            await service.from("crm_vacature_signalen").insert(sig);
+            nieuw.push(sig);
+          }
+        }
+      }
+      const { error } = await service.from("crm_werkenbij").upsert(rij, { onConflict: "sleutel" });
+      if (!error) bijgewerkt++;
+    }
+    // Eén melding per persoon per bedrijf, niet per vacature: anders loopt
+    // "Voor jou" vol bij een bedrijf dat in één keer tien vacatures plaatst.
+    const perBedrijf = new Map<string, Record<string, unknown>[]>();
+    for (const n of nieuw) {
+      const key = `${n.voor}|${n.bedrijf}`;
+      if (!perBedrijf.has(key)) perBedrijf.set(key, []);
+      perBedrijf.get(key)!.push(n);
+    }
+    for (const lijst of perBedrijf.values()) {
+      const n = lijst[0];
+      const functies = lijst.map((x) => x.functie).slice(0, 3).join(", ") + (lijst.length > 3 ? ` en nog ${lijst.length - 3}` : "");
+      await service.from("crm_meldingen").insert({
+        id: "md" + Date.now() + Math.floor(Math.random() * 10000), voor: n.voor, van: "Werkenbij-wacht", soort: "systeem",
+        tekst: `${n.bedrijf} heeft ${lijst.length === 1 ? "een nieuwe vacature" : lijst.length + " nieuwe vacatures"}: ${functies}. Bel ze nu.`,
+        entiteit: n.klant_id ? "klant" : "", ref: n.klant_id ? String(n.klant_id) : "", gelezen: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+    return antwoord({ ok: true, bijgewerkt, nieuw: nieuw.map((n) => ({ bedrijf: n.bedrijf, functie: n.functie, voor: n.voor })) });
+  }
+
   // Modus 'import': onderzoeksvondsten en/of conceptteksten opslaan.
   // rows: [{bedrijf, plaats?, functies?, vacatures?, url?, bron?, notitie?, concepten?}]
   if (Array.isArray(body.import)) {

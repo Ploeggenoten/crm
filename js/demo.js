@@ -414,6 +414,14 @@
       cands:CANDS, clients:KLANTEN, vacs:VACS, leads:LEADS, activiteiten:ACTS,
       taken:TAKEN, documenten:[], kansen:KANSEN, contacten:CONTACTEN, meldingen:MELDINGEN,
       ooSessions:OO,
+      /* Werkenbij-wacht: nieuwe vacatures op de site van klanten/pijplijn. */
+      vacSignalen: [
+        ['Koomstra & Co','Productiemedewerker 2-ploegen',0],['Koomstra & Co','Heftruckchauffeur',0],
+        ['Starcuisine','Operator verpakkingslijn',1],['MBS Groep','Monteur elektrotechniek',2],
+        ['Proponent','Orderpicker',0]
+      ].map(([b,f,dg],i) => { const k = KLANTEN.find(x => x.naam === b) || {};
+        return {id:'vs'+i, bedrijf:b, klant_id:k.id||'', functie:f, url:'https://example.com/vacature/'+i,
+          voor:k.eigenaar||'Tjeerd', status:'nieuw', gezien_op:new Date(Date.now()-dg*864e5).toISOString()}; }),
       /* Commerciële afspraken per klant. Zonder deze lijst geeft CRM.fee overal
          `fee: null` en blijft het bedrag op de kandidaatkaart, de klantkaart en
          Performance in de demo leeg — terwijl dat juist het cijfer is waar het

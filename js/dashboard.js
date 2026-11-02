@@ -1790,7 +1790,7 @@ const routinesPlek = () => dashRol() === 'eigenaar'
 
 function meldingenBlok(){
   /* De dagstatus van routines staat bij de eigenaar in het blok Routines, niet hier. */
-  const ms = CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m)));
+  const ms = CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m)) && !isWachtMelding(m));
   if(!ms.length) return '';
   return `<div class="dash-sec"><div class="label sec-kop">Voor jou</div>
     <div class="card meld-card"><div class="card-b meld-b">
@@ -1828,6 +1828,51 @@ function linkedinLijst(id){
         ${br.map(b => `<p style="margin:0 0 10px"><b>${h(b.naam)}</b><br>${h(b.tekst)}</p>`).join('')}` : ''}
     </div>
     <div class="modal-f"><button class="btn ghost" data-mclose>Sluiten</button></div>`);
+}
+
+/* ─── Nieuwe vacatures (werkenbij-wacht, 2 nov 2026) ─────────────
+   Tjeerd: "alle werkenbij-sites checken of ze nieuwe vacatures hebben, zodat
+   ik een alert krijg en kan opbellen." De ochtendroutine legt elke vacature
+   die er gisteren nog niet stond vast in crm_vacature_signalen, op naam van
+   de eigenaar van de klant. Hier één regel per bedrijf met het nummer erbij;
+   Gebeld of × haalt hem weg. De melding die de routine daarnaast stuurt
+   staat niet nog eens in "Voor jou" — dit blok ís die melding. */
+const isWachtMelding = m => m && m.van === 'Werkenbij-wacht' && !CRM.state._mist_crm_vacature_signalen;
+const mijnSignalen = () => (CRM.state.vacSignalen||[]).filter(s => s.status === 'nieuw' && s.voor === CRM.me());
+function signaalNummer(bedrijf){
+  const cs = (CRM.state.contacten||[]).filter(c => c.klant === bedrijf);
+  return (cs.find(x => x.hoofd && x.telefoon) || cs.find(x => x.telefoon) || {}).telefoon
+    || (CRM.klant(bedrijf) || {}).telefoon || '';
+}
+function vacaturesBlok(){
+  const per = new Map();
+  mijnSignalen().forEach(s => { if(!per.has(s.bedrijf)) per.set(s.bedrijf, []); per.get(s.bedrijf).push(s); });
+  if(!per.size) return '';
+  const groepen = [...per.values()].sort((a,b) => String(b[0].gezien_op).localeCompare(String(a[0].gezien_op)));
+  const rijen = groepen.slice(0,6).map(g => {
+    const s = g[0], tel = signaalNummer(s.bedrijf), ids = g.map(x => x.id).join(',');
+    const functies = g.slice(0,3).map(x => veiligeUrl(x.url)
+      ? `<a href="${h(veiligeUrl(x.url))}" target="_blank" rel="noopener">${h(x.functie||'vacature')}</a>` : h(x.functie||'vacature')).join(', ')
+      + (g.length > 3 ? ` en nog ${g.length-3}` : '');
+    return `<div class="zij-rij vs-rij" data-vs-klant="${h(s.klant_id||'')}">
+      <div class="zij-t"><b class="vs-naam">${h(s.bedrijf)}</b>
+        <span class="zij-s">${functies} · <span class="num">${h(CRM.geleden(s.gezien_op))}</span></span></div>
+      <div class="vs-act">
+        ${tel ? `<a class="btn sm" href="tel:${h(String(tel).replace(/[^\d+]/g,''))}" title="${h(tel)}">📞</a>` : ''}
+        <button type="button" class="btn sm" data-vs="gebeld" data-ids="${h(ids)}" title="Gebeld — weg uit de lijst">Gebeld</button>
+        <button type="button" class="btn sm ghost" data-vs="weg" data-ids="${h(ids)}" title="Niet interessant">×</button>
+      </div></div>`;
+  }).join('');
+  const meer = groepen.length > 6 ? `<div class="meta" style="padding:6px 0 2px">en nog ${groepen.length-6} bedrijven …</div>` : '';
+  return `<div class="dash-sec"><div class="label sec-kop">Nieuwe vacatures · bellen</div>
+    <div class="card"><div class="card-b zij-b">${rijen}${meer}</div></div></div>`;
+}
+async function signaalAf(ids, status){
+  const op = new Date().toISOString();
+  (CRM.state.vacSignalen||[]).forEach(s => { if(ids.includes(String(s.id))){ s.status = status; s.afgehandeld_op = op; } });
+  if(CRM.demo) return;
+  const { error } = await CRM.sb.from('crm_vacature_signalen').update({status, afgehandeld_op:op}).in('id', ids);
+  if(error) CRM.fout('Opslaan mislukt', error);
 }
 
 /* Hot vacatures van deze gebruiker — doellogica identiek aan de Hot-module. */
@@ -1998,7 +2043,7 @@ function kolomRechts(){
     return meldingenBlok() + mailPlek()
       + `<div id="dash_posten">${_mkt ? postenHTML(_mkt)
       : `<div class="dash-sec"><div class="label sec-kop">Vandaag posten</div><div class="card"><div class="card-b zij-b"><div class="meta">Laden…</div></div></div></div>`}</div>`;
-  return routinesPlek() + meldingenBlok() + mailPlek() + hotBlok();
+  return routinesPlek() + vacaturesBlok() + meldingenBlok() + mailPlek() + hotBlok();
 }
 
 /* Onder de agenda, in dezelfde baan: hoe jij ervoor staat. Dat blok stond
@@ -2021,7 +2066,8 @@ CRM.registerModule('dashboard', {
     const nu = VANDAAG(), mij = CRM.me();
     const openTaken = (CRM.state.taken||[]).filter(t =>
       !t.klaar && (!t.voor || t.voor===mij) && kort(t.datum) && kort(t.datum) <= nu).length;
-    return CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m))).length + openTaken;
+    return CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m)) && !isWachtMelding(m)).length
+      + new Set(mijnSignalen().map(s => s.bedrijf)).size + openTaken;
   }catch(e){ return 0; } },
 
   render(mount, acties){
@@ -2178,6 +2224,21 @@ CRM.registerModule('dashboard', {
     CRM.$$('.tl2-vouw', mount).forEach(v => {
       v.onclick = () => vouwOpen(v, P);
       v.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); vouwOpen(v, P); } };
+    });
+
+    /* Nieuwe vacatures: Gebeld/× haalt het bedrijf uit de lijst, klik op de
+       naam opent de klant (radarbedrijven zonder klantkaart: de Leadradar). */
+    CRM.$$('[data-vs]', mount).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const rij = b.closest('.vs-rij'), sec = b.closest('.dash-sec');
+      await signaalAf(b.dataset.ids.split(','), b.dataset.vs);
+      if(rij) rij.remove();
+      if(sec && !sec.querySelector('.vs-rij')) sec.remove();
+      CRM.navBadges && CRM.navBadges();
+    });
+    CRM.$$('.vs-naam', mount).forEach(n => n.onclick = () => {
+      const id = n.closest('.vs-rij').dataset.vsKlant;
+      if(id) CRM.ga('klanten',{id}); else CRM.ga('sales',{tab:'radar'});
     });
 
     /* Meldingen: ✓ handelt af, klik op de regel navigeert naar de bron. */

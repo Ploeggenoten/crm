@@ -465,6 +465,9 @@ function kaartHTML(k, lc, act, af, vandaag){
   const actief = CRM.SALES_ACTIEF.includes(faseVan(k));
   const hangt = actief && faseVan(k) !== 'Lead' && d!=null && d>HANGT_NA;
   const vac = openVacatures(k.naam);
+  /* Werkenbij-wacht (2 nov 2026): nieuwe vacatures op hun eigen site =
+     reden om te bellen. Oranje chip, en de kaart schuift naar boven. */
+  const nieuwVac = nieuweVacatures(k.naam);
   /* Kansen zijn als apart begrip afgeschaft (Tjeerd, 4 aug 2026: "alles
      wat ik in het systeem zet is een kans") — geen chip meer. */
   const kans = 0;
@@ -476,7 +479,8 @@ function kaartHTML(k, lc, act, af, vandaag){
   const lijf = [
     (k.eigenaar || k.locatie) ? `<div class="bc-s trunc">${h(k.eigenaar||'geen eigenaar')}${k.locatie?' · '+h(k.locatie):''}</div>` : '',
     waarom,
-    (vac || kans) ? `<div class="bc-f">
+    (vac || kans || nieuwVac) ? `<div class="bc-f">
+      ${nieuwVac?`<span class="chip amber" title="Nieuw op hun werkenbij-site — bel ze">${nieuwVac} nieuwe vacature${nieuwVac===1?'':'s'}</span>`:''}
       ${vac?`<span class="chip">${vac} vacature${vac===1?'':'s'}</span>`:''}
       ${kans?`<span class="chip blue">${kans} kans${kans===1?'':'en'}</span>`:''}</div>` : ''
   ].filter(Boolean).join('');
@@ -485,7 +489,7 @@ function kaartHTML(k, lc, act, af, vandaag){
   /* Leeg = er is écht niets voor het lijf — ook geen eigenaar of plaats.
      Leads houden zo hun eigenaar-regel ("ik moet alles kunnen zien vanuit
      de kaart"); alleen een kaart zonder enige inhoud is een kale kop. */
-  const leeg = !waarom && !vac && !kans && !k.eigenaar && !k.locatie;
+  const leeg = !waarom && !vac && !kans && !nieuwVac && !k.eigenaar && !k.locatie;
   /* Alle kaarten dezelfde opzet (besluit Tjeerd, 4 aug 2026, na drie kleur-
      rondes): leads dragen gewoon minder in het lijf, geen aparte microvorm. */
   const mini = false;
@@ -510,8 +514,14 @@ function kaartHTML(k, lc, act, af, vandaag){
       volgorde waarin je je week leest: wie komt er het eerst aan de beurt.
       Kaarten zonder afspraak zakken naar onderen.
    Bij gelijkspel op naam, zodat het bord niet danst tussen twee renders. */
+const nieuweVacatures = naam => (CRM.state.vacSignalen||[])
+  .filter(s => s.status === 'nieuw' && s.bedrijf === naam).length;
 function kolomVolgorde(lijst, afspr){
+  const nieuw = new Set((CRM.state.vacSignalen||[]).filter(s => s.status === 'nieuw').map(s => s.bedrijf));
   return [...lijst].sort((a, b) => {
+    /* 0. Wie net nieuwe vacatures op zijn site heeft, staat bovenaan. */
+    const na = nieuw.has(a.naam) ? 0 : 1, nb = nieuw.has(b.naam) ? 0 : 1;
+    if(na !== nb) return na - nb;
     const pa = a.sales_prio == null ? Infinity : Number(a.sales_prio);
     const pb = b.sales_prio == null ? Infinity : Number(b.sales_prio);
     if(pa !== pb) return pa - pb;

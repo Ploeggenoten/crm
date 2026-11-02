@@ -499,7 +499,11 @@ const TABEL_QUERY = {
   /* ZZP-klussen (21 aug 2026): elke klus van een ZZP-kandidaat een eigen
      rij. Bestaat de tabel nog niet (migratie niet gedraaid), dan zet
      veilig() een lege lijst neer en degradeert de ZZP-weergave netjes. */
-  crm_klussen:       {veld:'klussen',       q:() => sb.from('crm_klussen').select('*').order('start')}
+  crm_klussen:       {veld:'klussen',       q:() => sb.from('crm_klussen').select('*').order('start')},
+  /* Werkenbij-wacht (2 nov 2026): nieuwe vacatures op de werkenbij-site van
+     klanten en pijplijnbedrijven, gevuld door de ochtendroutine. Alleen wat
+     nog open staat; ontbreekt de tabel, dan blijft het blok gewoon weg. */
+  crm_vacature_signalen: {veld:'vacSignalen', q:() => sb.from('crm_vacature_signalen').select('*').eq('status','nieuw').order('gezien_op',{ascending:false}).limit(300)}
 };
 CRM.load = async (force=false) => {
   if(CRM.state._loaded && !force) return CRM.state;
