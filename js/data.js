@@ -578,7 +578,8 @@ CRM.naamNorm = n => {
 };
 /* Wie plaatst er? Een marketeer hoort niet in een plaatsingenoverzicht — dan
    staat er een regel met overal nul die alleen maar afleidt. */
-CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh'];
+/* Daan (sales/accountmanagement, sinds 2 nov 2026) plaatst bij zijn eigen klanten, net als Tjerk. */
+CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh', 'Daan'];
 CRM.isPlaatser = n => CRM.PLAATSERS.includes(CRM.naamNorm(n));
 
 CRM.isVanMij = obj => {

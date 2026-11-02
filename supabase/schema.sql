@@ -761,7 +761,8 @@ select u.id, v.naam, v.email, v.functie, v.rol
     ('tjeerd@ploeggenoten.nl',      'Tjeerd', 'am',        'admin'),
     ('tjerk@ploeggenoten.nl',       'Tjerk',  'am',        'am'),
     ('recruitment@ploeggenoten.nl', 'Rajesh', 'recruiter', 'am'),
-    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'am')
+    ('bryan@ploeggenoten.nl',       'Bryan',  'marketeer', 'am'),
+    ('daan@ploeggenoten.nl',        'Daan',   'am',        'am')
   ) as v(email, naam, functie, rol)
   join auth.users u on lower(u.email) = v.email
 on conflict (id) do update
