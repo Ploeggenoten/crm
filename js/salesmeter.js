@@ -43,7 +43,10 @@
   /* Doelen per persoon. Op voornaam, zoals CRM.me() het profiel noemt.
      Wie hier niet staat ziet op het dashboard geen belmeter. */
   const DOELEN = {
-    tjeerd: {belDag:30, afsprWeek:3}
+    tjeerd: {belDag:30, afsprWeek:3},
+    /* Daan (sales + accountmanagement, 2 nov 2026): ook 30 belletjes, maar
+       minder kennismakingen — hij heeft daarnaast zijn eigen klanten. */
+    daan:   {belDag:30, afsprWeek:2}
   };
   const voornaam = n => String(n||'').trim().split(/\s+/)[0].toLowerCase();
   const doel = (wie = CRM.me()) => DOELEN[voornaam(wie)] || null;
