@@ -1351,12 +1351,14 @@ async function cockpitPosts(mount){
     : `<span class="cp-big num">${n}</span>${te ? `<span class="cp-pil or">${te} te laat</span>` : n ? '<span class="cp-pil">klaarzetten</span>' : '<span class="cp-pil">niets gepland</span>'}`;
 }
 
-/* De vijf uitsneden, op volgorde van links naar rechts. Tjeerd (doos)
+/* De uitsneden, op volgorde van links naar rechts. Tjeerd (doos)
    staat tegen de linkerrand zodat de afgesneden doos aansluit, Tjerk
-   (haarnetje) helemaal rechts, Peter Ploeg in het midden. */
+   (haarnetje) helemaal rechts, Peter Ploeg in het midden. Daan (witte
+   helm) kwam er op 2 nov 2026 bij, links naast Tjeerd. */
 function teamHTML(){
   return `<div class="dk-team" aria-hidden="true">
     <img class="t-doos" src="assets/team/doos.webp" alt="">
+    <img class="t-daan" src="assets/team/daan.webp" alt="">
     <img class="t-helm" src="assets/team/helm.webp" alt="">
     <img class="t-peter" src="assets/team/peter.webp" alt="">
     <img class="t-hamer" src="assets/team/hamer.webp" alt="">
