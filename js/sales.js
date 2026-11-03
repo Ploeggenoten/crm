@@ -172,8 +172,7 @@ async function taakKlaar(id, klaar){
    gedachtestreepjes. Alleen Tjeerd is "eigenaar van". */
 function geenGehoorBericht(contactNaam, klantNaam){
   const voornaam = String(contactNaam||'').trim().split(/\s+/)[0] || '';
-  const afzender = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Ploeggenoten';
-  const wie = /^tjeerd$/i.test(afzender) ? 'Tjeerd, eigenaar van Ploeggenoten' : `${afzender} van Ploeggenoten`;
+  const wie = afzender().wie;
   const bedrijf = String(klantNaam||'').trim();
   return `Hoi${voornaam?' '+voornaam:''}, ik probeerde je net te bellen. Ik ben ${wie}, uitzendbureau voor productie en industrie. Wij maken de wervingscampagnes zelf en zetten die uit via social media advertising, en doen daarna het hele traject, van zichtbaarheid tot verloning en behoud. Benieuwd hoe ${bedrijf || 'jullie'} er voor staat met de bezetting. Wanneer schikt het om even te bellen?`;
 }
@@ -183,12 +182,22 @@ CRM.geenGehoorBericht = geenGehoorBericht;
    daar ook de beslisregels). Alleen [detail] en [vervolgstap] wisselen per
    prospect; de leadradar-routine vult die zelf in (concepten.mail), dit is
    de terugval als er geen concept is. Pas je de template aan, doe het dan
-   op beide plekken. */
+   op beide plekken.
+   Sinds 3 nov 2026 mailt het hele team vanuit het CRM: de voorstelzin en
+   de groet gaan op naam van wie verstuurt, en de contactgegevens staan in
+   de handtekening die js/outlook.js eronder zet. */
+const FUNCTIE_AFZENDER = {tjeerd:'eigenaar van Ploeggenoten', daan:'sales manager bij Ploeggenoten',
+  tjerk:'accountmanager bij Ploeggenoten', rajesh:'accountmanager bij Ploeggenoten', bryan:'recruitment marketeer bij Ploeggenoten'};
+const afzender = () => {
+  const v = String(CRM.me()||'').trim().split(/\s+/)[0] || 'Tjeerd';
+  return {voornaam: v, wie: `${v}, ${FUNCTIE_AFZENDER[v.toLowerCase()] || 'van Ploeggenoten'}`};
+};
+CRM.mailAfzender = afzender;
 CRM.salesTemplate = voornaam => `Hoi ${voornaam || '[naam]'},
 
 [Reden van contact, twee zinnen met één echt detail van hun site, uit het gesprek of uit een bericht van henzelf.]
 
-Ik ben Tjeerd, eigenaar van Ploeggenoten, een uitzendbureau uit Alphen aan den Rijn voor productie, logistiek en industrie. Wij doen het hele traject, van zichtbaarheid tot verloning en behoud.
+Ik ben ${afzender().wie}, een uitzendbureau uit Alphen aan den Rijn voor productie, logistiek en industrie. Wij doen het hele traject, van zichtbaarheid tot verloning en behoud.
 
 Een vacature wacht tot iemand hem vindt. Wij gaan die iemand halen. Per functie maken we een campagne op maat: wij bedenken het concept, schrijven het script, filmen bij jullie op de vloer en zetten dat betaald uit via social media advertising. Zo bereik je ook de mensen die zich oriënteren maar niet actief zoeken, en dat is de grootste groep. En jullie employer branding groeit mee, want elke campagne laat de regio zien wat voor werkgever jullie zijn.
 
@@ -199,12 +208,7 @@ Wat we maken staat hier: https://linktr.ee/ploeggenoten
 [Vervolgstap: twee concrete tijdstippen, of: kan ik degene die hierover gaat deze week even kort spreken?]
 
 Groet,
-Tjeerd van Elk
-Ploeggenoten
-06 13 55 53 72
-tjeerd@ploeggenoten.nl
-ploeggenoten.nl
-J. Keplerweg 10L, Alphen aan den Rijn`;
+${afzender().voornaam}`;
 async function geenGehoor(naam, contactId){
   const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
   if(!c || !c.telefoon) return;

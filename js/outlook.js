@@ -47,6 +47,48 @@ const isoLokaal = d => {                       // "2026-07-30T14:00:00" zonder U
 };
 const combineer = (datum, tijd) => new Date(`${datum}T${(tijd||'09:00')}:00`);
 
+/* ─── Handtekening ───────────────────────────────────────────────
+   Per afzender een tabel + bewegende GIF in assets/handtekening/<voornaam>
+   (bron: ~/Desktop/ploeggenoten-handtekeningen/definitief, de versies die
+   in Outlook staan). De tabel verwijst naar cid:pg-handtekening; stuurMail
+   hangt de GIF met dat id als inline-bijlage aan de mail. Wie hier niet
+   staat, mailt gewoon zonder. */
+const HANDTEKENINGEN = ['tjeerd','daan','tjerk','rajesh','bryan'];
+const afzenderSleutel = () => String((_account && _account.username) || CRM.user?.email || '')
+  .split('@')[0].toLowerCase().replace(/[^a-z]/g, '');
+const _hk = {};
+async function handtekening(){
+  const n = afzenderSleutel();
+  if(!HANDTEKENINGEN.includes(n)) return null;
+  if(!_hk[n]) _hk[n] = (async () => {
+    const [html, gif] = await Promise.all([
+      fetch(`assets/handtekening/${n}.html?v=20261103`).then(r => r.ok ? r.text() : Promise.reject(r.status)),
+      fetch(`assets/handtekening/${n}.gif?v=20261103`).then(r => r.ok ? r.blob() : Promise.reject(r.status))
+    ]);
+    const b64 = await new Promise((ok, nee) => { const f = new FileReader();
+      f.onload = () => ok(String(f.result).split(',')[1]); f.onerror = nee; f.readAsDataURL(gif); });
+    return {html, gif: b64};
+  })().catch(e => { console.warn('handtekening', e); delete _hk[n]; return null; });
+  return _hk[n];
+}
+/* Concepten van de leadradar (mailtemplate.md) eindigen met de gegevens in
+   tekst: "Groet, / Tjeerd van Elk / Ploeggenoten / 06… / mail / site /
+   adres / Instagram | LinkedIn". Met de echte handtekening eronder stond
+   alles dubbel, dus die staartregels gaan eraf; "Groet," en de naam blijven. */
+function zonderTekstHandtekening(tekst){
+  const staart = /^(ploeggenoten|(\+31|0)[\d\s-]{8,}|\S+@ploeggenoten\.nl|(https?:\/\/)?(www\.)?ploeggenoten\.nl|j\. ?keplerweg.*|instagram\s*\|\s*linkedin)$/i;
+  const r = String(tekst || '').replace(/\s+$/, '').split('\n');
+  while(r.length > 2 && staart.test(r[r.length-1].trim())) r.pop();
+  return r.join('\n');
+}
+/* Platte tekst uit het opstelvenster naar nette HTML: alinea's blijven
+   staan, links worden klikbaar (de linktree moet aanklikbaar zijn). */
+function tekstNaarHtml(tekst){
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const html = esc(tekst || '').replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, u => `<a href="${u}">${u}</a>`).replace(/\n/g, '<br>');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1a1f0a">${html}</div>`;
+}
+
 /* ─── Laag 1: deeplink (werkt altijd, geen registratie nodig) ──── */
 function composeUrl({titel, start, eind, body, locatie, deelnemers}){
   const q = new URLSearchParams({
@@ -692,17 +734,26 @@ CRM.outlook = {
     const lijst = a => (Array.isArray(a)?a:[a]).filter(Boolean)
       .map(x => ({emailAddress:{address:String(x).trim()}}));
     if(!lijst(aan).length) throw new Error('Geen ontvanger');
+    /* De Outlook-handtekening komt niet mee via Graph, dus zetten we hem er
+       zelf onder (Tjeerd, 3 nov 2026: "met de handtekening van onze
+       Outlook erbij"). De GIF gaat als inline-bijlage mee, niet als link:
+       een extern plaatje blokkeert Outlook bij de ontvanger standaard. */
+    const hk = await handtekening();
     await graph('/me/sendMail', {method:'POST', body:{
       message: {
         subject: onderwerp || '',
-        body: { contentType:'text', content: tekst || '' },
+        body: { contentType:'html', content: tekstNaarHtml(hk ? zonderTekstHandtekening(tekst) : tekst) + (hk ? '<br>' + hk.html : '') },
         toRecipients: lijst(aan),
-        ccRecipients: lijst(cc)
+        ccRecipients: lijst(cc),
+        attachments: hk ? [{'@odata.type':'#microsoft.graph.fileAttachment', name:'handtekening.gif',
+          contentType:'image/gif', contentBytes:hk.gif, isInline:true, contentId:'pg-handtekening'}] : []
       },
       saveToSentItems: true
     }});
     return {ok:true};
   },
+  /* Heeft deze afzender een handtekening? Voor het opstelvenster. */
+  handtekeningUrl(){ const n = afzenderSleutel(); return HANDTEKENINGEN.includes(n) ? `assets/handtekening/${n}.gif` : ''; },
 
   /* ─── Teams ─────────────────────────────────────────────────
      Meldingen landen waar het team de hele dag kijkt. Berichten gaan

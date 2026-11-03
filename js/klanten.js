@@ -4749,9 +4749,38 @@ const voornaamVan = n => String(n||'').trim().split(/\s+/)[0] || '';
 const SJABLONEN = {
   klant: [
     /* Tjeerds vaste salesmail (CRM.salesTemplate in sales.js). */
-    { lbl:'Info na ons gesprek (vaste template)',
+    { lbl:'Acquisitie: info na belletje (vaste template)',
       onderwerp: c => 'Ploeggenoten' + (c.klant ? ' · ' + c.klant : ''),
       tekst: c => CRM.salesTemplate ? CRM.salesTemplate(c.voornaam) : '' },
+    /* Opvolgmailtjes (3 nov 2026), zelfde regels als mailtemplate.md: de
+       hele keten erin, linktree voluit, "Groet,", geen gedachtestreepjes.
+       De handtekening komt er bij versturen vanzelf onder. */
+    { lbl:'Acquisitie: opvolgen, geen reactie op de info',
+      onderwerp: c => 'Even opvolgen' + (c.klant ? ' · ' + c.klant : ''),
+      tekst: c => { const a = CRM.mailAfzender ? CRM.mailAfzender() : {voornaam:c.mij||''}; return `Hoi ${c.voornaam || '[naam]'},
+
+Een paar dagen geleden stuurde ik je informatie over Ploeggenoten. Ik ben benieuwd of je er al naar hebt kunnen kijken.
+
+Kort samengevat: wij doen het hele traject, van zichtbaarheid tot verloning en behoud. We maken per functie een wervingscampagne en zetten die uit via social media advertising, en daarna pakken we de recruitment op. De video's en het advertentiebudget zijn voor onze rekening, je betaalt pas als er via ons iemand bij jullie start.
+
+Wat we maken staat hier: https://linktr.ee/ploeggenoten
+
+[Vervolgstap: twee concrete tijdstippen, of: kan ik degene die hierover gaat deze week even kort spreken?]
+
+Groet,
+${a.voornaam}`; } },
+    { lbl:'Acquisitie: geen gehoor, ik probeerde te bellen',
+      onderwerp: c => 'Ik probeerde je te bellen' + (c.klant ? ' · ' + c.klant : ''),
+      tekst: c => { const a = CRM.mailAfzender ? CRM.mailAfzender() : {voornaam:c.mij||'', wie:c.mij||''}; return `Hoi ${c.voornaam || '[naam]'},
+
+Ik probeerde je net te bellen, maar kreeg je niet te pakken. Ik ben ${a.wie}, een uitzendbureau uit Alphen aan den Rijn voor productie, logistiek en industrie. Wij maken de wervingscampagnes zelf, zetten die uit via social media advertising en doen daarna het hele traject, van zichtbaarheid tot verloning en behoud.
+
+Benieuwd hoe ${c.klant || 'jullie'} er voor staat met de bezetting. [Vervolgstap: twee concrete tijdstippen om even te bellen.]
+
+Wat we maken staat hier: https://linktr.ee/ploeggenoten
+
+Groet,
+${a.voornaam}`; } },
     { lbl:'Kandidaat voorstellen',
       onderwerp: c => 'Kandidaat voor ' + (c.functie || 'jullie vacature'),
       tekst: c => `Beste ${c.voornaam || '[naam]'},
@@ -4903,7 +4932,8 @@ CRM.mailUI = {
           <input type="text" id="ml_ond" value="${h(opts.onderwerp || '')}"></div>
         <div class="f-row"><label for="ml_tekst">Bericht</label>
           <textarea id="ml_tekst" class="ml-tekst">${h(opts.tekst || '')}</textarea></div>
-        <p class="meta ml-vanaf">Wordt verstuurd vanaf jouw Outlook-account.</p>
+        <p class="meta ml-vanaf">Wordt verstuurd vanaf jouw Outlook-account${CRM.outlook.handtekeningUrl?.() ? ', met je handtekening eronder' : ''}.</p>
+        ${CRM.outlook.handtekeningUrl?.() ? `<img class="ml-hk" src="${h(CRM.outlook.handtekeningUrl())}?v=20261103" alt="Je handtekening">` : ''}
       </div>
       <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
         <button class="btn" id="ml_send">Versturen</button></div>`, {onOpen(m){
