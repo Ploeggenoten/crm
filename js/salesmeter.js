@@ -1,7 +1,7 @@
 /* ═══ SALESMETER — koude acquisitie meten en opvolgen ══════════════
    Tjeerd, 25 okt 2026: "Ik moet meer meters maken… een sales meter die
    precies mijn input, maar ook resultaten meet en aangeeft wie ik wanneer
-   moet opvolgen." Doelen: 30 belletjes per dag (sinds 3 nov 2026 elk salesbelletje, niet alleen koud), 3 afspraken per week
+   moet opvolgen." Doelen: 30 belletjes per dag (sinds 3 nov 2026 elk belletje naar een bedrijf, ook actieve klanten), 3 afspraken per week
    met nieuwe leads.
 
    Twee dingen, één bestand (CRM.salesmeter):
@@ -83,27 +83,12 @@
 
   /* ─── Tellen ─────────────────────────────────────────────────── */
   const klantVanContact = id => ((CRM.state.contacten||[]).find(x => String(x.id) === String(id)) || {}).klant || '';
-  function isKoud(a){
-    if(a.extra && typeof a.extra.koud === 'boolean') return a.extra.koud;
-    if(a.entiteit === 'radar') return true;
-    const naam = a.entiteit === 'klant' ? a.ref : a.entiteit === 'contact' ? klantVanContact(a.ref) : '';
-    const k = naam && CRM.klant(naam);
-    return !!(k && KOUDE_FASES.includes(k.fase || 'Lead'));
-  }
-  /* WAT TELT VOOR HET BELDOEL (Tjeerd, 3 nov 2026: "niet alleen koud, maar
-     ook belletjes vanuit het sales traject"): elk belletje naar de radar of
-     naar een bedrijf in de salespijplijn, van Lead t/m Onderhandeling plus
-     "Project uitgesteld". Alleen actieve klanten (Afgerond) tellen niet:
-     dat is accountmanagement. Bij het vastleggen zetten we extra.sales vast,
-     net als extra.koud; oudere belletjes lezen we af aan de fase van nu. */
-  const SALES_TRAJECT = (CRM.SALES_ACTIEF || KOUDE_FASES).concat('Project uitgesteld');
+  /* WAT TELT VOOR HET BELDOEL (Tjeerd, 3 nov 2026): eerst alleen koud, toen
+     "ook belletjes vanuit het sales traject", daarna "laat actieve klanten
+     ook meetellen". Dus: elk belletje naar een bedrijf (radar, klant of
+     contactpersoon), welke fase dan ook. Koud blijft alleen bepalend voor
+     het weekdoel afspraken met nieuwe leads. */
   const bedrijfVan = a => a.entiteit === 'radar' ? 'radar:' + a.ref : a.entiteit === 'klant' ? a.ref : klantVanContact(a.ref);
-  function isSales(a){
-    if(a.extra && typeof a.extra.sales === 'boolean') return a.extra.sales;
-    if(isKoud(a)) return true;
-    const k = bedrijfVan(a) && CRM.klant(bedrijfVan(a));
-    return !!(k && SALES_TRAJECT.includes(k.fase || 'Lead'));
-  }
   const uitkomstVan = a => (a.extra && a.extra.uitkomst) || (/geen gehoor/i.test(a.tekst||'') ? 'geen_gehoor' : '');
   const mijnBellen = (wie = CRM.me()) => (CRM.state.activiteiten||[])
     .filter(a => a.soort === 'bel' && a.door === wie && ['klant','contact','radar'].includes(a.entiteit));
@@ -125,7 +110,7 @@
 
   function tel(wie = CRM.me()){
     const vandaag = CRM.todayISO(), ma = maandagISO();
-    const sales = ontdubbel(mijnBellen(wie).filter(isSales));
+    const sales = ontdubbel(mijnBellen(wie));
     const opDag = d => sales.filter(a => lokaalDag(a.op) === d);
     const vd = opDag(vandaag);
     const week = sales.filter(a => { const d = lokaalDag(a.op); return d >= ma && d <= vandaag; });
@@ -257,7 +242,6 @@
     let klant = ctx.klant || '';
     const vooraf = klant ? CRM.klant(klant) : null;
     const koud = ctx.radar ? true : !!(vooraf && KOUDE_FASES.includes(vooraf.fase || 'Lead'));
-    const sales = koud || !!(vooraf && SALES_TRAJECT.includes(vooraf.fase || 'Lead'));
 
     let extraInfo = null;
     if(uk === 'receptie'){
@@ -328,7 +312,7 @@
       geen_interesse: `Gebeld${wie} — geen interesse${reden?': '+reden:''}`
     }[uk];
     await CRM.logActiviteit(ctx.contactId ? 'contact' : 'klant', ctx.contactId || klant, 'bel', zin,
-      {uitkomst:uk, koud, sales, poging:p || undefined});
+      {uitkomst:uk, koud, poging:p || undefined});
     /* De klantkaart toont activiteiten op klantnaam: bij een contactpersoon
        ook daar een regel, anders mist de tijdlijn van het bedrijf het. */
     if(ctx.contactId) await CRM.logActiviteit('klant', klant, 'notitie', zin, {koud, gespiegeld:true});
