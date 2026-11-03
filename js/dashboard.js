@@ -1118,7 +1118,7 @@ function maandStand(){
 
    De cockpitstrook ("optie A") is bewust één dunne regel: vier cijfers met
    hun voortgang, geen vier grote vlakken met weinig erin.
-     - Salesbelletjes: alleen wie een beldoel heeft (CRM.salesmeter.doel).
+     - Belletjes: alleen wie een beldoel heeft (CRM.salesmeter.doel).
      - Afspraken nieuwe leads: idem.
      - Opvolgen vandaag: iedereen — dezelfde taken als Sales → Opvolgingen.
      - Het team deze maand: iedereen (aantal mensen, geen geld). */
@@ -1190,7 +1190,7 @@ function cockpitEigenaar(){
   const o = SM ? SM.opvolgen() : {n:0, verlopen:0};
   const vak = [];
   if(d){
-    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Salesbelletjes vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
+    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Belletjes vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
       regels:[`<b class="num">${t.gesproken}</b> gesproken${t.gesproken ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / t.gesproken))}` : ''}`,
               `<b class="num">${t.week}</b> / ${d.belDag*5} deze week`]}));
     const nog = Math.max(0, d.afsprWeek - t.afspraken);
@@ -1281,7 +1281,7 @@ function cockpitSales(){
   const o = SM ? SM.opvolgen() : {n:0, verlopen:0};
   const mij = CRM.me(), ma = weekVan(), vak = [];
   if(d){
-    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Salesbelletjes vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
+    vak.push(vakMeter({n:t.vandaag, doel:d.belDag, label:'Belletjes vandaag', mod:'sales', tab:'radar', titel:'Naar de Leadradar',
       regels:[`<b class="num">${t.gesproken}</b> gesproken${t.gesproken ? ` · 1 op ${Math.max(1, Math.round(t.vandaag / t.gesproken))}` : ''}`,
               `<b class="num">${t.week}</b> / ${d.belDag*5} deze week`]}));
     const nog = Math.max(0, d.afsprWeek - t.afspraken);
