@@ -1216,7 +1216,7 @@ async function afspraakWeghalen(k, e){
    klantadres én alle contactpersonen, nieuwste bovenaan, met de naam
    erbij zodat je weet met wie het gesprek loopt. */
 function mailwisselingBlokHtml(k){
-  if(!mailAan()) return '';
+  if(!metTeam()) return '';
   const adressen = klantAdressen(k);
   if(!adressen.length) return '';
   return `<div class="card kl-railkaart kl-r-ml" id="ml_kaart" hidden>
@@ -1239,19 +1239,8 @@ function railMailwisseling(root, k){
   const kaart = root.querySelector('#ml_kaart'); if(!kaart) return;
   const lijst = kaart.querySelector('#ml_klijst');
   const adressen = klantAdressen(k);
-  Promise.all(adressen.map(([adres, naam]) =>
-    Promise.resolve(CRM.outlook.mailMet(adres, 5))
-      .then(rijen => (Array.isArray(rijen) ? rijen : []).map(m => ({...m, wieNaam: naam})))
-      .catch(() => [])
-  )).then(groepen => {
-    /* Dezelfde mail kan bij twee adressen matchen (cc) — ontdubbelen op de
-       Outlook-link, en anders op onderwerp + tijdstip. */
-    const gezien = new Set();
-    const alle = groepen.flat().filter(m => {
-      const sleutel = m.link || (m.onderwerp + '|' + m.op);
-      if(gezien.has(sleutel)) return false;
-      gezien.add(sleutel); return true;
-    }).sort((a,b) => new Date(b.op) - new Date(a.op)).slice(0, 8);
+  /* Eigen mail + die van collega's, ontdubbeld (zie mailVoor). */
+  mailVoor(adressen, 8).then(alle => {
     if(!alle.length) return;                 // blok blijft weg — geen lege belofte
     kaart.hidden = false;
     lijst.innerHTML = `<div class="ml-lijst">${alle.map(m => mailRegelHtml(m)).join('')}</div>`;
@@ -4856,7 +4845,12 @@ function mailRegelHtml(m){
      naam erbij ("verstuurd aan Donna") maakt het gesprek herkenbaar. In
      het blok van één contactpersoon blijft wieNaam leeg en staat er
      gewoon "verstuurd". */
-  const richting = uitgaand
+  /* Teammail (js/mailsync.js): de mail van een collega, met zijn naam erbij. */
+  const collega = m.door ? voornaamVan(m.door) : '';
+  const richting = collega
+    ? (m.uitgaand ? `${collega} verstuurde` + (m.wieNaam ? ' aan ' + m.wieNaam : '')
+                  : `${collega} ontving` + (m.vanNaam ? ' van ' + m.vanNaam : (m.wieNaam ? ' van ' + m.wieNaam : '')))
+    : uitgaand
     ? 'verstuurd' + (m.wieNaam ? ' aan ' + m.wieNaam : '')
     : 'ontvangen' + (m.vanNaam ? ' van ' + m.vanNaam : (m.wieNaam ? ' van ' + m.wieNaam : ''));
   const binnen = `<b class="trunc">${h(m.onderwerp || '(geen onderwerp)')}</b>
@@ -4867,13 +4861,36 @@ function mailRegelHtml(m){
     : `<div class="ml-i">${binnen}</div>`;
 }
 
+/* Eigen live mail (Outlook) + teammail van collega's (crm_mails) voor één
+   of meer adressen, ontdubbeld en nieuwste bovenaan. adressen: [[adres, naam]]. */
+const metTeam = () => mailAan() || (!!CRM.teamMail && !CRM.demo);
+async function mailVoor(adressen, aantal){
+  const [eigen, team] = await Promise.all([
+    Promise.all(adressen.map(([adres, naam]) => Promise.resolve(mailAan() ? CRM.outlook.mailMet(adres, aantal) : [])
+      .then(r => (Array.isArray(r) ? r : []).map(m => ({...m, wieNaam: naam}))).catch(() => []))).then(g => g.flat()),
+    CRM.teamMail ? CRM.teamMail.lees(adressen.map(a => a[0]), aantal * 2).catch(() => []) : []
+  ]);
+  const naamVan = a => (adressen.find(x => x[0] === a) || [])[1] || '';
+  const teamRijen = team.map(t => ({mid: t.mid, onderwerp: t.onderwerp, van: t.van, vanNaam: t.van_naam,
+    op: t.op, fragment: t.fragment, link: '', uitgaand: t.richting === 'uit', door: t.door,
+    wieNaam: (t.adressen||[]).map(naamVan).find(Boolean) || ''}));
+  /* Dezelfde mail kan bij twee adressen (cc) of twee collega's staan. */
+  const gezien = new Set();
+  return eigen.concat(teamRijen).filter(m => {
+    const s = m.mid || m.link || (m.onderwerp + '|' + m.op);
+    if(gezien.has(s)) return false; gezien.add(s); return true;
+  }).sort((a, b) => new Date(b.op) - new Date(a.op)).slice(0, aantal);
+}
+
 CRM.mailUI = {
   actief: mailAan,
 
   /* Leeg blok. Geen koppeling of geen adres → lege string: dan staat er
-     niets op het scherm dat we toch niet kunnen waarmaken. */
+     niets op het scherm dat we toch niet kunnen waarmaken. Sinds de
+     teammail (3 nov 2026) ook zonder eigen koppeling: dan zie je wat je
+     collega's met dit adres mailden. */
   blokHtml(adres, id = 'ml_blok'){
-    if(!mailAan() || !adres) return '';
+    if(!metTeam() || !adres) return '';
     return `<div class="card ml-kaart" id="${h(id)}">
       <div class="card-h"><div class="h2">Mailwisseling</div>
         <span class="spacer"></span><span class="meta trunc ml-adres">${h(adres)}</span></div>
@@ -4882,11 +4899,11 @@ CRM.mailUI = {
 
   /* Vult het blok. Alleen aanroepen als de kaart/drawer daadwerkelijk open is. */
   laad(root, adres, id = 'ml_blok'){
-    if(!mailAan() || !adres || !root) return;
+    if(!metTeam() || !adres || !root) return;
     const kaart = root.querySelector('#' + id);
     if(!kaart) return;
     const body = kaart.querySelector('.ml-b');
-    Promise.resolve(CRM.outlook.mailMet(adres, 10)).then(rijen => {
+    mailVoor([[String(adres).trim().toLowerCase(), '']], 10).then(rijen => {
       if(!Array.isArray(rijen) || !rijen.length){
         body.innerHTML = '<p class="meta ml-leeg">Geen mailwisseling gevonden met dit adres.</p>';
         return;
@@ -4915,32 +4932,40 @@ CRM.mailUI = {
     const ctx = Object.assign({mij: CRM.me()}, opts.ctx || {});
     const adressen = s => String(s||'').split(/[;,]/).map(x => x.trim()).filter(Boolean);
 
-    CRM.modal.open(`
-      <div class="modal-h"><div class="h2">Mail opstellen</div>
-        ${opts.wie ? `<p class="sub" style="margin:6px 0 0">${h(opts.wie)}</p>` : ''}</div>
-      <div class="modal-b">
-        ${set.length ? `<div class="f-row"><label for="ml_sj">Sjabloon</label>
+    /* Opgemaakt als een mail (Tjeerd, 3 nov 2026: "best wel klein, ik wil
+       dat het echt lijkt op een mail"): Van/Aan/CC/Onderwerp als kopregels,
+       daaronder het blad in mail-letter met de echte handtekening eronder,
+       precies zoals de ontvanger hem ziet. Klassen .mv-* in css/klanten.css. */
+    const van = CRM.outlook.accountNaam?.() || CRM.user?.email || '';
+    CRM.modal.open(`<div class="mv">
+      <div class="mv-top"><b>Nieuw bericht</b>${opts.wie ? `<span class="meta trunc">${h(opts.wie)}</span>` : ''}
+        <span class="spacer"></span>
+        ${set.length ? `<label class="mv-sj"><span class="meta">Sjabloon</span>
           <select id="ml_sj"><option value="">Leeg bericht</option>${
-            set.map((s,i) => `<option value="${i}">${h(s.lbl)}</option>`).join('')}</select></div>` : ''}
-        <div class="f-grid">
-          <div class="f-row"><label for="ml_aan">Aan</label>
-            <input type="text" id="ml_aan" value="${h(aan)}"></div>
-          <div class="f-row"><label for="ml_cc">CC</label>
-            <input type="text" id="ml_cc" value="" placeholder="optioneel"></div>
-        </div>
-        <div class="f-row"><label for="ml_ond">Onderwerp</label>
-          <input type="text" id="ml_ond" value="${h(opts.onderwerp || '')}"></div>
-        <div class="f-row"><label for="ml_tekst">Bericht</label>
-          <textarea id="ml_tekst" class="ml-tekst">${h(opts.tekst || '')}</textarea></div>
-        <p class="meta ml-vanaf">Wordt verstuurd vanaf jouw Outlook-account${CRM.outlook.handtekeningUrl?.() ? ', met je handtekening eronder' : ''}.</p>
-        ${CRM.outlook.handtekeningUrl?.() ? `<img class="ml-hk" src="${h(CRM.outlook.handtekeningUrl())}?v=20261103" alt="Je handtekening">` : ''}
+            set.map((s,i) => `<option value="${i}">${h(s.lbl)}</option>`).join('')}</select></label>` : ''}</div>
+      <div class="mv-kop">
+        ${van ? `<div class="mv-r"><span class="mv-l">Van</span><span class="mv-van">${h(van)}</span></div>` : ''}
+        <div class="mv-r"><label class="mv-l" for="ml_aan">Aan</label><input type="text" id="ml_aan" value="${h(aan)}"></div>
+        <div class="mv-r"><label class="mv-l" for="ml_cc">CC</label><input type="text" id="ml_cc" value=""></div>
+        <div class="mv-r mv-ond"><input type="text" id="ml_ond" value="${h(opts.onderwerp || '')}" placeholder="Onderwerp"></div>
       </div>
-      <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
-        <button class="btn" id="ml_send">Versturen</button></div>`, {onOpen(m){
+      <div class="mv-blad">
+        <textarea id="ml_tekst" class="mv-tekst" placeholder="Schrijf je bericht…">${h(opts.tekst || '')}</textarea>
+        <div class="mv-hk" id="ml_hk"></div>
+      </div>
+      <div class="mv-f"><span class="meta">Gaat via jouw Outlook${CRM.outlook.handtekeningUrl?.() ? ', met je handtekening' : ''}</span>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-mclose>Annuleren</button>
+        <button class="btn" id="ml_send">Versturen</button></div>
+    </div>`, {onOpen(m){
       const sj  = m.querySelector('#ml_sj');
       const ond = m.querySelector('#ml_ond');
       const tk  = m.querySelector('#ml_tekst');
-      setTimeout(() => (sj || tk).focus(), 60);
+      /* Het blad groeit mee met de tekst, net als in Outlook. */
+      const groei = () => { tk.style.height = 'auto'; tk.style.height = Math.max(260, tk.scrollHeight + 4) + 'px'; };
+      tk.addEventListener('input', groei); setTimeout(groei, 0);
+      Promise.resolve(CRM.outlook.handtekeningHtml?.()).then(hk => { const d = m.querySelector('#ml_hk'); if(d && hk) d.innerHTML = hk; });
+      setTimeout(() => (aan ? tk : m.querySelector('#ml_aan')).focus(), 60);
 
       if(sj) sj.onchange = async () => {
         const s = set[Number(sj.value)];
@@ -4951,7 +4976,7 @@ CRM.mailUI = {
         }
         ond.value = s.onderwerp(ctx);
         tk.value  = s.tekst(ctx);
-        tk.focus();
+        groei(); tk.focus();
       };
 
       m.querySelector('#ml_send').onclick = async ev => {

@@ -666,9 +666,10 @@ CRM.outlook = {
     const veilig = String(adres).replace(/'/g, "''");
     try{
       const d = await graph(`/me/messages?$search="participants:${encodeURIComponent(veilig)}"` +
-        `&$top=${aantal}&$select=subject,from,toRecipients,receivedDateTime,bodyPreview,webLink,isRead`,
+        `&$top=${aantal}&$select=subject,from,toRecipients,receivedDateTime,bodyPreview,webLink,isRead,internetMessageId`,
         { headers:{ ConsistencyLevel:'eventual' } }, false);
       return (d?.value||[]).map(m => ({
+        mid: m.internetMessageId || '',
         onderwerp: m.subject || '(geen onderwerp)',
         van: m.from?.emailAddress?.address || '',
         vanNaam: m.from?.emailAddress?.name || '',
@@ -700,6 +701,28 @@ CRM.outlook = {
         op: m.sentDateTime
       }));
     }catch(e){ console.warn('mailVerzonden', e); return null; }
+  },
+
+  /* Voor de teammail (js/mailsync.js): koppen + fragment uit Inbox of
+     Verzonden sinds een moment, met paginering. Alleen metadata; wat
+     daarvan bewaard wordt, beslist mailsync (alleen CRM-adressen). Stil. */
+  async mailSinds(map, sindsISO, maxPaginas = 10){
+    if(!CRM.outlook.beschikbaar() || !_account) return null;
+    const veld = map === 'sentitems' ? 'sentDateTime' : 'receivedDateTime';
+    let pad = `/me/mailFolders/${map}/messages?$filter=${encodeURIComponent(veld + ' ge ' + sindsISO)}` +
+      `&$orderby=${veld} desc&$top=50&$select=id,internetMessageId,subject,from,toRecipients,ccRecipients,${veld},bodyPreview`;
+    const uit = [];
+    for(let i = 0; pad && i < maxPaginas; i++){
+      const d = await graph(pad, {}, false);
+      (d?.value||[]).forEach(m => uit.push({
+        id: m.id, mid: m.internetMessageId || m.id, onderwerp: m.subject || '',
+        van: (m.from?.emailAddress?.address || '').toLowerCase(), vanNaam: m.from?.emailAddress?.name || '',
+        aan: (m.toRecipients||[]).concat(m.ccRecipients||[]).map(r => (r.emailAddress?.address||'').toLowerCase()).filter(Boolean),
+        op: m[veld], fragment: (m.bodyPreview||'').slice(0, 220)
+      }));
+      pad = d?.['@odata.nextLink'] ? d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '') : null;
+    }
+    return uit;
   },
 
   /* Inbox-overzicht voor het dashboard: wat kwam er binnen en wat is nog
@@ -754,6 +777,15 @@ CRM.outlook = {
   },
   /* Heeft deze afzender een handtekening? Voor het opstelvenster. */
   handtekeningUrl(){ const n = afzenderSleutel(); return HANDTEKENINGEN.includes(n) ? `assets/handtekening/${n}.gif` : ''; },
+  /* De handtekening zoals hij in de mail komt, maar met de GIF als gewone
+     afbeelding: voor het voorbeeld onder het opstelvenster. */
+  async handtekeningHtml(){
+    const n = afzenderSleutel(); if(!HANDTEKENINGEN.includes(n)) return '';
+    try{
+      const r = await fetch(`assets/handtekening/${n}.html?v=20261103`);
+      return r.ok ? (await r.text()).replace('cid:pg-handtekening', `assets/handtekening/${n}.gif?v=20261103`) : '';
+    }catch(e){ return ''; }
+  },
 
   /* ─── Teams ─────────────────────────────────────────────────
      Meldingen landen waar het team de hele dag kijkt. Berichten gaan
