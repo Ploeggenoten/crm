@@ -1021,6 +1021,9 @@ function bewerk(klantnaam, ct, na){
     </div>`, {onOpen(m){
       setTimeout(()=>m.querySelector(kiesKlant && !n.klant ? '#cb_klant' : '#cb_naam').focus(), 60);
       CRM.dictee?.hang(m.querySelector('#cb_note'));
+      /* Nieuw: naam herkennen uit je telefoonboek (js/telefoonboek.js). */
+      if(!ct) CRM.telefoonboek?.hang(m, {naam:'#cb_naam', functie:'#cb_functie', tel:'#cb_tel', mail:'#cb_mail',
+        klant: () => kiesKlant ? m.querySelector('#cb_klant').value : n.klant});
       m.querySelector('#cb_ok').onclick = async () => {
         const rij = Object.assign({}, n, {
           klant:    kiesKlant ? m.querySelector('#cb_klant').value : n.klant,

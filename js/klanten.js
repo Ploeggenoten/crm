@@ -2957,6 +2957,8 @@ function contactModal(k, ct, na){
       <button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="c_ok">Opslaan</button>
     </div>`, {onOpen(m){
+      /* Nieuw: naam herkennen uit je telefoonboek (js/telefoonboek.js). */
+      if(!ct) CRM.telefoonboek?.hang(m, {naam:'#c_naam', functie:'#c_functie', tel:'#c_tel', mail:'#c_mail', klant:k.naam});
       m.querySelector('#c_ok').onclick = async () => {
         const rij = Object.assign({}, n, {
           naam:m.querySelector('#c_naam').value.trim(), functie:m.querySelector('#c_functie').value.trim(),

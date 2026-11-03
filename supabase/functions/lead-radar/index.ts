@@ -254,6 +254,37 @@ Deno.serve(async (req) => {
     return error ? antwoord({ error: error.message }, 500) : antwoord({ ok: true });
   }
 
+  // Modus 'telefoonboek' (3 nov 2026): {eigenaar, contacten:[{bron_id, naam,
+  // bedrijf, functie, telefoons, emails}]}. De ochtendroutine zet de Mac-
+  // contacten (iCloud = iPhone) klaar, zodat "Nieuwe contactpersoon" de naam
+  // herkent. Vervangt de hele lijst van die eigenaar: wat op de telefoon weg
+  // is, verdwijnt hier ook. Tabel: supabase/telefoonboek.sql.
+  if (body.telefoonboek) {
+    if (cronKey !== Deno.env.get("CRON_SECRET")) return antwoord({ error: "alleen voor routines" }, 403);
+    const tb = body.telefoonboek as Record<string, unknown>;
+    const eigenaar = String(tb.eigenaar ?? "").trim().toLowerCase();
+    if (!eigenaar.includes("@")) return antwoord({ error: "eigenaar (e-mail) ontbreekt" }, 400);
+    const lijst = (Array.isArray(tb.contacten) ? tb.contacten : []) as Record<string, unknown>[];
+    const nu = new Date().toISOString();
+    const tekst = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
+    const rij = (c: Record<string, unknown>) => ({
+      eigenaar, bron_id: tekst(c.bron_id, 120), naam: tekst(c.naam, 160), bedrijf: tekst(c.bedrijf, 160),
+      functie: tekst(c.functie, 120), bijgewerkt: nu,
+      telefoons: (Array.isArray(c.telefoons) ? c.telefoons : []).map((t) => tekst(t, 40)).filter(Boolean).slice(0, 6),
+      emails: (Array.isArray(c.emails) ? c.emails : []).map((t) => tekst(t, 160)).filter(Boolean).slice(0, 4),
+    });
+    const rijen = lijst.map(rij).filter((r) => r.bron_id && r.naam);
+    if (!rijen.length) return antwoord({ error: "geen contacten meegestuurd" }, 400);
+    for (let i = 0; i < rijen.length; i += 500) {
+      const { error } = await service.from("crm_telefoonboek").upsert(rijen.slice(i, i + 500), { onConflict: "eigenaar,bron_id" });
+      if (error) return antwoord({ error: "tabel crm_telefoonboek ontbreekt? draai supabase/telefoonboek.sql — " + error.message }, 500);
+    }
+    // Alles van deze eigenaar dat deze ronde niet meekwam, is van de telefoon af.
+    const { count } = await service.from("crm_telefoonboek").delete({ count: "exact" })
+      .eq("eigenaar", eigenaar).lt("bijgewerkt", nu);
+    return antwoord({ ok: true, opgeslagen: rijen.length, verwijderd: count ?? 0 });
+  }
+
   // ── Werkenbij-wacht (2 nov 2026) ─────────────────────────────
   // Tjeerd: "alle werkenbij-sites checken of ze nieuwe vacatures hebben,
   // zodat ik een alert krijg en kan opbellen — ook in het dashboard en de
