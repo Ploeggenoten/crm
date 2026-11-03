@@ -583,6 +583,16 @@ CRM.naamNorm = n => {
 CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh'];
 CRM.isPlaatser = n => CRM.PLAATSERS.includes(CRM.naamNorm(n));
 
+/* Staat dit op MIJN naam? Voor het dashboard en de opvolging: iedereen ziet
+   alleen wat op zijn eigen naam staat (Tjeerd, 3 nov 2026: "iedereen moet een
+   kandidaat te zien krijgen die hij of zij zelf inplant ... die op zijn naam
+   staan"). Leeg is dus NIET van iedereen meer. Vergelijkt op voornaam na
+   naamNorm, zodat "TJERK", "tjerk@..." en "Tjerk Jansen" hetzelfde zijn. */
+CRM.isIk = (naam, mij = CRM.me()) => {
+  const v = n => CRM.naamNorm(n).split(' ')[0].toLowerCase();
+  return !!v(naam) && v(naam) === v(mij);
+};
+
 CRM.isVanMij = obj => {
   const mij = CRM.me();
   return !mij || obj?.eigenaar === mij || obj?.rec === mij || obj?.am === mij;

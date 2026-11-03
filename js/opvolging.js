@@ -643,11 +643,14 @@ function rondeIndex(){
    er niet bij — "hoe gaat het met de mensen die bij jullie werken" is geen
    vraag die je aan een prospect stelt. Hier een eigen definitie verzinnen
    zou precies de dubbele waarheid opleveren die dit bestand opruimt.       */
+const eigenaarVanPG = () => { try{ return !!CRM.canSeeMoney(); }catch(e){ return false; } };
 function rondeKlanten(mij, vrijdag){
   const tot = plusDagen(vrijdag, RONDE_DAGEN);
   const ix = rondeIndex();
   return (CRM.actieveKlanten() || [])
-    .filter(k => !(mij && k.eigenaar && k.eigenaar !== mij))
+    /* Jouw klanten; een klant zonder eigenaar valt bij de eigenaar van
+       Ploeggenoten, niet meer bij iedereen (Tjeerd, 3 nov 2026). */
+    .filter(k => !mij || (k.eigenaar ? CRM.isIk(k.eigenaar, mij) : eigenaarVanPG()))
     .map(k => klantRegel(k, vrijdag, tot, ix))
     /* Bovenaan wie je het langst niet gesproken hebt, en daarboven nog wie
        je nog nóóit gesproken hebt. Wie deze week al aan de lijn hing zakt
@@ -1090,9 +1093,10 @@ const OPV = CRM.opvolging = {
     const nu = dag(datum) || vandaag();
     const uit = [];
     CRM.kandidaten().forEach(c => {
-      /* Kandidaten hangen aan hun recruiter. Staat er niemand op, dan is
-         het van iedereen — zelfde regel als bij de taken op het dashboard. */
-      if(mij && c.rec && c.rec !== mij) return;
+      /* Kandidaten hangen aan hun recruiter. Staat er niemand op, dan bij
+         niemand (Tjeerd, 3 nov 2026); de eigenaar ziet op het dashboard een
+         verdeelregel voor die kandidaten. */
+      if(mij && !CRM.isIk(c.rec, mij)) return;
       const r = OPV.voorKandidaat(c, nu);
       r.open.forEach(m => uit.push(Object.assign({
         entiteit:'kandidaat', ref:c.id, naam:c.naam, mod:'kandidaten', id:c.id,
@@ -1125,7 +1129,7 @@ const OPV = CRM.opvolging = {
     if(!v || !t || t < v) return [];
     const uit = [];
     CRM.kandidaten().forEach(c => {
-      if(mij && c.rec && c.rec !== mij) return;
+      if(mij && !CRM.isIk(c.rec, mij)) return;
       /* Peildatum is VANDAAG, ook als je naar een andere week kijkt: of iets
          open staat of gemist is, gaat over nu. Zou je vanaf maandag rekenen,
          dan heet een check-in van woensdag "komt nog" terwijl hij vandaag
@@ -1221,7 +1225,7 @@ const OPV = CRM.opvolging = {
     const nu = dag(datum) || vandaag();
     const uit = [];
     CRM.kandidaten().forEach(c => {
-      if(mij && c.rec && c.rec !== mij) return;
+      if(mij && !CRM.isIk(c.rec, mij)) return;
       const r = OPV.voorKandidaat(c, nu);
       if(!r.actief || r.klaar) return;
       /* Wat er nú open staat, en anders het eerstvolgende ritmemoment. Een

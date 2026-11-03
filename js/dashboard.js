@@ -181,8 +181,9 @@ function bouwDag(){
   const klem = u => Math.max(START_UUR, Math.min(EIND_UUR-1, u));
 
   /* CRM-afspraken vandaag: intakes, gesprekken, meeloopdagen. Outlook
-     komt er later asynchroon bij, zie agendaVullen(). */
-  cs.filter(c => actief(c) && kort(c.datum)===nu)
+     komt er later asynchroon bij, zie agendaVullen(). Alleen kandidaten op
+     jouw naam (Tjeerd, 3 nov 2026) — zie CRM.isIk. */
+  cs.filter(c => actief(c) && CRM.isIk(c.rec) && kort(c.datum)===nu)
     .sort((a,b)=>String(a.tijd).localeCompare(String(b.tijd)))
     .forEach(c => {
       const it = { soort:'afspraak', titel:c.naam,
@@ -226,7 +227,7 @@ function bouwWeek(){
   const opDag = iso => dagen.find(x => x.iso === iso);
 
   /* CRM-afspraken: intakes, gesprekken, meeloopdagen. */
-  cs.filter(actief).forEach(c => {
+  cs.filter(c => actief(c) && CRM.isIk(c.rec)).forEach(c => {
     const d = opDag(kort(c.datum)); if(!d) return;
     d.items.push({ soort:'afspraak', titel:c.naam,
       sub:[c.fase, c.klant].filter(Boolean).join(' · '),
@@ -505,6 +506,13 @@ function wanneerHTML(taakId, datum){
    "Vandaag": werk verdwijnt niet omdat je een filter kiest. Dat laatste
    is geen detail — in productie staan er taken zonder datum, en in de
    oude dagbaan waren die onzichtbaar omdat daar op datum werd gefilterd. */
+/* Van wie is een taak? Van wie hij `voor` is; staat daar niemand, dan van
+   wie hem aanmaakte (`door`); staat ook dat er niet, dan van de eigenaar.
+   Vroeger stond een taak zonder `voor` bij iedereen, en zagen Tjeerd en
+   Daan elkaars en andermans werk (Tjeerd, 3 nov 2026). */
+const isEigenaar = () => { try{ return !!CRM.canSeeMoney(); }catch(e){ return false; } };
+const taakVanMij = t => t.voor ? CRM.isIk(t.voor) : t.door ? CRM.isIk(t.door) : isEigenaar();
+
 function bouwTaken(){
   const nu = VANDAAG(), mij = CRM.me();
   const eindWeek = dISO(dagPlus(maandag(0), 6));
@@ -518,7 +526,7 @@ function bouwTaken(){
   };
 
   (CRM.state.taken||[])
-    .filter(t => !t.klaar && (!t.voor || t.voor === mij))
+    .filter(t => !t.klaar && taakVanMij(t))
     .forEach(t => {
       const d = kort(t.datum);
       /* Kandidaten en contactpersonen noemen we bij naam; staat de naam er
@@ -558,7 +566,7 @@ function bouwTaken(){
     || String(a.tekst).localeCompare(String(b.tekst), 'nl')));
 
   const afVandaag = (CRM.state.taken||[]).filter(t =>
-    t.klaar && (!t.voor || t.voor === mij) &&
+    t.klaar && taakVanMij(t) &&
     (kort(t.datum) === nu || sessieAf.has(String(t.id)))).length;
 
   return { groepen, afVandaag,
@@ -599,9 +607,9 @@ function opvolgingRijen(){
      werd dat een getal waar niemand aan begint, en de helft was niet eens
      "nieuw". Nu twee aparte regels (Tjeerd, 2 sep 2026):
        1. Belafspraken — met de kandidaat afgesproken momenten (opvolgen_op
-          vandaag of eerder). Die van jou, plus die zonder eigenaar: een
-          belofte aan een kandidaat die bij niemand ligt breek je anders
-          stilzwijgend, en dat is erger dan een dubbele beller.
+          vandaag of eerder). Alleen die van jou (3 nov 2026); die zonder
+          eigenaar telt de verdeelregel hieronder, zodat ze niet bij
+          niemand blijven liggen.
        2. Nieuwe sollicitanten — jouw eigen Nieuw-leads die er twee dagen of
           langer liggen én geen gepland belmoment hebben. Zonder eigenaar
           telt hier niet meer mee: dat is verdeel-werk voor de eigenaar
@@ -609,7 +617,7 @@ function opvolgingRijen(){
   /* Genormaliseerd vergelijken (rapport 5, 3 sep 2026): gemigreerde botleads
      hebben eigenaren als "TJERK"/"bryan" en vielen met === uit de belsignalen. */
   const afspraken = belLeads
-    .filter(l => eigenaarLoos(l) || CRM.naamNorm(l.eigenaar) === CRM.naamNorm(mij))
+    .filter(l => CRM.isIk(l.eigenaar))
     .filter(l => kort(l.opvolgen_op) && kort(l.opvolgen_op) <= nu)
     .sort((a,b) => String(a.terugbel_om||a.opvolgen_op||'')
       .localeCompare(String(b.terugbel_om||b.opvolgen_op||'')));
@@ -622,7 +630,7 @@ function opvolgingRijen(){
     sub: afspraken.slice(0,3).map(l=>l.naam).join(', ') + (afspraken.length>3?' …':'') });
 
   const leads = belLeads
-    .filter(l => CRM.naamNorm(l.eigenaar) === CRM.naamNorm(mij))
+    .filter(l => CRM.isIk(l.eigenaar))
     .filter(l => CRM.leadIs(l.status, 'Nieuw') && (CRM.dagenGeleden(l.binnen_op)||0) >= 2
               && !kort(l.opvolgen_op));
   if(leads.length) uit.nu.push({ sleutel:'leads', mod:'recruitment', vink:true,
@@ -645,12 +653,22 @@ function opvolgingRijen(){
   }catch(e){ /* geen profiel geladen: dan ook geen verdeelregel */ }
 
   /* VAN MIJ, niet van iedereen: ongefilterd kregen Tjeerd, Tjerk en Rajesh
-     's ochtends dezelfde namen te zien en belden ze alle drie. Een kandidaat
-     zonder recruiter hoort wél bij iedereen — die ligt anders bij niemand. */
+     's ochtends dezelfde namen te zien en belden ze alle drie. Sinds 3 nov
+     2026 ook niet meer de kandidaten zonder recruiter: die telt de
+     eigenaar in één verdeelregel (hieronder). */
   const acties = CRM.kandidaten()
-    .filter(c => !c.rec || c.rec === mij)
+    .filter(c => CRM.isIk(c.rec))
     .filter(c => actief(c) && c.volgendeActie && kort(c.actieDatum) && kort(c.actieDatum) < nu)
     .sort((a,b)=>String(a.actieDatum).localeCompare(String(b.actieDatum)));
+  /* Kandidaten zonder recruiter staan nu bij niemand op het dashboard. Dan
+     moet de eigenaar wél zien dát ze er liggen, net als bij de sollicitanten. */
+  if(isEigenaar()){
+    const zonderRec = CRM.kandidaten().filter(c => actief(c) && !String(c.rec||'').trim()).length;
+    if(zonderRec) uit.nu.push({ sleutel:'verdeel-kand', mod:'kandidaten',
+      titel:`Wijs ${zonderRec} kandidaat${zonderRec===1?'':'en'} zonder recruiter toe`,
+      sub:'Ze staan bij niemand op het dashboard — zet een recruiter op de kaart.' });
+  }
+
   if(acties.length) uit.nu.push({ sleutel:'acties', mod:'kandidaten', urgent:true,
     actieIds: acties.map(c=>c.id),
     titel:`Werk ${acties.length} ${acties.length===1?'actie':'acties'} over datum bij`,
@@ -2067,7 +2085,7 @@ CRM.registerModule('dashboard', {
   badge(){ try{
     const nu = VANDAAG(), mij = CRM.me();
     const openTaken = (CRM.state.taken||[]).filter(t =>
-      !t.klaar && (!t.voor || t.voor===mij) && kort(t.datum) && kort(t.datum) <= nu).length;
+      !t.klaar && taakVanMij(t) && kort(t.datum) && kort(t.datum) <= nu).length;
     return CRM.mijnMeldingen().filter(m => !(dashRol() === 'eigenaar' && isRoutineMelding(m)) && !isWachtMelding(m)).length
       + new Set(mijnSignalen().map(s => s.bedrijf)).size + openTaken;
   }catch(e){ return 0; } },

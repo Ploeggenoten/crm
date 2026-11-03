@@ -1226,9 +1226,10 @@ function registreerVerjaardagen(){
   CRM.opvolging.registreerBron((mij, datum) => {
     if(typeof CRM.contactVerjaardagen !== 'function') return [];
     return CRM.contactVerjaardagen(datum, 0)
-      /* Zonder eigenaar is de relatie van iedereen — zelfde regel als bij
-         de taken op het dashboard. */
-      .filter(v => !mij || !v.eigenaar || v.eigenaar === mij)
+      /* Jouw relaties; zonder eigenaar bij de eigenaar van Ploeggenoten,
+         niet meer bij iedereen (Tjeerd, 3 nov 2026). */
+      .filter(v => !mij || (v.eigenaar ? CRM.isIk(v.eigenaar, mij)
+        : (() => { try{ return !!CRM.canSeeMoney(); }catch(e){ return false; } })()))
       .map(v => ({
         key: 'ctjarig:' + v.contact.id + ':' + v.wanneer,
         soort: 'contactverjaardag', kanaal: 'bel',
