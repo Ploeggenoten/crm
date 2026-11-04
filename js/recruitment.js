@@ -3067,12 +3067,16 @@ function openLead(id){
             <div class="f-row"><label for="rc_eig">Eigenaar (AM)</label>
               ${eigenaarSelectHtml(l.eigenaar)}</div>
           </div>
+          ${''/* Opslaan direct onder het veld (Tjeerd, 4 nov 2026: "anders
+             vergeten mensen het opslaan"). Stond onderaan tussen de
+             belknoppen, een rij lager dan de reden. De reden staat ernaast
+             omdat hij bij dezelfde notitie hoort. ⌘/Ctrl+Enter slaat ook op. */}
           <div class="f-row"><label for="rc_note">Notitie toevoegen</label>
             <textarea id="rc_note" placeholder="Wat is er besproken?"></textarea>
-            <span class="hint">@naam om een collega te melden</span></div>
-          <div class="f-row"><label for="rc_notecat">Reden (optioneel)</label>
-            <select id="rc_notecat">
-              <option value="">— geen categorie —</option>
+            <div class="row tight" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:8px">
+            <select id="rc_notecat" style="width:auto;min-width:200px;flex:1" aria-label="Reden (optioneel)"
+              title="Reden (optioneel) — komt terug in Performance onder Top redenen">
+              <option value="">Reden (optioneel)</option>
               <optgroup label="Potentieel">
                 ${CRM.LEAD_POTENTIEEL_CATS.map(c=>`<option value="${h(c)}">${h(c)}</option>`).join('')}
               </optgroup>
@@ -3080,9 +3084,10 @@ function openLead(id){
                 ${CRM.LEAD_NIET_GESCHIKT_CATS.map(c=>`<option value="${h(c)}">${h(c)}</option>`).join('')}
               </optgroup>
             </select>
-            <span class="hint">Komt terug in Performance onder "Top redenen"</span></div>
+            <button class="btn" id="rc_noteok" disabled title="Of ⌘/Ctrl+Enter in het notitieveld">Notitie opslaan</button>
+            </div>
+            <span class="hint">@naam om een collega te melden · de reden komt terug in Performance onder "Top redenen"</span></div>
           <div class="row tight">
-            <button class="btn ghost sm" id="rc_noteok">Notitie opslaan</button>
             <button class="btn ghost sm" id="rc_belpoging" title="Telt een belpoging zonder de status te veranderen">Belpoging noteren</button>
             ${CRM.RECRUIT_V2 ? `<button class="btn ghost sm" id="rc_app" title="Opent WhatsApp met een klaargezet bericht vanaf jouw eigen nummer">App: geen gehoor</button>
             <button class="btn ghost sm" id="rc_app_en" title="Zelfde bericht in het Engels">EN</button>
@@ -3177,7 +3182,12 @@ function openLead(id){
           tekenKop(); tekenLijst(); openLead(l.id);
         }
       };
-      dr.querySelector('#rc_noteok').onclick = async () => {
+      const noteVeld = dr.querySelector('#rc_note'), noteOk = dr.querySelector('#rc_noteok');
+      noteVeld.addEventListener('input', () => { noteOk.disabled = !noteVeld.value.trim(); });
+      noteVeld.addEventListener('keydown', e => {
+        if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)){ e.preventDefault(); if(!noteOk.disabled) noteOk.click(); }
+      });
+      noteOk.onclick = async () => {
         const t0 = dr.querySelector('#rc_note').value.trim(); if(!t0) return;
         const cat = dr.querySelector('#rc_notecat').value;
         const t = cat ? `${cat} — ${t0}` : t0;
@@ -3195,7 +3205,7 @@ function openLead(id){
             await bewaarKand(cand.id, {notities:nieuw});
             CRM.verwerkTags(t, 'kandidaat', cand.id);
             CRM.toast('Notitie opgeslagen op de kandidaatkaart','ok');
-            dr.querySelector('#rc_note').value = '';
+            dr.querySelector('#rc_note').value = ''; noteOk.disabled = true;
             return;
           }
         }

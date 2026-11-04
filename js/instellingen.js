@@ -753,7 +753,7 @@ async function vulFormulieren(mount){
   const alleVacs = CRM.state.vacs || [];
   const vacBij = id => alleVacs.find(v => String(v.id) === String(id));
   const PLOEG = ['','Geen','2-ploegen','3-ploegen','4-ploegen','5-ploegen','Wisselend','Alleen nachtdienst'];
-  const AMS   = ['','Tjeerd','Tjerk','Rajesh'];
+  const AMS   = ['','Tjeerd','Tjerk','Rajesh','Daan'];
   /* ── Kwalificatievragen als vaste stappen (Tjeerd, 3 sep 2026): Bryan
      moet hier dezelfde vragen afvinken als in Smits oude n8n-formulier —
      geen vrij tekstvak waarin van alles mis kan gaan. Opslag blijft wél

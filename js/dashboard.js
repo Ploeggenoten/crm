@@ -1192,7 +1192,7 @@ function meterSVG(n, doel, vanTekst){
      eigenaar   → overzicht, sales en ondernemerschap (Tjeerd)
      am         → kandidaten en de eigen klanten (Tjerk, Rajesh; ook recruiter)
      marketeer  → marketing (Bryan)
-     sales      → sales en accountmanagement, géén plaatsingen (Daan, sinds
+     sales      → sales en accountmanagement; telt sinds 4 nov wel als plaatser (Daan, sinds
                   2 nov 2026: "zowel sales stats als kandidaten")
    De eigenaar wordt herkend aan canSeeMoney(), de rest aan profiel.functie
    (Instellingen → Gebruikers). */
@@ -1201,9 +1201,10 @@ function dashRol(){
   const f = CRM.profile?.functie || 'am';
   return f === 'marketeer' || f === 'sales' ? f : 'am';
 }
-/* Wie deelt het maandtarget voor plaatsingen? Marketeer en sales plaatsen
-   niet; tellen ze mee, dan krijgt elke recruiter een te klein aandeel. */
-const telPlaatsers = () => (CRM.state.profiles||[]).filter(p => !['marketeer','sales'].includes(p.functie||'am')).length || 1;
+/* Wie deelt het maandtarget voor plaatsingen? De marketeer plaatst niet;
+   telt hij mee, dan krijgt elke recruiter een te klein aandeel. Sales
+   (Daan) plaatst sinds 4 nov 2026 wel ("is gewoon een accountmanager"). */
+const telPlaatsers = () => (CRM.state.profiles||[]).filter(p => (p.functie||'am') !== 'marketeer').length || 1;
 
 const strook = vak => `<div class="cp-strook">${vak.filter(Boolean).map((v, i) => (i ? '<span class="cp-sep"></span>' : '') + v).join('')}</div>`;
 const vakGetal = ({label, n, van, pil, pilOr, extra = '', mod, tab, titel}) => {

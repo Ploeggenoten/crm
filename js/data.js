@@ -578,15 +578,12 @@ CRM.naamNorm = n => {
 };
 /* Wie plaatst er? Een marketeer hoort niet in een plaatsingenoverzicht — dan
    staat er een regel met overal nul die alleen maar afleidt. */
-/* Daan (sales/accountmanagement, sinds 2 nov 2026) is collega maar géén plaatser
-   (Tjeerd, 2 nov: "heeft niets met plaatsingen te maken"). */
-CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh'];
+/* Daan (sinds 2 nov 2026) was eerst géén plaatser. Op 4 nov 2026 zei
+   Tjeerd: "Daan kan wel meetellen hoor, is gewoon een accountmanager". */
+CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh', 'Daan'];
 CRM.isPlaatser = n => CRM.PLAATSERS.includes(CRM.naamNorm(n));
-/* Wie kan eigenaar zijn van een sollicitant in Recruitment? De plaatsers
-   plus Daan: hij belt sinds 4 nov 2026 ook sollicitanten (Tjeerd: "zet hem
-   als eigenaar ook erin bij de recruitment"). Hij blijft buiten de
-   plaatsingscijfers; daarvoor is CRM.PLAATSERS. */
-CRM.RECRUITMENT_EIGENAREN = CRM.PLAATSERS.concat(['Daan']);
+/* Wie kan eigenaar zijn van een sollicitant in Recruitment: de plaatsers. */
+CRM.RECRUITMENT_EIGENAREN = CRM.PLAATSERS;
 
 /* Staat dit op MIJN naam? Voor het dashboard en de opvolging: iedereen ziet
    alleen wat op zijn eigen naam staat (Tjeerd, 3 nov 2026: "iedereen moet een
