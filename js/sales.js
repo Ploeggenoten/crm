@@ -28,6 +28,10 @@ let stilF    = V.get('stil','');
 let zoek     = V.get('zoek','');
 let mijn     = V.get('mijn',false);
 let eigFilter= V.get('eigenaar','');
+/* Opvolgingen filteren op naam (Tjeerd, 4 nov 2026): '' = iedereen. Van wie
+   een taak is: `voor`, en staat daar niemand dan wie hem aanmaakte. */
+let opvVoor  = V.get('opvVoor','');
+const opvVan = t => t.voor || t.door || '';
 let sortering= V.get('sort',{veld:'naam',op:1});
 let sleepend = null;                             // naam van de kaart die gesleept wordt
 
@@ -752,13 +756,17 @@ function openOpvolgingen(){
       contactId: t.entiteit === 'contact' ? String(t.ref) : ''
     }) : null;
   }).filter(Boolean)
-    .filter(t => !mijn || t.voor === CRM.me())
+    /* Op de tab zelf beslist alleen de keuze "voor wie"; "Mijn klanten" is
+       daar niet te zien en mag dus ook niet stil meefilteren. */
+    .filter(t => opvVoor ? CRM.isIk(opvVan(t), opvVoor) : (tab === 'opvolg' || !mijn || CRM.isIk(opvVan(t))))
     .sort((a,b) => String(a.datum||'9999').localeCompare(String(b.datum||'9999')));
 }
 function opvolgHTML(){
-  const alle = openOpvolgingen();
+  const q = zoek.trim().toLowerCase();
+  const alle = openOpvolgingen().filter(t => !q || `${t.klantNaam} ${t.tekst||''}`.toLowerCase().includes(q));
   if(!alle.length) return CRM.ui.leeg('Geen open opvolgingen',
-    mijn ? 'Er staat niets open op jouw naam. Zet "Mijn klanten" uit om die van collega\'s te zien.'
+    opvVoor || q ? `Er staat niets open${opvVoor ? ' voor ' + h(opvVoor) : ''}${q ? ' met "' + h(zoek.trim()) + '"' : ''}. Kies "Iedereen" of wis de zoekterm.`
+    : mijn ? 'Er staat niets open op jouw naam. Zet "Mijn klanten" uit om die van collega\'s te zien.'
          : 'Elke afspraak die je maakt — "volgende week terugbellen" — hoort hier als taak te staan. '
            + 'Je legt er een vast op de kaart van de relatie: knop "+ Taak", of "Taak" bij de belknoppen.');
   const vandaag = CRM.todayISO();
@@ -2328,6 +2336,21 @@ function tekenActies(){
   /* De Leadradar heeft eigen filters in de tab zelf; de pijplijnfilters
      hierboven zouden daar niets doen en alleen verwarren. */
   if(tab==='radar' || tab==='vondsten'){ actiesEl.innerHTML = ''; return; }
+  /* Op Opvolgingen gaat het om personen, niet om klanteigenaren: één keuze
+     "voor wie" en zoeken op klant of taak. */
+  if(tab==='opvolg'){
+    const namen = [...new Set(CRM.teamNamen().map(n => CRM.naamNorm(n).split(' ')[0]).filter(Boolean))];
+    actiesEl.innerHTML = `
+      <div class="searchbox"><input type="search" id="s_zoek" placeholder="Zoek klant of taak" value="${h(zoek)}"></div>
+      <select id="s_opvvoor" style="width:auto;min-width:140px"${opvVoor?' class="on"':''}>
+        <option value="">Iedereen</option>
+        ${namen.map(n=>`<option value="${h(n)}"${CRM.isIk(n, opvVoor)?' selected':''}>${h(n)}${CRM.isIk(n)?' (ik)':''}</option>`).join('')}
+      </select>`;
+    const inp = actiesEl.querySelector('#s_zoek');
+    inp.oninput = CRM.debounce(()=>{ zoek = inp.value; V.zet('zoek',zoek); tekenInhoud(); }, 220);
+    actiesEl.querySelector('#s_opvvoor').onchange = e => { opvVoor = e.target.value; V.zet('opvVoor',opvVoor); tekenActies(); tekenInhoud(); };
+    return;
+  }
   actiesEl.innerHTML = `
     <div class="searchbox"><input type="search" id="s_zoek" placeholder="Zoek bedrijf, branche of plaats" value="${h(zoek)}"></div>
     <select id="s_eig" style="width:auto;min-width:140px">
