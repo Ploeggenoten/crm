@@ -582,6 +582,11 @@ CRM.naamNorm = n => {
    (Tjeerd, 2 nov: "heeft niets met plaatsingen te maken"). */
 CRM.PLAATSERS = ['Tjeerd', 'Tjerk', 'Rajesh'];
 CRM.isPlaatser = n => CRM.PLAATSERS.includes(CRM.naamNorm(n));
+/* Wie kan eigenaar zijn van een sollicitant in Recruitment? De plaatsers
+   plus Daan: hij belt sinds 4 nov 2026 ook sollicitanten (Tjeerd: "zet hem
+   als eigenaar ook erin bij de recruitment"). Hij blijft buiten de
+   plaatsingscijfers; daarvoor is CRM.PLAATSERS. */
+CRM.RECRUITMENT_EIGENAREN = CRM.PLAATSERS.concat(['Daan']);
 
 /* Staat dit op MIJN naam? Voor het dashboard en de opvolging: iedereen ziet
    alleen wat op zijn eigen naam staat (Tjeerd, 3 nov 2026: "iedereen moet een

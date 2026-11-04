@@ -1073,8 +1073,8 @@ function vulEigSelect(basis){
     telling.set(n, (telling.get(n) || 0) + 1);
   });
   const extra = Array.from(new Set(leads().map(l => CRM.naamNorm(l.eigenaar))))
-    .filter(n => n && !CRM.PLAATSERS.includes(n)).sort((a,b) => a.localeCompare(b));
-  const namen = CRM.PLAATSERS.concat(extra);
+    .filter(n => n && !CRM.RECRUITMENT_EIGENAREN.includes(n)).sort((a,b) => a.localeCompare(b));
+  const namen = CRM.RECRUITMENT_EIGENAREN.concat(extra);
   /* Een gekozen waarde die (net) niet meer in de lijst staat blijft zichtbaar
      in plaats van stiekem op "Alle eigenaren" te lijken — zelfde afweging als
      statusOptieExtra. */
@@ -2949,11 +2949,11 @@ async function verwijderLead(l){
    als extra optie staan zodat kiezen nooit ongemerkt de waarde wegneemt. */
 function eigenaarSelectHtml(huidig){
   const norm = CRM.naamNorm(huidig);
-  const vreemd = norm && !CRM.PLAATSERS.includes(norm) ? norm : '';
+  const vreemd = norm && !CRM.RECRUITMENT_EIGENAREN.includes(norm) ? norm : '';
   return `<select id="rc_eig">
     <option value="">— geen —</option>
     ${vreemd ? `<option value="${h(vreemd)}" selected>${h(vreemd)}</option>` : ''}
-    ${CRM.PLAATSERS.map(n=>`<option value="${h(n)}" ${norm===n?'selected':''}>${h(n)}</option>`).join('')}
+    ${CRM.RECRUITMENT_EIGENAREN.map(n=>`<option value="${h(n)}" ${norm===n?'selected':''}>${h(n)}</option>`).join('')}
   </select>`;
 }
 
