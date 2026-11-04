@@ -2648,6 +2648,7 @@ function railTaken(el, k){
     const t = CRM.state.taken.find(x => String(x.id) === cb.dataset.taak);
     if(!t) return;
     await bewaarRij('crm_taken','taken', Object.assign({}, t, {klaar:true}), true);
+    if(CRM.salesmeter) CRM.salesmeter.belTaakAf(t);
     CRM.navBadges();
     railTaken(el, k);
   });

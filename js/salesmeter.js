@@ -470,6 +470,29 @@
   /* ─── Kennismaking gehad → één venster, volgende stap staat ──────
      Aangeroepen na het afvinken van een taak die met "Kennismaking "
      begint (sales.js, dashboard.js, contactkaart.js). */
+  /* Afgevinkt is gebeld (Tjeerd, 4 nov 2026). Daan vinkte zijn terugbel-
+     taken af zonder de knop Gebeld, en dan stond er geen belletje. Een taak
+     met "bel" in de tekst (Bel …, bellen, nabellen, terugbellen) die je
+     afvinkt, legt nu zelf het belletje vast op dezelfde kaart. Een mailtaak
+     is geen belletje. Vink je hem terug aan, dan gaat het belletje weer weg.
+     Belde je net via Gebeld, dan voegt ontdubbel() de twee samen. */
+  const BELTAAK = /(^|[^a-zà-ÿ]|na|terug|op)bel(len|t|ronde|poging|afspraak|letje)?\b/i;
+  async function belTaakAf(t, klaar = true){
+    if(!t || !BELTAAK.test(String(t.tekst||''))) return;
+    const lijst = CRM.state.activiteiten || [];
+    const al = lijst.find(a => a.soort === 'bel' && a.extra && String(a.extra.viaTaak) === String(t.id));
+    if(klaar){
+      if(al) return;
+      await CRM.logActiviteit(t.entiteit || 'klant', t.ref, 'bel', `Gebeld — taak afgevinkt: ${t.tekst}`, {viaTaak:String(t.id)});
+    }else if(al){
+      lijst.splice(lijst.indexOf(al), 1);
+      if(!CRM.demo){
+        const {error} = await CRM.sb.from('crm_activiteiten').delete().eq('id', al.id);
+        if(error) console.warn('belletje terugdraaien', error);
+      }
+    }
+  }
+
   async function naKennismaking(t){
     if(!t || !/^Kennismaking\s/.test(String(t.tekst||''))) return;
     const klant = t.entiteit === 'klant' ? t.ref : t.entiteit === 'contact' ? klantVanContact(t.ref) : '';
@@ -616,5 +639,5 @@
     }, naContact: () => gemaakt && gemaakt.contactId}, klaar);
   }
 
-  CRM.salesmeter = {doel, tel, opvolgen, gebeld, belNieuw, belEnVraag, naKennismaking, kiesReden, UITKOMST, KOUDE_FASES};
+  CRM.salesmeter = {doel, tel, opvolgen, gebeld, belNieuw, belEnVraag, naKennismaking, belTaakAf, kiesReden, UITKOMST, KOUDE_FASES};
 })();

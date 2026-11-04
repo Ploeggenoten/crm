@@ -924,7 +924,7 @@ async function taakAfvinken(id, cb){
   rijAf(cb);
   CRM.toast('Taak afgerond','ok');
   CRM.navBadges();
-  if(CRM.salesmeter) CRM.salesmeter.naKennismaking(t);
+  if(CRM.salesmeter){ CRM.salesmeter.belTaakAf(t); CRM.salesmeter.naKennismaking(t); }
 }
 
 /* "Acties over datum": de onderliggende kandidaat-acties worden echt als

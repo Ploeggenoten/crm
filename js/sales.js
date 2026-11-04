@@ -157,6 +157,7 @@ async function taakKlaar(id, klaar){
     if(error){ t.klaar = !klaar; return CRM.fout('Taak bijwerken mislukt', error); }
   }
   CRM.navBadges();
+  if(CRM.salesmeter) CRM.salesmeter.belTaakAf(t, klaar);
   if(klaar && CRM.salesmeter) CRM.salesmeter.naKennismaking(t).then(() => tekenInhoud());
 }
 
