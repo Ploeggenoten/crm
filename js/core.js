@@ -478,10 +478,16 @@ const TABEL_QUERY = {
      ze stilletjes krimpen bij precies de leads die het langst lopen
      (audit 4 sep 2026). Nu gepagineerd volledig, net als de leadtabellen. */
   crm_activiteiten:  {veld:'activiteiten',  alles:true, q:() => sb.from('crm_activiteiten').select('*').order('op',{ascending:false})},
-  crm_taken:         {veld:'taken',         q:() => sb.from('crm_taken').select('*').order('datum')},
-  crm_documenten:    {veld:'documenten',    q:() => sb.from('crm_documenten').select('*').order('op',{ascending:false})},
+  /* Gepagineerd sinds 4 nov 2026: crm_taken liep over de 1000 rijen die
+     Supabase per keer teruggeeft, en omdat hij op datum oplopend sorteert
+     vielen juist de nieuwste taken weg — Tjeerd en Daan zagen hun taken en
+     opvolgingen van de dag ervoor niet meer. `id` erachter zodat de pagina's
+     een vaste volgorde hebben (gelijke datums schuiven anders tussen twee
+     pagina's door). Contacten en de andere groeiende tabellen idem. */
+  crm_taken:         {veld:'taken',         alles:true, q:() => sb.from('crm_taken').select('*').order('datum').order('id')},
+  crm_documenten:    {veld:'documenten',    alles:true, q:() => sb.from('crm_documenten').select('*').order('op',{ascending:false}).order('id')},
   crm_kansen:        {veld:'kansen',        q:() => sb.from('crm_kansen').select('*').order('created_at',{ascending:false})},
-  crm_contacten:     {veld:'contacten',     q:() => sb.from('crm_contacten').select('*').order('naam')},
+  crm_contacten:     {veld:'contacten',     alles:true, q:() => sb.from('crm_contacten').select('*').order('naam').order('id')},
   crm_meldingen:     {veld:'meldingen',     q:() => sb.from('crm_meldingen').select('*').order('created_at',{ascending:false}).limit(200)},
   oo_sessions:       {veld:'ooSessions',    q:() => sb.from('oo_sessions').select('*')},
   /* De commerciële afspraken (fee-percentages per klant) worden hier
@@ -494,8 +500,8 @@ const TABEL_QUERY = {
      vertrouwen op sneuvelt: het scherm liegt en niemand kan zien dat het
      liegt. Twee onderzoekers vonden hem onafhankelijk van elkaar. */
   crm_afspraken:     {veld:'afspraken',     q:() => sb.from('crm_afspraken').select('*')},
-  crm_trajecten:     {veld:'trajecten',     q:() => sb.from('crm_trajecten').select('*').order('op',{ascending:false})},
-  crm_sollicitaties: {veld:'sollicitaties', q:() => sb.from('crm_sollicitaties').select('*').order('op',{ascending:false})},
+  crm_trajecten:     {veld:'trajecten',     alles:true, q:() => sb.from('crm_trajecten').select('*').order('op',{ascending:false}).order('id')},
+  crm_sollicitaties: {veld:'sollicitaties', alles:true, q:() => sb.from('crm_sollicitaties').select('*').order('op',{ascending:false}).order('id')},
   /* ZZP-klussen (21 aug 2026): elke klus van een ZZP-kandidaat een eigen
      rij. Bestaat de tabel nog niet (migratie niet gedraaid), dan zet
      veilig() een lege lijst neer en degradeert de ZZP-weergave netjes. */
