@@ -138,6 +138,12 @@ const TAAKZICHT_KEY = 'crm_dash_taakzicht';
 const TAAKZICHTEN   = ['vandaag','week','alles'];
 const taakZicht    = () => { try{ const v = localStorage.getItem(TAAKZICHT_KEY); return TAAKZICHTEN.includes(v) ? v : 'week'; }catch(e){ return 'week'; } };
 const zetTaakZicht = v => { try{ localStorage.setItem(TAAKZICHT_KEY, v); }catch(e){} };
+/* Voor wie (Tjeerd, 4 nov 2026: "doe dat ook op het dashboard", net als in
+   Sales → Opvolgingen). '' = mijn taken, '*' = iedereen, anders een naam.
+   Kies je jezelf, dan is dat gewoon "mij". */
+const TAAKVOOR_KEY = 'crm_dash_taakvoor';
+const taakVoor    = () => { try{ const v = localStorage.getItem(TAAKVOOR_KEY) || ''; return v !== '*' && CRM.isIk(v) ? '' : v; }catch(e){ return ''; } };
+const zetTaakVoor = v => { try{ v ? localStorage.setItem(TAAKVOOR_KEY, v) : localStorage.removeItem(TAAKVOOR_KEY); }catch(e){} };
 
 function groet(){
   const u = new Date().getHours();
@@ -512,9 +518,16 @@ function wanneerHTML(taakId, datum){
    Daan elkaars en andermans werk (Tjeerd, 3 nov 2026). */
 const isEigenaar = () => { try{ return !!CRM.canSeeMoney(); }catch(e){ return false; } };
 const taakVanMij = t => t.voor ? CRM.isIk(t.voor) : t.door ? CRM.isIk(t.door) : isEigenaar();
+const taakInZicht = () => {
+  const wie = taakVoor();
+  return wie === '*' ? () => true : wie ? t => CRM.isIk(t.voor || t.door, wie) : taakVanMij;
+};
+/* De opvolging (belrondes, nazorg, klantupdates) is persoonlijk werk; die
+   staat er alleen bij je eigen taken. */
+const opvolgingInZicht = () => taakVoor() ? {nu:[], komt:[]} : opvolgingRijen();
 
 function bouwTaken(){
-  const nu = VANDAAG(), mij = CRM.me();
+  const nu = VANDAAG(), mij = CRM.me(), hoort = taakInZicht(), ander = !!taakVoor();
   const eindWeek = dISO(dagPlus(maandag(0), 6));
 
   const groepen = {
@@ -526,7 +539,7 @@ function bouwTaken(){
   };
 
   (CRM.state.taken||[])
-    .filter(t => !t.klaar && taakVanMij(t))
+    .filter(t => !t.klaar && hoort(t))
     .forEach(t => {
       const d = kort(t.datum);
       /* Kandidaten en contactpersonen noemen we bij naam; staat de naam er
@@ -543,9 +556,10 @@ function bouwTaken(){
                     : t.entiteit === 'radar' ? 'Leadradar'
                     : (t.ref || '');
       const van = (t.door && t.door !== mij) ? 'van ' + String(t.door).split(/\s+/)[0] : '';
+      const voor = ander && t.voor && !CRM.isIk(t.voor) ? 'voor ' + String(t.voor).split(/\s+/)[0] : '';
       const rij = { id:String(t.id), tekst:t.tekst || '(lege taak)', datum:d,
         prio: prioNorm(t.prioriteit),
-        sub: [refNaam, van].filter(Boolean).join(' · '),
+        sub: [refNaam, voor, van].filter(Boolean).join(' · '),
         mod: t.entiteit==='klant' ? 'klanten' : t.entiteit==='kandidaat' ? 'kandidaten'
            : t.entiteit==='lead' ? 'recruitment' : t.entiteit==='radar' ? 'sales' : (ctRij ? 'contacten' : ''),
         ref: t.entiteit==='radar' ? '' : (t.ref || '') };
@@ -566,7 +580,7 @@ function bouwTaken(){
     || String(a.tekst).localeCompare(String(b.tekst), 'nl')));
 
   const afVandaag = (CRM.state.taken||[]).filter(t =>
-    t.klaar && taakVanMij(t) &&
+    t.klaar && hoort(t) &&
     (kort(t.datum) === nu || sessieAf.has(String(t.id)))).length;
 
   return { groepen, afVandaag,
@@ -808,7 +822,7 @@ const ZICHT_GROEPEN = {
 };
 
 function takenPaneelHTML(T, O){
-  const stand = taakZicht();
+  const stand = taakZicht(), wie = taakVoor();
   const toon  = ZICHT_GROEPEN[stand];
   const verborgen = Object.keys(T.groepen)
     .filter(k => !toon.includes(k))
@@ -825,7 +839,9 @@ function takenPaneelHTML(T, O){
   const takenLijst = T.open
     ? toon.map(groepHTML).join('') +
       (verborgen ? `<button type="button" class="tk-meer" id="tk_alles">Nog ${verborgen} ${verborgen===1?'taak':'taken'} verderop — alles tonen</button>` : '')
-    : `<div class="tk-leeg meta">${h(T.afVandaag
+    : `<div class="tk-leeg meta">${h(wie
+        ? (wie === '*' ? 'Niemand heeft open taken.' : `${String(wie).split(/\s+/)[0]} heeft geen open taken.`)
+        : T.afVandaag
         ? 'Alles afgevinkt. Mooi moment om vooruit te werken.'
         : 'Geen open taken. Zet hierboven neer wat er nog moet gebeuren.')}</div>`;
 
@@ -846,8 +862,14 @@ function takenPaneelHTML(T, O){
         <button type="button" data-tzicht="week"${stand==='week'?' class="on"':''}>Deze week</button>
         <button type="button" data-tzicht="alles"${stand==='alles'?' class="on"':''}>Alles</button>
       </div>
+      <select id="tk_voor" class="tk-voor" title="Van wie wil je de taken zien?" aria-label="Voor wie">
+        <option value="">Mijn taken</option>
+        <option value="*"${wie==='*'?' selected':''}>Iedereen</option>
+        ${(CRM.teamNamen ? CRM.teamNamen() : []).filter(n => !CRM.isIk(n))
+          .map(n => `<option value="${h(n)}"${wie!=='*' && CRM.isIk(n, wie)?' selected':''}>${h(n)}</option>`).join('')}
+      </select>
       <span class="spacer"></span>
-      ${tot?`<div class="tk-vg"><span class="meta num" id="tk_vgt">${af} van ${tot} vandaag</span>
+      ${tot && !wie?`<div class="tk-vg"><span class="meta num" id="tk_vgt">${af} van ${tot} vandaag</span>
         <div class="bar tk-vgbar"><i id="tk_vgb" style="width:${pct}%"></i></div></div>`:''}
     </div>
     <div class="card-b tk-b">
@@ -859,10 +881,10 @@ function takenPaneelHTML(T, O){
           title="Datum, prioriteit en aan wie je hem geeft">Meer…</button>
       </div>
       <div class="tk-lijst" id="tk_lijst">${takenLijst}</div>
-      <div class="tk-opv">
+      ${wie ? '' : `<div class="tk-opv">
         <div class="label tk-glabel tk-opvkop">Opvolging${O.nu.length?`<span class="tk-gtel num">${O.nu.length}</span>`:''}</div>
         ${opvLijst}
-      </div>
+      </div>`}
     </div></div>`;
 }
 
@@ -1027,7 +1049,7 @@ function vinkHandlers(root){
 function tekenTaken(mount){
   const el = mount.querySelector('#dash_taken');
   if(!el) return;
-  const T = bouwTaken(), O = opvolgingRijen();
+  const T = bouwTaken(), O = opvolgingInZicht();
   const vg = taakVoortgang(T, O);
   _vgTot = vg.tot; _vgAf = vg.af;
   el.innerHTML = takenPaneelHTML(T, O);
@@ -1051,6 +1073,11 @@ function bindTaken(mount){
   });
   const alles = el.querySelector('#tk_alles');
   if(alles) alles.onclick = e => { e.stopPropagation(); zetTaakZicht('alles'); opnieuw(); };
+  const voor = el.querySelector('#tk_voor');
+  if(voor){
+    voor.onclick = e => e.stopPropagation();
+    voor.onchange = () => { zetTaakVoor(voor.value); opnieuw(); };
+  }
 
   /* Prioriteit: één klik verder in de ronde normaal → hoog → laag. */
   CRM.$$('.tk-prio', el).forEach(b => b.onclick = e => {
@@ -2102,7 +2129,7 @@ CRM.registerModule('dashboard', {
     const P = bouwDag();
     const week = zicht()==='week';
     const W = week ? bouwWeek() : null;
-    const T = bouwTaken(), O = opvolgingRijen();
+    const T = bouwTaken(), O = opvolgingInZicht();
     const vg = taakVoortgang(T, O);
     _vgTot = vg.tot; _vgAf = vg.af;
     const naam = String(CRM.me()||'').split(/\s+/)[0] || '';

@@ -87,11 +87,23 @@
      "ook belletjes vanuit het sales traject", daarna "laat actieve klanten
      ook meetellen". Dus: elk belletje naar een bedrijf (radar, klant of
      contactpersoon), welke fase dan ook. Koud blijft alleen bepalend voor
-     het weekdoel afspraken met nieuwe leads. */
-  const bedrijfVan = a => a.entiteit === 'radar' ? 'radar:' + a.ref : a.entiteit === 'klant' ? a.ref : klantVanContact(a.ref);
+     het weekdoel afspraken met nieuwe leads.
+     4 nov 2026: "elk belletje is gewoon 1 belletje". Daan stond op 0 terwijl
+     hij belde: zijn gesprek stond als notitie "Gespreksverslag …". Dus telt
+     nu elk belletje, waar het ook hangt (ook een lead, vacature of
+     kandidaat), plus een notitie die begint met "Gespreksverslag" of
+     "Gebeld". Op voornaam (CRM.isIk), niet op de exacte schrijfwijze. */
+  const bedrijfVan = a => a.entiteit === 'radar' ? 'radar:' + a.ref : a.entiteit === 'klant' ? a.ref
+    : a.entiteit === 'contact' ? klantVanContact(a.ref) : a.entiteit + ':' + a.ref;
   const uitkomstVan = a => (a.extra && a.extra.uitkomst) || (/geen gehoor/i.test(a.tekst||'') ? 'geen_gehoor' : '');
+  const isBelletje = a => a.soort === 'bel'
+    || (a.soort === 'notitie' && /^\s*(gespreksverslag|gebeld)\b/i.test(a.tekst||''));
   const mijnBellen = (wie = CRM.me()) => (CRM.state.activiteiten||[])
-    .filter(a => a.soort === 'bel' && a.door === wie && ['klant','contact','radar'].includes(a.entiteit));
+    .filter(a => isBelletje(a) && CRM.isIk(a.door, wie));
+  /* Gesproken: de uitkomst zegt het; zonder uitkomst (de knop Bellen op de
+     relatiekaart, een gespreksverslag) is er gesproken, tenzij het een kale
+     belpoging of een voicemail was. */
+  const gesproken = a => { const u = uitkomstVan(a); return u ? u !== 'geen_gehoor' : !/^belpoging|voicemail/i.test(a.tekst||''); };
 
   /* Eén belletje kan twee regels geven (de belknop op de kaart legt een
      "belpoging" vast, daarna volgt de uitkomst of het WhatsApp-appje).
@@ -114,12 +126,12 @@
     const opDag = d => sales.filter(a => lokaalDag(a.op) === d);
     const vd = opDag(vandaag);
     const week = sales.filter(a => { const d = lokaalDag(a.op); return d >= ma && d <= vandaag; });
-    const afspraken = (CRM.state.activiteiten||[]).filter(a => a.door === wie && a.extra && a.extra.uitkomst === 'afspraak' && a.extra.koud
+    const afspraken = (CRM.state.activiteiten||[]).filter(a => CRM.isIk(a.door, wie) && a.extra && a.extra.uitkomst === 'afspraak' && a.extra.koud
       && lokaalDag(a.op) >= ma && lokaalDag(a.op) <= vandaag).length;
     return {
       doel: doel(wie),
       vandaag: vd.length,
-      gesproken: vd.filter(a => { const u = uitkomstVan(a); return u && u !== 'geen_gehoor'; }).length,
+      gesproken: vd.filter(gesproken).length,
       week: week.length,
       perDag: weekDagen().map(d => Object.assign(d, {n: opDag(d.iso).length})),
       afspraken   // alleen bij nieuwe leads (koud): het weekdoel gaat over nieuwe klanten
@@ -130,7 +142,7 @@
      Sales → Opvolgingen (taken aan een klant of contactpersoon). */
   function opvolgen(wie = CRM.me()){
     const vandaag = CRM.todayISO();
-    const open = (CRM.state.taken||[]).filter(t => !t.klaar && (!t.voor || t.voor === wie)
+    const open = (CRM.state.taken||[]).filter(t => !t.klaar && CRM.isIk(t.voor || t.door, wie)
       && ['klant','contact','radar'].includes(t.entiteit) && t.datum && String(t.datum).slice(0,10) <= vandaag);
     return {n: open.length, verlopen: open.filter(t => String(t.datum).slice(0,10) < vandaag).length};
   }
