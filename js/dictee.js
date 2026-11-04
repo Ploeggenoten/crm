@@ -34,7 +34,10 @@ CRM.dictee = {
     btn.textContent = '🎤';
 
     let recognition = null, basis = '';
-    const zetUit = () => { btn.classList.remove('aan'); recognition = null; };
+    /* CRM.dictee.bezig: zolang er wordt ingesproken tekent een realtime-sync
+       het scherm niet opnieuw (zie hertekenNaSync in js/core.js). */
+    const zetUit = () => { if(btn.classList.contains('aan')) CRM.dictee.bezig = Math.max(0, (CRM.dictee.bezig||0) - 1);
+      btn.classList.remove('aan'); recognition = null; };
     const stop = () => { if(recognition){ const r = recognition; recognition = null; r.stop(); } zetUit(); };
 
     btn.onclick = () => {
@@ -67,7 +70,7 @@ CRM.dictee = {
         }
       };
       recognition.onend = zetUit;
-      try{ recognition.start(); btn.classList.add('aan'); }
+      try{ recognition.start(); btn.classList.add('aan'); CRM.dictee.bezig = (CRM.dictee.bezig||0) + 1; }
       catch(e){ zetUit(); }
     };
     return btn;

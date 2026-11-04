@@ -1315,15 +1315,27 @@ function hertekenNaSync(tabel){
      waar je nét in typte onder je handen vandaan ("velden schieten weg",
      naam: Tjeerd, 5 aug 2026). De data staat al in CRM.state; we proberen
      het gewoon opnieuw zodra de gebruiker het veld heeft losgelaten. */
+  /* 4 nov 2026 (Tjeerd: "als ik via de spraakmemo een notitie wil doen, dat
+     die dan weggaat"): de wacht keek alleen naar #viewmount, en alleen naar
+     het veld met de focus. Het notitieveld van een sollicitant staat in de
+     lade (#drawer). Tijdens het inspreken heeft de microfoonknop de focus,
+     niet het veld. Nu wachten we ook als de lade of een venster een veld
+     met focus heeft, als er een dictee loopt, en als er ergens een
+     tekstvak staat met tekst die nog niet is opgeslagen. */
   const a = document.activeElement;
+  const ZONES = '#viewmount, #drawer.on, #modal';
   const blokOpen = document.querySelector('#viewmount .kd-blokform');
-  if(blokOpen || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#viewmount'))){
+  const bezigInVeld = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest(ZONES);
+  const ongered = Array.from(document.querySelectorAll('#viewmount textarea, #drawer.on textarea, #modal textarea'))
+    .some(t => t.value.trim() && t.value !== t.defaultValue);
+  if(blokOpen || bezigInVeld || ongered || (CRM.dictee && CRM.dictee.bezig)){
     clearTimeout(_syncLater[tabel]);
     _syncLater[tabel] = setTimeout(() => hertekenNaSync(tabel), 2500);
     return;
   }
   CRM.render();
 }
+CRM._hertekenNaSync = hertekenNaSync;   // voor testen in de demo
 
 /* ─── Auth ────────────────────────────────────────────────────── */
 async function start(user){

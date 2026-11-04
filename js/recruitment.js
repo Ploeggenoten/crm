@@ -635,7 +635,10 @@ CRM.registerModule('recruitment', {
     tekenTabs();
     tekenBody();
     tekenActies(acties);
-    if(params && params.id && params.id !== 'focus:belafspraken' && leadById(params.id)){ S.tab = 'leads'; openLead(params.id); }
+    /* Alleen openen als de lade nog niet openstaat. Elke realtime-sync tekent
+       dit scherm opnieuw met dezelfde params; dan vulde de lade zich steeds
+       opnieuw en verdween een half ingesproken notitie (4 nov 2026). */
+    if(params && params.id && params.id !== 'focus:belafspraken' && leadById(params.id) && !CRM.drawer._aan){ S.tab = 'leads'; openLead(params.id); }
     /* Stil op de achtergrond; meldt zich alleen als er iets hersteld is. */
     cvZelfherstel();
   }
