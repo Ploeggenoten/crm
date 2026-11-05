@@ -1231,6 +1231,7 @@ let radarBezigMet = null;    // lopende laad-belofte
 let rFilter = V.get('r_status','nieuw');   // nieuw | toegevoegd | genegeerd | alles
 if(!['nieuw','toegevoegd','genegeerd','alles'].includes(rFilter)) rFilter = 'nieuw';
 let rZoek = '', rBron = '';
+let rToonWeg = false;        // ook tonen wat er als klant-in-traject of dubbel uit is gehaald
 /* Welke rijen hun belteksten open hebben staan. In het geheugen, niet in
    de opslag: bij een verse sessie begin je met een rustige tabel. */
 const rOpen = new Set();
@@ -1256,9 +1257,52 @@ function laadRadar(force){
         radarStatus = 'mist'; radar = []; return;
       }
       radar = r.data || []; radarStatus = 'ok';
+      radarLive();
     }catch(e){ console.warn('Laden crm_leadradar', e); radarStatus = 'mist'; radar = []; }
   })().finally(()=>{ radarBezigMet = null; });
   return radarBezigMet;
+}
+
+/* ─── Live (Tjeerd, 5 nov 2026: "Daan en ik gaan vaak door de lijst heen …
+   zorg ervoor dat het echt live loopt, die lijst") ──────────────────
+   Core laadt crm_leadradar niet, dus ook de realtime-sync van core kende
+   hem niet: wat Daan negeerde of toevoegde zag jij pas na verversen. Nu een
+   eigen kanaal op crm_leadradar (staat al in de realtime-publicatie, zie
+   supabase/schema.sql blok 9). Vangnet voor als realtime wegvalt (laptop
+   dicht, wifi weg): elke minuut opnieuw ophalen zolang je naar de radar
+   kijkt, en meteen als je terugkomt in het tabblad.
+   Klant- en belwijzigingen (clients, crm_activiteiten) komen al via core
+   binnen; die tekenen de radar opnieuw met de waarschuwingen van nu. */
+let radarKanaal = null, radarSyncT = null;
+const radarInBeeld = () => CRM.view === 'sales' && (tab === 'radar' || tab === 'vondsten') && !document.hidden;
+function radarHerteken(){
+  clearTimeout(radarSyncT);
+  if(CRM.view !== 'sales'){ return; }
+  if(tab !== 'radar' && tab !== 'vondsten'){ CRM.navBadges(); return; }
+  /* Niet onder je handen: zoekveld met focus, een venster open (Gebeld),
+     of de muis op een knop in de tabel. Dan over twee seconden opnieuw. */
+  const a = document.activeElement;
+  const bezig = (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) || CRM.modal._aan
+    || document.querySelector('#viewmount .tbl tr:hover');
+  if(bezig){ radarSyncT = setTimeout(radarHerteken, 2000); return; }
+  tekenInhoud(); CRM.navBadges();
+}
+function radarLive(){
+  if(CRM.demo || radarKanaal) return;
+  try{
+    radarKanaal = CRM.sb.channel('crm-leadradar')
+      .on('postgres_changes', {event:'*', schema:'public', table:'crm_leadradar'}, p => {
+        if(p.eventType === 'DELETE'){ const id = p.old && p.old.id; radar = radar.filter(r => r.id !== id); }
+        else if(p.new && p.new.id != null){
+          const r = radar.find(x => x.id === p.new.id);
+          if(r) Object.assign(r, p.new); else radar.unshift(p.new);
+        }
+        clearTimeout(radarSyncT); radarSyncT = setTimeout(radarHerteken, 400);
+      })
+      .subscribe();
+  }catch(e){ console.warn('Leadradar live', e); }
+  setInterval(() => { if(radarInBeeld()) laadRadar(true).then(radarHerteken); }, 60000);
+  document.addEventListener('visibilitychange', () => { if(radarInBeeld()) laadRadar(true).then(radarHerteken); });
 }
 
 /* Demo: verzonnen maar echt-aandoende NL productie/logistiek-bedrijven.
@@ -1288,7 +1332,10 @@ function demoRadar(){
     ['Diepvries Depot Rijnmond','Schiedam','orderpicker, heftruckchauffeur',3,'website','€2.600–3.000','nieuw','Van website diepvriesdepot.nl · 3 passende vacatures op deze pagina'],
     ['Grondstoffen Verwerking Maasvlakte','Rotterdam','procesoperator',2,'website','','nieuw','Van website · Contactpersoon: R. de Wit (Manager Productie)'],
     ['Van Vliet Zoetwaren B.V.','Katwijk','productiemedewerker',1,'linkedin','','nieuw','Contactpersoon: HR-manager · LinkedIn'],
-    ['Transportbedrijf Van Kooten','Alblasserdam','chauffeur, verlader',2,'handmatig','','nieuw','Branche: Transport']
+    ['Transportbedrijf Van Kooten','Alblasserdam','chauffeur, verlader',2,'handmatig','','nieuw','Branche: Transport'],
+    /* Dezelfde naam als de eerste rij, via een andere bron: zo is te zien
+       dat een dubbel één keer in de lijst staat. */
+    ['Koelvers Logistiek Bleiswijk B.V.','Bleiswijk','heftruckchauffeur',2,'claude-research','','nieuw','']
   ].map(([bedrijf,plaats,functies,vacatures,bron,sal,status,notitie],i)=>({
     id:'lrdemo'+i, bedrijf, plaats, functies, vacatures, bron,
     url:'https://www.adzuna.nl/land/ad/demo'+i, salaris_ind:sal,
@@ -1324,20 +1371,76 @@ function demoConcepten(bedrijf, plaats, functies){
 const ZELF_BRONNEN = ['website','linkedin','handmatig'];
 const isZelf = r => ZELF_BRONNEN.includes(r.bron||'');
 
-const radarNieuwN  = () => radar.filter(r=>!isZelf(r) && (r.status||'nieuw')==='nieuw').length;
-const vondstNieuwN = () => radar.filter(r=> isZelf(r) && (r.status||'nieuw')==='nieuw').length;
-
 /* Staat dit bedrijf al in de klantpijplijn? Dan wil je dat zien vóór je
    het nog een keer als lead opvoert. */
 const alKlant = bedrijf => CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, bedrijf));
 
-function radarRijen(zelf){
+/* ─── Geen ruis op de radar (Tjeerd, 5 nov 2026) ──────────────────
+   "Er stonden nog huidige klanten in. Daan zit er nu officieel bij. Ik wil
+   dat hij geen prospects/klanten belt die al in een vergaand traject zitten."
+   En: "hij staat er vaak ook dubbel in."
+   1. In traject: een bedrijf dat in de klantpijplijn verder is dan Lead
+      (Suspect en verder, of klant) gaat uit de lijst Nieuw. Dat werk je af
+      vanuit de pijplijn, niet vanaf de radar.
+   2. Lead of uitgesteld: blijft staan, met een waarschuwing en de eigenaar.
+   3. Onlangs gebeld (14 dagen), door wie dan ook: waarschuwing met naam.
+   4. Dubbel: dezelfde naam (CRM.normKlant) staat één keer in de lijst. Is
+      één van de dubbelen al toegevoegd of genegeerd, dan verdwijnen de
+      andere uit Nieuw. Een status zetten geldt voor alle dubbelen. */
+const NOG_BELLEN = ['Lead','Project uitgesteld'];
+const inTraject = k => !!k && !NOG_BELLEN.includes(k.fase || 'Lead');
+const radarSleutel = r => CRM.normKlant(r.bedrijf) || ('id:' + r.id);
+function radarGroepen(){
+  const g = new Map();
+  radar.forEach(r => { const k = radarSleutel(r); if(!g.has(k)) g.set(k, []); g.get(k).push(r); });
+  return g;
+}
+/* Per rij: weglaten (en waarom), of tonen met hoeveel dubbelen erbij horen. */
+function radarOordeel(){
+  const uit = new Map();
+  radarGroepen().forEach(rijen => {
+    const behandeld = rijen.some(r => (r.status||'nieuw') !== 'nieuw');
+    const nieuw = rijen.filter(r => (r.status||'nieuw') === 'nieuw')
+      .sort((a,b) => (heeftConcepten(b)?1:0) - (heeftConcepten(a)?1:0)
+        || String(b.laatst_gezien||'').localeCompare(String(a.laatst_gezien||'')));
+    const klant = rijen.length ? alKlant(rijen[0].bedrijf) : null;
+    nieuw.forEach((r, i) => {
+      if(inTraject(klant)) uit.set(r.id, {weg:'traject', klant});
+      else if(behandeld) uit.set(r.id, {weg:'dubbel'});
+      else if(i > 0) uit.set(r.id, {weg:'dubbel'});
+      else uit.set(r.id, {dubbel: rijen.length - 1, klant});
+    });
+  });
+  return uit;
+}
+const radarZichtbaarNieuw = (oordeel, r) => (r.status||'nieuw') === 'nieuw' && !(oordeel.get(r.id)||{}).weg;
+const radarNieuwN  = () => { const o = radarOordeel(); return radar.filter(r=>!isZelf(r) && radarZichtbaarNieuw(o, r)).length; };
+const vondstNieuwN = () => { const o = radarOordeel(); return radar.filter(r=> isZelf(r) && radarZichtbaarNieuw(o, r)).length; };
+
+/* Wie belde dit bedrijf in de laatste 14 dagen? Op de radarrij zelf, op
+   een dubbele radarrij, of op de klant en zijn contactpersonen. */
+function radarRecentGebeld(r){
+  const sleutel = radarSleutel(r);
+  const ids = new Set(radar.filter(x => radarSleutel(x) === sleutel).map(x => String(x.id)));
+  const klant = alKlant(r.bedrijf);
+  const ctIds = klant ? new Set((CRM.state.contacten||[]).filter(c => c.klant === klant.naam).map(c => String(c.id))) : new Set();
+  const grens = Date.now() - 14*86400000;
+  const hit = (CRM.state.activiteiten||[]).filter(a => a.soort === 'bel' && new Date(a.op).getTime() >= grens && (
+      (a.entiteit === 'radar' && ids.has(String(a.ref)))
+      || (klant && a.entiteit === 'klant' && a.ref === klant.naam)
+      || (a.entiteit === 'contact' && ctIds.has(String(a.ref)))))
+    .sort((a,b) => String(b.op).localeCompare(String(a.op)))[0];
+  return hit ? {door: String(hit.door||'iemand').split(/\s+/)[0], op: hit.op, ik: CRM.isIk(hit.door)} : null;
+}
+
+function radarRijen(zelf, oordeel = radarOordeel()){
   const q = rZoek.trim().toLowerCase();
   const rang = {nieuw:0, toegevoegd:1, genegeerd:2};
   return radar.filter(r=>{
     if(isZelf(r) !== !!zelf) return false;
     const st = r.status||'nieuw';
     if(rFilter!=='alles' && st!==rFilter) return false;
+    if(st==='nieuw' && (oordeel.get(r.id)||{}).weg && !rToonWeg) return false;
     if(rBron && (r.bron||'')!==rBron) return false;
     if(q && !(`${r.bedrijf} ${r.plaats||''} ${r.functies||''}`).toLowerCase().includes(q)) return false;
     return true;
@@ -1406,7 +1509,15 @@ function radarHTML(zelf){
     <div class="searchbox"><input type="search" id="r_zoek" placeholder="Zoek bedrijf, plaats of functie" value="${h(rZoek)}"></div>
   </div>`);
 
-  delen.push(radarTabelHTML(radarRijen(zelf), zelf, eigen.length));
+  const oordeel = radarOordeel();
+  const weg = eigen.filter(r => (r.status||'nieuw')==='nieuw' && (oordeel.get(r.id)||{}).weg);
+  const wegTraject = weg.filter(r => oordeel.get(r.id).weg === 'traject').length, wegDubbel = weg.length - wegTraject;
+  if(weg.length && ['nieuw','alles'].includes(rFilter))
+    delen.push(`<div class="meta r-weg" style="margin:0 0 10px">${[
+      wegTraject ? `${wegTraject} ${wegTraject===1?'bedrijf staat':'bedrijven staan'} al in de klantpijplijn (verder dan Lead)` : '',
+      wegDubbel ? `${wegDubbel} ${wegDubbel===1?'dubbele':'dubbele'} weggelaten` : ''].filter(Boolean).join(' · ')} —
+      niet bellen vanaf de radar. <button type="button" class="lnk" data-rtoonweg>${rToonWeg ? 'verberg ze' : 'toon ze toch'}</button></div>`);
+  delen.push(radarTabelHTML(radarRijen(zelf, oordeel), zelf, eigen.length, oordeel));
 
   delen.push(zelf
     ? `<div class="note info" style="margin-top:18px"><b>Hoe komt hier iets bij?</b> Klik op LinkedIn
@@ -1487,7 +1598,7 @@ function conceptHTML(r){
   </div>`;
 }
 
-function radarTabelHTML(rijen, zelf, totaal){
+function radarTabelHTML(rijen, zelf, totaal, oordeel = radarOordeel()){
   if(!totaal && radarStatus==='ok')
     return `<div class="card"><div class="card-b">${zelf
       ? CRM.ui.leeg('Je hebt zelf nog niets toegevoegd',
@@ -1510,11 +1621,17 @@ function radarTabelHTML(rijen, zelf, totaal){
       /* Dubbel in beeld brengen op de plek waar je kijkt: naast de naam.
          Niet blokkeren — soms wíl je een tweede ingang bij dezelfde klant. */
       const bestaand = st==='nieuw' ? alKlant(r.bedrijf) : null;
+      const oo = oordeel.get(r.id) || {};
+      const gebeld = st==='nieuw' ? radarRecentGebeld(r) : null;
+      const eig = bestaand && bestaand.eigenaar && !CRM.isIk(bestaand.eigenaar) ? String(bestaand.eigenaar).split(/\s+/)[0] : '';
       const conc = heeftConcepten(r), open = rOpen.has(r.id);
       return `<tr${st!=='nieuw'?' class="s-dicht"':''}>
         <td><div style="font-weight:600">${h(r.bedrijf)}${url?` <a href="${h(url)}" target="_blank" rel="noopener" title="Vacature bekijken" class="r-link">↗</a>`:''}</div>
-          ${bestaand?`<div class="rowsub"><span class="chip amber">staat al in de pijplijn${
-            bestaand.fase?` — ${h(bestaand.fase)}`:''}</span> <button class="btn sm ghost" data-rpijp="${h(bestaand.naam)}">open klant →</button></div>`:''}
+          ${bestaand?`<div class="rowsub"><span class="chip ${inTraject(bestaand)?'red':'amber'}">⚠ ${inTraject(bestaand)?'in traject':'staat al in de pijplijn'}${
+            bestaand.fase?` — ${h(bestaand.fase)}`:''}${eig?` · van ${h(eig)}`:''}</span> <button class="btn sm ghost" data-rpijp="${h(bestaand.naam)}">open klant →</button></div>`:''}
+          ${gebeld?`<div class="rowsub"><span class="chip ${gebeld.ik?'':'amber'}">📞 ${gebeld.ik?'Jij belde':h(gebeld.door)+' belde'} ${h(CRM.geleden(gebeld.op)||'')}</span></div>`:''}
+          ${oo.weg==='dubbel'?`<div class="rowsub"><span class="chip">dubbel</span></div>`:''}
+          ${oo.dubbel?`<div class="rowsub meta">${oo.dubbel+1}× gevonden — staat hier één keer</div>`:''}
           ${r.notitie?`<div class="rowsub">${h(r.notitie)}</div>`:''}
           ${conc?`<div class="rowsub"><button class="btn sm ghost" data-rcon="${h(r.id)}"
             aria-expanded="${open}">${open?'▾':'▸'} Belteksten</button></div>`:''}</td>
@@ -1546,6 +1663,14 @@ function radarTabelHTML(rijen, zelf, totaal){
 /* Status van een radar-rij wijzigen (+ tellers en tab-badge verversen). */
 async function zetRadarStatus(id, status, notitie){
   const r = radar.find(x=>x.id===id); if(!r) return false;
+  /* De dubbelen van deze rij die nog op Nieuw staan, krijgen dezelfde status
+     (stil, zonder eigen melding), anders duiken ze straks weer op. */
+  const sl = radarSleutel(r);
+  const dubbelen = radar.filter(x => x !== r && radarSleutel(x) === sl && (x.status||'nieuw') === 'nieuw');
+  dubbelen.forEach(x => { x.status = status; x.status_door = CRM.me(); });
+  if(dubbelen.length && !CRM.demo)
+    CRM.sb.from('crm_leadradar').update({status, status_door:CRM.me()}).in('id', dubbelen.map(x => x.id))
+      .then(({error}) => { if(error) console.warn('dubbelen bijwerken', error); });
   const oud = {status:r.status, status_door:r.status_door, notitie:r.notitie};
   r.status = status; r.status_door = CRM.me();
   if(notitie!=null) r.notitie = notitie;
@@ -2548,6 +2673,7 @@ function bindRadar(){
     CRM.salesmeter.belEnVraag(radarCtx(r), ()=>tekenInhoud());
   }));
   CRM.$$('[data-rneg]',  mountEl).forEach(b=>b.onclick=()=>radarNegeren(b.dataset.rneg));
+  CRM.$$('[data-rtoonweg]', mountEl).forEach(b=>b.onclick=()=>{ rToonWeg = !rToonWeg; tekenInhoud(); });
   CRM.$$('[data-rher]',  mountEl).forEach(b=>b.onclick=()=>zetRadarStatus(b.dataset.rher,'nieuw',''));
   CRM.$$('[data-rpijp]', mountEl).forEach(b=>b.onclick=()=>{
     const kl = CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, b.dataset.rpijp));
