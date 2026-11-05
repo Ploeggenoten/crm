@@ -1387,6 +1387,24 @@ const alKlant = bedrijf => CRM.state.clients.find(c=>CRM.zelfdeKlant(c.naam, bed
    4. Dubbel: dezelfde naam (CRM.normKlant) staat één keer in de lijst. Is
       één van de dubbelen al toegevoegd of genegeerd, dan verdwijnen de
       andere uit Nieuw. Een status zetten geldt voor alle dubbelen. */
+/* Voor de radar mag de naamvergelijking ruimer dan CRM.zelfdeKlant (die
+   bewust alleen exact matcht, omdat hij klanten samenvoegt). Hier gaat het
+   alleen om waarschuwen of weglaten. Exact gaf gemiste klanten op de live
+   lijst: "Van Vliet Potplants" naast klant "J van Vliet Potplants",
+   "Gebr. van der Salm" naast "Van der salm". Dus ook: de ene naam zit in
+   de andere (minstens 5 tekens). Bij meer treffers telt de klant die het
+   verst in de pijplijn is. */
+const FASE_RANG = f => { const i = (CRM.SALES_FASES||[]).findIndex(x => x.k === (f||'Lead')); return f === 'Project uitgesteld' ? 0 : i; };
+function radarKlant(bedrijf){
+  const n = CRM.normKlant(bedrijf); if(!n) return null;
+  const hits = (CRM.state.clients||[]).filter(c => {
+    const m = CRM.normKlant(c.naam); if(!m) return false;
+    if(m === n) return true;
+    const kort = m.length < n.length ? m : n, lang = kort === m ? n : m;
+    return kort.length >= 5 && lang.includes(kort);
+  });
+  return hits.sort((a,b) => FASE_RANG(b.fase) - FASE_RANG(a.fase))[0] || null;
+}
 const NOG_BELLEN = ['Lead','Project uitgesteld'];
 const inTraject = k => !!k && !NOG_BELLEN.includes(k.fase || 'Lead');
 const radarSleutel = r => CRM.normKlant(r.bedrijf) || ('id:' + r.id);
@@ -1403,7 +1421,7 @@ function radarOordeel(){
     const nieuw = rijen.filter(r => (r.status||'nieuw') === 'nieuw')
       .sort((a,b) => (heeftConcepten(b)?1:0) - (heeftConcepten(a)?1:0)
         || String(b.laatst_gezien||'').localeCompare(String(a.laatst_gezien||'')));
-    const klant = rijen.length ? alKlant(rijen[0].bedrijf) : null;
+    const klant = rijen.length ? radarKlant(rijen[0].bedrijf) : null;
     nieuw.forEach((r, i) => {
       if(inTraject(klant)) uit.set(r.id, {weg:'traject', klant});
       else if(behandeld) uit.set(r.id, {weg:'dubbel'});
@@ -1422,7 +1440,7 @@ const vondstNieuwN = () => { const o = radarOordeel(); return radar.filter(r=> i
 function radarRecentGebeld(r){
   const sleutel = radarSleutel(r);
   const ids = new Set(radar.filter(x => radarSleutel(x) === sleutel).map(x => String(x.id)));
-  const klant = alKlant(r.bedrijf);
+  const klant = radarKlant(r.bedrijf);
   const ctIds = klant ? new Set((CRM.state.contacten||[]).filter(c => c.klant === klant.naam).map(c => String(c.id))) : new Set();
   const grens = Date.now() - 14*86400000;
   const hit = (CRM.state.activiteiten||[]).filter(a => a.soort === 'bel' && new Date(a.op).getTime() >= grens && (
@@ -1482,7 +1500,7 @@ function radarHTML(zelf){
   const toegevoegd = eigen.filter(r=>r.status==='toegevoegd').length;
   /* Op de eigen tab is "staat al in de pijplijn" het nuttigste getal: dat is
      precies het dubbele werk dat je wilt zien vóór je gaat bellen. */
-  const dubbel = zelf ? eigen.filter(r=>(r.status||'nieuw')==='nieuw' && alKlant(r.bedrijf)).length : 0;
+  const dubbel = zelf ? eigen.filter(r=>(r.status||'nieuw')==='nieuw' && radarKlant(r.bedrijf)).length : 0;
   delen.push(`<div class="grid c3 s-kpi">
     ${CRM.ui.kpi('Nieuw te beoordelen', `<span class="num">${zelf?vondstNieuwN():radarNieuwN()}</span>`, 'wachten op jouw oordeel', 'accent')}
     ${zelf
@@ -1620,7 +1638,7 @@ function radarTabelHTML(rijen, zelf, totaal, oordeel = radarOordeel()){
       const fns = String(r.functies||'').split(',').map(s=>s.trim()).filter(Boolean);
       /* Dubbel in beeld brengen op de plek waar je kijkt: naast de naam.
          Niet blokkeren — soms wíl je een tweede ingang bij dezelfde klant. */
-      const bestaand = st==='nieuw' ? alKlant(r.bedrijf) : null;
+      const bestaand = st==='nieuw' ? radarKlant(r.bedrijf) : null;
       const oo = oordeel.get(r.id) || {};
       const gebeld = st==='nieuw' ? radarRecentGebeld(r) : null;
       const eig = bestaand && bestaand.eigenaar && !CRM.isIk(bestaand.eigenaar) ? String(bestaand.eigenaar).split(/\s+/)[0] : '';
