@@ -285,7 +285,10 @@ function bouwModel(c, ctx, o){
              : stand === 'vol'  ? (volNaam || 'Kandidaat')
              : (volNaam.split(/\s+/)[0] || 'Kandidaat');
 
-  const functie = t(c.functie) || t(cv.functie) || (ctx.vac ? t(ctx.vac.functie) : '');
+  /* De functie onder de naam is sinds 5 nov 2026 een vrij veld (o.functie,
+     zie open()). Zonder dat veld (oude aanroep) de oude terugval. */
+  const functie = o.functie != null ? t(o.functie)
+    : t(c.functie) || t(cv.functie) || (ctx.vac ? t(ctx.vac.functie) : '');
   const onder = [functie, t(o.sector), stand === 'geen' ? '' : t(c.woonplaats)].filter(Boolean);
 
   const oplijst = aan('opl') ? oplRijen(cv.opleidingen) : [];
@@ -443,9 +446,10 @@ let paneelEl = null, sluitHandler = null, schaalWaarnemer = null;
    erbij, dus onbruikbaar zodra je er twee naast elkaar hebt staan. */
 let cvNaamVoorTitel = '', titelVoorPrint = null;
 
-function zijkantHtml(c, o, er, werk){
+function zijkantHtml(c, o, er, werk, ctx = {}){
   const cv = c.cv || {};
   const zichtbaar = ONDERDELEN.filter(x => er[x.k]);
+  const vacFunctie = ctx.vac ? t(ctx.vac.functie) : '';
   return `
     <div class="cvg-blok">
       <div class="label" style="margin-bottom:8px">Naam op het profiel</div>
@@ -456,8 +460,19 @@ function zijkantHtml(c, o, er, werk){
     </div>
 
     <div class="cvg-blok">
+      <div class="label" style="margin-bottom:6px">Functie onder de naam</div>
+      <input type="text" id="cvg_functie" value="${h(o.functie)}" placeholder="bijv. Productiemedewerker / Operator">
+      ${vacFunctie && t(o.functie).toLowerCase() !== vacFunctie.toLowerCase()
+        ? `<button type="button" class="lnk" id="cvg_vacfunctie" style="margin-top:6px">Functie van de vacature gebruiken: ${h(vacFunctie)}</button>` : ''}
+      <div class="meta" style="margin-top:6px">Vrij in te vullen, of leeg laten. De vacature wordt niet meer vanzelf overgenomen:
+        vaak stel je iemand voor meerdere functies voor.</div>
+    </div>
+
+    <div class="cvg-blok">
       <div class="label" style="margin-bottom:6px">Profielschets</div>
       <textarea id="cvg_schets" rows="8" placeholder="Vier tot zes regels die deze kandidaat samenvatten: achtergrond, sterke punten, en wat de volgende stap moet brengen.">${h(o.schets)}</textarea>
+      ${vacFunctie && !/stellen wij deze kandidaat/i.test(o.schets)
+        ? `<button type="button" class="lnk" id="cvg_vaczin" style="margin-top:6px">+ Zin voor deze vacature toevoegen</button>` : ''}
       <div class="meta" style="margin-top:6px">Dit is het belangrijkste stuk van het vel — schrijf het in je eigen woorden.</div>
     </div>
 
@@ -538,8 +553,15 @@ function open(kandidaat, opts){
      beginzin. */
   const samenvatting = t((c.intake || {}).samenvatting);
   if(samenvatting) o.schets = samenvatting;
-  else if(ctx.vac) o.schets = 'Voor de functie ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') +
-    ' stellen wij deze kandidaat aan je voor. ';
+  /* Niet meer vanzelf de vacature in het vel (Tjeerd, 5 nov 2026: "vaak
+     stellen wij één kandidaat aan meerdere functies voor, dus het hoeft
+     niet de hele tijd automatisch ingezet te worden"). De voorstelzin en
+     de vacaturefunctie zijn nu een knop in de zijkant. Onder de naam komt
+     de eigen functie van de kandidaat; is die gelijk aan de vacature (bij
+     het koppelen overgenomen), dan blijft het veld leeg. */
+  const vacFunctie = ctx.vac ? t(ctx.vac.functie) : '';
+  o.functie = [t((c.cv || {}).functie), t(c.functie)]
+    .find(f => f && f.toLowerCase() !== vacFunctie.toLowerCase()) || '';
   /* Sector: de branche van de klant is een startpunt, geen aanname — de
      AM ziet hem staan en kan hem aanpassen of weghalen. */
   const klantRij = ctx.klant && CRM.klant ? CRM.klant(ctx.klant) : null;
@@ -592,7 +614,7 @@ function open(kandidaat, opts){
     requestAnimationFrame(schaalBij);
   }
   function tekenZij(){
-    zijEl.innerHTML = zijkantHtml(c, o, beschikbaar(c, ctx), werkRijen((c.cv || {}).werkgevers));
+    zijEl.innerHTML = zijkantHtml(c, o, beschikbaar(c, ctx), werkRijen((c.cv || {}).werkgevers), ctx);
     bindZij();
     teken();
   }
@@ -609,6 +631,16 @@ function open(kandidaat, opts){
     });
     const schets = zijEl.querySelector('#cvg_schets');
     if(schets) schets.oninput = CRM.debounce(() => { o.schets = schets.value; teken(); }, 180);
+    const functie = zijEl.querySelector('#cvg_functie');
+    if(functie) functie.oninput = CRM.debounce(() => { o.functie = functie.value; teken(); }, 180);
+    const vacF = zijEl.querySelector('#cvg_vacfunctie');
+    if(vacF) vacF.onclick = () => { o.functie = t(ctx.vac.functie); tekenZij(); };
+    const vacZin = zijEl.querySelector('#cvg_vaczin');
+    if(vacZin) vacZin.onclick = () => {
+      const zin = 'Voor de functie ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') + ' stellen wij deze kandidaat aan je voor.';
+      o.schets = t(o.schets) ? zin + ' ' + t(o.schets) : zin;
+      tekenZij();
+    };
     const sector = zijEl.querySelector('#cvg_sector');
     if(sector) sector.oninput = CRM.debounce(() => { o.sector = sector.value; teken(); }, 180);
 
