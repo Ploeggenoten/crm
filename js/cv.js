@@ -314,7 +314,7 @@ function bouwModel(c, ctx, o){
 /* ═══════════════════════════════════════════════════════════════
    HET VEL (A4) — vaste opmaak, dit is wat geprint wordt
    ═══════════════════════════════════════════════════════════════ */
-function velHtml(m){
+function velBlokken(m){
   const job = w => `<article class="cvg-job">
     <div class="cvg-jaar">${h(w.badge)}</div>
     <div class="cvg-jc">
@@ -358,21 +358,44 @@ function velHtml(m){
     </article>`;
   };
 
-  const onderBlok = (m.skills.length || m.opl.length || m.regels.length) ? `
-    <hr class="cvg-lijn">
-    ${m.skills.length ? `<section class="cvg-rij">
+  /* Het vel als losse blokken (Tjeerd, 5 nov 2026: "er staan nog vaak
+     pagina's half in, ik wil het zelf goed op een pagina kunnen zetten").
+     Een blok gaat altijd in zijn geheel naar een pagina; zetPaginas()
+     verdeelt ze over A4-bladen. De lijn boven een sectie hoort bij het
+     eerste blok van die sectie, zodat hij meeverhuist. */
+  const blokken = [];
+  blokken.push({id:'kop', soort:'kop', vast:true, html: kopHtml(m)});
+  if(m.schets) blokken.push({id:'schets', soort:'schets', lbl:'Profielschets',
+    html:`<p class="cvg-schets">${h(m.schets)}</p>`});
+  groepen.forEach((g, i) => blokken.push({id:'werk' + i, soort:'werk',
+    lbl:'Werkervaring · ' + (g.bedrijf || (g.rollen[0] || {}).functie || '—'),
+    html:(i === 0 ? '<hr class="cvg-lijn"><h2 class="cvg-sk">Werkervaring</h2>' : '') + jobGroep(g)}));
+  let lijn = '<hr class="cvg-lijn">';
+  if(m.skills.length){
+    blokken.push({id:'skills', soort:'onder', lbl:'Vaardigheden', html: lijn + `<section class="cvg-rij">
       <div class="cvg-lbl">Vaardigheden</div>
       <div class="cvg-rc"><div class="cvg-pillen">${m.skills.map(s => `<span class="cvg-pil-o">${h(s)}</span>`).join('')}</div></div>
-    </section>` : ''}
-    ${(m.opl.length || m.regels.length) ? `<section class="cvg-rij">
+    </section>`});
+    lijn = '';
+  }
+  if(m.opl.length || m.regels.length) blokken.push({id:'opl', soort:'onder', lbl:m.oplLabel, html: lijn + `<section class="cvg-rij">
       <div class="cvg-lbl">${h(m.oplLabel)}</div>
       <div class="cvg-rc">
         ${m.opl.map(o => `<div class="cvg-oplr"><b>${h(o.kop)}</b>${o.rest.length ? `<span> · ${o.rest.map(x => h(x)).join(' · ')}</span>` : ''}</div>`).join('')}
         ${m.regels.length ? `<div class="cvg-extra">${m.regels.map(r =>
           `<div class="cvg-oplr"><b>${h(r.lbl)}</b><span> · ${h(r.w)}</span></div>`).join('')}</div>` : ''}
       </div>
-    </section>` : ''}` : '';
+    </section>`});
+  if(m.leeg) blokken.push({id:'leeg', soort:'schets', vast:true, html:`<p class="cvg-schets cvg-stil">Van deze kandidaat staan nog geen profielgegevens in het systeem.
+      Vul de kandidaatkaart aan of schrijf hiernaast een profielschets — dan vult dit vel zich vanzelf.</p>`});
+  blokken.push({id:'voet', soort:'voet', vast:true, html:`<footer class="cvg-bal">
+      <span>Contact via Ploeggenoten</span>
+      <span class="cvg-url">ploeggenoten.nl</span>
+    </footer>`});
+  return blokken;
+}
 
+function kopHtml(m){
   return `
     <div class="cvg-kopzone">
       <div class="cvg-deco" aria-hidden="true"></div>
@@ -388,25 +411,109 @@ function velHtml(m){
       ${m.stand === 'geen' ? `<div class="cvg-ref num">Ref. ${h(m.ref)}</div>` : ''}
       ${m.onder.length ? `<div class="cvg-onder">${m.onder.map(x => h(x)).join(' · ')}</div>` : ''}
       <div class="cvg-balk"><i></i><b></b></div>
-    </div>
+    </div>`;
+}
 
-    ${m.schets ? `<p class="cvg-schets">${h(m.schets)}</p>` : ''}
+/* ─── Blokken over A4-bladen verdelen ─────────────────────────────
+   Het voorbeeld toont de echte bladen, dus wat je ziet is wat er in de
+   pdf komt. Standen:
+   - 'auto': past het op één blad (eventueel iets verkleind, niet onder
+     CVG_AUTO_ZOOM), dan één blad; anders doorlopen naar blad 2.
+   - 'een':  altijd één blad, verkleind tot CVG_MIN_ZOOM.
+   - 'twee': nooit verkleinen; doorlopen, en blad 2 begint bij het blok
+     dat de AM kiest (pag.breuk) of anders waar blad 1 vol is.
+   Meten via getBoundingClientRect ten opzichte van het blad zelf: dat is
+   altijd 297mm hoog, dus de schaal van het voorbeeld valt weg. */
+const CVG_PAGINA_HOOGTE_PX = 297 * 96 / 25.4;
+const CVG_PAGINA_BREEDTE_PX = 210 * 96 / 25.4;
+const CVG_MIN_ZOOM = .72;
+const CVG_AUTO_ZOOM = .86;
+/* Een paar px mag in de ondermarge vallen (13mm, ruim 49px): anders
+   valt een cv dat zichtbaar past toch af op een haar. */
+const CVG_SPELING = 12;
 
-    ${m.werk.length ? `<hr class="cvg-lijn">
-      <section class="cvg-werk">
-        <h2 class="cvg-sk">Werkervaring</h2>
-        ${groepen.map(jobGroep).join('')}
-      </section>` : ''}
+function zetPaginas(velEl, blokken, m, pag){
+  velEl.innerHTML = '';
+  let bladZoom = 1;
+  const nieuwBlad = eerste => {
+    const blad = document.createElement('section');
+    blad.className = 'cvg-blad';
+    const inh = document.createElement('div');
+    inh.className = 'cvg-inhoud';
+    if(!eerste) inh.innerHTML = `<div class="cvg-kop2"><img class="cvg-logo" src="assets/logo-dark.png" alt="Ploeggenoten"><span>${h(m.naam)}</span></div>`;
+    blad.appendChild(inh); velEl.appendChild(blad);
+    if(bladZoom !== 1) zoom(inh, bladZoom);
+    return inh;
+  };
+  const blokEl = b => {
+    const d = document.createElement('div');
+    d.className = 'cvg-blk cvg-blk-' + b.soort;
+    d.dataset.blok = b.id;
+    d.innerHTML = b.html;
+    return d;
+  };
+  const hoogte = inh => {
+    const blad = inh.parentElement.getBoundingClientRect().height;
+    return blad > 0 ? inh.getBoundingClientRect().height / blad * CVG_PAGINA_HOOGTE_PX : inh.scrollHeight;
+  };
+  const zoom = (inh, z) => {
+    inh.style.zoom = z === 1 ? '' : String(z);
+    inh.style.width = z === 1 ? '' : (CVG_PAGINA_BREEDTE_PX / z) + 'px';
+  };
 
-    ${onderBlok}
+  /* Eén blad, zo nodig verkleind. Na het verkleinen loopt de tekst breder
+     door en wordt het vel korter, dus een paar keer bijstellen. */
+  const opEen = minZoom => {
+    velEl.innerHTML = '';
+    const inh = nieuwBlad(true);
+    blokken.forEach(b => inh.appendChild(blokEl(b)));
+    let z = 1, hgt = hoogte(inh);
+    for(let i = 0; i < 4 && hgt > CVG_PAGINA_HOOGTE_PX + CVG_SPELING; i++){
+      z = Math.max(minZoom, z * CVG_PAGINA_HOOGTE_PX / hgt);
+      zoom(inh, z);
+      hgt = hoogte(inh);   // meet al in bladmaat, ook met zoom
+      if(z === minZoom) break;
+    }
+    return {paginas:1, zoom:z, past: hgt <= CVG_PAGINA_HOOGTE_PX + CVG_SPELING, vulling: Math.min(1, hgt / CVG_PAGINA_HOOGTE_PX)};
+  };
 
-    ${m.leeg ? `<p class="cvg-schets cvg-stil">Van deze kandidaat staan nog geen profielgegevens in het systeem.
-      Vul de kandidaatkaart aan of schrijf hiernaast een profielschets — dan vult dit vel zich vanzelf.</p>` : ''}
+  const doorlopen = (z = 1) => {
+    velEl.innerHTML = '';
+    bladZoom = z;
+    let inh = nieuwBlad(true);
+    const aantal = () => inh.querySelectorAll('.cvg-blk').length;
+    const vullingen = [];
+    const volgende = () => { vullingen.push(hoogte(inh)); inh = nieuwBlad(false); };
+    let teLang = false;
+    blokken.forEach(b => {
+      if(b.id === pag.breuk && velEl.children.length === 1 && aantal()) volgende();
+      const el = blokEl(b);
+      inh.appendChild(el);
+      if(hoogte(inh) <= CVG_PAGINA_HOOGTE_PX + CVG_SPELING) return;
+      const vorige = el.previousElementSibling;
+      if(b.soort === 'voet' && vorige && vorige.classList.contains('cvg-blk') && aantal() > 2 && !vorige.dataset.blok.startsWith('kop')){
+        /* De voetbalk past niet meer: neem het laatste blok mee, zodat
+           blad 2 nooit alléén een voetbalk is. */
+        vorige.remove(); el.remove(); volgende();
+        inh.appendChild(vorige); inh.appendChild(el);
+      }else if(aantal() > 1){
+        el.remove(); volgende(); inh.appendChild(el);
+      }
+      if(hoogte(inh) > CVG_PAGINA_HOOGTE_PX + CVG_SPELING) teLang = true;
+    });
+    vullingen.push(hoogte(inh));
+    return {paginas: velEl.children.length, zoom:z, past: !teLang,
+      vulling: Math.min(1, vullingen[0] / CVG_PAGINA_HOOGTE_PX)};
+  };
 
-    <footer class="cvg-bal">
-      <span>Contact via Ploeggenoten</span>
-      <span class="cvg-url">ploeggenoten.nl</span>
-    </footer>`;
+  /* 'zelf': de AM kiest de lettergrootte met de schuif (Tjeerd, 5 nov
+     2026: "dat ik hem zelf groter of kleiner kan maken"). Wat niet past
+     loopt in hele blokken door naar het volgende blad — nooit afsnijden. */
+  if(pag.stand === 'zelf') return doorlopen(pag.zoom || 1);
+  if(pag.stand === 'een') return opEen(CVG_MIN_ZOOM);
+  if(pag.stand === 'twee') return doorlopen();
+  const r = opEen(CVG_AUTO_ZOOM);
+  return r.past ? r : doorlopen();
 }
 
 /* Platte tekst uit hetzelfde model. */
@@ -451,6 +558,8 @@ function zijkantHtml(c, o, er, werk, ctx = {}){
   const zichtbaar = ONDERDELEN.filter(x => er[x.k]);
   const vacFunctie = ctx.vac ? t(ctx.vac.functie) : '';
   return `
+    <div class="cvg-blok" id="cvg_pag"></div>
+
     <div class="cvg-blok">
       <div class="label" style="margin-bottom:8px">Naam op het profiel</div>
       <div class="seg cvg-seg">${NAAM_STANDEN.map(s =>
@@ -604,9 +713,88 @@ function open(kandidaat, opts){
     (t(c.naam) || 'Kandidaat') + (ctx.vac ? ' · ' + t(ctx.vac.functie) + (ctx.klant ? ' bij ' + ctx.klant : '') : '');
 
   let model = null;
+  /* Pagina-indeling hoort bij dit ene vel, niet onthouden. */
+  const pag = {stand:'auto', breuk:'', zoom:1};
+  /* Het blok wordt één keer opgebouwd en daarna alleen bijgewerkt: zo
+     blijft de schuif onder je muis staan terwijl je sleept. */
+  function bouwPag(pagEl){
+    pagEl.innerHTML = `
+      <div class="label" style="margin-bottom:8px">Pagina's en lettergrootte</div>
+      <div class="seg cvg-seg">${[['auto','Automatisch'],['een','1 pagina'],['twee',"2 pagina's"]].map(([k, l]) =>
+        `<button type="button" data-pag="${k}">${l}</button>`).join('')}</div>
+      <label for="cvg_zoom" class="cvg-zoomrij">
+        <span>Kleiner</span>
+        <input type="range" id="cvg_zoom" min="70" max="115" step="1" value="100">
+        <span>Groter</span>
+        <b class="num" id="cvg_zoomw">100%</b>
+      </label>
+      <div id="cvg_breukw" style="display:none">
+        <label class="label" for="cvg_breuk" style="display:block;margin:12px 0 6px">Pagina 2 begint bij</label>
+        <select id="cvg_breuk"></select>
+      </div>
+      <div class="meta" id="cvg_pagmeta" style="margin-top:8px"></div>`;
+    pagEl.querySelectorAll('[data-pag]').forEach(b => b.onclick = () => {
+      pag.stand = b.dataset.pag;
+      if(pag.stand === 'een') pag.breuk = '';
+      teken();
+    });
+    const zoomEl = pagEl.querySelector('#cvg_zoom');
+    const zetZoom = CRM.debounce(() => { teken(); }, 60);
+    zoomEl.oninput = () => {
+      pag.stand = 'zelf';
+      pag.zoom = Number(zoomEl.value) / 100;
+      pagEl.querySelector('#cvg_zoomw').textContent = zoomEl.value + '%';
+      zetZoom();
+    };
+    const breuk = pagEl.querySelector('#cvg_breuk');
+    breuk.onchange = () => {
+      pag.breuk = breuk.value;
+      if(pag.breuk && pag.stand !== 'zelf') pag.stand = 'twee';
+      teken();
+    };
+  }
+  function tekenPag(r, blokken){
+    const pagEl = zijEl.querySelector('#cvg_pag');
+    if(!pagEl) return;
+    if(!pagEl.querySelector('#cvg_zoom')) bouwPag(pagEl);
+    const keuzes = blokken.filter(b => !b.vast);
+    const pct = x => Math.round(x * 100) + '%';
+    let status;
+    if(r.paginas === 1){
+      status = !r.past
+        ? `<span style="color:var(--red)">Te lang voor 1 pagina, ook verkleind tot ${pct(r.zoom)}. Kort taken in, zet onderdelen uit of kies 2 pagina's.</span>`
+        : r.zoom < 1 ? `Past op 1 pagina, verkleind tot ${pct(r.zoom)}.` : 'Past op 1 pagina.';
+    }else{
+      status = `${r.paginas} pagina's · pagina 1 is voor ${pct(r.vulling)} gevuld.` +
+        (r.vulling < .8 ? ' Veel wit onderaan? Kies hieronder waar pagina 2 begint, of maak de letters iets kleiner.' : '') +
+        (!r.past ? ' <span style="color:var(--red)">Eén blok is langer dan een hele pagina; kort de taken daar in.</span>' : '');
+      /* Gekozen beginpunt ligt verder dan wat op pagina 1 past: zeg waar
+         pagina 2 nu echt begint, anders lijkt de keuze niet te werken. */
+      const eerste2 = velEl.querySelectorAll('.cvg-blad')[1]?.querySelector('.cvg-blk')?.dataset.blok;
+      const b2 = blokken.find(b => b.id === eerste2);
+      if(pag.breuk && b2 && eerste2 !== pag.breuk)
+        status += ` <span style="color:var(--oranje)">Zo ver past pagina 1 niet; pagina 2 begint nu bij ${h(b2.lbl)}.</span>`;
+    }
+    pagEl.querySelectorAll('[data-pag]').forEach(b => b.classList.toggle('on', b.dataset.pag === pag.stand));
+    /* De schuif volgt wat de automatische standen kozen, behalve terwijl
+       je er zelf aan zit. */
+    const zoomEl = pagEl.querySelector('#cvg_zoom');
+    if(document.activeElement !== zoomEl){
+      zoomEl.value = String(Math.round(r.zoom * 100));
+      pagEl.querySelector('#cvg_zoomw').textContent = Math.round(r.zoom * 100) + '%';
+    }
+    const breukW = pagEl.querySelector('#cvg_breukw');
+    breukW.style.display = (r.paginas > 1 || pag.stand === 'twee' || pag.stand === 'zelf') ? '' : 'none';
+    pagEl.querySelector('#cvg_breuk').innerHTML = `<option value="">Automatisch (waar pagina 1 vol is)</option>` +
+      keuzes.map(b => `<option value="${h(b.id)}"${pag.breuk === b.id ? ' selected' : ''}>${h(b.lbl)}</option>`).join('');
+    pagEl.querySelector('#cvg_pagmeta').innerHTML = status;
+  }
   function teken(){
     model = bouwModel(c, ctx, o);
-    velEl.innerHTML = velHtml(model);
+    const blokken = velBlokken(model);
+    if(pag.breuk && !blokken.some(b => b.id === pag.breuk)) pag.breuk = '';
+    const r = zetPaginas(velEl, blokken, model, pag);
+    tekenPag(r, blokken);
     if(model.fotoPad) CRM.opslag.vulAfbeeldingen(velEl);
     const stand = NAAM_STANDEN.find(s => s.k === o.naamStand);
     standEl.textContent = 'Naam: ' + (stand ? stand.lbl.toLowerCase() : '') +
@@ -695,6 +883,9 @@ function open(kandidaat, opts){
   }
 
   tekenZij();
+  /* De bladindeling meet de tekst; staat het Anton-lettertype er bij de
+     eerste keer nog niet, dan opnieuw verdelen zodra het geladen is. */
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if(paneelEl === wrap) teken(); });
 
   wrap.querySelector('.cvg-scrim').onclick = () => sluit();
   wrap.querySelector('#cvg_x').onclick = () => sluit();
@@ -743,33 +934,15 @@ function paginaAan(){
 }
 function paginaUit(){ document.getElementById('cvg-print-page')?.remove(); }
 
-/* Een A4-pagina is bij print altijd 297mm hoog, en CSS 'mm' is per spec
-   exact 96px/inch — dus 1122,52px is geen gok maar de vaste omrekening. Past
-   het vel daar met de normale opmaak niet in (te veel werkervaring/taken),
-   dan verkleinen we met CSS `zoom` — die telt, anders dan `transform`, ook
-   echt mee in Chrome's paginering, dus het vel schuift niet meer door naar
-   een tweede blad. Ondergrens 0,72 om de tekst leesbaar te houden; wordt die
-   geraakt, dan past het cv nog steeds niet volledig en zeggen we dat erbij. */
-const CVG_PAGINA_HOOGTE_PX = 297 * 96 / 25.4;
-const CVG_MIN_ZOOM = .72;
-function pasPaginaAan(){
-  const vel = paneelEl && paneelEl.querySelector('#cvg_vel');
-  if(!vel) return;
-  vel.style.zoom = '';
-  const hoogte = vel.scrollHeight;
-  if(hoogte <= CVG_PAGINA_HOOGTE_PX) return;
-  const schaal = CVG_PAGINA_HOOGTE_PX / hoogte;
-  vel.style.zoom = String(Math.max(CVG_MIN_ZOOM, schaal));
-  if(schaal < CVG_MIN_ZOOM)
-    CRM.toast('Dit cv is erg lang — past ook verkleind niet volledig op één pagina. Kort de werkervaring of taken in.');
-}
-
+/* Verkleinen en de verdeling over bladen gebeuren al in het voorbeeld
+   (zetPaginas, met CSS `zoom`, die anders dan `transform` meetelt in de
+   paginering). Bij het printen verandert er dus niets meer aan de opmaak:
+   het voorbeeld ís de pdf. */
 let printTimer = null;
 function printAan(){
   if(!paneelEl) return;
   paneelEl.classList.add('cvg-print');
   paginaAan();
-  pasPaginaAan();
   if(titelVoorPrint == null){
     titelVoorPrint = document.title;
     document.title = 'CV ' + cvNaamVoorTitel + ' - Ploeggenoten';
@@ -777,11 +950,7 @@ function printAan(){
 }
 function printUit(){
   clearTimeout(printTimer); printTimer = null;
-  if(paneelEl){
-    paneelEl.classList.remove('cvg-print');
-    const vel = paneelEl.querySelector('#cvg_vel');
-    if(vel) vel.style.zoom = '';
-  }
+  if(paneelEl) paneelEl.classList.remove('cvg-print');
   if(titelVoorPrint != null){ document.title = titelVoorPrint; titelVoorPrint = null; }
   paginaUit();
 }
