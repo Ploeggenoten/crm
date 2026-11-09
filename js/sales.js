@@ -577,7 +577,8 @@ function bordHTML(klanten){
    bij een Graph-fout verandert er niets aan het bord — geen foutmelding,
    het bord wist het gewoon al niet beter. */
 async function agendaOpBord(){
-  if(!(CRM.outlook?.verbonden?.())) return;
+  /* Geen eigen Outlook-koppeling nodig: de teamagenda (afspraken van
+     collega's, crm_agenda) komt ook via agendaIndex mee (9 nov 2026). */
   let idx = null;
   try{ idx = await CRM.opvolging.agendaIndex(30); }catch(e){ idx = null; }
   /* Klaar met wachten? Alleen bijwerken als Sales nog op het scherm staat
@@ -595,7 +596,7 @@ async function agendaOpBord(){
     const gesprekKaart = kaart.closest('.bcol')?.dataset.fase === 'Gesprek ingepland';
     const regel = `<div class="s-w-r s-w-stap${gesprekKaart?' s-w-gesprek':''}"><span class="s-w-l">${
       gesprekKaart ? 'gesprek op' : 'volgende stap'}</span>
-      <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}${wanneer ? ' — ' + h(wanneer) : ''}">${
+      <span class="s-w-v trunc" title="${h(e.titel||'Afspraak')}${wanneer ? ' — ' + h(wanneer) : ''}${e.van ? ' — agenda van ' + h(e.van) : ''}">${
         wanneer ? `<span class="num">${h(wanneer)}</span> ` : ''}${h(e.titel||'Afspraak')}</span></div>`;
     const stap = kaart.querySelector('.s-w-stap');
     const blok = kaart.querySelector('.s-waarom');

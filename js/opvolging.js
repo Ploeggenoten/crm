@@ -932,6 +932,121 @@ function agendaTreffers(items, k){
   });
 }
 
+/* De eigen Outlook-agenda per klant, met cache. null = niet te lezen. */
+async function eigenAgenda(dagen){
+  if(!(CRM.outlook?.verbonden?.())) return null;
+  if(agLezing && agLezing.dagen >= dagen && Date.now() - agLezing.op < AG_VERS)
+    return agLezing.index;
+  if(agFoutOp && Date.now() - agFoutOp < AG_FOUT_WACHT) return null;
+  if(agBezig) return agBezig;
+  agBezig = (async () => {
+    let items = null;
+    try{ items = await CRM.outlook.agenda(dagen); }catch(e){ items = null; }
+    agBezig = null;
+    if(!Array.isArray(items)){ agFoutOp = Date.now(); return null; }
+    agFoutOp = 0;
+    const index = new Map();
+    (CRM.state.clients||[]).forEach(k => {
+      const raak = agendaTreffers(items, k);
+      if(raak.length) index.set(k.naam, raak);
+    });
+    agLezing = {op: Date.now(), dagen, index};
+    agendaNaarTeam(index, dagen);
+    return index;
+  })();
+  return agBezig;
+}
+
+/* ═══ TEAMAGENDA (9 nov 2026) ═════════════════════════════════════
+   Tjeerd: "bij Gesprek ingepland zie ik welke data de gesprekken zijn.
+   Alleen Daan kan het niet zien — zorg dat hij ook deze agendapunten van
+   mij kan zien, zodat we beiden weten welke gesprekken, hoe laat."
+   De agenda wordt per gebruiker uit zijn eigen Outlook gelezen. Na elke
+   geslaagde lezing zet dit CRM de afspraken die bij een klant horen in
+   crm_agenda (alleen die: onderwerp, tijd, locatie — niet de hele agenda,
+   geen deelnemers). Elk scherm leest daarna de eigen Outlook plus wat
+   collega's daar hebben neergezet. Een afspraak die uit Outlook verdwijnt,
+   verdwijnt bij de volgende lezing ook uit de tabel.
+   Begintijden staan als lokale tijdtekst ("2026-11-18T12:30:00"), precies
+   zoals Graph ze met de West-Europese tijdzone teruggeeft — dan rekent
+   ieder scherm er hetzelfde mee als met de eigen agenda. */
+const mijnMail = () => String(CRM.user?.email || '').toLowerCase();
+const lokaalNu = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 19); };
+let agSyncSig = '';
+async function agendaNaarTeam(index, dagen){
+  const ik = mijnMail();
+  if(CRM.demo || !ik || !CRM.sb || CRM.state._mist_crm_agenda) return;
+  const rijen = [];
+  index.forEach((items, klant) => items.forEach(e => {
+    if(!e.id || !e.start) return;
+    rijen.push({id: ik + '|' + e.id + '|' + klant, eigenaar: ik, door: CRM.me(), klant,
+      titel: String(e.titel || '').slice(0, 300), start: String(e.start).slice(0, 19),
+      eind: e.eind ? String(e.eind).slice(0, 19) : null,
+      locatie: e.online ? 'Teams' : String(e.locatie || '').slice(0, 200)});
+  }));
+  const sig = JSON.stringify(rijen);
+  if(sig === agSyncSig) return;
+  try{
+    if(rijen.length){
+      const {error} = await CRM.sb.from('crm_agenda').upsert(rijen);
+      if(error) throw error;
+    }
+    /* Wat er van mij in het gelezen venster stond maar nu niet meer in
+       Outlook staat (verzet, afgezegd): weg. */
+    const vanaf = lokaalNu();
+    const tot = new Date(Date.now() + dagen*86400000 - new Date().getTimezoneOffset()*60000).toISOString().slice(0, 19);
+    const {data, error} = await CRM.sb.from('crm_agenda').select('id')
+      .eq('eigenaar', ik).gte('start', vanaf).lte('start', tot);
+    if(error) throw error;
+    const nu = new Set(rijen.map(r => r.id));
+    const weg = (data || []).map(r => r.id).filter(id => !nu.has(id));
+    if(weg.length){
+      const {error: e2} = await CRM.sb.from('crm_agenda').delete().in('id', weg);
+      if(e2) throw e2;
+    }
+    agSyncSig = sig;
+  }catch(e){
+    if(/does not exist|schema cache|relation/i.test(e?.message || '')) CRM.state._mist_crm_agenda = true;
+    else console.warn('teamagenda bijwerken', e);
+  }
+}
+
+/* De afspraken van collega's uit crm_agenda, in dezelfde vorm als een
+   Outlook-afspraak maar zonder id (dus niet aan te passen vanuit hier) en
+   met `van` = wiens agenda het is. Mijn eigen rijen alleen als mijn eigen
+   Outlook nu niet gelezen kon worden (bijv. op een andere computer). */
+function teamAfspraken(eigenGelezen){
+  const ik = mijnMail(), vanaf = lokaalNu().slice(0, 10);
+  const perKlant = new Map();
+  (CRM.state.teamAgenda || []).forEach(r => {
+    if(!r || !r.klant || !r.start || String(r.start).slice(0, 10) < vanaf) return;
+    if(eigenGelezen && String(r.eigenaar || '').toLowerCase() === ik) return;
+    const e = {titel: r.titel, start: r.start, eind: r.eind, locatie: r.locatie === 'Teams' ? '' : (r.locatie || ''),
+      online: r.locatie === 'Teams' ? 'Teams' : '', van: r.door || r.eigenaar, team: true};
+    if(!perKlant.has(r.klant)) perKlant.set(r.klant, []);
+    perKlant.get(r.klant).push(e);
+  });
+  return perKlant;
+}
+
+/* Eigen agenda + teamagenda samen. Dezelfde afspraak bij twee collega's
+   (allebei uitgenodigd) één keer tonen: zelfde klant en zelfde begintijd. */
+function voegSamen(eigen, team){
+  const uit = new Map();
+  const zet = (klant, lijst) => {
+    const al = uit.get(klant) || [];
+    lijst.forEach(e => {
+      const t = String(e.start).slice(0, 16);
+      if(!al.some(x => String(x.start).slice(0, 16) === t)) al.push(e);
+    });
+    al.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    uit.set(klant, al);
+  };
+  if(eigen) eigen.forEach((l, k) => zet(k, l));
+  team.forEach((l, k) => zet(k, l));
+  return uit;
+}
+
 /* ═══ PUBLIEKE API ════════════════════════════════════════════════ */
 const OPV = CRM.opvolging = {
 
@@ -939,27 +1054,15 @@ const OPV = CRM.opvolging = {
      Geeft een Map(klantnaam → [afspraken, oplopend op begintijd]) of null
      als er niets te lezen valt. Cache van vijf minuten: het bord rendert
      bij elke sleep opnieuw en de klantkaart vraagt hetzelfde venster. */
+  /* Sinds 9 nov 2026 inclusief de teamagenda (zie agendaNaarTeam): ook
+     zonder eigen Outlook-koppeling krijg je de afspraken van collega's.
+     Alleen de eigen lezing wordt gecachet; de teamrijen komen live uit
+     CRM.state en worden er bij elke aanroep bij gevoegd. */
   async agendaIndex(dagen = 30){
-    if(!(CRM.outlook?.verbonden?.())) return null;
-    if(agLezing && agLezing.dagen >= dagen && Date.now() - agLezing.op < AG_VERS)
-      return agLezing.index;
-    if(agFoutOp && Date.now() - agFoutOp < AG_FOUT_WACHT) return null;
-    if(agBezig) return agBezig;
-    agBezig = (async () => {
-      let items = null;
-      try{ items = await CRM.outlook.agenda(dagen); }catch(e){ items = null; }
-      agBezig = null;
-      if(!Array.isArray(items)){ agFoutOp = Date.now(); return null; }
-      agFoutOp = 0;
-      const index = new Map();
-      (CRM.state.clients||[]).forEach(k => {
-        const raak = agendaTreffers(items, k);
-        if(raak.length) index.set(k.naam, raak);
-      });
-      agLezing = {op: Date.now(), dagen, index};
-      return index;
-    })();
-    return agBezig;
+    const eigen = await eigenAgenda(dagen);
+    const team = teamAfspraken(!!eigen);
+    if(!eigen && !team.size) return null;
+    return voegSamen(eigen, team);
   },
 
   /* Na het inplannen van een afspraak of het versturen van een mail:

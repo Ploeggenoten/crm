@@ -509,6 +509,11 @@ const TABEL_QUERY = {
   /* Werkenbij-wacht (2 nov 2026): nieuwe vacatures op de werkenbij-site van
      klanten en pijplijnbedrijven, gevuld door de ochtendroutine. Alleen wat
      nog open staat; ontbreekt de tabel, dan blijft het blok gewoon weg. */
+  /* Teamagenda (9 nov 2026): klantafspraken uit ieders Outlook, zodat Daan
+     ook de gesprekken van Tjeerd op het bord ziet (en andersom). Alleen
+     vanaf vandaag; ontbreekt de tabel, dan blijft alleen de eigen agenda. */
+  crm_agenda:        {veld:'teamAgenda',    q:() => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                       return sb.from('crm_agenda').select('*').gte('start', d.toISOString().slice(0, 10)).order('start').limit(1000); }},
   crm_vacature_signalen: {veld:'vacSignalen', q:() => sb.from('crm_vacature_signalen').select('*').eq('status','nieuw').order('gezien_op',{ascending:false}).limit(300)}
 };
 CRM.load = async (force=false) => {

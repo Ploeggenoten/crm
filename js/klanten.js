@@ -1102,10 +1102,12 @@ function kopHtml(k, c){
    Alleen als deze gebruiker zijn Outlook gekoppeld heeft; anders
    blijft het blok weg (geen loze belofte op het scherm). ───────── */
 function afsprakenBlokHtml(){
-  if(!CRM.outlook?.verbonden?.()) return '';
+  /* Sinds 9 nov 2026 ook zonder eigen koppeling: dan staan hier de
+     afspraken van collega's (teamagenda). Inplannen kan alleen met Outlook. */
+  const eigen = !!CRM.outlook?.verbonden?.();
   return `<div class="card kl-railkaart kl-r-ag" id="ag_kaart" hidden>
     <div class="card-h"><div class="h2">Komende afspraken</div><span class="spacer"></span>
-      <button type="button" class="lnk" id="ag_nieuw">+ Afspraak</button></div>
+      ${eigen ? '<button type="button" class="lnk" id="ag_nieuw">+ Afspraak</button>' : ''}</div>
     <div class="card-b" id="ag_lijst"></div></div>`;
 }
 
@@ -1131,7 +1133,7 @@ function railAfspraken(root, k){
       const waar = e.online ? 'Teams' : (e.locatie || '');
       return `<div class="kl-afspraak">
         <b class="trunc">${h(e.titel||'Afspraak')}</b>
-        <div class="meta num">${h(wanneer)}${waar ? ' · ' + h(waar) : ''}</div>
+        <div class="meta num">${h(wanneer)}${waar ? ' · ' + h(waar) : ''}${e.van ? ' · agenda van ' + h(e.van) : ''}</div>
         ${e.id ? `<div class="kl-ag-acties">
           ${e.organisator ? `<button type="button" class="lnk" data-agwijzig="${i}">aanpassen</button>` : ''}
           <button type="button" class="lnk" data-agweg="${i}">${e.organisator ? 'verwijderen' : 'afslaan'}</button>
