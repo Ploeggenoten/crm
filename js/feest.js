@@ -360,17 +360,23 @@ function maakDeeltje(x, y, vx, vy){
    één keer op tijd gesorteerd en daarna alleen nog vooraan leeggehaald.
    Bij een tweede plaatsing komt er een set bíj (met `vanaf` verschoven
    naar nu) — de eerste wordt niet weggegooid. */
-function vulWachtrij(vanaf){
+/* `maat` maakt er een groter feest van (een nieuwe klant): `factor` meer
+   deeltjes, `salvo` kanonschoten na elkaar in plaats van één, en een
+   langere regen van boven. Zonder `maat` precies het plaatsingsfeest. */
+function vulWachtrij(vanaf, maat){
+  const m = maat || {};
   const w = window.innerWidth, hgt = window.innerHeight;
-  const totaal = aantalDeeltjes();
+  const totaal = Math.round(aantalDeeltjes() * (m.factor || 1));
   const uitKanon = Math.round(totaal * .42);
+  const salvo = m.salvo || 1, regen = m.regen || T.regen;
 
   for(let i = 0; i < uitKanon; i++){
     const links = i % 2 === 0;
     const hoek = (links ? rnd(-1.35, -0.55) : rnd(-2.59, -1.79));   // omhoog, naar binnen
-    const kracht = rnd(11, 22);
+    const kracht = rnd(11, 22) * (salvo > 1 ? rnd(1, 1.18) : 1);
+    const schot = i % salvo;                                          // welk kanonschot
     wachtrij.push({
-      op: vanaf + rnd(0, 90),
+      op: vanaf + schot * 650 + rnd(0, 90),
       d: maakDeeltje(
         links ? rnd(-10, w * .12) : rnd(w * .88, w + 10),
         hgt * rnd(.96, 1.04),
@@ -381,7 +387,7 @@ function vulWachtrij(vanaf){
   }
   for(let i = uitKanon; i < totaal; i++){
     wachtrij.push({
-      op: vanaf + rnd(0, T.regen),
+      op: vanaf + rnd(0, regen),
       d: maakDeeltje(rnd(-20, w + 20), rnd(-90, -10), rnd(-1.4, 1.4), rnd(1, 4))
     });
   }
@@ -430,14 +436,14 @@ document.addEventListener('visibilitychange', () => {
    loopt er maar één lus en één klok: een tweede knal schuift zijn
    deeltjes in dezelfde wachtrij en verlengt het einde. De eerste knal
    loopt gewoon door. */
-function startConfetti(){
+function startConfetti(maat){
   if(rustig()) return;              // dan alleen het bericht
   zorgCanvas();
   const nu = performance.now();
   if(!lus){ startTijd = nu; vorigeTijd = nu; eind = 0; meting.frames = 0; meting.ms = 0; }
   const vanaf = nu - startTijd;
-  vulWachtrij(vanaf);
-  eind = Math.max(eind, vanaf + T.confetti);
+  vulWachtrij(vanaf, maat);
+  eind = Math.max(eind, vanaf + ((maat && maat.duur) || T.confetti));
   if(!lus) lus = requestAnimationFrame(frame);
 }
 
@@ -818,11 +824,30 @@ function toonKaart(ev){
   const heeftAM     = Number.isFinite(amTotaal) && amTotaal > 0 && !!am;
 
   const kaart = document.createElement('div');
-  kaart.className = 'feest-kaart';
+  kaart.className = 'feest-kaart' + (ev.soort === 'klant' ? ' klant' : '');
   /* Volgorde: eerst het bericht, dán pas de sluitknop. De knop staat
      visueel toch absoluut in de hoek, en voorleessoftware leest de
      laag van boven naar beneden — dan hoor je de plaatsing en niet
      eerst "Bericht sluiten". */
+  if(ev.soort === 'klant'){
+    /* Een nieuwe klant (Tjeerd, 9 nov 2026): "XXX HEEFT GETEKEND." en
+       dan de AM op wiens naam de klant komt, met de opdracht erbij. Geen
+       tellers en geen fee: hier is nog niets geplaatst — het werk begint
+       nu pas, en dat is precies wat de kaart zegt. */
+    const klant = String(ev.klant || '').trim();
+    kaart.innerHTML =
+      '<div class="feest-over">Nieuwe klant</div>' +
+      '<div class="feest-naam' + (klant.length > 18 ? ' lang' : '') + '">' +
+        (klant ? h(klant.toUpperCase()) + ' HEEFT GETEKEND.' : 'ER IS GETEKEND.') + '</div>' +
+      (am ? '<div class="feest-am">' + CRM.avatar(am) +
+            '<div class="feest-am-t"><span>Op naam van</span><b>' + h(am) + '</b></div>' +
+            '</div>' : '') +
+      '<div class="feest-opdracht">' + (am ? h(voornaam(am).toUpperCase()) + ', NU' : 'NU') +
+        ' IS HET AAN JOU OM TE VULLEN!</div>' +
+      '<span class="feest-hand" aria-hidden="true">Knallen!</span>' +
+      '<button class="feest-sluit" type="button">Aan de slag</button>' +
+      '<button class="feest-x" type="button" aria-label="Bericht sluiten">×</button>';
+  } else
   kaart.innerHTML =
     '<div class="feest-over">Contract getekend</div>' +
     '<div class="feest-naam' + (naam.length > 22 ? ' lang' : '') + '">' +
@@ -899,9 +924,11 @@ function toonKaart(ev){
   kaart.onclick = weg;                                   // wegklikken mag overal op de kaart
   kaart.querySelector('.feest-x').onclick     = e => { e.stopPropagation(); weg(); };
   kaart.querySelector('.feest-sluit').onclick = e => { e.stopPropagation(); weg(); };
+  return kaart;
 }
 
 function sluitAlles(){
+  if(podiumEl) podiumEl._klaar();
   if(laag) Array.from(laag.children).forEach(k => k._sluit && k._sluit());
   ruimCanvasOp();
   wegPeter();          /* wegklikken sluit het hele feest, niet de helft */
@@ -918,6 +945,7 @@ function sluitAlles(){
    dezelfde toetsaanslag overheen mee. */
 document.addEventListener('keydown', e => {
   if(e.key !== 'Escape') return;
+  if(podiumEl){ podiumEl._klaar(); return; }       // eerst alleen het podium overslaan
   if(!laag || !laag.children.length) return;
   if(CRM.modal && CRM.modal._aan) return;
   if(document.querySelector('.drawer.on, .scrim.on')) return;
@@ -1030,8 +1058,113 @@ function zetStand(rust){
   });
 }
 
+/* Een nieuwe klant is zeldzamer dan een plaatsing en het begin van alles
+   wat daarna komt — dus meer: ruim twee keer zoveel deeltjes (gemeten
+   bleef 520 tegelijk op volle framerate), drie kanonschoten na elkaar en
+   een regen die twee keer zo lang aanhoudt. */
+const KLANT_MAAT = {factor:2.3, salvo:3, regen:2400, duur:8200};
+/* Alleen klanten die NA de invoering van dit feest tekenden. Wat al
+   Afgerond stond — ook in de dagen ervoor — is oud nieuws en krijgt geen
+   inhaalfeest (Tjeerd, 9 nov 2026: "het gaat om de klanten van nu"). */
+const KLANT_FEEST_VANAF = '2026-11-09T14:15:00Z';
+
+/* ═══════════════════════════════════════════════════════════════
+   HET PODIUM — de klantversie
+   Een plaatsing is een kaart midden in beeld. Een nieuwe klant neemt
+   het héle scherm even over, want de tekst ís hier het feest
+   (Tjeerd, 9 nov 2026: "de tekst prominenter"):
+
+     0,35 s  de klantnaam knalt erin, letter voor letter — eerste salvo
+     1,15 s  "HEEFT GETEKEND." slaat erop als een stempel — tweede salvo,
+             Peter komt rechtsonder op met zijn kanon
+     2,0 s   de AM: "TJERK,"
+     2,5 s   "NU IS HET AAN JOU OM TE" en daaronder VULLEN! als lege
+             omtrek…
+     3,2 s   …die van onder naar boven volloopt met lime. Dat is het
+             verschil met een plaatsing: deze klant moet nog gevuld
+             worden, dus het woord vult zich voor je ogen — derde salvo
+             zodra hij vol is.
+     8,8 s   het podium gaat weg en de kaart staat rechtsboven, tot
+             iemand hem wegklikt (zoals altijd).
+
+   Klik of Escape slaat het podium over. Bij "minder beweging" of een
+   tabblad op de achtergrond: geen podium, meteen de kaart.
+   ═══════════════════════════════════════════════════════════════ */
+let podiumEl = null;
+const PODIUM_DUUR = 8800;
+
+function podium(ev, klaar){
+  if(podiumEl) podiumEl._klaar();
+  const klant = String(ev.klant || '').trim().toUpperCase() || 'ER IS';
+  const am = String(ev.am || '').trim();
+  const letters = Array.from(klant).map((t, i) =>
+    t === ' ' ? '<span class="fp-sp"> </span>'
+              : '<span class="fp-l" style="--i:' + i + '">' + h(t) + '</span>').join('');
+  const el = document.createElement('div');
+  el.className = 'feest-podium';
+  el.setAttribute('aria-hidden', 'true');      // de kaart in de laag is wat voorgelezen wordt
+  el.style.setProperty('--n', Math.max(6, klant.length));
+  el.innerHTML =
+    '<div class="fp-in">' +
+      '<div class="fp-over">Nieuwe klant</div>' +
+      '<div class="fp-naam">' + letters + '</div>' +
+      '<div class="fp-stempel">Heeft getekend.</div>' +
+      (am ? '<div class="fp-am">' + CRM.avatar(am) + '<span>' + h(voornaam(am).toUpperCase()) + ',</span></div>' : '') +
+      '<div class="fp-zin">Nu is het aan jou om te</div>' +
+      '<div class="fp-vul" data-t="VULLEN!"><span>VULLEN!</span></div>' +
+    '</div>' +
+    '<div class="fp-tip">klik om verder te gaan</div>';
+  document.body.appendChild(el);
+  podiumEl = el;
+
+  const timers = [];
+  const op = (ms, f) => timers.push(setTimeout(f, ms));
+  const stap = k => el.classList.add(k);
+  const schok = () => { const i = el.firstChild; i.classList.remove('schok'); void i.offsetWidth; i.classList.add('schok'); };
+
+  let weg = false;
+  el._klaar = () => {
+    if(weg) return; weg = true;
+    timers.forEach(clearTimeout);
+    if(podiumEl === el) podiumEl = null;
+    el.classList.add('uit');
+    setTimeout(() => el.remove(), 520);
+    klaar();
+  };
+  el.onclick = el._klaar;
+
+  op(20,   () => stap('s0'));                                    // achtergrond
+  op(350,  () => { stap('s1'); });                               // naam
+  op(350 + Math.min(klant.length, 18) * 45 + 260, () => {        // laatste letter geland
+    schok(); startConfetti({factor:1.1, regen:900, duur:7600});
+  });
+  op(1150 + Math.min(klant.length, 18) * 30, () => {             // stempel
+    stap('s2'); schok();
+    startConfetti({factor:.8, regen:1400, duur:7000});
+    toonPeter(); if(peter) peter.classList.add('rechts');
+  });
+  op(2000 + Math.min(klant.length, 18) * 30, () => stap('s3'));  // de AM
+  op(2500 + Math.min(klant.length, 18) * 30, () => stap('s4'));  // zin + lege omtrek
+  op(3200 + Math.min(klant.length, 18) * 30, () => stap('s5'));  // volloopt
+  op(5000 + Math.min(klant.length, 18) * 30, () => {             // vol
+    stap('s6'); schok(); startConfetti({factor:1.2, regen:2200, duur:6000});
+  });
+  op(PODIUM_DUUR, el._klaar);
+}
+
 function vier(ev){
-  startConfetti();
+  if(ev.soort === 'klant' && !rustig() && document.visibilityState !== 'hidden'){
+    /* Eerst het podium; de kaart staat al klaar in de hoek maar blijft
+       onzichtbaar tot het podium weg is. */
+    const wrap = zorgLaag();
+    clearTimeout(wrap._tRust);
+    const kaart = toonKaart(ev);
+    if(kaart) kaart.classList.add('wacht');
+    zetStand(true);
+    podium(ev, () => { if(kaart) kaart.classList.remove('wacht'); });
+    return;
+  }
+  startConfetti(ev.soort === 'klant' ? KLANT_MAAT : null);
   toonPeter();
   /* Elk nieuw feest begint in het midden en valt daarna terug in rust.
      De klok wordt hier gewist én opnieuw gezet, ook als de stand al op
@@ -1041,20 +1174,84 @@ function vier(ev){
   clearTimeout(wrap._tRust);
   zetStand(false);
   toonKaart(ev);
-  wrap._tRust = setTimeout(() => zetStand(true), T.rust);
+  wrap._tRust = setTimeout(() => zetStand(true), ev.soort === 'klant' ? KLANT_MAAT.duur + 1200 : T.rust);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   NIET MIDDEN IN HET WERK
+   Een feest van een COLLEGA springt niet zomaar over je scherm terwijl
+   je aan het typen of slepen bent (Tjeerd, 9 nov 2026: "anders komen er
+   dingen opeens in het scherm"). Het gaat in de wacht en komt pas op
+   zodra je naar een andere pagina gaat — dan ben je toch al aan het
+   omschakelen. Wie zélf afsluit ziet het meteen: die deed het net.
+
+   "Andere pagina" = een andere module (Sales → Dashboard), niet het
+   openen van een kaart binnen dezelfde module; ook dat is bezig zijn.
+   Alle navigatie loopt via CRM.ga, dus daar haken we aan.
+   ═══════════════════════════════════════════════════════════════ */
+const inDeWacht = [];
+
+function ontvang(ev){
+  if(inDeWacht.some(w => w.ck && w.ck === ev.ck)) return;
+  inDeWacht.push(ev);
+}
+
+function wachtrijTonen(){
+  const rij = inDeWacht.splice(0).filter(ev => !gezienHeeft(ev.id));
+  if(!rij.length) return;
+  rij.slice(0, MAX_KAARTEN).forEach((ev, i) => { if(i === 0) vier(ev); else toonKaart(ev); });
+}
+
+(function haakAanNavigatie(){
+  const zet = () => {
+    if(typeof CRM.ga !== 'function' || CRM.ga._feest) return !!(CRM.ga && CRM.ga._feest);
+    const origineel = CRM.ga;
+    const ga = function(key){
+      const was = CRM.view;
+      const uit = origineel.apply(this, arguments);
+      if(inDeWacht.length && CRM.view !== was){
+        /* Even de nieuwe pagina laten tekenen; confetti over een half
+           opgebouwd scherm voelt als een storing. */
+        setTimeout(wachtrijTonen, 700);
+      }
+      return uit;
+    };
+    ga._feest = true;
+    CRM.ga = ga;
+    return true;
+  };
+  if(!zet()) document.addEventListener('DOMContentLoaded', zet);
+})();
 
 /* ═══════════════════════════════════════════════════════════════
    ROND STUREN — broadcast op een eigen kanaal
    ═══════════════════════════════════════════════════════════════ */
 
 function verbind(){
+  /* De demo-modus (?demo=1) praat NOOIT met het live kanaal: daar wordt
+     getest met verzonnen gebeurtenissen, en die belandden anders bij het
+     hele team (9 nov 2026: testfeesten voor Holcim, Arcelor Mittal e.a.
+     verschenen live als "getekend"). Niet zenden én niet luisteren. */
+  if(CRM.demo) return;
   if(kanaal || !CRM.sb) return;
   try{
     kanaal = CRM.sb.channel('crm-feest', {config:{broadcast:{self:false, ack:false}}});
     kanaal.on('broadcast', {event:'getekend'}, bericht => {
       const ev = bericht && bericht.payload;
-      if(ev && typeof ev === 'object' && !gezienHeeft(ev.id) && magVieren(ev)) vier(ev);
+      if(!ev || typeof ev !== 'object') return;
+      /* Een klantfeest alleen als die klant hier ook op Afgerond staat.
+         De fase is al opgeslagen vóórdat de afzender uitzendt; staat hij
+         hier nog niet bij, dan even verversen is geen reden voor confetti
+         over een bedrijf dat niet getekend heeft. */
+      const isAfgerond = () => { const k = CRM.klant ? CRM.klant(ev.klant) : null;
+                                 return !!k && (CRM.SALES_KLANT || ['Afgerond']).includes(k.fase); };
+      if(ev.soort === 'klant' && !isAfgerond()){
+        /* De rijwijziging kan nét na dit bericht binnenkomen: één keer
+           kort wachten en opnieuw kijken. Daarna niet = geen feest. */
+        setTimeout(() => { if(isAfgerond() && !gezienHeeft(ev.id) && magVieren(ev)) ontvang(ev); }, 3000);
+        return;
+      }
+      if(!gezienHeeft(ev.id) && magVieren(ev)) ontvang(ev);
     });
     /* Vangnet naast de broadcast: de rijwijziging zelf. Sinds 14 aug 2026
        staat `candidates` in de realtime-publicatie (daardoor beweegt het
@@ -1082,7 +1279,7 @@ function verbind(){
         fee: feeVan(String(r.id))
       };
       ev.ck = kandSleutel(ev);
-      if(magVieren(ev)) vier(ev);
+      if(magVieren(ev)) ontvang(ev);
     });
     kanaal.subscribe(status => { verbonden = (status === 'SUBSCRIBED'); });
   }catch(e){
@@ -1102,7 +1299,7 @@ function verbind(){
    de console schoon. httpSend bestaat niet in elke versie van de
    bibliotheek, vandaar de terugval. */
 function stuur(ev){
-  if(!kanaal) return;
+  if(CRM.demo || !kanaal) return;          // demo stuurt nooit iets rond (zie verbind)
   try{
     const bericht = {type:'broadcast', event:'getekend', payload:ev};
     const r = (!verbonden && typeof kanaal.httpSend === 'function')
@@ -1132,7 +1329,36 @@ function inhalen(){
       .filter(c => c.geplaatstOp && String(c.geplaatstOp) >= grens &&
                    CRM.PLACED.includes(c.fase) && !gezienHeeft(c.id))
       .sort((a, b) => String(a.geplaatstOp).localeCompare(String(b.geplaatstOp)));
-  }catch(e){ return; }                       // liever niets dan een storing
+  }catch(e){ nieuw = []; }                   // liever niets dan een storing
+
+  /* Nieuwe klanten uit dezelfde drie dagen. De bron is het fase-logboek
+     ("Fase gewijzigd: … → Afgerond"), niet fase_sinds: de automatische
+     zet naar Afgerond bij een plaatsing schrijft een ánder zinnetje en
+     hoort geen klantfeest te geven — dat is al gevierd als plaatsing. */
+  let klanten = [];
+  try{
+    const grens = dagenTerug(INHAAL_DAGEN);
+    const al = new Set();
+    klanten = (CRM.state.activiteiten || [])
+      .filter(a => a.entiteit === 'klant' && a.soort === 'fase' &&
+                   /→\s*Afgerond\s*$/.test(String(a.tekst || '')) &&
+                   String(a.op || '') >= KLANT_FEEST_VANAF &&
+                   new Date(a.op).toLocaleDateString('sv-SE') >= grens)
+      .filter(a => { const k = CRM.klant ? CRM.klant(a.ref) : null;
+                     if(!k || k.fase !== 'Afgerond' || al.has(a.ref)) return false;
+                     al.add(a.ref); return !gezienHeeft('klant:' + a.ref); })
+      .reverse();
+  }catch(e){ klanten = []; }
+
+  if(!nieuw.length && !klanten.length) return;
+  let eerste = true;
+  klanten.slice(0, MAX_KAARTEN).forEach(a => {
+    const k = CRM.klant(a.ref) || {};
+    const ev = klantEv(a.ref, String(k.eigenaar || '').trim());
+    ev.eid = 'inhaal:klant:' + a.ref;
+    if(!magVieren(ev)) return;
+    if(eerste){ vier(ev); eerste = false; } else toonKaart(ev);
+  });
   if(!nieuw.length) return;
 
   /* Eén knal en één Peter voor de hele inhaalslag, ook bij twee
@@ -1155,7 +1381,72 @@ function inhalen(){
        regel 3: komt er vlak na het opstarten alsnog een uitzending over
        dezelfde kandidaat binnen, dan viert die niet nóg een keer. */
     if(!magVieren(ev)) return;
-    if(i === 0) vier(ev); else toonKaart(ev);
+    if(eerste){ vier(ev); eerste = false; } else toonKaart(ev);
+  });
+}
+
+/* De gebeurtenis van een nieuwe klant. Het id krijgt een voorvoegsel
+   zodat "weggeklikt" en "niet dubbel" nooit botsen met een kandidaat-id. */
+function klantEv(naam, am){
+  const id = 'klant:' + String(naam || '').trim();
+  return {eid: CRM.uid ? CRM.uid() : 'k' + Date.now() + Math.random().toString(36).slice(2),
+          ts: Date.now(), soort:'klant', id, ck:id,
+          klant: String(naam || '').trim(), am: String(am || '').trim(),
+          door: CRM.me ? CRM.me() : ''};
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   OP WIENS NAAM KOMT DE KLANT
+   Voordat het feest losbarst kiest de afsluiter de AM. Het venster is
+   één klik: de huidige eigenaar (of jijzelf) staat al gekozen, dus wie
+   niets wil veranderen drukt alleen op de knop. Annuleren = de fase
+   blijft zoals hij was; de aanroeper ziet dan `null`.
+   ═══════════════════════════════════════════════════════════════ */
+const AM_ALTIJD = ['Daan'];
+
+function kiesAM(klantNaam, huidig){
+  return new Promise(res => {
+    const profielen = (CRM.state && CRM.state.profiles) || [];
+    /* Marketeers vullen geen vacatures; die staan er alleen bij als ze
+       nu al eigenaar zijn (anders verdwijnt de huidige keuze). */
+    let namen = profielen.filter(p => p.naam && (p.functie !== 'marketeer' || p.naam === huidig)).map(p => p.naam);
+    if(!namen.length) namen = CRM.teamNamen ? CRM.teamNamen() : [];
+    /* Vaste AM's die er altijd tussen staan, wat er ook als functie in
+       hun profiel staat (Tjeerd, 9 nov 2026: "Daan is ook AM nu").
+       Gematcht op voornaam, zodat "Daan" en "Daan <achternaam>" één
+       knop zijn en de naam overeenkomt met het profiel. */
+    AM_ALTIJD.forEach(vn => {
+      if(namen.some(n => voornaam(n).toLowerCase() === vn.toLowerCase())) return;
+      const p = profielen.find(x => voornaam(x.naam).toLowerCase() === vn.toLowerCase());
+      namen.push(p ? p.naam : vn);
+    });
+    if(huidig && !namen.includes(huidig)) namen.unshift(huidig);
+    let keuze = (huidig && namen.includes(huidig)) ? huidig : (CRM.me && namen.includes(CRM.me()) ? CRM.me() : namen[0] || '');
+    let klaar = false;
+    const einde = w => { if(klaar) return; klaar = true; res(w); };
+
+    CRM.modal.open(`
+      <div class="modal-h"><div class="h2">${h(klantNaam)} heeft getekend</div></div>
+      <div class="modal-b">
+        <p class="feest-am-vraag">Op wiens naam komt deze klant? Die AM gaat de vacatures vullen.</p>
+        <div class="feest-am-keus" role="radiogroup" aria-label="Accountmanager">
+          ${namen.map(n => `<button type="button" class="feest-am-optie" role="radio" data-am="${h(n)}"
+              aria-checked="${n === keuze}">${CRM.avatar(n)}<span>${h(n)}</span></button>`).join('')}
+        </div>
+      </div>
+      <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
+        <button class="btn" id="feest_am_ok">Op naam zetten en vieren</button></div>`,
+      {onClose: () => einde(null), onOpen(m){
+        const opties = CRM.$$('.feest-am-optie', m);
+        const zet = n => { keuze = n; opties.forEach(b => b.setAttribute('aria-checked', String(b.dataset.am === n))); };
+        opties.forEach(b => {
+          b.onclick = () => zet(b.dataset.am);
+          b.ondblclick = () => { zet(b.dataset.am); m.querySelector('#feest_am_ok').click(); };
+        });
+        m.querySelector('[data-mclose]').onclick = () => { einde(null); CRM.modal.close(); };
+        m.querySelector('#feest_am_ok').onclick = () => { const w = keuze; einde(w || ''); CRM.modal.close(); };
+        setTimeout(() => m.querySelector('#feest_am_ok')?.focus(), 60);
+      }});
   });
 }
 
@@ -1248,6 +1539,27 @@ CRM.feest = {
           fee:o.fee != null ? o.fee : feeVan(id)});
   },
 
+  /* Een nieuwe klant heeft getekend (sales-fase → Afgerond). Groter
+     feest dan een plaatsing, en de kaart zegt wie de vacatures gaat
+     vullen. Viert lokaal én stuurt het rond, net als getekend(). */
+  klantGetekend(opts){
+    const o = opts || {};
+    /* Alleen een klant die écht op Afgerond staat is getekend. Project
+       uitgesteld, Onderhandeling of wat dan ook: geen feest (Tjeerd,
+       9 nov 2026: "alleen afgerond, de rest hoeft er niet in"). */
+    const k = CRM.klant ? CRM.klant(String(o.klant || '').trim()) : null;
+    if(!k || !(CRM.SALES_KLANT || ['Afgerond']).includes(k.fase)) return false;
+    const ev = klantEv(o.klant, o.am);
+    if(!magVieren(ev)) return false;
+    vier(ev);
+    stuur(ev);
+    return true;
+  },
+
+  /* Venster "op wiens naam komt deze klant?" → Promise met de naam, of
+     null bij annuleren. */
+  kiesAM,
+
   sluit: sluitAlles,
 
   /* Meetpunt voor het bouwen en voor later nakijken: framerate, het
@@ -1261,7 +1573,9 @@ CRM.feest = {
   /* Alleen voor het testen: de inhaalslag opnieuw draaien, en de
      "weggeklikt"-opslag legen. */
   _inhalen: inhalen,
-  _vergeet: () => { try{ localStorage.removeItem(OPSLAG); }catch(e){} }
+  _vergeet: () => { try{ localStorage.removeItem(OPSLAG); }catch(e){} },
+  /* Alleen voor het testen: doen alsof er een feest van een collega binnenkomt. */
+  _ontvang: ev => { ev = Object.assign({eid:'t'+Date.now(), ts:Date.now()}, ev); ev.ck = ev.ck || kandSleutel(ev); if(magVieren(ev)) ontvang(ev); return inDeWacht.length; }
 };
 
 })();

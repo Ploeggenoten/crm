@@ -525,13 +525,14 @@ function klantOpruimen(k){
 
 async function bewaarKlant(naam, wijziging){
   const i = CRM.state.clients.findIndex(c => c.naam === naam);
-  if(i < 0) return;
+  if(i < 0) return false;
   Object.assign(CRM.state.clients[i], wijziging);
   if(!CRM.demo){
     const {error} = await CRM.sb.from('clients').update(wijziging).eq('naam', naam);
-    if(error) return CRM.fout('Opslaan mislukt', error);
+    if(error){ CRM.fout('Opslaan mislukt', error); return false; }
   }
   CRM.toast('Opgeslagen','ok');
+  return true;
 }
 /* ─── Relatie wordt vanzelf klant ─────────────────────────────────
    Staat er een kandidaat geplaatst (Contract getekend of Gestart), dan
@@ -1003,10 +1004,21 @@ function kaart(mount, acties, naam){
     const sluit = async bewaren => {
       if(klaar) return; klaar = true;
       const nieuw = sel.value;
+      let feest = null;
       if(bewaren && nieuw !== (k.fase||'')){
         const oud = k.fase || '—';
-        await bewaarKlant(k.naam, {fase:nieuw, fase_sinds:CRM.todayISO()});
-        CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oud} → ${nieuw||'—'}`);
+        const w = {fase:nieuw, fase_sinds:CRM.todayISO()};
+        /* Getekend = nieuwe klant: eerst op wiens naam (Tjeerd, 9 nov 2026). */
+        if(CRM.SALES_KLANT.includes(nieuw) && !CRM.SALES_KLANT.includes(k.fase) && CRM.feest?.kiesAM){
+          const am = await CRM.feest.kiesAM(k.naam, k.eigenaar || '');
+          if(am === null){ CRM.render(); return; }
+          if(am) w.eigenaar = am;
+          feest = am || k.eigenaar || '';
+        }
+        if(await bewaarKlant(k.naam, w)){
+          CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oud} → ${nieuw||'—'}`);
+          if(feest != null) CRM.feest.klantGetekend({klant:k.naam, am:feest});
+        }
       }
       CRM.render();
     };
@@ -4280,11 +4292,21 @@ function klantModal(k){
       const nieuweNaam = m.querySelector('#g_naam').value.trim();
       const nieuweCao = m.querySelector('#g_cao').value.trim();
       CRM.modal.close();
+      /* Getekend = nieuwe klant: eerst op wiens naam (Tjeerd, 9 nov 2026).
+         Annuleren laat de fase staan, de rest van de wijziging gaat door. */
+      let feest = null;
+      if(faseGewisseld && CRM.SALES_KLANT.includes(nieuweFase) && !CRM.SALES_KLANT.includes(oudeFase) && CRM.feest?.kiesAM){
+        const am = await CRM.feest.kiesAM(k.naam, w.eigenaar || k.eigenaar || '');
+        if(am === null){ w.fase = oudeFase; delete w.fase_sinds; }
+        else { if(am) w.eigenaar = am; feest = am || w.eigenaar || ''; }
+      }
+      const faseEcht = w.fase !== oudeFase;
       /* Eerst de gewone velden onder de huidige naam, dán pas hernoemen —
          andersom zoekt bewaarKlant een rij die net van naam veranderd is. */
-      await bewaarKlant(k.naam, w);
+      const gelukt = await bewaarKlant(k.naam, w);
+      if(gelukt && feest != null) CRM.feest.klantGetekend({klant:k.naam, am:feest});
       if(nieuweCao !== (k.cao||'')) await bewaarCao(k, nieuweCao);
-      if(faseGewisseld)
+      if(faseEcht && gelukt)
         CRM.logActiviteit('klant', k.naam, 'fase', `Fase gewijzigd: ${oudeFase||'—'} → ${nieuweFase||'—'}`);
       if(nieuweNaam && nieuweNaam !== k.naam){
         const ok = await CRM.bevestig(`"${k.naam}" hernoemen naar "${nieuweNaam}"? Alle koppelingen — kandidaten, vacatures, contactpersonen, taken en geschiedenis — verhuizen mee.`);

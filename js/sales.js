@@ -103,17 +103,28 @@ function formModal(titel, velden, knop='Opslaan'){
 async function zetFase(naam, nieuw){
   const k = CRM.klant(naam);
   if(!k || faseVan(k)===nieuw) return;
-  const oud = faseVan(k), oudSinds = k.fase_sinds;
-  k.fase = nieuw; k.fase_sinds = CRM.todayISO();
+  const oud = faseVan(k), oudSinds = k.fase_sinds, oudEig = k.eigenaar;
+  /* Getekend = nieuwe klant: eerst kiezen op wiens naam hij komt
+     (Tjeerd, 9 nov 2026). Annuleren = de kaart springt terug. */
+  const getekend = CRM.SALES_KLANT.includes(nieuw) && !CRM.SALES_KLANT.includes(oud) && CRM.feest?.kiesAM;
+  let am = null;
+  if(getekend){
+    am = await CRM.feest.kiesAM(naam, k.eigenaar || '');
+    if(am === null){ teken(); return; }
+  }
+  const wijziging = {fase:nieuw, fase_sinds:CRM.todayISO()};
+  if(am) wijziging.eigenaar = am;
+  Object.assign(k, wijziging);
   if(!CRM.demo){
-    const {error} = await CRM.sb.from('clients').update({fase:nieuw, fase_sinds:k.fase_sinds}).eq('naam', naam);
+    const {error} = await CRM.sb.from('clients').update(wijziging).eq('naam', naam);
     /* Ook fase_sinds terugdraaien — anders staat er na een mislukte
        wissel "0 dagen" in de oude fase en lijkt het traject vers. */
-    if(error){ k.fase = oud; k.fase_sinds = oudSinds; teken(); return CRM.fout('Fase opslaan mislukt', error); }
+    if(error){ k.fase = oud; k.fase_sinds = oudSinds; k.eigenaar = oudEig; teken(); return CRM.fout('Fase opslaan mislukt', error); }
   }
   CRM.logActiviteit('klant', naam, 'fase', `Fase gewijzigd: ${oud} → ${nieuw}`);
   CRM.toast(`${naam} → ${nieuw}`, 'ok');
   teken();
+  if(getekend) CRM.feest.klantGetekend({klant:naam, am: am || k.eigenaar || ''});
 }
 
 async function bewaarKlant(naam, wijzigingen){
