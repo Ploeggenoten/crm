@@ -1097,9 +1097,13 @@ function podium(ev, klaar){
   if(podiumEl) podiumEl._klaar();
   const klant = String(ev.klant || '').trim().toUpperCase() || 'ER IS';
   const am = String(ev.am || '').trim();
-  const letters = Array.from(klant).map((t, i) =>
-    t === ' ' ? '<span class="fp-sp"> </span>'
-              : '<span class="fp-l" style="--i:' + i + '">' + h(t) + '</span>').join('');
+  /* Per woord een eigen blok dat niet breekt: een lange naam mag over
+     twee regels, maar nooit midden in een woord ("BIOCERAMI / CS"). */
+  let i = 0;
+  const letters = klant.split(/\s+/).map(w =>
+    '<span class="fp-w">' + Array.from(w).map(t =>
+      '<span class="fp-l" style="--i:' + (i++) + '">' + h(t) + '</span>').join('') + '</span>'
+  ).join(' ');
   const el = document.createElement('div');
   el.className = 'feest-podium';
   el.setAttribute('aria-hidden', 'true');      // de kaart in de laag is wat voorgelezen wordt
@@ -1116,6 +1120,17 @@ function podium(ev, klaar){
     '<div class="fp-tip">klik om verder te gaan</div>';
   document.body.appendChild(el);
   podiumEl = el;
+  /* Laten passen: krimpen tot elk woord binnen de breedte valt en de
+     naam hooguit twee regels beslaat. CSS kan dat niet zelf, want de
+     breedte van Anton hangt van de letters af. */
+  const naamEl = el.querySelector('.fp-naam'), binnen = el.querySelector('.fp-in');
+  let fs = parseFloat(getComputedStyle(naamEl).fontSize) || 120;
+  const past = () => {
+    const br = binnen.clientWidth;
+    return Array.from(naamEl.querySelectorAll('.fp-w')).every(w => w.offsetWidth <= br) &&
+           naamEl.offsetHeight <= fs * 2.1;
+  };
+  for(let n = 0; n < 40 && fs > 30 && !past(); n++){ fs -= 6; naamEl.style.fontSize = fs + 'px'; }
 
   const timers = [];
   const op = (ms, f) => timers.push(setTimeout(f, ms));
