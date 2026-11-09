@@ -1369,7 +1369,7 @@ function inhalen(){
                    new Date(a.op).toLocaleDateString('sv-SE') >= grens)
       .filter(a => { const k = CRM.klant ? CRM.klant(a.ref) : null;
                      if(!k || k.fase !== 'Afgerond' || al.has(a.ref)) return false;
-                     al.add(a.ref); return !gezienHeeft('klant:' + a.ref); })
+                     al.add(a.ref); return !gezienHeeft(KLANT_ID + a.ref); })
       .reverse();
   }catch(e){ klanten = []; }
 
@@ -1410,8 +1410,15 @@ function inhalen(){
 
 /* De gebeurtenis van een nieuwe klant. Het id krijgt een voorvoegsel
    zodat "weggeklikt" en "niet dubbel" nooit botsen met een kandidaat-id. */
+/* Voorvoegsel van het klantfeest in "weggeklikt". Bewust NIET 'klant:':
+   op 9 nov 2026 kregen collega's met de oude versie bij CAM Bioceramics
+   alleen een los kaartje en klikten dat weg onder 'klant:CAM …'. Met een
+   eigen voorvoegsel telt dat niet als gezien en krijgt iedereen na
+   verversen alsnog het echte podium. */
+const KLANT_ID = 'klantfeest:';
+
 function klantEv(naam, am){
-  const id = 'klant:' + String(naam || '').trim();
+  const id = KLANT_ID + String(naam || '').trim();
   return {eid: CRM.uid ? CRM.uid() : 'k' + Date.now() + Math.random().toString(36).slice(2),
           ts: Date.now(), soort:'klant', id, ck:id,
           klant: String(naam || '').trim(), am: String(am || '').trim(),
