@@ -1238,6 +1238,14 @@ function wachtrijTonen(){
   if(!zet()) document.addEventListener('DOMContentLoaded', zet);
 })();
 
+/* Terugkomen naar het CRM-tabblad (vanuit Outlook, Teams, …) is net zo
+   goed een omschakelmoment als een paginawissel: dan komt wat er in de
+   wacht stond. Zo ziet een collega die op dat moment in een ander
+   programma zat het feest zodra hij terug is, en niet pas veel later. */
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && inDeWacht.length) setTimeout(wachtrijTonen, 700);
+});
+
 /* ═══════════════════════════════════════════════════════════════
    ROND STUREN — broadcast op een eigen kanaal
    ═══════════════════════════════════════════════════════════════ */
