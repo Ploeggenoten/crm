@@ -525,19 +525,39 @@ function kaartHTML(k, lc, act, af, vandaag){
    Bij gelijkspel op naam, zodat het bord niet danst tussen twee renders. */
 const nieuweVacatures = naam => (CRM.state.vacSignalen||[])
   .filter(s => s.status === 'nieuw' && s.bedrijf === naam).length;
+/* Sinds 9 nov 2026 staat de afspraak VOOROP (Tjeerd: "zorg dat de kaarten
+   in de salespijplijn allemaal op chronologische volgorde staan, zodat ik
+   ze niet telkens hoef te slepen naar welke mijn eerstvolgende afspraak
+   is"). Eerst alle kaarten met een komende afspraak, vroegste bovenaan —
+   uit het CRM (afspr) én uit de agenda (Outlook + teamagenda, bordAgenda).
+   Daaronder de rest: nieuwe vacatures, dan wat je zelf gesleept hebt, dan
+   op naam. Slepen werkt dus alleen nog tussen kaarten zonder afspraak. */
+let bordAgenda = null;      // laatste agendaIndex voor het bord (Map klant → afspraken)
+let bordAgendaSig = '';     // waarmee de huidige volgorde getekend is
+const agendaWanneer = naam => {
+  const e = bordAgenda && (bordAgenda.get(naam) || [])[0];
+  return e && e.start ? String(e.start).slice(0, 16) : '';
+};
+const agendaSig = idx => idx ? [...idx.entries()].map(([k, l]) => k + '@' + String((l[0] || {}).start || '').slice(0, 16)).sort().join('|') : '';
 function kolomVolgorde(lijst, afspr){
   const nieuw = new Set((CRM.state.vacSignalen||[]).filter(s => s.status === 'nieuw').map(s => s.bedrijf));
+  const wanneer = naam => {
+    const f = afspr.get(naam);
+    const crm = f ? String(f.datum) + 'T' + String(f.tijd || '99:99') : '';
+    const ag = agendaWanneer(naam);
+    return [crm, ag].filter(Boolean).sort()[0] || '';
+  };
   return [...lijst].sort((a, b) => {
-    /* 0. Wie net nieuwe vacatures op zijn site heeft, staat bovenaan. */
+    /* 1. Komende afspraak, vroegste eerst. */
+    const sa = wanneer(a.naam) || '9999', sb = wanneer(b.naam) || '9999';
+    if(sa !== sb) return sa < sb ? -1 : 1;
+    /* 2. Wie net nieuwe vacatures op zijn site heeft. */
     const na = nieuw.has(a.naam) ? 0 : 1, nb = nieuw.has(b.naam) ? 0 : 1;
     if(na !== nb) return na - nb;
+    /* 3. Zelf gesleept. */
     const pa = a.sales_prio == null ? Infinity : Number(a.sales_prio);
     const pb = b.sales_prio == null ? Infinity : Number(b.sales_prio);
     if(pa !== pb) return pa - pb;
-    const fa = afspr.get(a.naam), fb = afspr.get(b.naam);
-    const sa = fa ? String(fa.datum) + 'T' + String(fa.tijd || '99:99') : '9999';
-    const sb = fb ? String(fb.datum) + 'T' + String(fb.tijd || '99:99') : '9999';
-    if(sa !== sb) return sa < sb ? -1 : 1;
     return String(a.naam||'').localeCompare(String(b.naam||''), 'nl');
   });
 }
@@ -584,6 +604,12 @@ async function agendaOpBord(){
   /* Klaar met wachten? Alleen bijwerken als Sales nog op het scherm staat
      én het bord er nog hangt (de gebruiker kan intussen gewisseld zijn). */
   if(!idx || CRM.view !== 'sales' || !mountEl.querySelector('#s_board')) return;
+  /* Nieuwe of verschoven afspraken: bord opnieuw tekenen zodat de
+     volgorde de agenda volgt. Daarna is de handtekening gelijk en wordt
+     er alleen nog bijgewerkt — geen tekenlus. */
+  const sig = agendaSig(idx);
+  bordAgenda = idx;
+  if(sig !== bordAgendaSig){ bordAgendaSig = sig; tekenInhoud(); return; }
   CRM.$$('.bcard', mountEl).forEach(kaart => {
     const e = (idx.get(kaart.dataset.klant) || [])[0];
     if(!e) return;
