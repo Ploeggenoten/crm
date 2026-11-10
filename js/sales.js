@@ -556,7 +556,13 @@ function kolomVolgorde(lijst, afspr){
     const f = afspr.get(naam);
     const crm = f ? String(f.datum) + 'T' + String(f.tijd || '99:99') : '';
     const ag = agendaWanneer(naam);
-    return [crm, ag].filter(Boolean).sort()[0] || '';
+    const eerst = [crm, ag].filter(Boolean).sort()[0];
+    if(eerst) return eerst;
+    /* Geen afspraak, wel een taak met een datum vanaf vandaag: die datum
+       staat dan op de kaart ("gesprek op 17 nov"), dus telt hij ook mee
+       voor de volgorde. Zonder tijd = achter de afspraken van die dag. */
+    const t = volgendeTaak(naam);
+    return t && t.datum && String(t.datum) >= CRM.todayISO() ? String(t.datum).slice(0, 10) + 'T99:99' : '';
   };
   return [...lijst].sort((a, b) => {
     /* 1. Komende afspraak, vroegste eerst. */
