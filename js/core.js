@@ -1297,7 +1297,15 @@ function rijPatch(tabel, p){
     return true;
   }
   if((type === 'INSERT' || type === 'UPDATE') && p.new && p.new.id != null){
-    const i = arr.findIndex(r => String(r.id) === String(p.new.id));
+    let i = arr.findIndex(r => String(r.id) === String(p.new.id));
+    /* Een nieuwe relatie (→ Lead uit Zelf gevonden / de radar, een koud
+       belletje, Nieuwe relatie) staat al lokaal in de lijst, maar nog zónder
+       id: dat deelt de database pas uit. De realtime-INSERT met id vond die
+       rij dus niet en zette er een tweede bij — de lead stond dubbel tot je
+       ververste (Tjeerd, 10 nov 2026). Daarom bij relaties ook op naam
+       zoeken (uniek in de tabel) naar een rij die nog geen id heeft. */
+    if(i < 0 && tabel === 'clients' && p.new.naam)
+      i = arr.findIndex(r => r.id == null && r.naam === p.new.naam);
     /* In de bestaande rij schrijven, niet vervangen: open schermen (de
        drawer!) houden verwijzingen naar dit object vast. */
     if(i >= 0) Object.assign(arr[i], p.new);
