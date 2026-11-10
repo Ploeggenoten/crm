@@ -36,7 +36,7 @@ const S = {
      De oude losse vlag `mijn` is hierin opgegaan — één bron van waarheid, de
      "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
      (zie vulEigSelect voor het waarom). */
-  l:{q:'', status:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false},
+  l:{q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false},
   /* Render-rust (motorkap-punt 15): zolang de wegwerkronde open staat
      hertekent de lijst niet mee met realtime-syncs — dat verspringt onder
      je handen. Bij het sluiten van de ronde volgt één verse hertekening. */
@@ -451,6 +451,15 @@ function belPogingen(leadId){
   const rij = (CRM.state.leads || []).find(l => String(l.id) === String(leadId));
   return Math.max(uitLog, (rij && rij.belpogingen) || 0);
 }
+/* Hoe vaak geen gehoor? Tjeerd, 10 nov 2026: "veel staan op geen gehoor —
+   filter op één keer, twee keer geen gehoor, etc., zodat we de eerste geen
+   gehoor eerst kunnen oppakken en daarna de meerdere." Alleen leads op
+   status Geen gehoor tellen; die zijn per definitie minstens één keer niet
+   opgenomen, ook als de belregel al uit het activiteitenvenster viel (dan
+   geeft belPogingen 0). POG_MAX = de bak "zo vaak of vaker". */
+const POG_MAX = 4;
+const geenGehoorStand = l => CRM.leadIs(l.status, 'Geen gehoor')
+  ? Math.min(Math.max(1, belPogingen(l.id)), POG_MAX) : 0;
 /* Wanneer was er voor het laatst écht contact? Welke activiteitsoorten als
    contact tellen komt uit js/opvolging.js (CRM.opvolging.CONTACT) — het
    dashboard en de kandidatenlijst lezen dezelfde lijst. Drie kopieën van
@@ -775,6 +784,7 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
        deze rijen blijven zien. (Tjeerd, 27 aug 2026) */
     if(l.kandidaat_id && !l._kand) return false;
     if(!negeerStatus && f.status && !CRM.leadIs(l.status, f.status)) return false;
+    if(f.pog && geenGehoorStand(l) !== +f.pog) return false;
     if(!negeerBot && f.bot && String(l.bot_status||'').trim() !== f.bot) return false;
     if(f.bron && l.bron !== f.bron) return false;
     if(f.vac && String(l.vacature_id) !== f.vac) return false;
@@ -920,7 +930,7 @@ const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').loc
    doen; de standaard komt bij de volgende sessie vanzelf terug
    (zetEigStandaard loopt één keer per sessie). Tjeerd, 2 sep 2026. */
 function wisFilters(){
-  S.l = {q:'', status:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false};
+  S.l = {q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false};
   wisSelectie();
 }
 
@@ -953,6 +963,11 @@ function tekenLeads(el){
           <input type="search" id="rc_q" placeholder="Zoek op naam, telefoon of plaats" value="${h(S.l.q)}">
         </div>
         <select id="rc_status"></select>
+        <select id="rc_pog" title="Leads op Geen gehoor, naar hoe vaak er al vergeefs is gebeld — pak de eerste poging eerst">
+          <option value="">Geen gehoor-pogingen</option>
+          ${Array.from({length:POG_MAX}, (_, i) => i + 1).map(n => `<option value="${n}" ${S.l.pog===String(n)?'selected':''}>${
+            n === POG_MAX ? n + '× of vaker geen gehoor' : n + '× geen gehoor'}</option>`).join('')}
+        </select>
         <select id="rc_bot"></select>
         <select id="rc_bron">
           <option value="">Alle bronnen</option>
@@ -992,6 +1007,7 @@ function tekenLeads(el){
   const q = el.querySelector('#rc_q');
   q.oninput = CRM.debounce(() => { S.l.q = q.value; wisSelectie(); tekenWerk(); }, 200);
   el.querySelector('#rc_status').onchange = e => { S.l.status = e.target.value; S.l.stil = false; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_pog').onchange    = e => { S.l.pog = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bot').onchange    = e => { S.l.bot = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_klant').onchange  = e => { S.l.klant = e.target.value; wisSelectie(); tekenWerk(); };
@@ -1133,6 +1149,17 @@ function vulKeuzeTellers(){
       o.textContent = o.textContent.replace(/\s*\(\d+\)\s*$/, '') + ` (${n})`;
     });
   };
+  zet('rc_pog',   ['pog'],           (b, v) => b.filter(l => geenGehoorStand(l) === +v).length);
+  /* "alle" telt ook: zo zie je in de dicht­geklapte keuzelijst al hoeveel
+     er op Geen gehoor staan. */
+  const ps = document.getElementById('rc_pog');
+  if(ps){
+    const oud = S.l.pog; S.l.pog = '';
+    const n = leadsGefilterd().filter(l => geenGehoorStand(l) > 0).length;
+    S.l.pog = oud;
+    ps.options[0].textContent = `Geen gehoor-pogingen (${n})`;
+    ps.value = S.l.pog;
+  }
   zet('rc_bron',  ['bron'],          (b, v) => b.filter(l => l.bron === v).length);
   zet('rc_klant', ['klant'],         (b, v) => b.filter(l => norm((vacVan(l)||{}).klant || l.klant || '') === v).length);
   zet('rc_vac',   ['vac','zvac'],    (b, v) => v === '__zonder'
@@ -1774,6 +1801,8 @@ function actieveFilters(){
   };
   if(f.q)      uit.push({lbl:'zoek: ' + f.q,                 wis(){ S.l.q = ''; const i = document.getElementById('rc_q'); if(i) i.value = ''; }});
   if(f.status) uit.push({lbl:'status: ' + f.status,          wis(){ S.l.status = ''; }});
+  if(f.pog)    uit.push({lbl:+f.pog >= POG_MAX ? POG_MAX + '× of vaker geen gehoor' : f.pog + '× geen gehoor',
+                         wis(){ S.l.pog = ''; const s = document.getElementById('rc_pog'); if(s) s.value = ''; }});
   if(f.bot)    uit.push({lbl:'bot: ' + f.bot,                wis(){ S.l.bot = ''; }});
   if(f.bron)   uit.push({lbl:'bron: ' + f.bron,              wis(){ S.l.bron = ''; }});
   if(f.klant)  uit.push({lbl:'klant: ' + optieTekst('rc_klant', f.klant), wis(){ S.l.klant = ''; const s = document.getElementById('rc_klant'); if(s) s.value = ''; }});
