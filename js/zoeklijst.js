@@ -15,10 +15,22 @@
   const MIN = 8;
   const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   let paneel = null;
+  /* Het select waar het paneel nu voor open staat. Het zoekveld neemt de
+     focus over, en dat gaf het select een blur. Modules die een select als
+     tijdelijke bewerker tonen (fase op de klantkaart, voorwaarden op de
+     vacaturekaart, de marketingweek) sluiten op blur — vóór de keuze in
+     het paneel was gemaakt. Gevolg: kiezen deed niets en de fase bleef op
+     Lead staan (Tjeerd, 10 nov 2026). Daarom: zolang het paneel open is,
+     wordt die blur onderschept; sluit het paneel zonder keuze, dan krijgt
+     het select alsnog zijn blur, zodat de bewerker netjes dichtgaat. */
+  let bron = null;
 
-  function sluit(){
+  function sluit(gekozen){
     if(paneel){ paneel.remove(); paneel = null; }
+    const s = bron; bron = null;
+    if(s && !gekozen && s.isConnected) s.dispatchEvent(new FocusEvent('blur'));
   }
+  window.addEventListener('blur', e => { if(bron && e.target === bron) e.stopImmediatePropagation(); }, true);
 
   function open(sel, startTekst){
     sluit();
@@ -55,8 +67,9 @@
     let actief = Math.max(0, opts.findIndex(o => o.v === sel.value)), zicht = opts;
 
     const kies = v => {
-      sluit();
-      if(v === sel.value) return;
+      const zelfde = v === sel.value;
+      sluit(!zelfde);
+      if(zelfde) return;
       sel.value = v;
       sel.dispatchEvent(new Event('change', {bubbles:true}));
     };
@@ -91,6 +104,7 @@
     };
     if(startTekst){ inp.value = startTekst; }
     teken();
+    bron = sel;
     inp.focus();
   }
 
