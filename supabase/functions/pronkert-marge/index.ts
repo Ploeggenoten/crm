@@ -568,7 +568,7 @@ Deno.serve(async (req) => {
 // De klant komt uit de plaatsing (CRM-spelling leidend); alleen wie geen
 // plaatsing heeft krijgt de naam van een collega bij dezelfde klant, en
 // anders de spelling van Pronkert.
-const STEKKERDOOS_VERSIE = "2026-11-16";
+const STEKKERDOOS_VERSIE = "2026-11-16b";   // b: flexplaatsingen bijhouden
 
 async function importStekkerdoos(
   service: ReturnType<typeof createClient>,
@@ -661,7 +661,10 @@ async function importStekkerdoos(
   const verslag = { weken: weken.filter((w) => !w.gelijk), personen, zonder_uurloon: zonderFactor,
     aantal_weken: weekLijst.length, aantal_regels: rijen.length,
     totaal: rond(rijen.reduce((s, r) => s + r.marge, 0)) };
-  if (droog) return { ok: true, droog: true, ...verslag };
+  if (droog) {
+    return { ok: true, droog: true, ...verslag,
+      flexplaatsingen: await flexPlaatsingenBijwerken(service, rijen, plaatsingen ?? [], true) };
+  }
 
   // Eerst alles van deze weken weg, dan het overzicht erin.
   for (let i = 0; i < weekLijst.length; i += 50) {
@@ -676,9 +679,86 @@ async function importStekkerdoos(
         " - stuur het overzicht direct opnieuw in, dan staat alles weer goed" };
     }
   }
+  const flexplaatsingen = await flexPlaatsingenBijwerken(service, rijen, plaatsingen ?? [], false);
   const herrekend = await herberekenWeken(service, weekLijst);
   const kracht = await herberekenKrachten(service);
-  return { ok: true, ...verslag, herrekend, ...kracht };
+  return { ok: true, ...verslag, flexplaatsingen, herrekend, ...kracht };
+}
+
+// -- Flexplaatsingen bijhouden vanuit Stekkerdoos ----------------
+// Tjeerd, 16 nov 2026: Kevin en Noadja werken via Pronkert maar stonden niet als
+// flex in Finance. "Neem ze direct mee als flexplaatsing, zodat ik het weet en
+// het niet telkens hoef in te vullen - maar tel het niet als extra plaatsing,
+// die zitten al in de netto plaatsingen op de teller."
+// Dat laatste klopt vanzelf: de teller (dashboard) en de getekende waarde in
+// Finance tellen kandidaten van het bord, niet fin_flex_plaatsingen. Deze rijen
+// krijgen daarom bewust GEEN pipeline_candidate_id.
+//
+// Wat het doet, elke import opnieuw:
+//   - wie in de laatste twee weken van het overzicht werkte en aan geen enkele
+//     flexplaatsing te koppelen is, krijgt er een (met de merknotitie);
+//   - rijen MET die merknotitie houdt het overzicht bij: klant gelijk aan
+//     Stekkerdoos, en gestopt zodra iemand drie weken achter elkaar ontbreekt
+//     (gestopt_op = laatste werkdag). Komt hij later terug, dan gaat gestopt_op
+//     er weer af. Plaatsingen die Tjeerd zelf aanmaakte blijven ongemoeid.
+const AUTO_NOTE = "Automatisch uit Stekkerdoos - telt niet als nieuwe plaatsing";
+
+async function flexPlaatsingenBijwerken(
+  service: ReturnType<typeof createClient>,
+  rijen: Record<string, unknown>[],
+  plaatsingenKort: Record<string, unknown>[],
+  droog: boolean,
+) {
+  const { data: alleP } = await service.from("fin_flex_plaatsingen").select("*");
+  const plaatsingen = alleP ?? plaatsingenKort;
+  const weken = [...new Set(rijen.map((r) => String(r.week)))].sort();
+  const laatste = weken[weken.length - 1];
+  const recent2 = new Set(weken.slice(-2)), recent3 = new Set(weken.slice(-3));
+
+  const per = new Map<string, { naam: string; roep: string; regnr: string; klant: string; functie: string;
+    eerste: string; laatsteDag: string; weken: Set<string> }>();
+  for (const r of rijen) {
+    if (!(Number(r.marge) || Number(r.uren))) continue;
+    const k = persoonSleutel(r);
+    const p = per.get(k) ?? { naam: String(r.naam), roep: String(r.roepnaam), regnr: String(r.regnr ?? ""),
+      klant: String(r.klant ?? ""), functie: String(r.functie ?? ""), eerste: String(r.datum ?? r.week),
+      laatsteDag: String(r.datum ?? r.week), weken: new Set<string>() };
+    p.weken.add(String(r.week));
+    const dag = String(r.datum ?? r.week);
+    if (dag < p.eerste) p.eerste = dag;
+    if (dag > p.laatsteDag) { p.laatsteDag = dag; if (r.klant) p.klant = String(r.klant); }
+    if (!p.regnr && r.regnr) p.regnr = String(r.regnr);
+    per.set(k, p);
+  }
+
+  const aangemaakt: Record<string, unknown>[] = [], bijgewerkt: Record<string, unknown>[] = [];
+  for (const p of per.values()) {
+    const pl = zoekPlaatsing(plaatsingen, { regnr: p.regnr, roepnaam: p.roep });
+    if (!pl) {
+      if (![...p.weken].some((w) => recent2.has(w))) continue;   // oud en al weg: niet opgraven
+      // 'K. Montoya' + 'Kevin' -> 'Kevin Montoya'; voorletters vallen weg.
+      const achter = p.naam.split(/\s+/).filter((w) => !/^([A-Za-z]\.)+$/.test(w)).join(" ");
+      const rij = { kandidaat: `${p.roep} ${achter}`.trim(), klant: p.klant, regnr: p.regnr, start: p.eerste,
+        uren_pw: 40, concept: false, note: AUTO_NOTE, pipeline_candidate_id: null };
+      if (!droog) {
+        const { error } = await service.from("fin_flex_plaatsingen").insert(rij);
+        if (error) { aangemaakt.push({ ...rij, fout: error.message }); continue; }
+        plaatsingen.push(rij);       // zo matcht een tweede rij van dezelfde persoon niet opnieuw
+      }
+      aangemaakt.push(rij);
+      continue;
+    }
+    if (pl.note !== AUTO_NOTE) continue;                          // met de hand gemaakt: niet aankomen
+    const velden: Record<string, unknown> = {};
+    if (p.klant && p.klant !== pl.klant) velden.klant = p.klant;
+    const weg = laatste && ![...p.weken].some((w) => recent3.has(w)) && weken.length >= 3;
+    if (weg && !pl.gestopt_op) velden.gestopt_op = p.laatsteDag;
+    if (!weg && pl.gestopt_op) velden.gestopt_op = null;
+    if (!Object.keys(velden).length) continue;
+    if (!droog) await service.from("fin_flex_plaatsingen").update(velden).eq("id", pl.id);
+    bijgewerkt.push({ kandidaat: pl.kandidaat, ...velden });
+  }
+  return { aangemaakt, bijgewerkt };
 }
 
 // -- Weektotalen opnieuw uit de regels halen --------------------
