@@ -134,3 +134,24 @@ doe je één keer:
 # regnr aan een plaatsing hangen; daarna matcht elke volgende factuur vanzelf
 curl … -d '{"koppel":{"regnr":"7653911","plaatsing_id":12}}'
 ```
+
+## Stekkerdoos leidend (16 nov 2026)
+
+Het marge-overzicht uit Pronkerts portaal (mail van `noreply@uitzendstekkerdoos.nl`,
+link `app.uitzendstekkerdoos.nl/marge/<token>`) is nu de leidende bron. De PDF blijft
+als controle en levert uurloon + inkoopfactor.
+
+**Eenmalig deployen** (er is geen deploy-script):
+Supabase-dashboard → Edge Functions → `dynamic-worker` → de hele inhoud vervangen door
+`supabase/functions/pronkert-marge/index.ts` → Deploy. Daarna geeft
+`pronkert.sh stand` `"versie":"2026-11-16"` terug. Zolang dat er niet staat weigert
+`pronkert.sh stekkerdoos` in te boeken (een oude functie zou elke week dubbel tellen).
+
+Daarna eenmalig: `pronkert.sh stekkerdoos-droog <link>` (laat zien wat verandert,
+o.a. week 43/44: €2.600,23 → €2.230,63 en €1.646,32 → €2.015,92) en dan
+`pronkert.sh stekkerdoos <link>`.
+
+Nieuwe commando's: `stekkerdoos <link>`, `stekkerdoos-droog <link>`, `prognose`.
+Het maanddoel zet Tjeerd in Finance → Flex → "Flexmarge naar je doel" (fin_settings
+`flex_doel_pm`). De prognose staat twee keer in de code, in `js/finance.js`
+(flexDoelPrognose) en `routines/stekkerdoos.py` — houd ze gelijk.

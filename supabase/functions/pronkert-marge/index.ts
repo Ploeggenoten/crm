@@ -22,6 +22,8 @@
 //   POST { regels:[...] }                     -> al elders gelezen regels opslaan
 //   POST { stand:true }                     -> huidige weken + krachten teruglezen
 //   POST { koppel:{regnr, plaatsing_id} }   -> onbekende flexkracht vastzetten
+//   POST { stekkerdoos:true, regels:[...], droog? } -> Stekkerdoos-overzicht
+//        inboeken: vervangt de geraakte weken helemaal (zie importStekkerdoos)
 // De cron-routine stuurt header x-cron-key: CRON_SECRET; het CRM stuurt het
 // bearer-token van de ingelogde eigenaar.
 // ===============================================================
@@ -337,14 +339,24 @@ Deno.serve(async (req) => {
   // -- Stand teruglezen (voor de routine-samenvatting) ----------
   if (body.stand) {
     const { data: weken } = await service.from("fin_flex_weken").select("*").order("week", { ascending: false }).limit(20);
-    const { data: krachten } = await service.from("fin_flex_week_kracht").select("*").order("week", { ascending: false }).limit(120);
+    const { data: krachten } = await service.from("fin_flex_week_kracht").select("*").order("week", { ascending: false }).limit(400);
     const { data: facturen } = await service.from("fin_flex_regels").select("factuur").limit(5000);
+    // Voor de prognose in de weekroutine: wie er loopt (start, gestopt) en
+    // het maanddoel dat Tjeerd in Finance -> Flex invult.
+    const { data: plaatsingen } = await service.from("fin_flex_plaatsingen").select("*");
+    const { data: doel } = await service.from("fin_settings").select("value").eq("key", "flex_doel_pm").limit(1);
     return new Response(
       JSON.stringify({
         ok: true,
+        // Aan deze versie ziet pronkert.sh dat de stekkerdoos-modus bestaat.
+        // Een oudere functie zou dezelfde aanroep als gewone regels opslaan
+        // en de week dubbel tellen - dus zonder versie: niet insturen.
+        versie: STEKKERDOOS_VERSIE,
         weken: weken ?? [],
         krachten: krachten ?? [],
         facturen: [...new Set((facturen ?? []).map((r) => String(r.factuur)))],
+        plaatsingen: plaatsingen ?? [],
+        doel_pm: doel?.length ? Number(doel[0].value) || null : null,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -378,6 +390,11 @@ Deno.serve(async (req) => {
 
   if (!Array.isArray(regels) || !regels.length) {
     return new Response(JSON.stringify({ error: "geen regels meegestuurd" }), { status: 400 });
+  }
+
+  if (body.stekkerdoos) {
+    return new Response(JSON.stringify(await importStekkerdoos(service, regels, !!body.droog)),
+      { headers: { "Content-Type": "application/json" } });
   }
 
   const facturen = [...new Set(regels.map((r) => String(r.factuur ?? "")).filter(Boolean))];
@@ -414,7 +431,38 @@ Deno.serve(async (req) => {
     ids.has(String(r.factuur ?? "")) || ids.has(String(r.deelfactuur ?? ""));
 
   const { data: bestaand } = await service.from("fin_flex_regels")
-    .select("factuur,deelfactuur,week,marge").in("week", weekLijst);
+    .select("factuur,deelfactuur,week,marge,bron,naam,roepnaam").in("week", weekLijst);
+
+  // STEKKERDOOS IS LEIDEND (Tjeerd, 16 nov 2026). Staat een flexkracht in een
+  // week al via Stekkerdoos in de tabel, dan boekt de PDF hem niet opnieuw:
+  // de nummers verschillen (PDF 273357 tegenover deelnummers 273165, 273224,
+  // ...), dus zonder deze toets telde hij dubbel. De PDF-bedragen komen
+  // terug als controle, zodat de routine een verschil nog wel ziet.
+  const sdSom = new Map<string, number>();
+  for (const r of bestaand ?? []) {
+    if (r.bron !== "stekkerdoos") continue;
+    const k = `${r.week}|${persoonSleutel(r)}`;
+    sdSom.set(k, (sdSom.get(k) ?? 0) + Number(r.marge || 0));
+  }
+  const controle: Record<string, unknown>[] = [];
+  if (sdSom.size && !body.verrijk) {
+    const pdfSom = new Map<string, number>();
+    regels = regels.filter((r) => {
+      const k = `${r.weekmaandag ?? r.week}|${persoonSleutel(r)}`;
+      if (!sdSom.has(k)) return true;
+      pdfSom.set(k, (pdfSom.get(k) ?? 0) + Number(r.marge || 0));
+      return false;
+    });
+    for (const [k, pdf] of pdfSom) {
+      const [week, persoon] = k.split("|");
+      const sd = rond(sdSom.get(k) ?? 0);
+      controle.push({ week, persoon, pdf: rond(pdf), stekkerdoos: sd, gelijk: Math.abs(rond(pdf) - sd) < 0.01 });
+    }
+    if (!regels.length) {
+      return new Response(JSON.stringify({ ok: true, al_via_stekkerdoos: true, facturen, controle }),
+        { headers: { "Content-Type": "application/json" } });
+    }
+  }
   // Andere facturen in dezelfde weken zijn geen fout meer, maar wel het melden
   // waard: zo blijft in de weekmelding zichtbaar dat een week uit meer dan een
   // factuur is opgebouwd.
@@ -449,10 +497,13 @@ Deno.serve(async (req) => {
   // `deelfactuur` en bij een Excel-import in allebei. Zo verdwijnt de oude
   // versie ook als dezelfde uren nu via de andere bron binnenkomen - dat is
   // precies het geval waarin week 30 anders dubbel zou tellen.
+  // Stekkerdoos-regels blijven altijd staan: die dragen het PDF-nummer in
+  // `factuur` mee, en zouden hier anders door hun eigen PDF worden weggegooid.
   const idLijst = [...ids];
-  await service.from("fin_flex_regels").delete().in("factuur", idLijst);
-  await service.from("fin_flex_regels").delete().in("deelfactuur", idLijst);
-  if (body.vervang) for (const f of andere) await service.from("fin_flex_regels").delete().eq("factuur", f);
+  const nietSd = "bron.is.null,bron.neq.stekkerdoos";
+  await service.from("fin_flex_regels").delete().in("factuur", idLijst).or(nietSd);
+  await service.from("fin_flex_regels").delete().in("deelfactuur", idLijst).or(nietSd);
+  if (body.vervang) for (const f of andere) await service.from("fin_flex_regels").delete().eq("factuur", f).or(nietSd);
 
   const rijen = regels.map((r) => ({
     factuur: String(r.factuur ?? ""), deelfactuur: String(r.deelfactuur ?? ""),
@@ -483,6 +534,7 @@ Deno.serve(async (req) => {
   return new Response(
     JSON.stringify({
       ok: true, facturen, regels: rijen.length, klant_uit_crm, weken, ...kracht,
+      ...(controle.length ? { controle } : {}),
       ...(andere.length
         ? { naast_deze_factuur: andere, naast_geboekt: naastTotaal,
             let_op: `Deze week${weekLijst.length > 1 ? "en bevatten" : " bevat"} ook regels van ` +
@@ -493,6 +545,141 @@ Deno.serve(async (req) => {
     { headers: { "Content-Type": "application/json" } },
   );
 });
+
+// -- Stekkerdoos-overzicht inboeken -----------------------------
+// Sinds 16 nov 2026 is het marge-overzicht van Pronkerts nieuwe portaal
+// (app.uitzendstekkerdoos.nl/marge/<token>/gegevens) de leidende bron: per dag,
+// per looncomponent, met de klant erbij, en per week tot op de cent gelijk aan
+// de facturen. Het maakte ook een leesfout van de PDF-lezer zichtbaar (wk 43/44:
+// Ricks regels van factuur 272988 stonden bij Alain).
+//
+// De routine stuurt telkens het HELE overzicht (alle weken van het jaar). Per
+// geraakte week gaat alles eruit en komt het overzicht ervoor in de plaats -
+// een tweede keer insturen verandert dus niets, en een correctie van Pronkert
+// op een oude week komt vanzelf mee.
+//
+// Wat het overzicht NIET heeft, nemen we over uit wat er al stond:
+//   - uurloon en inkoopfactor (alleen op de PDF): nodig voor de factoranalyse
+//     en de controle tegen de klantafspraak. Eerst dezelfde week + persoon +
+//     uursoort, anders de laatst bekende van die persoon voor die uursoort.
+//   - regnr (koppelt aan de plaatsing) en het PDF-factuurnummer. Dat laatste
+//     komt in `factuur`, het deelnummer van Stekkerdoos in `deelfactuur`; zo
+//     herkent de routine de PDF als verwerkt en boekt hij hem niet nog eens.
+// De klant komt uit de plaatsing (CRM-spelling leidend); alleen wie geen
+// plaatsing heeft krijgt de naam van een collega bij dezelfde klant, en
+// anders de spelling van Pronkert.
+const STEKKERDOOS_VERSIE = "2026-11-16";
+
+async function importStekkerdoos(
+  service: ReturnType<typeof createClient>,
+  regels: Record<string, unknown>[],
+  droog: boolean,
+) {
+  const weekLijst = [...new Set(regels.map((r) => String(r.weekmaandag ?? "")).filter(Boolean))];
+  if (!weekLijst.length || regels.some((r) => !r.weekmaandag || !r.naam)) {
+    return { ok: false, error: "regels zonder weekmaandag of naam" };
+  }
+
+  const alle: Record<string, unknown>[] = [];
+  for (let van = 0; ; van += 1000) {   // PostgREST geeft per keer max 1000 rijen
+    const { data } = await service.from("fin_flex_regels")
+      .select("week,naam,roepnaam,regnr,soort,uurloon,factor,factuur,bron,marge,uren")
+      .order("id").range(van, van + 999);
+    alle.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const { data: plaatsingen } = await service.from("fin_flex_plaatsingen").select("id,kandidaat,klant,regnr");
+
+  const soortVan = (r: Record<string, unknown>) => String(r.soort ?? "").trim().toLowerCase();
+  const wps = new Map<string, Record<string, unknown>>();          // week|persoon|soort
+  const ps = new Map<string, Record<string, unknown>>();           // persoon|soort, laatste week
+  const preg = new Map<string, string>();                          // persoon -> regnr
+  const pfac = new Map<string, string>();                          // week|persoon -> PDF-nummer
+  for (const r of alle) {
+    const p = persoonSleutel(r), wk = String(r.week);
+    if (r.uurloon != null || r.factor != null) {
+      wps.set(`${wk}|${p}|${soortVan(r)}`, r);
+      const oud = ps.get(`${p}|${soortVan(r)}`);
+      if (!oud || String(oud.week) <= wk) ps.set(`${p}|${soortVan(r)}`, r);
+    }
+    if (r.regnr) preg.set(p, String(r.regnr));
+    if (r.factuur && !pfac.has(`${wk}|${p}`)) pfac.set(`${wk}|${p}`, String(r.factuur));
+  }
+
+  // Pronkert-klantnaam -> CRM-klantnaam, geleerd van wie wel een plaatsing heeft.
+  const klantMap = new Map<string, string>();
+  const rijen = regels.map((r) => {
+    const p = persoonSleutel(r), wk = String(r.weekmaandag);
+    const regnr = String(r.regnr || preg.get(p) || "");
+    const pl = zoekPlaatsing(plaatsingen ?? [], { regnr, roepnaam: r.roepnaam });
+    const klantPl = String(pl?.klant ?? "").trim();
+    if (klantPl && r.klant_bron) klantMap.set(String(r.klant_bron), klantPl);
+    const bron = wps.get(`${wk}|${p}|${soortVan(r)}`) ?? ps.get(`${p}|${soortVan(r)}`);
+    return {
+      factuur: pfac.get(`${wk}|${p}`) ?? String(r.deelfactuur ?? ""),
+      deelfactuur: String(r.deelfactuur ?? ""),
+      factuurdatum: r.factuurdatum || null,
+      week: wk, weeknr: r.week ?? null, jaar: r.jaar ?? null, datum: r.datum || null,
+      regnr, naam: String(r.naam ?? ""), roepnaam: String(r.roepnaam ?? ""),
+      functie: String(r.functie ?? ""), klant: klantPl, _klant_bron: String(r.klant_bron ?? ""),
+      soort: String(r.soort ?? ""),
+      uren: Number(r.uren) || 0, uren_regel: Number(r.uren_regel) || 0,
+      uurloon: bron?.uurloon ?? null, factor: bron?.factor ?? null, tarief: r.tarief ?? null,
+      klantbedrag: r.klantbedrag ?? null,
+      marge: Number(r.marge) || 0, bron: "stekkerdoos",
+    };
+  });
+  for (const r of rijen) {
+    if (!r.klant) r.klant = klantMap.get(r._klant_bron) ?? r._klant_bron;
+  }
+
+  // Vergelijking met wat er stond: per week en per flexkracht.
+  const som = (lijst: Record<string, unknown>[], sleutel: (r: Record<string, unknown>) => string) => {
+    const m = new Map<string, { marge: number; uren: number }>();
+    for (const r of lijst) {
+      const k = sleutel(r), x = m.get(k) ?? { marge: 0, uren: 0 };
+      x.marge += Number(r.marge || 0); x.uren += Number(r.uren || 0); m.set(k, x);
+    }
+    return m;
+  };
+  const oud = alle.filter((r) => weekLijst.includes(String(r.week)));
+  const wkOud = som(oud, (r) => String(r.week)), wkNieuw = som(rijen, (r) => String(r.week));
+  const pOud = som(oud, (r) => `${r.week}|${r.naam} (${r.roepnaam})`);
+  const pNieuw = som(rijen, (r) => `${r.week}|${r.naam} (${r.roepnaam})`);
+  const weken = weekLijst.sort().map((w) => ({
+    week: w, was: rond(wkOud.get(w)?.marge ?? 0), wordt: rond(wkNieuw.get(w)?.marge ?? 0),
+  })).map((x) => ({ ...x, gelijk: Math.abs(x.was - x.wordt) < 0.01 }));
+  const personen = [...new Set([...pOud.keys(), ...pNieuw.keys()])].sort().map((k) => {
+    const [week, persoon] = k.split("|");
+    const a = pOud.get(k), b = pNieuw.get(k);
+    return { week, persoon, was: rond(a?.marge ?? 0), wordt: rond(b?.marge ?? 0),
+      uren_was: rond(a?.uren ?? 0), uren_wordt: rond(b?.uren ?? 0) };
+  }).filter((x) => Math.abs(x.was - x.wordt) >= 0.01 || Math.abs(x.uren_was - x.uren_wordt) >= 0.05);
+  const zonderFactor = [...new Set(rijen.filter((r) => isGewerkt(r.soort) && r.uren && r.uurloon == null)
+    .map((r) => `${r.naam} (${r.roepnaam})`))];
+
+  const verslag = { weken: weken.filter((w) => !w.gelijk), personen, zonder_uurloon: zonderFactor,
+    aantal_weken: weekLijst.length, aantal_regels: rijen.length,
+    totaal: rond(rijen.reduce((s, r) => s + r.marge, 0)) };
+  if (droog) return { ok: true, droog: true, ...verslag };
+
+  // Eerst alles van deze weken weg, dan het overzicht erin.
+  for (let i = 0; i < weekLijst.length; i += 50) {
+    const { error } = await service.from("fin_flex_regels").delete().in("week", weekLijst.slice(i, i + 50));
+    if (error) return { ok: false, error: "verwijderen mislukt: " + error.message };
+  }
+  const schoon = rijen.map(({ _klant_bron, ...r }) => r);
+  for (let i = 0; i < schoon.length; i += 500) {
+    const { error } = await service.from("fin_flex_regels").insert(schoon.slice(i, i + 500));
+    if (error) {
+      return { ok: false, error: "opslaan mislukt na verwijderen: " + error.message +
+        " - stuur het overzicht direct opnieuw in, dan staat alles weer goed" };
+    }
+  }
+  const herrekend = await herberekenWeken(service, weekLijst);
+  const kracht = await herberekenKrachten(service);
+  return { ok: true, ...verslag, herrekend, ...kracht };
+}
 
 // -- Weektotalen opnieuw uit de regels halen --------------------
 async function herberekenWeken(service: ReturnType<typeof createClient>, weken: string[]) {
@@ -519,8 +706,16 @@ async function herberekenWeken(service: ReturnType<typeof createClient>, weken: 
 // Afgeleid uit alle regels, dus nooit dubbel geteld. Wie niet te koppelen is,
 // komt terug als 'onbekend' - die slaan we niet stilzwijgend over.
 async function herberekenKrachten(service: ReturnType<typeof createClient>) {
-  const { data: regels } = await service.from("fin_flex_regels")
-    .select("regnr,naam,roepnaam,functie,klant,uren,marge,week,soort,uurloon,tarief,factor");
+  // Per 1000: PostgREST kapt een select daar af, en sinds Stekkerdoos (een
+  // regel per dag in plaats van per week) zijn het er al gauw meer.
+  const regels: Record<string, unknown>[] = [];
+  for (let van = 0; ; van += 1000) {
+    const { data } = await service.from("fin_flex_regels")
+      .select("regnr,naam,roepnaam,functie,klant,uren,marge,week,soort,uurloon,tarief,factor")
+      .order("id").range(van, van + 999);
+    regels.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
   const { data: plaatsingen } = await service.from("fin_flex_plaatsingen")
     .select("id,kandidaat,klant,regnr");
 

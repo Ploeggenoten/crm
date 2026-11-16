@@ -193,6 +193,22 @@ async function veiligQ(tabel, orderCol, asc=true){
   }catch(e){ _mist.push(tabel); if(!_finFout) _finFout = e; return null; }
 }
 
+/* Zoals veiligQ, maar per 1000 rijen: PostgREST kapt een select daar af.
+   Nodig voor fin_flex_regels sinds Stekkerdoos een regel per dag levert
+   (16 nov 2026) — zonder dit vielen de nieuwste weken stilletjes weg. */
+async function veiligQAlles(tabel, orderCol){
+  const uit = [];
+  try{
+    for(let van = 0; ; van += 1000){
+      const r = await CRM.sb.from(tabel).select('*').order(orderCol, {ascending:true}).order('id', {ascending:true})
+        .range(van, van + 999);
+      if(r.error){ _mist.push(tabel); if(!_finFout) _finFout = r.error; return null; }
+      uit.push(...(r.data || []));
+      if(!r.data || r.data.length < 1000) return uit;
+    }
+  }catch(e){ _mist.push(tabel); if(!_finFout) _finFout = e; return null; }
+}
+
 async function finLaad(force=false){
   /* Interne testhaak: zet in de console `CRM._finMock = {placements:[…],…}`
      en roep CRM.render() aan om de renderpaden zonder echte data te testen. */
@@ -214,7 +230,7 @@ async function finLaad(force=false){
     veiligQ('fin_dismissed_candidates'),
     /* Regels van de Pronkert-margefacturen. Bestaat de tabel nog niet (migratie
        niet gedraaid), dan geeft veiligQ null terug en werkt de rest gewoon door. */
-    veiligQ('fin_flex_regels','week')
+    veiligQAlles('fin_flex_regels','week')
   ]);
   /* Alle kerntabellen geblokkeerd (RLS) of onbereikbaar → helemaal geen data. */
   if(pl===null && inst===null && sal===null){ _fin = null; return _fin; }
@@ -3593,6 +3609,124 @@ function facturatieLijst(el, f, herteken){
   el.querySelectorAll('tr[data-pid]').forEach(tr => tr.onclick = () => plPaneel(f, tr.dataset.pid, herteken));
 }
 
+/* ─── Flexmarge naar het maanddoel ───────────────────────────────
+   Tjeerd, 16 nov 2026: "weten wat er aan zit te komen, en waar we naartoe
+   moeten, zodat we telkens kunnen bijstellen". Per maand (deze + twee
+   volgende): wat al geboekt is, wat de lopende flexkrachten nog opleveren,
+   wie er nieuw bij komt, en het gat naar het doel.
+   Rekenregel (zijn keuze): per flexkracht het gemiddelde van de laatste 4
+   gefactureerde weken, doorgetrokken tot de plaatsing stopt; nieuwe
+   plaatsingen vanaf hun startdatum. Een week hoort bij de maand van zijn
+   maandag, zoals flexInMaand. Geen feestdagen: grof, maar elke week opnieuw.
+   De weekroutine rekent hetzelfde in routines/stekkerdoos.py — pas je hier
+   iets aan, pas het daar ook aan, anders zegt de melding iets anders dan
+   dit scherm. Werkweken, niet de betaaldatum: dát is de kasstroom.      */
+const FLEX_DOEL_KEY = 'flex_doel_pm';
+function flexDoelPrognose(f){
+  const regels = f.flexRegels || [];
+  if(!regels.length) return null;
+  const per = new Map();
+  let laatste = '';
+  for(const r of regels){
+    const wk = String(r.week || '').slice(0,10); if(!wk) continue;
+    if(wk > laatste) laatste = wk;
+    const sl = tekst(r.naam,'') + '|' + tekst(r.roepnaam,'');
+    const p = per.get(sl) || {naam: tekst(r.roepnaam,'') || tekst(r.naam,''), roep: r.roepnaam || r.naam,
+      klant: tekst(r.klant,''), weken: new Map(), eerste: wk};
+    p.weken.set(wk, (p.weken.get(wk) || 0) + getal(r.marge));
+    if(wk < p.eerste) p.eerste = wk;
+    if(!p.klant && tekst(r.klant,'')) p.klant = tekst(r.klant,'');
+    per.set(sl, p);
+  }
+  const vier = [0,1,2,3].map(i => addDays(laatste, -7*i));
+  const pl = f.flexPl || [];
+  const plVan = roep => { const w = flexWoorden(roep)[0];
+    const h = w ? pl.filter(x => flexWoorden(x.kandidaat).includes(w)) : [];
+    return h.length === 1 ? h[0] : null; };
+  const lopers = [];
+  for(const p of per.values()){
+    const x = plVan(p.roep);
+    if(!p.weken.get(vier[0]) && !(p.weken.get(vier[1]) && x && !x.gestopt_op)) continue;
+    const n = vier.filter(w => w >= p.eerste).length || 1;
+    const gem = vier.reduce((s,w) => s + (p.weken.get(w) || 0), 0) / n;
+    const stop = x && x.gestopt_op ? String(x.gestopt_op).slice(0,10) : null;
+    if(stop && stop <= addDays(laatste, 6)) continue;
+    lopers.push({naam: p.naam, klant: p.klant, perWeek: gem, stop, nieuw: false, start: null});
+  }
+  const bekend = new Set([...per.values()].map(p => flexWoorden(p.roep)[0]));
+  for(const x of pl){
+    const start = String(x.start || '').slice(0,10);
+    if(x.gestopt_op || x.concept || !start || start <= laatste) continue;
+    if(bekend.has(flexWoorden(x.kandidaat)[0])) continue;
+    const kf = getalOfNull(x.klantfactor), ik = getalOfNull(x.inkoop_factor), ul = getalOfNull(x.uurloon);
+    const pw = (kf && ik && ul) ? (kf - ik) * ul * (getal(x.uren_pw) || 40) : null;
+    lopers.push({naam: tekst(x.kandidaat), klant: tekst(x.klant,''), perWeek: pw, stop: null, nieuw: true, start});
+  }
+  const m0 = todayISO().slice(0,7) + '-01';
+  const maanden = [0,1,2].map(i => String(addMonths(m0, i)).slice(0,10));
+  const eindHorizon = String(addMonths(m0, 3)).slice(0,10);
+  const doel = Sn(f, FLEX_DOEL_KEY, 0) || null;
+  const rijen = maanden.map(mk => {
+    let verwacht = 0, nieuw = 0;
+    for(let wk = addDays(laatste, 7); wk <= eindHorizon; wk = addDays(wk, 7)){
+      if(wk.slice(0,7) !== mk.slice(0,7)) continue;
+      for(const l of lopers){
+        if(!l.perWeek) continue;
+        if(l.stop && wk >= l.stop) continue;
+        if(l.start && addDays(wk, 6) < l.start) continue;
+        if(l.nieuw) nieuw += l.perWeek; else verwacht += l.perWeek;
+      }
+    }
+    const geboekt = flexInMaand(f, mk);
+    const totaal = geboekt + verwacht + nieuw;
+    return {mk, geboekt, verwacht, nieuw, totaal, doel, gat: doel ? doel - totaal : null};
+  });
+  const lopend = lopers.filter(l => !l.nieuw && l.perWeek);
+  const perKrachtMaand = lopend.length ? lopend.reduce((s,l) => s + l.perWeek, 0) / lopend.length * 52/12 : null;
+  return {laatste, lopers, rijen, doel, perKrachtMaand};
+}
+
+function flexDoelKaart(f){
+  const pg = flexDoelPrognose(f);
+  const knop = `<button class="btn ghost sm" id="fin_flexdoel">${Sn(f, FLEX_DOEL_KEY, 0) ? 'Doel aanpassen' : 'Doel instellen'}</button>`;
+  if(!pg) return '';
+  const rij = r => {
+    const gat = r.gat == null ? '<span class="meta">—</span>'
+      : r.gat <= 0 ? '<span class="num pos">gehaald</span>'
+      : `<span class="num neg">−${eur(r.gat)}</span>${pg.perKrachtMaand ? `<div class="rowsub">≈ ${num(r.gat / pg.perKrachtMaand, 1)} flexkracht extra</div>` : ''}`;
+    return `<tr><td><b>${H(mkLabel(r.mk))}</b></td>
+      <td class="n num">${eur(r.geboekt)}</td>
+      <td class="n num">${eur(r.verwacht)}${r.nieuw ? `<div class="rowsub">+ ${eur(r.nieuw)} nieuw</div>` : ''}</td>
+      <td class="n"><b class="num">${eur(r.totaal)}</b></td>
+      <td class="n num">${r.doel ? eur(r.doel) : '<span class="meta">—</span>'}</td>
+      <td class="n">${gat}</td></tr>`;
+  };
+  const zonder = pg.lopers.filter(l => l.nieuw && !l.perWeek).map(l => l.naam);
+  return kaart('Flexmarge naar je doel',
+    tabel('<th>Maand</th><th class="n">Geboekt</th><th class="n">Verwacht</th><th class="n">Totaal</th><th class="n">Doel</th><th class="n">Nog te gaan</th>',
+      pg.rijen.map(rij).join('')),
+    {plat: true, acties: knop,
+     voet: `Verwacht = per lopende flexkracht het gemiddelde van de laatste 4 gefactureerde weken (t/m week van ${dKort(pg.laatste)}), tot de plaatsing stopt; nieuw = getekend, nog niet gestart. Werkweken, geen feestdagen.`
+       + (zonder.length ? ` Telt niet mee (uurloon of factor ontbreekt): ${zonder.join(', ')}.` : '')});
+}
+
+async function flexDoelZetten(f, klaar){
+  if(!CRM.canSeeMoney()) return;
+  const nu = Sn(f, FLEX_DOEL_KEY, 0);
+  const in_ = await CRM.vraag('Maanddoel flexmarge', {hint: 'Hoeveel flexmarge per maand wil je halen (excl. btw)? Leeg = geen doel.',
+    waarde: nu ? String(Math.round(nu)) : '', placeholder: 'bijv. 20000', knop: 'Vastleggen'});
+  if(in_ === null && !nu) return;
+  const n = in_ === null ? 0 : Math.round(getal(String(in_).replace(/[€\s.]/g, '').replace(',', '.'), 0));
+  if(in_ !== null && !(n > 0)) return CRM.toast('Geen geldig bedrag', 'err');
+  if(CRM.demo){ CRM.toast('Demo-modus — het doel wordt niet opgeslagen','err'); return; }
+  const {error} = await CRM.sb.from('fin_settings').upsert([{key: FLEX_DOEL_KEY, value: n || null}], {onConflict:'key'});
+  if(error) return CRM.fout('Doel opslaan mislukt', error);
+  f.settings = f.settings || {}; f.settings[FLEX_DOEL_KEY] = n || null;
+  if(_fin && _fin !== f){ _fin.settings = _fin.settings || {}; _fin.settings[FLEX_DOEL_KEY] = n || null; }
+  CRM.toast(n ? `Maanddoel flex ${eur(n)} vastgelegd` : 'Maanddoel flex gewist', 'ok');
+  if(klaar) klaar();
+}
+
 /* ═══ TAB: FLEX ════════════════════════════════════════════════
    Wat levert flex op, wie loopt er, en wanneer mag de klant iemand
    kosteloos overnemen. De tariefopbouw-analyse en de staafgrafiek zijn
@@ -3669,6 +3803,7 @@ function tabFlex(el, f, compact){
       ${bijnaOver.map(r => `${H(tekst(r.f.kandidaat))} bij ${H(klantLabel(r.f.klant))} (nog ${Math.round(r.resterendUren)} u)`).join(' · ')}.
       Nu is het moment voor een vervolgafspraak.</div>` : ''}
     <div class="stack">
+      ${compact ? '' : flexDoelKaart(f)}
       ${(() => { const los = factuurZonderPortefeuille(f, pf); const afw = pf.map(r => ({...r, afwijking: factorAfwijking(f, r)})).filter(r => r.afwijking.length);
         if(!los.length && !afw.length) return '';
         return kaart('Controle tegen de margefacturen',
@@ -3698,6 +3833,8 @@ function tabFlex(el, f, compact){
     </div>`;
 
   el.querySelectorAll('#fin_marge_in').forEach(b => b.onclick = () => openMargeImport(f));
+  const dl = el.querySelector('#fin_flexdoel');
+  if(dl) dl.onclick = () => flexDoelZetten(f, () => tabFlex(el, f, compact));
   const ov = el.querySelector('#fin_overname_vast');
   if(ov) ov.onclick = () => finDoe(ov, () => overnameBewaren(f, Object.assign({}, OVERNAME_TJEERD)),
     'Overname-uren per klant vastgelegd', ok => ok && tabFlex(el, f, compact));

@@ -74,6 +74,40 @@ if not uit:
 print(json.dumps({"regels": uit, "verrijk": True}))
 ' "$1"; }
 
+HIER="$(cd "$(dirname "$0")" && pwd)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Body via een bestand: het Stekkerdoos-overzicht is al gauw 100 kB, te groot
+# om veilig als argument mee te geven.
+post(){ printf '%s' "$1" > "$TMP/body.json"; post_bestand "$TMP/body.json"; }
+post_bestand(){ curl -sS -X POST "$FUNCTIE" \
+  -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" -H "apikey: ${SUPABASE_ANON_KEY}" \
+  -H "x-cron-key: ${CRON_SECRET}" -H "Content-Type: application/json" \
+  -w '\nHTTP:%{http_code}\n' --data-binary @"$1"; }
+
+# Stekkerdoos-overzicht inboeken (leidend sinds 16 nov 2026, zie stekkerdoos.py).
+# <link> is de knop uit de mail van noreply@uitzendstekkerdoos.nl; we halen
+# <link>/gegevens op. Alleen dat ene domein: een link uit een mail die ergens
+# anders heen wijst halen we niet op. Een lokaal .json-bestand mag ook (test).
+stekkerdoos(){
+  local bron="$2"
+  if [[ "$bron" =~ ^https://app\.uitzendstekkerdoos\.nl/marge/[A-Za-z0-9_-]+/?$ ]]; then
+    curl -sS -f -o "$TMP/gegevens.json" "${bron%/}/gegevens" \
+      || { echo "FOUT: Stekkerdoos-link geeft geen gegevens (verlopen? token ±12 weken geldig)" >&2; exit 6; }
+  elif [ -f "$bron" ]; then cp "$bron" "$TMP/gegevens.json"
+  else echo "FOUT: geef de link uit de Stekkerdoos-mail (https://app.uitzendstekkerdoos.nl/marge/...)" >&2; exit 4
+  fi
+  # Een oudere functie kent de stekkerdoos-modus niet en zou de regels als
+  # gewone factuur opslaan: dan telt elke week dubbel. Dus eerst de versie.
+  post '{"stand":true}' > "$TMP/stand.json"
+  grep -q '"versie":"2026-11-16' "$TMP/stand.json" \
+    || { echo "FOUT: de Edge Function is nog niet bijgewerkt (geen stekkerdoos-versie) - eerst deployen, zie SETUP-PRONKERT.md" >&2; exit 7; }
+  python3 "$HIER/stekkerdoos.py" regels "$TMP/gegevens.json" > "$TMP/regels.json" || exit 5
+  if [ "$1" = "stekkerdoos-droog" ]; then
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["droog"]=True; json.dump(d,open(sys.argv[1],"w"))' "$TMP/regels.json"
+  fi
+  post_bestand "$TMP/regels.json"
+}
+
 case "${1:-}" in
   stand)   BODY='{"stand":true}' ;;
   lees)    [ -f "${2:-}" ] || { echo "FOUT: bestand niet gevonden: ${2:-<geen>}" >&2; exit 4; }
@@ -85,7 +119,10 @@ case "${1:-}" in
   klanten) [ -f "${2:-}" ] || { echo "FOUT: bestand niet gevonden: ${2:-<geen>}" >&2; exit 4; }
            BODY="$(pak_klanten "$2")" ;;
   klantsync) BODY='{"klant_uit_crm":true}' ;;
-  *) echo "Gebruik: pronkert.sh stand | lees <txt> | opslaan <txt> | regels <json> | klanten <tsv> | klantsync" >&2; exit 1 ;;
+  stekkerdoos|stekkerdoos-droog) stekkerdoos "$1" "${2:-}"; exit $? ;;
+  prognose) post '{"stand":true}' > "$TMP/stand.json"
+            python3 "$HIER/stekkerdoos.py" prognose "$TMP/stand.json"; exit $? ;;
+  *) echo "Gebruik: pronkert.sh stand | lees <txt> | opslaan <txt> | regels <json> | klanten <tsv> | klantsync | stekkerdoos <link> | stekkerdoos-droog <link> | prognose" >&2; exit 1 ;;
 esac
 
 curl -sS -X POST "$FUNCTIE" \
