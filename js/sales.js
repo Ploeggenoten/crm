@@ -1532,9 +1532,10 @@ function radarRijen(zelf, oordeel = radarOordeel()){
 }
 
 const BRON_LBL = {adzuna:'Adzuna', 'claude-research':'Claude-research', handmatig:'Handmatig',
-                  osm:'OpenStreetMap', website:'Website', linkedin:'LinkedIn'};
+                  osm:'OpenStreetMap', website:'Website', linkedin:'LinkedIn',
+                  'richard-raad':'Richard Raad'};
 const bronChip = b => {
-  const kleur = b==='claude-research' ? ' purple' : ZELF_BRONNEN.includes(b) ? ' blue' : '';
+  const kleur = b==='claude-research' ? ' purple' : b==='richard-raad' ? ' green' : ZELF_BRONNEN.includes(b) ? ' blue' : '';
   return `<span class="chip${kleur}">${h(BRON_LBL[b]||b||'—')}</span>`;
 };
 

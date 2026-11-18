@@ -1,17 +1,17 @@
-// ═══════════════════════════════════════════════════════════════
-// LEAD-RADAR — dagelijkse zoektocht naar bedrijven die nu
-// blue-collar personeel werven (potentiële klanten voor Ploeggenoten).
+// ???????????????????????????????????????????????????????????????
+// LEAD-RADAR - dagelijkse zoektocht naar bedrijven die nu
+// blue-collar personeel werven (potentiele klanten voor Ploeggenoten).
 //
 // Bron: Adzuna API (gratis, dekt NL, aggregeert o.a. bedrijfssites en
 // grote vacaturebanken). Secrets: ADZUNA_APP_ID + ADZUNA_APP_KEY
-// (registreren op developer.adzuna.com — zie SETUP-LEADRADAR.md).
+// (registreren op developer.adzuna.com - zie SETUP-LEADRADAR.md).
 //
 // Werking: zoekt per doelquery de nieuwste vacatures (max 7 dgn oud),
 // groepeert op bedrijf, filtert uitzenders/concullega's en bestaande
 // klanten eruit, en upsert het resultaat in crm_leadradar.
 // Aanroepen: door pg_cron met header x-cron-key = CRON_SECRET, of
 // handmatig door een ingelogde teamgebruiker (Authorization: Bearer).
-// ═══════════════════════════════════════════════════════════════
+// ???????????????????????????????????????????????????????????????
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const QUERIES = [
@@ -26,18 +26,18 @@ const QUERIES = [
   "vorkheftruckchauffeur", "voorman productie", "medewerker magazijn"
 ];
 
-// ─── Werkgebied ──────────────────────────────────────────────────
+// ??? Werkgebied ??????????????????????????????????????????????????
 // Tot 11 aug 2026 zocht deze functie heel Nederland af. Daardoor stroomde de
-// radar vol met bedrijven in Zierikzee, Warmenhuizen en Ravenstein — buiten
+// radar vol met bedrijven in Zierikzee, Warmenhuizen en Ravenstein - buiten
 // het werkgebied, dus geen belwerk. Adzuna kan zelf op straal filteren, en dat
 // kost geen extra aanroepen: het scheelt alleen maar ruis.
 // De 40 km is dezelfde harde grens die de ochtendroutine aanhoudt (7 aug 2026).
 const WERKGEBIED = "Alphen aan den Rijn";
-// Oplopende stralen. 40 km blijft het werkgebied — daar wonen de kandidaten en
+// Oplopende stralen. 40 km blijft het werkgebied - daar wonen de kandidaten en
 // daar hoort het belwerk. Maar een dag met nauwelijks vondsten is een lege
 // belijst, en dan is een bedrijf op 70 km alsnog beter dan niets. Hij verruimt
 // dus alleen als het dagdoel niet gehaald wordt, en stopt zodra dat wel zo is.
-// (Tjeerd, 11 aug 2026 — verzacht daarmee de harde 40 km-grens van 7 aug.)
+// (Tjeerd, 11 aug 2026 - verzacht daarmee de harde 40 km-grens van 7 aug.)
 // 12 aug 2026 (Tjeerd): "doe maar 60 km range". 40 km was te krap om er 30
 // bruikbare leads per dag uit te halen; 60 km haalt het hele Rotterdamse
 // havengebied binnen (Botlek 35, Europoort 38, Maasvlakte 46) plus Moerdijk,
@@ -48,27 +48,27 @@ const STRAAL_KM = STRALEN[0];        // het werkgebied zelf, voor de meldingen
 const DOEL_PER_RUN = 30;             // leads per run: nieuw + opnieuw wervend
 
 // Buiten het werkgebied zoeken kost per straal opnieuw aanroepen. Achttien
-// termen × drie stralen past niet binnen de gratis tier, dus verder weg zoekt
+// termen x drie stralen past niet binnen de gratis tier, dus verder weg zoekt
 // hij alleen met de termen die het meeste opleveren.
 const KERN_QUERIES = [
   "productiemedewerker", "magazijnmedewerker", "orderpicker",
   "heftruckchauffeur", "logistiek medewerker", "operator productie"
 ];
 
-// ─── Aanroepbudget ───────────────────────────────────────────────
+// ??? Aanroepbudget ???????????????????????????????????????????????
 // De gratis Adzuna-tier is krap en de bronnen spreken elkaar tegen (250 per
 // dag volgens hun documentatie, circa 1.000 per maand volgens hun eigen
 // developerpagina). We rekenen op de strengste van de twee: 1.000 per maand is
 // ~33 per dag. 18 termen op 40 km kost 18 aanroepen; verruimen kost er per
 // straal 6 bij (de KERN-termen). Een dag die tot 100 km moet doorzoeken komt zo
 // op 30. Haalt hij het doel binnen 40 km, dan stopt hij bij 18 en blijft er
-// ruimte over voor de keren dat iemand in Sales op "Nu zoeken" drukt — die
+// ruimte over voor de keren dat iemand in Sales op "Nu zoeken" drukt - die
 // aanroepen tellen namelijk mee.
 const MAX_CALLS = 30;
 const PER_PAGE = 50;
 const MAX_PAGINAS = 3;
 
-// Uitzenders / detacheerders / platformen — geen leads, dat zijn wij zelf of
+// Uitzenders / detacheerders / platformen - geen leads, dat zijn wij zelf of
 // concurrenten. Twee lagen: (1) een concrete namenlijst, (2) een
 // patroon-filter AGENCY_RE dat het gros van de bureaunamen wegvangt.
 const UITSLUITEN = [
@@ -82,7 +82,7 @@ const UITSLUITEN = [
   "workx", "workflex", "adver-online", "adver online", "jobbird", "jobrepublic",
   "undutchables", "projob", "proned", "olympia uitzend", "vhb", "werktalent",
   "werk talent", "flexteam", "flexpedia", "personato", "peak", "peakz", "endeavour",
-  "salarisdienst", "carrière", "carriere uitzend", "dpa", "nl flex", "nlflex",
+  "salarisdienst", "carri\u00e8re", "carriere uitzend", "dpa", "nl flex", "nlflex",
   "flexforce", "match", "matchd", "flexibility", "please", "please payroll",
   "vialumina", "vialuminis", "goflex", "go flex", "seasons", "sync ",
   // platforms / vacaturebanken
@@ -105,7 +105,7 @@ const UITSLUITEN = [
 
 // Naampatronen die vrijwel altijd op een bureau/bemiddelaar wijzen.
 // Fragmenten (geen woordgrens) omdat NL-bureaunamen vaak samengesteld zijn
-// (Perflexxion, Dujob, Apluspersoneel, NLwerkt, …).
+// (Perflexxion, Dujob, Apluspersoneel, NLwerkt, ...).
 // 12 aug 2026 uitgebreid: 'job\b' liet Jobforce door (geen woordgrens na job),
 // en search/selection/baan/banen/headhunt ontbraken helemaal. Let op dat
 // 'talent' hier NIET los mag staan: Watertalent en Luchttalent zijn juist
@@ -124,13 +124,13 @@ const telPlaatsen = (s: string) =>
 
 const norm = (s: string) => s.toLowerCase().replace(/\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
 
-// ─── CORS ────────────────────────────────────────────────────────
+// ??? CORS ????????????????????????????????????????????????????????
 // Zonder deze headers kan het CRM deze functie niet aanroepen. Een
-// cross-origin POST mét Authorization-header laat de browser voorafgaan door
+// cross-origin POST met Authorization-header laat de browser voorafgaan door
 // een OPTIONS-preflight, en die liep hier dood op een functie die alleen POST
 // kende. De fetch faalde dan met "Failed to fetch", en Sales toont bij precies
-// die fout "de zoekfunctie is nog niet gedeployed" — een misleidende melding,
-// want hij stond er wél. De nachtelijke cron merkte er niets van: die praat
+// die fout "de zoekfunctie is nog niet gedeployed" - een misleidende melding,
+// want hij stond er wel. De nachtelijke cron merkte er niets van: die praat
 // server-naar-server en kent geen preflight.
 // (Tjeerd, 11 aug 2026: "Nu zoeken" gaf dit terwijl de deploy geslaagd was.)
 const CORS: Record<string, string> = {
@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  // Toegang: cron-sleutel óf ingelogde teamgebruiker
+  // Toegang: cron-sleutel of ingelogde teamgebruiker
   if (cronKey !== Deno.env.get("CRON_SECRET")) {
     const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: auth } } });
@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
     if (!user) return antwoord({ error: "geen toegang" }, 403);
   }
 
-  // ── Extra modi voor de Claude-ochtendroutine ────────────────
+  // ?? Extra modi voor de Claude-ochtendroutine ????????????????
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch (_) { /* leeg is prima */ }
 
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
     return antwoord({ ok: true, rijen: data ?? [] });
   }
 
-  // Modus 'namen': alles waar de ochtendroutine tegen moet ontdubbelen, in één
+  // Modus 'namen': alles waar de ochtendroutine tegen moet ontdubbelen, in een
   // lichte respons. Niet alleen de radar: ook bestaande klanten en de
   // contactpersonen-bedrijven, zodat er nooit een belscript wordt geschreven
   // voor een relatie die Tjeerd al heeft. (12 aug 2026, op zijn verzoek)
@@ -198,13 +198,13 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Modus 'uitkomsten': wat er écht van de radarleads geworden is, zodat de
+  // Modus 'uitkomsten': wat er echt van de radarleads geworden is, zodat de
   // criticus in de ochtendroutine leert van Tjeerds keuzes en belresultaten
   // in plaats van van zijn eigen aannames (27 okt 2026). Per radarbedrijf dat
   // is opgepakt of genegeerd: de radarstatus en -notitie, de huidige fase in
   // de klantpijplijn, en de belletjes met hun uitkomst (extra.uitkomst, gezet
   // door het "Gebeld"-menu in js/salesmeter.js). Alleen namen, datums en
-  // uitkomsten — geen contactgegevens, die heeft de routine niet nodig.
+  // uitkomsten - geen contactgegevens, die heeft de routine niet nodig.
   if (body.uitkomsten) {
     const sinds = new Date(Date.now() - 120 * 864e5).toISOString();
     const [radar, klanten, acts] = await Promise.all([
@@ -277,7 +277,7 @@ Deno.serve(async (req) => {
     if (!rijen.length) return antwoord({ error: "geen contacten meegestuurd" }, 400);
     for (let i = 0; i < rijen.length; i += 500) {
       const { error } = await service.from("crm_telefoonboek").upsert(rijen.slice(i, i + 500), { onConflict: "eigenaar,bron_id" });
-      if (error) return antwoord({ error: "tabel crm_telefoonboek ontbreekt? draai supabase/telefoonboek.sql — " + error.message }, 500);
+      if (error) return antwoord({ error: "tabel crm_telefoonboek ontbreekt? draai supabase/telefoonboek.sql \u2014 " + error.message }, 500);
     }
     // Alles van deze eigenaar dat deze ronde niet meekwam, is van de telefoon af.
     const { count } = await service.from("crm_telefoonboek").delete({ count: "exact" })
@@ -285,11 +285,11 @@ Deno.serve(async (req) => {
     return antwoord({ ok: true, opgeslagen: rijen.length, verwijderd: count ?? 0 });
   }
 
-  // ── Werkenbij-wacht (2 nov 2026) ─────────────────────────────
+  // ?? Werkenbij-wacht (2 nov 2026) ?????????????????????????????
   // Tjeerd: "alle werkenbij-sites checken of ze nieuwe vacatures hebben,
-  // zodat ik een alert krijg en kan opbellen — ook in het dashboard en de
+  // zodat ik een alert krijg en kan opbellen - ook in het dashboard en de
   // salespijplijn." De ochtendroutine haalt de pagina's op (werkenbij.py op de
-  // Mac); de VERGELIJKING gebeurt hier, zodat er één waarheid is over wat al
+  // Mac); de VERGELIJKING gebeurt hier, zodat er een waarheid is over wat al
   // gezien was. Tabellen: crm_werkenbij + crm_vacature_signalen
   // (supabase/werkenbij.sql). Alleen met de cron-sleutel.
   const WACHT_FASES = ["Afgerond", "Suspect", "Prospect", "In afwachting kennismaking", "Gesprek ingepland",
@@ -306,7 +306,7 @@ Deno.serve(async (req) => {
       service.from("crm_leadradar").select("id,bedrijf,plaats,url").eq("status", "toegevoegd").limit(5000),
       service.from("crm_werkenbij").select("*").limit(5000),
     ]);
-    if (wb.error) return antwoord({ error: "tabel crm_werkenbij ontbreekt — draai supabase/werkenbij.sql" }, 500);
+    if (wb.error) return antwoord({ error: "tabel crm_werkenbij ontbreekt \u2014 draai supabase/werkenbij.sql" }, 500);
     const pagina = new Map((wb.data ?? []).map((r: Record<string, unknown>) => [String(r.sleutel), r]));
     const uit = new Map<string, Record<string, unknown>>();
     for (const k of (kl.data ?? []) as Record<string, unknown>[]) {
@@ -370,8 +370,8 @@ Deno.serve(async (req) => {
       const { error } = await service.from("crm_werkenbij").upsert(rij, { onConflict: "sleutel" });
       if (!error) bijgewerkt++;
     }
-    // Eén melding per persoon per bedrijf, niet per vacature: anders loopt
-    // "Voor jou" vol bij een bedrijf dat in één keer tien vacatures plaatst.
+    // Een melding per persoon per bedrijf, niet per vacature: anders loopt
+    // "Voor jou" vol bij een bedrijf dat in een keer tien vacatures plaatst.
     const perBedrijf = new Map<string, Record<string, unknown>[]>();
     for (const n of nieuw) {
       const key = `${n.voor}|${n.bedrijf}`;
@@ -397,14 +397,62 @@ Deno.serve(async (req) => {
     const vandaag = new Date().toISOString().slice(0, 10);
     let nieuw = 0, bijgewerkt = 0;
     const alerts: string[] = [];
+    // Nooit dubbele leads (Tjeerd, 18 nov 2026: "geen zin in dubbele leads").
+    // Exact-op-naam matchen liet "Luiten B.V." naast "Luiten" staan. Daarom:
+    // genormaliseerde naam vergelijken met ALLE radarrijen (ook genegeerde) en
+    // alle klanten/prospects. Lijkt een naam op een bestaande radarrij, dan
+    // wordt die rij bijgewerkt in plaats van een nieuwe gemaakt. Lijkt hij op
+    // een klant of prospect, dan komt er geen radarrij (dat hoort een
+    // kaartnotitie te zijn) en meldt de import hem terug onder 'overgeslagen'.
+    const norm = (x: unknown) => String(x ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/\b(b\.?\s?v\.?|n\.?\s?v\.?|v\.?o\.?f\.?|holding|groep|group|nederland|netherlands|holland|europe|benelux|international|the|de|het)\b/g, " ")
+      .replace(/[^a-z0-9]/g, "");
+    const lijkt = (a: string, b: string) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 5 && (a.includes(b) || b.includes(a))));
+    const [alleRadar, alleKlanten] = await Promise.all([
+      service.from("crm_leadradar").select("id,bedrijf").limit(10000),
+      service.from("clients").select("naam").limit(10000),
+    ]);
+    const radarNamen = ((alleRadar.data ?? []) as Record<string, unknown>[]).map((x) => ({ id: String(x.id), bedrijf: String(x.bedrijf), n: norm(x.bedrijf) }));
+    const klantNamen = ((alleKlanten.data ?? []) as Record<string, unknown>[]).map((x) => ({ naam: String(x.naam), n: norm(x.naam) }));
+    const overgeslagen: Record<string, string>[] = [];
     for (const r of body.import as Record<string, unknown>[]) {
       const naam = String(r.bedrijf ?? "").trim();
       if (!naam) continue;
-      const { data: bestaand } = await service.from("crm_leadradar")
-        .select("id,status,vacatures,functies").ilike("bedrijf", naam).limit(1);
+      const nn = norm(naam);
+      let { data: bestaand } = await service.from("crm_leadradar")
+        .select("id,status,vacatures,functies,notitie,concepten").ilike("bedrijf", naam).limit(1);
+      if (!bestaand?.length) {
+        const kl = klantNamen.find((k) => lijkt(nn, k.n));
+        if (kl) { overgeslagen.push({ bedrijf: naam, reden: "klant/prospect", match: kl.naam }); continue; }
+        const rd = radarNamen.find((x) => lijkt(nn, x.n));
+        if (rd) {
+          const { data: b2 } = await service.from("crm_leadradar")
+            .select("id,status,vacatures,functies,notitie,concepten").eq("id", rd.id).limit(1);
+          bestaand = b2;
+          if (!r.aanvullen) { overgeslagen.push({ bedrijf: naam, reden: "lijkt op radarrij", match: rd.bedrijf }); continue; }
+        }
+      }
       const velden: Record<string, unknown> = { laatst_gezien: vandaag };
       for (const k of ["plaats", "functies", "url", "salaris_ind", "notitie", "concepten"])
         if (r[k] != null) velden[k] = r[k];
+      // aanvullen:true (Richard Raad, 18 nov 2026): een bestaande rij krijgt het
+      // nieuwe signaal ONDER de oude notitie, in plaats van dat de notitie en de
+      // belteksten van eerder onderzoek worden overschreven. Concepten alleen
+      // invullen als er nog geen waren. laatst_gezien = vandaag zet hem bovenaan.
+      if (r.aanvullen && bestaand?.length) {
+        const oud = String(bestaand[0].notitie ?? "").trim();
+        const erbij = String(r.notitie ?? "").trim();
+        if (erbij && !oud.includes(erbij)) velden.notitie = oud ? `${vandaag}: ${erbij}\n\n${oud}` : `${vandaag}: ${erbij}`;
+        else delete velden.notitie;
+        const c = bestaand[0].concepten as Record<string, unknown> | null;
+        if (c && Object.values(c).some((v) => String(v ?? "").trim())) delete velden.concepten;
+        delete velden.plaats;
+        if (bestaand[0].functies && velden.functies) {
+          const al = String(bestaand[0].functies);
+          if (!al.toLowerCase().includes(String(velden.functies).toLowerCase())) velden.functies = `${al}, ${velden.functies}`;
+          else delete velden.functies;
+        }
+      }
       if (r.vacatures != null) velden.vacatures = Number(r.vacatures) || 1;
       if (bestaand?.length) {
         if (bestaand[0].status !== "genegeerd") {
@@ -425,7 +473,7 @@ Deno.serve(async (req) => {
             await service.from("crm_meldingen").insert({
               id: "md" + Date.now() + Math.floor(Math.random() * 10000),
               voor: "Tjeerd", van: "Leadradar", soort: "systeem",
-              tekst: `${naam} werft opnieuw — ${wat}.`,
+              tekst: `${naam} werft opnieuw \u2014 ${wat}.`,
               entiteit: "lead", ref: String(bestaand[0].id),
             });
             alerts.push(`${naam}: ${wat}`);
@@ -442,11 +490,42 @@ Deno.serve(async (req) => {
         nieuw++;
       }
     }
-    return antwoord({ ok: true, nieuw, bijgewerkt, alerts });
+    return antwoord({ ok: true, nieuw, bijgewerkt, alerts, overgeslagen });
+  }
+
+  // Modus 'kaartnotitie' (Richard Raad, 18 nov 2026): een klant of prospect
+  // werft via een ander bureau. Tjeerd wil dat als notitie op de kaart, zonder
+  // taak en zonder radarrij. rows: [{klant, tekst, url?}]. De klantnaam moet
+  // (hoofdletterongevoelig) precies een bestaande clients.naam zijn, anders
+  // komt de notitie nergens in beeld; die gevallen komen terug als 'onbekend'.
+  if (Array.isArray(body.kaartnotitie)) {
+    if (cronKey !== Deno.env.get("CRON_SECRET")) return antwoord({ error: "alleen voor routines" }, 403);
+    let geplaatst = 0;
+    const onbekend: string[] = [];
+    for (const r of body.kaartnotitie as Record<string, unknown>[]) {
+      const naam = String(r.klant ?? "").trim();
+      const tekst = String(r.tekst ?? "").trim().slice(0, 2000);
+      if (!naam || !tekst) continue;
+      const { data: k } = await service.from("clients").select("naam").ilike("naam", naam).limit(1);
+      if (!k?.length) { onbekend.push(naam); continue; }
+      const echt = String(k[0].naam);
+      // Niet twee keer dezelfde notitie op een kaart (routine draait dagelijks).
+      const { data: al } = await service.from("crm_activiteiten").select("id")
+        .eq("entiteit", "klant").eq("ref", echt).eq("tekst", tekst).limit(1);
+      if (al?.length) continue;
+      const { error } = await service.from("crm_activiteiten").insert({
+        id: "ra" + Date.now() + Math.floor(Math.random() * 10000),
+        entiteit: "klant", ref: echt, soort: "notitie", tekst,
+        door: "Richard Raad", op: new Date().toISOString(),
+        extra: { bron: "richard-raad", url: String(r.url ?? "") },
+      });
+      if (!error) geplaatst++;
+    }
+    return antwoord({ ok: true, geplaatst, onbekend });
   }
 
   // Modus 'opschonen': bestaande bureau-rijen uit de radar filteren.
-  // Zet ze op 'genegeerd' (omkeerbaar, verdwijnt uit de Nieuw-lijst) — raakt
+  // Zet ze op 'genegeerd' (omkeerbaar, verdwijnt uit de Nieuw-lijst) - raakt
   // handmatig toegevoegde rijen niet aan.
   if (body.opschonen) {
     const { data: alle } = await service.from("crm_leadradar")
@@ -463,9 +542,9 @@ Deno.serve(async (req) => {
     return antwoord({ ok: true, opgeschoond: weg });
   }
 
-  // Modus 'osm': échte productie/logistiek-bedrijven uit OpenStreetMap (gratis,
+  // Modus 'osm': echte productie/logistiek-bedrijven uit OpenStreetMap (gratis,
   // geen sleutel). Geen wervingssignaal, wel gegarandeerd EINDBEDRIJVEN: fabrieken,
-  // magazijnen en distributiecentra. Regio = ISO3166-2 (NL-ZH, NL-NH, NL-UT, NL-NB …).
+  // magazijnen en distributiecentra. Regio = ISO3166-2 (NL-ZH, NL-NH, NL-UT, NL-NB ...).
   if (body.osm) {
     const regio = String(body.regio ?? "Zuid-Holland");
     const max = Math.min(Number(body.max ?? 60), 150);
@@ -489,8 +568,8 @@ Deno.serve(async (req) => {
   nwr["building"="warehouse"]["name"]["website"];
 );
 out center tags 600;`;
-    // Overpass weigert anonieme/Deno-requests (406) — dus een nette User-Agent.
-    // Twee servers: valt de eerste uit (drukte → 504), dan de reserve.
+    // Overpass weigert anonieme/Deno-requests (406) - dus een nette User-Agent.
+    // Twee servers: valt de eerste uit (drukte -> 504), dan de reserve.
     const endpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -510,18 +589,18 @@ out center tags 600;`;
         clearTimeout(timer);
         laatst = r.status;
         if (r.ok) { const j = await r.json(); elements = (j.elements ?? []) as Record<string, unknown>[]; gelukt = true; break; }
-      } catch (_e) { /* time-out of fout → volgende server proberen */ }
+      } catch (_e) { /* time-out of fout \u2192 volgende server proberen */ }
     }
     if (!gelukt) return antwoord({ error: "overpass onbereikbaar", status: laatst }, 502);
 
-    // Dedup tegen bestaande klanten én bestaande radar-rijen.
+    // Dedup tegen bestaande klanten en bestaande radar-rijen.
     const { data: clients2 } = await service.from("clients").select("naam");
     const bekend2 = new Set((clients2 ?? []).map((c) => norm(c.naam)));
     const { data: radarNu } = await service.from("crm_leadradar").select("bedrijf");
     for (const rr of radarNu ?? []) bekend2.add(norm(String(rr.bedrijf ?? "")));
 
     // Namen die een terrein/gebied beschrijven i.p.v. een bedrijf.
-    // Terrein-/gebiedsnamen én generieke gebouwen (historische loodsen, gemalen,
+    // Terrein-/gebiedsnamen en generieke gebouwen (historische loodsen, gemalen,
     // trafo's, musea) i.p.v. echte bedrijven.
     const gebiedRe = /industrieterrein|bedrijventerrein|bedrijvenpark|industriepark|industriegebied|\bhaven\b|\bterrein\b|\bzone\b|logistiek park|business park|\bloods\b|pakhuis|\bmagazijn\b|schuur|kruit|visafslag|remise|\bsilo\b|opslag|^dc ?\d|gemaal|rioolwater|waterzuiver|\btrafo\b|substation|umformer|\bmolen\b|museum|\bkerk\b/i;
     const vandaag2 = new Date().toISOString().slice(0, 10);
@@ -547,7 +626,7 @@ out center tags 600;`;
         gevonden_op: vandaag2, laatst_gezien: vandaag2, status: "nieuw",
       });
     }
-    // Eén bulk-insert (veel lichter dan tientallen losse). Valt die door één
+    // Een bulk-insert (veel lichter dan tientallen losse). Valt die door een
     // dubbele naam om, dan proberen we de rijen alsnog een voor een.
     let nieuw = 0;
     if (rows.length) {
@@ -584,9 +663,9 @@ out center tags 600;`;
                 { id: String(r.id), status: String(r.status ?? "") });
 
   // Hoeveel leads levert wat we tot nu toe hebben? Tjeerd (11 aug 2026) rekent
-  // "alles wat vandaag werft" mee: een nieuw bedrijf én een bedrijf dat al in de
+  // "alles wat vandaag werft" mee: een nieuw bedrijf en een bedrijf dat al in de
   // radar staat maar nu opnieuw vacatures heeft. Genegeerde bedrijven tellen
-  // niet mee — die heeft hij bewust weggezet.
+  // niet mee - die heeft hij bewust weggezet.
   const telLeads = () => {
     let n = 0;
     for (const [, b] of bedrijven) {
@@ -598,20 +677,20 @@ out center tags 600;`;
     return n;
   };
 
-  // Doorbladeren tot de vangst opdroogt. Eén pagina van 50 was voor brede
+  // Doorbladeren tot de vangst opdroogt. Een pagina van 50 was voor brede
   // termen als "magazijnmedewerker" te weinig: alles voorbij de vijftigste
   // vacature zag de radar simpelweg nooit. Een volgende pagina halen we alleen
-  // op als de vorige helemaal vol zat — een halfvolle pagina is de laatste.
+  // op als de vorige helemaal vol zat - een halfvolle pagina is de laatste.
   // Tijdslimiet naast de call-limiet. Een trage Adzuna kan de functie anders
   // over zijn maximale looptijd trekken, en dan krijgt het CRM nooit antwoord:
   // de knop blijft draaien en er verschijnt geen melding. Liever een halve
-  // oogst mét antwoord dan een volle die nooit aankomt — wat we tot hier
+  // oogst met antwoord dan een volle die nooit aankomt - wat we tot hier
   // verzameld hebben, wordt gewoon weggeschreven.
   const START = Date.now();
   const MAX_MS = 45_000;
   let calls = 0, budgetOp = false, tijdOp = false;
 
-  // Eén pagina ophalen en verwerken. Geeft terug hoeveel vacatures erop stonden
+  // Een pagina ophalen en verwerken. Geeft terug hoeveel vacatures erop stonden
   // (-1 bij een fout), zodat de aanroeper weet of er een volgende pagina is.
   const haalPagina = async (q: string, pagina: number, straal: number): Promise<number> => {
     const url = `https://api.adzuna.com/v1/api/jobs/nl/search/${pagina}?app_id=${APP_ID}&app_key=${APP_KEY}` +
@@ -636,24 +715,24 @@ out center tags 600;`;
         const plaats = job.location?.area?.slice(-1)[0] ?? job.location?.display_name ?? "";
         if (plaats) b.plaatsen.add(plaats);
         if (!b.url) b.url = job.redirect_url ?? "";
-        if (!b.sal && job.salary_min) b.sal = `€${Math.round(job.salary_min)}–${Math.round(job.salary_max ?? job.salary_min)}`;
+        if (!b.sal && job.salary_min) b.sal = `\u20ac${Math.round(job.salary_min)}\u2013${Math.round(job.salary_max ?? job.salary_min)}`;
         bedrijven.set(nn, b);
       }
       return treffers.length;
     } catch (e) { console.error("adzuna", q, pagina, straal, e); return -1; }
   };
 
-  // BREEDTE VÓÓR DIEPTE, en LOKAAL VÓÓR VER.
+  // BREEDTE VOOR DIEPTE, en LOKAAL VOOR VER.
   //
-  // Breedte: eerst van élke zoekterm pagina 1, pas daarna tweede pagina's van de
-  // termen die helemaal vol zaten. De versie daarvóór werkte term voor term
+  // Breedte: eerst van elke zoekterm pagina 1, pas daarna tweede pagina's van de
+  // termen die helemaal vol zaten. De versie daarvoor werkte term voor term
   // helemaal af, en dan was het budget op na ongeveer tien van de achttien
-  // termen — de laatste acht kwamen elke run opnieuw niet aan bod.
+  // termen - de laatste acht kwamen elke run opnieuw niet aan bod.
   //
   // Ver: de radar begint binnen 40 km, want daar wonen de kandidaten. Levert dat
   // te weinig op, dan verruimt hij naar 60 en zo nodig 100 km, en hij stopt
   // zodra het dagdoel gehaald is. Tjeerd (11 aug 2026): "als er 0 binnenkomt,
-  // wil ik dat die verder kijkt dan de radius — minimaal 30 leads per dag."
+  // wil ik dat die verder kijkt dan de radius - minimaal 30 leads per dag."
   // Buiten de eerste straal zoekt hij alleen met de KERN-termen: achttien termen
   // per straal past niet binnen het gratis Adzuna-budget, en de brede termen
   // leveren verreweg de meeste bedrijven op.
@@ -680,15 +759,15 @@ out center tags 600;`;
     }
   }
 
-  // ── Wegschrijven ────────────────────────────────────────────────
-  // Hiervóór deed deze lus per bedrijf eerst een select en daarna nog een
+  // ?? Wegschrijven ????????????????????????????????????????????????
+  // Hiervoor deed deze lus per bedrijf eerst een select en daarna nog een
   // insert of update: twee netwerkrondjes per bedrijf, allemaal netjes op
-  // elkaar wachtend. Met twaalf zoekopdrachten van één pagina bleef dat net
+  // elkaar wachtend. Met twaalf zoekopdrachten van een pagina bleef dat net
   // binnen de tijd. Met achttien zoekopdrachten en meerdere pagina's kwamen er
   // zoveel bedrijven bij dat de functie eruit liep en "Nu zoeken" bleef hangen
   // zonder ooit iets terug te geven. (Tjeerd, 11 aug 2026: "doet er heel lang
   // over en doet niets.")
-  // Nu: één select voor álle bestaande rijen, één batch-insert voor de nieuwe,
+  // Nu: een select voor alle bestaande rijen, een batch-insert voor de nieuwe,
   // en de updates in blokken tegelijk.
   const vandaag = new Date().toISOString().slice(0, 10);
   const teMaken: Record<string, unknown>[] = [];
@@ -709,13 +788,13 @@ out center tags 600;`;
       teMaken.push({
         id: "lr" + Date.now() + "-" + teMaken.length,   // teller, geen random:
         bedrijf: b.naam, bron: "adzuna", url: b.url,    // Date.now() is binnen
-        salaris_ind: b.sal, gevonden_op: vandaag,       // één batch voor elke
+        salaris_ind: b.sal, gevonden_op: vandaag,       // \u00e9\u00e9n batch voor elke
         status: "nieuw",                                // rij hetzelfde
         // Buiten het werkgebied? Dan hoort dat op de kaart te staan, anders bel
         // je een bedrijf waar je kandidaten niet naartoe krijgt zonder dat je
         // het doorhad.
         notitie: b.straal > STRAAL_KM
-          ? `Gevonden binnen ${b.straal} km van Alphen aan den Rijn — dus buiten het werkgebied van ${STRAAL_KM} km. `
+          ? `Gevonden binnen ${b.straal} km van Alphen aan den Rijn \u2014 dus buiten het werkgebied van ${STRAAL_KM} km. `
             + `De radar keek verder omdat er binnen de straal te weinig te halen viel.`
           : "",
         ...velden
@@ -727,7 +806,7 @@ out center tags 600;`;
   if (teMaken.length) {
     const { error } = await service.from("crm_leadradar").insert(teMaken);
     if (error) {
-      // Eén rotte rij mag de rest niet meeslepen — dan alsnog per stuk.
+      // Een rotte rij mag de rest niet meeslepen - dan alsnog per stuk.
       for (const rij of teMaken) {
         const { error: e2 } = await service.from("crm_leadradar").insert(rij);
         if (!e2) nieuw++;
