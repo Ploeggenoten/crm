@@ -194,8 +194,8 @@ function geenGehoorBericht(contactNaam, klantNaam){
 }
 CRM.geenGehoorBericht = geenGehoorBericht;
 
-/* Tjeerds vaste salesmail (bron: ~/ploeggenoten-leadradar/mailtemplate.md,
-   daar ook de beslisregels). Alleen [detail] en [vervolgstap] wisselen per
+/* Vaste salesmail (bron: ~/ploeggenoten-leadradar/mailtemplate.md, sinds
+   18 nov 2026 kort). Alleen [naam], [functie] en [dag] wisselen per
    prospect; de leadradar-routine vult die zelf in (concepten.mail), dit is
    de terugval als er geen concept is. Pas je de template aan, doe het dan
    op beide plekken.
@@ -209,22 +209,41 @@ const afzender = () => {
   return {voornaam: v, wie: `${v}, ${FUNCTIE_AFZENDER[v.toLowerCase()] || 'van Ploeggenoten'}`};
 };
 CRM.mailAfzender = afzender;
+/* De leadradar-routine schrijft zijn concepten (opener, connectieverzoek,
+   mail) op naam van Tjeerd. Stuurt iemand anders ze vanuit het CRM, dan
+   moet er zijn eigen naam in staan (Tjeerd, 18 nov 2026: "stuurt Daan hem,
+   komt hij vanuit zijn naam"). Dit zet ze om op het moment van tonen,
+   kopiëren en mailen, dus ook voor alle concepten die al in de radar staan. */
+CRM.opNaam = tekst => {
+  const s = String(tekst || '');
+  const a = afzender();
+  if(!s || a.voornaam.toLowerCase() === 'tjeerd') return s;
+  const vol = String(CRM.me()||'').trim() || a.voornaam;
+  return s
+    .replace(/Ik ben Tjeerd,? eigenaar van Ploeggenoten/g, `Ik ben ${a.wie}`)
+    .replace(/Tjeerd van Elk/g, vol)
+    .replace(/eigenaar van Ploeggenoten/g, FUNCTIE_AFZENDER[a.voornaam.toLowerCase()] || 'van Ploeggenoten')
+    .replace(/\bTjeerd\b/g, a.voornaam);
+};
+const opNaamConcepten = c => {
+  if(!c) return c;
+  const o = Object.assign({}, c);
+  ['opener','connectie','mail'].forEach(k => { if(o[k]) o[k] = CRM.opNaam(o[k]); });
+  return o;
+};
 CRM.salesTemplate = voornaam => `Hoi ${voornaam || '[naam]'},
 
-[Reden van contact, twee zinnen met één echt detail van hun site, uit het gesprek of uit een bericht van henzelf.]
+Elk uitzendbureau stuurt jullie nu cv's zodra er een vacature openstaat. Wij niet. Wij halen de mensen die nooit op een vacature reageren.
 
-Ik ben ${afzender().wie}, een uitzendbureau uit Alphen aan den Rijn voor productie, logistiek en industrie. Wij doen het hele traject, van zichtbaarheid tot verloning en behoud.
+Ploeggenoten is een uitzendbureau voor productie, logistiek en industrie, maar dan new age recruitment. We filmen bij jullie op de vloer en zetten die video's met recruitment marketing op de telefoon van de juiste mensen in de regio. Daarna werven we, verlonen we ze en blijven we erop zitten. De video's en advertenties zijn voor onze rekening, je betaalt pas als iemand start: no cure no pay.
 
-Een vacature wacht tot iemand hem vindt. Wij gaan die iemand halen. Per functie maken we een campagne op maat: wij bedenken het concept, schrijven het script, filmen bij jullie op de vloer en zetten dat betaald uit via social media advertising. Zo bereik je ook de mensen die zich oriënteren maar niet actief zoeken, en dat is de grootste groep. En jullie employer branding groeit mee, want elke campagne laat de regio zien wat voor werkgever jullie zijn.
+Zo ziet dat eruit: https://linktr.ee/ploeggenoten
 
-Daarna pakken wij de hele recruitment op: screening, gesprekken, plaatsing en verloning. En we blijven erop zitten als iemand is gestart, want behoud weegt zwaarder dan instroom. Flex, werving en selectie of zzp, net wat past bij de vraag. De video’s en het advertentiebudget zijn voor onze rekening, dus je betaalt pas als er via ons iemand bij jullie start. No cure no pay.
-
-Wat we maken staat hier: https://linktr.ee/ploeggenoten
-
-[Vervolgstap: twee concrete tijdstippen, of: kan ik degene die hierover gaat deze week even kort spreken?]
+Mag ik je [dag] even bellen?
 
 Groet,
 ${afzender().voornaam}`;
+CRM.salesOnderwerp = 'Wij reageren niet op jullie vacature';
 async function geenGehoor(naam, contactId){
   const c = (CRM.state.contacten||[]).find(x => String(x.id) === String(contactId));
   if(!c || !c.telefoon) return;
@@ -1625,7 +1644,7 @@ async function kopieerTekst(tekst){
 
 /* Alles in één blok, voor wie liever in zijn eigen notitieblok plakt. */
 function conceptTekst(r){
-  const c = r.concepten || {};
+  const c = opNaamConcepten(r.concepten || {});
   return [
     `${r.bedrijf}${r.plaats?` — ${r.plaats}`:''}`,
     c.contactprofiel ? 'WIE JE ZOEKT\n' + c.contactprofiel : '',
@@ -1636,7 +1655,7 @@ function conceptTekst(r){
 }
 
 function conceptHTML(r){
-  const c = r.concepten || {};
+  const c = opNaamConcepten(r.concepten || {});
   const blok = (veld, label, extra) => {
     const tekst = String(c[veld]||'').trim();
     if(!tekst) return '';
@@ -1889,7 +1908,7 @@ function radarCtx(r, extra = {}){
 /* Conceptteksten van de radar voor een klant (voor "Info gemaild"). */
 CRM.radarConcept = klant => {
   const r = radar.find(x => CRM.zelfdeKlant(x.bedrijf, klant) && x.concepten && x.concepten.mail);
-  return r ? r.concepten : null;
+  return r ? opNaamConcepten(r.concepten) : null;
 };
 
 /* "↻ Nu zoeken": de Edge Function direct aanroepen. */
@@ -2715,7 +2734,7 @@ function bindRadar(){
   CRM.$$('[data-rkop]', mountEl).forEach(b=>b.onclick=async ()=>{
     const [id, veld] = b.dataset.rkop.split('|');
     const r = radar.find(x=>x.id===id); if(!r) return;
-    const tekst = veld==='alles' ? conceptTekst(r) : String((r.concepten||{})[veld]||'');
+    const tekst = veld==='alles' ? conceptTekst(r) : String(opNaamConcepten(r.concepten||{})[veld]||'');
     if(!tekst) return CRM.toast('Deze tekst is leeg','err');
     const gelukt = await kopieerTekst(tekst);
     CRM.toast(gelukt ? (veld==='alles' ? 'Alle teksten gekopieerd' : 'Gekopieerd')

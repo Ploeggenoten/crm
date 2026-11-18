@@ -434,7 +434,7 @@
     CRM.mailUI.opstellen({
       aan: (c && c.email) || k.email || '',
       wie: c ? `${c.naam} — ${klant}` : klant,
-      onderwerp: `Ploeggenoten · ${klant}`,
+      onderwerp: CRM.salesOnderwerp || `Ploeggenoten · ${klant}`,
       tekst, set:'klant', ctx:{voornaam, klant},
       entiteit: c ? 'contact' : 'klant', ref: c ? String(c.id) : klant
     });
