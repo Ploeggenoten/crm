@@ -667,7 +667,15 @@ CRM.PLAATSEN = {
      'krimpenandenijssel' — sleutels die de functie nooit produceert. */
   'alphenadrijn':[52.129,4.655],     'krimpenadijssel':[51.917,4.593],
   'capelleadijssel':[51.930,4.577],  'nieuwerkerkadijssel':[51.975,4.615],
-  'koudekerkadrijn':[52.121,4.598]
+  'koudekerkadrijn':[52.121,4.598],
+  /* Aangevuld 17 nov 2026 voor het locatiefilter op Recruitment: de
+     woonplaatsen die de bot het vaakst aanlevert maar die hier ontbraken. */
+  'hilversum':[52.223,5.176],  'roosendaal':[51.531,4.465], 'uithoorn':[52.238,4.826],
+  'reeuwijk':[52.046,4.721],   'enschede':[52.221,6.894],   'bussum':[52.274,5.161],
+  'nieuwegein':[52.029,5.081], 'hoorn':[52.642,5.060],      'schoonhoven':[51.948,4.849],
+  'roelofarendsveen':[52.203,4.633], 'woubrugge':[52.165,4.637], 'vijfhuizen':[52.350,4.680],
+  'deventer':[52.255,6.164],   'almelo':[52.357,6.662],     'brielle':[51.902,4.162],
+  'hazerswouderijndijk':[52.087,4.587]
 };
 /* Schrijfwijzen die naar dezelfde plaats verwijzen. Zonder deze laag geeft
    CRM.afstandKm null voor "The Hague" of "Leidschenveen", en dan scoort
@@ -731,8 +739,29 @@ CRM.plaatsSleutel = (() => {
     return k;
   };
 })();
+/* Coördinaat van een plaatsnaam. Eerst exact; anders de langste bekende
+   plaats waarmee de sleutel begint — de bot levert wijken en toevoegingen
+   aan ("Rotterdam-Zuid", "Rotterdam Nesselande", "Rozenburg ZH", "Hoogvliet
+   Rotterdam") die anders allemaal buiten elk radiusfilter vielen. Alleen
+   bekende sleutels van 5+ tekens tellen, zodat "den" of "haag" nooit een
+   willekeurig begin vangt. Gecached per sleutel. */
+CRM.plaatsCoord = (() => {
+  const cache = new Map();
+  let lang = null;
+  return s => {
+    const k = CRM.plaatsSleutel(s);
+    if(!k) return null;
+    if(CRM.PLAATSEN[k]) return CRM.PLAATSEN[k];
+    if(cache.has(k)) return cache.get(k);
+    if(!lang) lang = Object.keys(CRM.PLAATSEN).filter(x => x.length >= 5).sort((a,b) => b.length - a.length);
+    const hit = lang.find(x => k.startsWith(x));
+    const uit = hit ? CRM.PLAATSEN[hit] : null;
+    if(cache.size < 5000) cache.set(k, uit);
+    return uit;
+  };
+})();
 CRM.afstandKm = (a,b) => {
-  const pa = CRM.PLAATSEN[CRM.plaatsSleutel(a)], pb = CRM.PLAATSEN[CRM.plaatsSleutel(b)];
+  const pa = CRM.plaatsCoord(a), pb = CRM.plaatsCoord(b);
   if(!pa || !pb) return null;
   const R = 6371, rad = d => d*Math.PI/180;
   const dLat = rad(pb[0]-pa[0]), dLon = rad(pb[1]-pa[1]);

@@ -96,6 +96,11 @@
    maar breed genoeg dat "— zonder eigenaar — (73)" er als gekozen waarde
    volledig in staat — een half afgekapt filter lees je als een ander filter. */
 #rc_eigfil{min-width:118px;max-width:182px}
+/* Locatiefilter (17 nov 2026): plaats + straal als één blok, zodat ze bij
+   het teruglopen van de balk samen naar de volgende regel gaan. */
+.rc-loc{display:flex;align-items:center;gap:6px}
+.rc-loc input{width:150px}
+.rc-loc select{min-width:78px}
 .rc-fil .chip.btn-like{padding:5px 12px}
 
 /* ─── Meerdere sollicitanten tegelijk ────────────────────────────

@@ -36,7 +36,7 @@ const S = {
      De oude losse vlag `mijn` is hierin opgegaan — één bron van waarheid, de
      "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
      (zie vulEigSelect voor het waarom). */
-  l:{q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false},
+  l:{q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:25, zvac:false, stil:false},
   /* Render-rust (motorkap-punt 15): zolang de wegwerkronde open staat
      hertekent de lijst niet mee met realtime-syncs — dat verspringt onder
      je handen. Bij het sluiten van de ronde volgt één verse hertekening. */
@@ -449,7 +449,13 @@ function belPogingen(leadId){
      stand daarom óók hard op de leadrij (kolom belpogingen); het hoogste
      van de twee is de waarheid, en dat getal kan nooit meer krimpen. */
   const rij = (CRM.state.leads || []).find(l => String(l.id) === String(leadId));
-  return Math.max(uitLog, (rij && rij.belpogingen) || 0);
+  /* Wie op Geen gehoor staat is minstens één keer vergeefs gebeld, ook als
+     die poging nooit gelogd werd (botleads die de bot zelf op Geen gehoor
+     zette, of een regel die uit het venster viel). Zonder deze ondergrens
+     noteerde de 2e-pogingronde zo'n tweede poging als "poging 1" en bleef
+     de lead eeuwig in de 1×-stapel staan (17 nov 2026). */
+  const vloer = rij && CRM.leadIs(rij.status, 'Geen gehoor') ? 1 : 0;
+  return Math.max(uitLog, (rij && rij.belpogingen) || 0, vloer);
 }
 /* Hoe vaak geen gehoor? Tjeerd, 10 nov 2026: "veel staan op geen gehoor —
    filter op één keer, twee keer geen gehoor, etc., zodat we de eerste geen
@@ -460,6 +466,48 @@ function belPogingen(leadId){
 const POG_MAX = 4;
 const geenGehoorStand = l => CRM.leadIs(l.status, 'Geen gehoor')
   ? Math.min(Math.max(1, belPogingen(l.id)), POG_MAX) : 0;
+
+/* ─── De 2e-pogingronde (Tjeerd, 17 nov 2026) ─────────────────────
+   1.556 sollicitanten stonden op 1× geen gehoor; bij 1.191 was de tweede
+   poging al verlopen. Niet omdat niemand belde, maar omdat die stapel in de
+   lijst wegzakt tussen nieuw werk. Daarom een eigen ronde met een vaste
+   dagportie per AM: eerst wie de bot goed beoordeelde, daarna de nieuwste
+   (hoe verser, hoe groter de kans dat iemand nog opneemt). Wie al een
+   toekomstige poging gepland heeft, wacht tot die dag. Volgt de filters die
+   aanstaan (locatie, vacature, klant…); zonder eigenaarfilter alleen je
+   eigen sollicitanten — "Weggebeld" is per persoon. */
+const POG2_PORTIE = 20;
+const POG2_GOUD = ['Gekwalificeerd', 'Potentieel andere vacature', 'Twijfelgeval'];
+function pog2Stapel(){
+  const oud = S.l.pog; S.l.pog = '';
+  const basis = leadsGefilterd(true);
+  S.l.pog = oud;
+  const mij = CRM.naamNorm(CRM.me());
+  const vandaag = CRM.todayISO();
+  const goud = l => POG2_GOUD.includes(String(l.bot_status || '').trim()) ? 1 : 0;
+  return basis.filter(l => geenGehoorStand(l) === 1
+      && (S.l.eig || CRM.naamNorm(l.eigenaar) === mij)
+      && !(l.opvolgen_op && String(l.opvolgen_op).slice(0, 10) > vandaag))
+    .sort((a, b) => goud(b) - goud(a)
+      || String(b.binnen_op || '').localeCompare(String(a.binnen_op || '')));
+}
+/* Hoeveel 2e pogingen deed ik vandaag? Uit de tijdlijn, dus op elk apparaat
+   hetzelfde: een gelogde "poging 2", of een statuswissel weg van Geen gehoor
+   (iemand nam op). Per sollicitant één keer. */
+function pog2Gedaan(){
+  const mij = CRM.naamNorm(CRM.me()), vandaag = CRM.todayISO();
+  const lokaal = op => { const d = new Date(op); if(isNaN(d)) return '';
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  const ids = new Set();
+  for(const a of (CRM.state.activiteiten || [])){
+    if(a.entiteit !== 'lead' || CRM.naamNorm(a.door) !== mij) continue;
+    if(lokaal(a.op) !== vandaag) continue;
+    if((a.soort === 'bel' && /\(poging 2\)/.test(String(a.tekst || '')))
+       || (a.extra && a.extra.van && CRM.leadIs(a.extra.van, 'Geen gehoor') && !a.extra.teruggedraaid))
+      ids.add(String(a.ref));
+  }
+  return ids.size;
+}
 /* Wanneer was er voor het laatst écht contact? Welke activiteitsoorten als
    contact tellen komt uit js/opvolging.js (CRM.opvolging.CONTACT) — het
    dashboard en de kandidatenlijst lezen dezelfde lijst. Drie kopieën van
@@ -785,6 +833,14 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
     if(l.kandidaat_id && !l._kand) return false;
     if(!negeerStatus && f.status && !CRM.leadIs(l.status, f.status)) return false;
     if(f.pog && geenGehoorStand(l) !== +f.pog) return false;
+    /* Locatie (Tjeerd, 17 nov 2026): bij een nieuwe vacature in de straal
+       kijken of er nog sollicitanten wonen — ook wie niet opnam. Onbekende
+       woonplaats valt buiten de straal (liever geen resultaat dan een gok,
+       zelfde regel als CRM.binnenRadius). */
+    if(f.plaats){
+      const km = CRM.afstandKm(l.woonplaats, f.plaats);
+      if(km == null || km > f.km) return false;
+    }
     if(!negeerBot && f.bot && String(l.bot_status||'').trim() !== f.bot) return false;
     if(f.bron && l.bron !== f.bron) return false;
     if(f.vac && String(l.vacature_id) !== f.vac) return false;
@@ -930,7 +986,7 @@ const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').loc
    doen; de standaard komt bij de volgende sessie vanzelf terug
    (zetEigStandaard loopt één keer per sessie). Tjeerd, 2 sep 2026. */
 function wisFilters(){
-  S.l = {q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', zvac:false, stil:false};
+  S.l = {q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:S.l.km || 25, zvac:false, stil:false};
   wisSelectie();
 }
 
@@ -943,6 +999,25 @@ function wisFilters(){
    één filterbalk waarin de statuschips als dropdown mét tellers zijn
    opgegaan. De filterbalk wordt één keer gebouwd en daarna alleen bijgewerkt;
    opnieuw tekenen bij elke toetsaanslag zou de cursor uit het zoekveld halen. */
+/* Keuzes voor het locatieveld: eerst de vacaturelocaties (met functie en
+   klant erbij, zodat je bij een nieuwe vacature meteen zijn plaats pakt),
+   daarna de woonplaatsen die het vaakst voorkomen. Alleen plaatsen die we
+   kunnen meten — een keuze die altijd nul oplevert is erger dan geen keuze. */
+function plaatsKeuzes(vacs){
+  const gezien = new Set(), uit = [];
+  const voeg = (plaats, lbl) => {
+    const p = String(plaats || '').trim(), k = CRM.plaatsSleutel(p);
+    if(!p || !k || gezien.has(k) || !CRM.plaatsCoord(p)) return;
+    gezien.add(k); uit.push(`<option value="${h(p)}">${h(lbl || '')}</option>`);
+  };
+  vacs.filter(v => !/gesloten|vervuld|dicht/i.test(String(v.status || '')))
+      .forEach(v => voeg(v.locatie, 'vacature: ' + [v.functie, v.klant].filter(Boolean).join(' · ')));
+  const tel = new Map();
+  leads().forEach(l => { const p = String(l.woonplaats || '').trim(); if(p) tel.set(p, (tel.get(p) || 0) + 1); });
+  Array.from(tel.entries()).sort((a, b) => b[1] - a[1]).slice(0, 150).forEach(([p]) => voeg(p, ''));
+  return uit.join('');
+}
+
 function tekenLeads(el){
   zetEigStandaard();
   const bronnen = Array.from(new Set(leads().map(l => l.bron).filter(Boolean))).sort();
@@ -986,6 +1061,11 @@ function tekenLeads(el){
             leads().filter(l => CRM.leadIn(l.status, CRM.LEAD_OPEN) && !(l.kandidaat_id && !l._kand) && !isGekoppeld(l)).length})</option>
           ${vacs.map(v=>`<option value="${h(v.id)}" ${S.l.vac===String(v.id)?'selected':''}>${h(vacLabel(v))}</option>`).join('')}
         </select>
+        <div class="rc-loc" title="Woont binnen de straal van deze plaats — typ een plaats of kies de locatie van een vacature">
+          <input type="search" id="rc_plaats" list="rc_plaatsen" placeholder="📍 Plaats" autocomplete="off" value="${h(S.l.plaats)}">
+          <select id="rc_km">${[10,15,25,40,60].map(k => `<option value="${k}" ${+S.l.km===k?'selected':''}>${k} km</option>`).join('')}</select>
+          <datalist id="rc_plaatsen">${plaatsKeuzes(vacs)}</datalist>
+        </div>
         ${''/* rc_eigfil, niet rc_eig: die id is al van het eigenaarveld in de lade */}
         <select id="rc_eigfil"></select>
         <button class="chip btn-like" id="rc_mijn" type="button"
@@ -1016,6 +1096,20 @@ function tekenLeads(el){
     else { S.l.zvac = false; S.l.vac = e.target.value; }
     wisSelectie(); tekenWerk();
   };
+  const pl = el.querySelector('#rc_plaats');
+  const zetPlaats = () => {
+    const v = pl.value.trim();
+    if(v === S.l.plaats) return;
+    if(v && !CRM.plaatsCoord(v)){
+      CRM.toast(`"${v}" ken ik nog niet als plaats — kies er een uit de lijst`, 'err');
+      return;
+    }
+    S.l.plaats = v; wisSelectie(); tekenWerk();
+  };
+  pl.onchange = zetPlaats;
+  /* Leegmaken met het kruisje van het zoekveld vuurt alleen 'search'. */
+  pl.addEventListener('search', zetPlaats);
+  el.querySelector('#rc_km').onchange = e => { S.l.km = +e.target.value || 25; if(S.l.plaats){ wisSelectie(); tekenWerk(); } };
   el.querySelector('#rc_eigfil').onchange = e => { S.l.eig  = e.target.value; wisSelectie(); tekenWerk(); };
   /* "Van mij" is een sneltoets op het eigenaarfilter, geen eigen filter:
      aanklikken zet de dropdown op jezelf, nóg een keer klikken (of een andere
@@ -1311,6 +1405,19 @@ function tekenDoenregel(basis){
     }
   }
 
+  /* De 2e-pogingronde: je dagportie, en hoeveel je er vandaag al deed. */
+  let pog2Knop = '';
+  const p2 = pog2Stapel();
+  const p2Gedaan = pog2Gedaan();
+  if(p2.length || p2Gedaan){
+    const vol = p2Gedaan >= POG2_PORTIE;
+    pog2Knop = `<button class="rc-doenfeit${vol ? ' on' : ''}" id="rc_pog2"
+      aria-label="2e poging: ${p2Gedaan} van ${POG2_PORTIE} vandaag — start de ronde"
+      title="${p2.length} ${p2.length === 1 ? 'sollicitant staat' : 'sollicitanten staan'} op 1× geen gehoor${S.l.eig ? '' : ' (van jou)'}. De ronde biedt er ${POG2_PORTIE} per dag aan: eerst wie de bot goed beoordeelde, daarna de nieuwste.${
+        vol ? ' Dagportie gehaald — klik voor nog een ronde.' : ''}"
+      >📞 2e poging <b class="num">${p2Gedaan}/${POG2_PORTIE}</b> vandaag</button>`;
+  }
+
   el.innerHTML = `${belregel}
     <div class="rc-doen${streep ? ' let' : ''}">
       ${links}
@@ -1319,6 +1426,7 @@ function tekenDoenregel(basis){
         ${/* Valkuil dicht (motorkap-punt 8): de knop blijft ook staan als het
              filter aanstaat terwijl er 0 blijven liggen — anders is er geen
              uitknop meer en lijkt het scherm onverklaarbaar leeg. */''}
+        ${pog2Knop}
         ${vervolgFeit}
         ${stilTot || S.l.stil ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
             aria-label="${stilTot} ${stilTot===1?'blijft':'blijven'} liggen — toon alleen die"
@@ -1341,6 +1449,8 @@ function tekenDoenregel(basis){
   if(ba) ba.onclick = () => wegwerkModus('__bel');
   /* v2: de zonder-vervolg-stapel wegwerken = gewoon de Geen gehoor-ronde;
      elke afgehandelde kaart krijgt daar vanzelf zijn cadansdatum. */
+  const p2k = el.querySelector('#rc_pog2');
+  if(p2k) p2k.onclick = () => wegwerkModus('__pog2');
   const vv = el.querySelector('#rc_vervolg');
   if(vv) vv.onclick = () => wegwerkModus('Geen gehoor');
   const wis = el.querySelector('#rc_filterweg');
@@ -1546,7 +1656,7 @@ function rijHtml(l){
       aria-label="Selecteer ${h(leadNaam(l))}"></td>
     <td>
       <div class="rc-naam">${h(leadNaam(l))}</div>
-      <div class="rowsub">${h(l.woonplaats||'—')}${l.bron?' · '+h(l.bron):''}${(l.cv||l.cv_url)?' · cv':''}${
+      <div class="rowsub">${h(l.woonplaats||'—')}${S.l.plaats ? (km => km != null ? ` · <b class="num">${km} km</b>` : '')(CRM.afstandKm(l.woonplaats, S.l.plaats)) : ''}${l.bron?' · '+h(l.bron):''}${(l.cv||l.cv_url)?' · cv':''}${
         dub > 1 ? ` <span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">×${dub}</span>` : ''}${
         ken.kands.length ? ` · <span class="rc-dub" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>` : ''}</div>
       ${waarom ? `<div style="margin-top:5px">${waarom}</div>` : ''}
@@ -1803,6 +1913,7 @@ function actieveFilters(){
   if(f.status) uit.push({lbl:'status: ' + f.status,          wis(){ S.l.status = ''; }});
   if(f.pog)    uit.push({lbl:+f.pog >= POG_MAX ? POG_MAX + '× of vaker geen gehoor' : f.pog + '× geen gehoor',
                          wis(){ S.l.pog = ''; const s = document.getElementById('rc_pog'); if(s) s.value = ''; }});
+  if(f.plaats) uit.push({lbl:`binnen ${f.km} km van ${f.plaats}`, wis(){ S.l.plaats = ''; const i = document.getElementById('rc_plaats'); if(i) i.value = ''; }});
   if(f.bot)    uit.push({lbl:'bot: ' + f.bot,                wis(){ S.l.bot = ''; }});
   if(f.bron)   uit.push({lbl:'bron: ' + f.bron,              wis(){ S.l.bron = ''; }});
   if(f.klant)  uit.push({lbl:'klant: ' + optieTekst('rc_klant', f.klant), wis(){ S.l.klant = ''; const s = document.getElementById('rc_klant'); if(s) s.value = ''; }});
@@ -2294,6 +2405,8 @@ function wegwerkModus(status){
      een afspraak van vandaag of eerder, over de statussen heen, puur op
      tijdstip. De keuzeknoppen volgen dan per kaart de échte status. */
   const belronde = status === '__bel';
+  const pog2 = status === '__pog2';
+  if(pog2) status = 'Geen gehoor';
   if(!belronde){
     status = CRM.leadNorm(status);
     status = CRM.LEAD_OPEN.includes(status) ? status : 'Nieuw';
@@ -2303,7 +2416,10 @@ function wegwerkModus(status){
      kwijt waar je was. Volgorde: belafspraken eerst (op tijdstip), dan
      vers goud van vandaag, daarna oudste eerst (B1: één volgorde met de
      lijst; de staart blijft hier oudste-eerst — wie het langst wacht). */
-  const stapel = (belronde
+  const stapel = pog2 ? (() => {
+      const rest = POG2_PORTIE - pog2Gedaan();
+      return pog2Stapel().slice(0, rest > 0 ? rest : POG2_PORTIE);
+    })() : (belronde
       ? leadsGefilterd(true).filter(l => belRang(l) === 0 && !CRM.leadIs(l.status, 'Intake ingepland'))
       : leadsGefilterd(true).filter(l => CRM.leadIs(l.status, status)))
     .sort((a,b) => belRang(a) - belRang(b)
@@ -2314,7 +2430,8 @@ function wegwerkModus(status){
                 || (belGoud(b)?1:0) - (belGoud(a)?1:0)
                 || (versGoud(b)?1:0) - (versGoud(a)?1:0)
                 || String(a.binnen_op||'').localeCompare(String(b.binnen_op||'')));
-  if(!stapel.length) return CRM.toast(belronde ? 'Geen belafspraken voor vandaag' : `Er staat niets op ${status}`,'ok');
+  if(!stapel.length) return CRM.toast(belronde ? 'Geen belafspraken voor vandaag'
+    : pog2 ? 'Niemand meer op 1× geen gehoor binnen je filters' : `Er staat niets op ${status}`,'ok');
   const keuzes = WW_KEUZES[status] || WW_KEUZES['Nieuw'];
   const keuzesNu = () => belronde
     ? (WW_KEUZES[CRM.leadNorm((stapel[i]||{}).status)] || WW_KEUZES['Nieuw'])
@@ -2467,7 +2584,7 @@ function wegwerkModus(status){
     box.innerHTML = `
       <div class="modal-h">
         <div class="row" style="justify-content:space-between;align-items:baseline">
-          <div class="h2">${belronde ? 'Belafspraken afbellen' : 'Wegwerken · ' + h(status)}</div>
+          <div class="h2">${belronde ? 'Belafspraken afbellen' : pog2 ? '2e poging · Geen gehoor' : 'Wegwerken · ' + h(status)}</div>
           <span class="meta num">${i+1} van ${stapel.length}</span>
         </div>
         ${CRM.ui.bar(pct)}
@@ -2596,7 +2713,12 @@ function wegwerkModus(status){
         /* Breed werkblad (Tjeerd, 10 sep 2026: "kleine kaart, moet
            duidelijker en praktischer") — links weten, rechts doen. */
         m.classList.add('ww-modal');
-        CRM.modal._onClose = () => m.classList.remove('ww-modal');
+        /* Aanhaken, niet vervangen: deze regel overschreef de onClose
+           hierboven, waardoor wwOpen na élke ronde op true bleef staan en de
+           lijst niet meer hertekende tot je de pagina herlaadde — tellers en
+           statussen bleven op de stand van vóór de ronde (17 nov 2026). */
+        const naRonde = CRM.modal._onClose;
+        CRM.modal._onClose = () => { m.classList.remove('ww-modal'); if(naRonde) naRonde(); };
         teken();
         /* De modal geeft de focus standaard aan het eerste veld; hier zou dat
            het notitieveld of de bel-link zijn en dan slikken die de
