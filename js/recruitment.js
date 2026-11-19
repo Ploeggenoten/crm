@@ -4578,7 +4578,7 @@ async function faseWissel(id, fase){
   /* "fee" is een financieel begrip en blijft bij wie geld mag zien; voor het
      team benoemen we waarom het veld nodig is zonder onze omzet erbij te halen. */
   const feeUitleg = CRM.canSeeMoney() ? 'de automatische fee-berekening' : 'de contract- en factuurgegevens';
-  const uitleg = vraagKlant ? 'Aan wie stel je deze kandidaat voor? Zonder klant en vacature telt dit voorstel nergens mee.'
+  const uitleg = vraagKlant ? 'Aan wie stel je deze kandidaat voor? Op een vacature, of open bij een klant met een functie die je zelf invult.'
     : vraagStart ? `Startdatum en maandloon zijn verplicht — daar rekenen plaatsingen en ${feeUitleg} mee.`
     : vraagVerw ? 'Weet je de verwachte startdatum al? Dan rekent de forecast ermee. Nog niet? Dan vul je hem later aan.'
     : vraagLoon ? `Het bruto maandloon is nodig voor ${feeUitleg}.`
@@ -4598,6 +4598,20 @@ async function faseWissel(id, fase){
            data-klant="${h(v.klant)}" data-functie="${h(v.functie||'')}">${h(v.functie||'(geen functie)')}</option>`)
         .join('')}</optgroup>`).join('');
   };
+  /* Open voorstel (Tjeerd, 19 nov 2026): "ik stel ook mensen voor op functies
+     die nog niet in het CRM staan — dat ik zelf de functie kan invoeren,
+     zonder de vacature in het systeem te zetten." Het model kon dat al:
+     klant + functie zonder vacature_id is hoe de oude ATS-kaarten er ook
+     uitzien (zie alGekoppeld in js/kandidaten.js). Alleen dit venster
+     dwong een vacature af. Klant blijft een bestaande relatie, zodat het
+     voorstel op de relatiekaart en in de tellingen terechtkomt. */
+  const klantKeuze = () => {
+    const namen = Array.from(new Set((CRM.state.clients || []).map(k => String(k.naam || '').trim()).filter(Boolean)))
+      .sort((a,b) => a.localeCompare(b,'nl'));
+    return namen.map(n => `<option value="${h(n)}"${CRM.zelfdeKlant(n, c.klant || '') ? ' selected' : ''}>${h(n)}</option>`).join('');
+  };
+  /* Al een klant maar geen vacature op de kaart = vorige keer ook open. */
+  const openStart = vraagKlant && !!String(c.klant||'').trim() && !c.vacatureId;
   /* Een plaatsing is de belangrijkste handeling in het systeem: hier hangen
      de omzet, het feestscherm en het hele nazorgritme aan. Dan hoort het
      venster ook te lezen als vastleggen ("Plaatsing van X bij Y vastleggen")
@@ -4642,9 +4656,20 @@ async function faseWissel(id, fase){
     <div class="modal-h"><div class="h2">${kop}</div>
       <p class="sub" style="margin:6px 0 0">${h(uitleg)}</p></div>
     <div class="modal-b">
-      ${vraagKlant ? `<div class="f-row"><label for="fw_vac">Vacature</label>
+      ${vraagKlant ? `<div class="seg" id="fw_soort" style="margin-bottom:12px">
+          <button type="button" data-s="vac" class="${openStart ? '' : 'on'}">Op een vacature</button>
+          <button type="button" data-s="open" class="${openStart ? 'on' : ''}">Open voorstel</button>
+        </div>
+        <div class="f-row" id="fw_vacrij"${openStart ? ' style="display:none"' : ''}><label for="fw_vac">Vacature</label>
           <select id="fw_vac"><option value="">— kies een openstaande vacature —</option>${vacKeuze()}</select>
-          <div class="hint">De klant volgt uit de vacature. Staat de vacature er niet bij, maak hem dan eerst aan bij Vacatures.</div></div>` : ''}
+          <div class="hint">De klant volgt uit de vacature. Staat de functie er niet bij? Kies dan <b>Open voorstel</b>.</div></div>
+        <div id="fw_openrij"${openStart ? '' : ' style="display:none"'}>
+          <div class="f-row"><label for="fw_oklant">Klant</label>
+            <select id="fw_oklant"><option value="">— kies een relatie —</option>${klantKeuze()}</select></div>
+          <div class="f-row"><label for="fw_ofunctie">Functie</label>
+            <input type="text" id="fw_ofunctie" value="${h(c.functie||'')}" placeholder="Bijv. Operator 2-ploegen" autocomplete="off">
+            <div class="hint">Voor een functie die nog niet als vacature in het CRM staat. Komt de vacature later binnen, dan koppel je hem op de kandidaatkaart.</div></div>
+        </div>` : ''}
       ${vraagDatum || vraagCall ? `<div class="f-grid">
           <div class="f-row"><label for="fw_datum">${vraagCall?'Datum videocall':'Datum afspraak'}</label>
             <input type="date" id="fw_datum" value="${h(c.datum||'')}"></div>
@@ -4689,6 +4714,15 @@ async function faseWissel(id, fase){
     <div class="modal-f"><button class="btn ghost" data-mclose>Annuleren</button>
       <button class="btn" id="fw_ok">${vraagStart ? 'Plaatsing vastleggen' : vraagKlant ? 'Voorstellen' : 'Opslaan'}</button></div>`, {onOpen(m){
       const val = id => { const e = m.querySelector('#fw_'+id); return e ? e.value : ''; };
+      let soort = openStart ? 'open' : 'vac';
+      CRM.$$('#fw_soort button', m).forEach(b => b.onclick = () => {
+        soort = b.dataset.s;
+        CRM.$$('#fw_soort button', m).forEach(x => x.classList.toggle('on', x === b));
+        /* style, niet hidden: .f-row zet zelf display en wint van [hidden]. */
+        m.querySelector('#fw_vacrij').style.display = soort === 'vac' ? '' : 'none';
+        m.querySelector('#fw_openrij').style.display = soort === 'open' ? '' : 'none';
+        m.querySelector('#fw_err').style.display = 'none';
+      });
       /* Flex rekent per uur (uurloon × factor × 1.560 uur), niet per
          maandloon — dat veld is bij Flex simpelweg niet van toepassing.
          De echte flex-gegevens (uurloon, uren, tarief) staan op de
@@ -4723,7 +4757,16 @@ async function faseWissel(id, fase){
         const zeg = t => { err.style.display=''; err.textContent = t; };
         const isFlex = (val('type') || c.type) === 'Flex';
         const extra = {volgende_actie: val('actie').trim() || null};
-        if(vraagKlant){
+        if(vraagKlant && soort === 'open'){
+          const klant = val('oklant'), functie = val('ofunctie').trim();
+          if(!klant) return zeg('Kies de klant aan wie je deze kandidaat voorstelt.');
+          if(!functie) return zeg('Vul de functie in waarvoor je deze kandidaat voorstelt.');
+          extra.klant = klant;
+          extra.vacature_id = null;
+          extra.functie = functie;
+          extra._open = true;
+        }
+        else if(vraagKlant){
           const sel = m.querySelector('#fw_vac');
           const opt = sel && sel.selectedOptions[0];
           if(!sel || !sel.value || !opt) return zeg('Kies de vacature waarop je deze kandidaat voorstelt.');
@@ -4775,8 +4818,13 @@ async function faseWissel(id, fase){
         }
         let doel = fase;
         if(fase === 'Contract getekend' && extra.start && extra.start <= CRM.todayISO()) doel = 'Gestart';
+        const open = extra._open; delete extra._open;
         CRM.modal.close();
         await bewaarFase(c, doel, extra);
+        /* Zonder vacature is de relatiekaart de enige plek waar dit voorstel
+           terug te vinden is — dus daar een regel. */
+        if(open) await CRM.logActiviteit('klant', extra.klant, 'systeem',
+          `${c.naam} voorgesteld als ${extra.functie} (open voorstel, nog geen vacature)`);
         /* Bij Flex is de plaatsing nu vastgelegd, maar de gegevens waar de
            marge op rekent (uurloon, uren, tarief) staan nog niet ingevuld —
            dat kan alleen op de kandidaatkaart. Direct doorsturen scheelt
