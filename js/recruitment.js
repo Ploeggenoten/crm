@@ -36,7 +36,7 @@ const S = {
      De oude losse vlag `mijn` is hierin opgegaan — één bron van waarheid, de
      "Van mij"-knop is nog slechts de sneltoets die dit veld op jezelf zet
      (zie vulEigSelect voor het waarom). */
-  l:{q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:25, zvac:false, stil:false},
+  l:{q:'', status:'', pog:'', reden:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:25, zvac:false, stil:false},
   /* Render-rust (motorkap-punt 15): zolang de wegwerkronde open staat
      hertekent de lijst niet mee met realtime-syncs — dat verspringt onder
      je handen. Bij het sluiten van de ronde volgt één verse hertekening. */
@@ -820,6 +820,48 @@ function tekenBody(){
 /* negeerStatus/negeerBot/negeerEig: elke dropdown toont tellers met alle
    ándere filters toegepast, dus de basis voor zijn tellers negeert alleen
    zichzelf. */
+/* ─── Reden afgevallen (Tjeerd, 20 nov 2026) ──────────────────────
+   "Dan kunnen we meten welke mensen we te laat hebben opgebeld die dus al
+   een baan hebben." De reden staat al per lead in de tijdlijn
+   (extra.categorie, gelogd door nietGeschiktForm); de laatste telt.
+   Onbereikbaar heeft geen reden: dat is de status zelf (3× geen gehoor). */
+const REDEN_ONB = '__onbereikbaar';
+let _redenIdx = null, _redenN = -1;
+function redenIndex(){
+  const acts = CRM.state.activiteiten || [];
+  if(_redenIdx && _redenN === acts.length) return _redenIdx;
+  _redenIdx = new Map(); _redenN = acts.length;
+  for(const a of acts){            /* nieuwste eerst: de eerste treffer wint */
+    if(a.entiteit !== 'lead' || !a.extra || !a.extra.categorie) continue;
+    if(!CRM.LEAD_NIET_GESCHIKT_CATS.includes(a.extra.categorie)) continue;
+    const k = String(a.ref);
+    if(!_redenIdx.has(k)) _redenIdx.set(k, a.extra.categorie);
+  }
+  return _redenIdx;
+}
+function heeftReden(l, reden){
+  if(reden === REDEN_ONB) return CRM.leadIs(l.status, 'Onbereikbaar');
+  return CRM.leadIs(l.status, 'Niet geschikt') && redenIndex().get(String(l.id)) === reden;
+}
+/* Hoe lang na de aanmelding belden we voor het eerst? Eerste belregel in de
+   tijdlijn, of anders de eerste statuswissel weg van Nieuw (iemand nam op). */
+function eersteBelDagen(l){
+  const start = new Date(l.binnen_op || l.created_at || 0);
+  if(isNaN(start) || !start.getTime()) return null;
+  let eerst = null;
+  for(const a of CRM.activiteitenVoor('lead', l.id)){
+    const bel = a.soort === 'bel' || (a.extra && a.extra.van && CRM.leadIs(a.extra.van, 'Nieuw'));
+    if(!bel) continue;
+    const t = new Date(a.op);
+    if(!isNaN(t) && (!eerst || t < eerst)) eerst = t;
+  }
+  return eerst ? Math.max(0, (eerst - start) / 864e5) : null;
+}
+const dagTekst = d => d < 1 ? (d * 24 < 1 ? '< 1 uur' : Math.round(d * 24) + ' uur')
+                            : (Math.round(d * 10) / 10).toString().replace('.', ',') + (d < 1.5 ? ' dag' : ' dagen');
+const mediaan = arr => { if(!arr.length) return null; const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
 function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
   const f = S.l, q = norm(f.q);
   return leads().filter(l => {
@@ -833,6 +875,7 @@ function leadsGefilterd(negeerStatus, negeerBot, negeerEig){
     if(l.kandidaat_id && !l._kand) return false;
     if(!negeerStatus && f.status && !CRM.leadIs(l.status, f.status)) return false;
     if(f.pog && geenGehoorStand(l) !== +f.pog) return false;
+    if(f.reden && !heeftReden(l, f.reden)) return false;
     /* Locatie (Tjeerd, 17 nov 2026): bij een nieuwe vacature in de straal
        kijken of er nog sollicitanten wonen — ook wie niet opnam. Onbekende
        woonplaats valt buiten de straal (liever geen resultaat dan een gok,
@@ -986,7 +1029,7 @@ const oudsteEerst = arr => arr.slice().sort((a,b) => String(a.binnen_op||'').loc
    doen; de standaard komt bij de volgende sessie vanzelf terug
    (zetEigStandaard loopt één keer per sessie). Tjeerd, 2 sep 2026. */
 function wisFilters(){
-  S.l = {q:'', status:'', pog:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:S.l.km || 25, zvac:false, stil:false};
+  S.l = {q:'', status:'', pog:'', reden:'', bot:'', bron:'', vac:'', klant:'', eig:'', plaats:'', km:S.l.km || 25, zvac:false, stil:false};
   wisSelectie();
 }
 
@@ -1043,6 +1086,11 @@ function tekenLeads(el){
           ${Array.from({length:POG_MAX}, (_, i) => i + 1).map(n => `<option value="${n}" ${S.l.pog===String(n)?'selected':''}>${
             n === POG_MAX ? n + '× of vaker geen gehoor' : n + '× geen gehoor'}</option>`).join('')}
         </select>
+        <select id="rc_reden" title="Waarom viel een sollicitant af? 'Al een baan gevonden' laat ook zien hoe snel we de eerste keer belden">
+          <option value="">Reden afgevallen</option>
+          ${CRM.LEAD_NIET_GESCHIKT_CATS.map(c => `<option value="${h(c)}" ${S.l.reden===c?'selected':''}>${h(c)}</option>`).join('')}
+          <option value="${REDEN_ONB}" ${S.l.reden===REDEN_ONB?'selected':''}>Onbereikbaar (3× geen gehoor)</option>
+        </select>
         <select id="rc_bot"></select>
         <select id="rc_bron">
           <option value="">Alle bronnen</option>
@@ -1088,6 +1136,7 @@ function tekenLeads(el){
   q.oninput = CRM.debounce(() => { S.l.q = q.value; wisSelectie(); tekenWerk(); }, 200);
   el.querySelector('#rc_status').onchange = e => { S.l.status = e.target.value; S.l.stil = false; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_pog').onchange    = e => { S.l.pog = e.target.value; wisSelectie(); tekenWerk(); };
+  el.querySelector('#rc_reden').onchange  = e => { S.l.reden = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bot').onchange    = e => { S.l.bot = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_bron').onchange   = e => { S.l.bron = e.target.value; wisSelectie(); tekenWerk(); };
   el.querySelector('#rc_klant').onchange  = e => { S.l.klant = e.target.value; wisSelectie(); tekenWerk(); };
@@ -1254,6 +1303,7 @@ function vulKeuzeTellers(){
     ps.options[0].textContent = `Geen gehoor-pogingen (${n})`;
     ps.value = S.l.pog;
   }
+  zet('rc_reden', ['reden'],         (b, v) => b.filter(l => heeftReden(l, v)).length);
   zet('rc_bron',  ['bron'],          (b, v) => b.filter(l => l.bron === v).length);
   zet('rc_klant', ['klant'],         (b, v) => b.filter(l => norm((vacVan(l)||{}).klant || l.klant || '') === v).length);
   zet('rc_vac',   ['vac','zvac'],    (b, v) => v === '__zonder'
@@ -1418,6 +1468,35 @@ function tekenDoenregel(basis){
       >📞 2e poging <b class="num">${p2Gedaan}/${POG2_PORTIE}</b> vandaag</button>`;
   }
 
+  /* Reden-filter aan: hoe snel belden we deze groep, tegenover wie wél tot
+     een intake kwam? Dat is de "te laat gebeld"-meting. */
+  let redenFeit = '';
+  if(S.l.reden){
+    const groep = leadsGefilterd().map(eersteBelDagen);
+    const gebeld = groep.filter(d => d != null);
+    const oud = S.l.reden; S.l.reden = '';
+    const gelukt = leadsGefilterd(true).filter(l => CRM.leadIs(l.status, 'Intake ingepland') || l.kandidaat_id)
+      .map(eersteBelDagen).filter(d => d != null);
+    S.l.reden = oud;
+    const mg = mediaan(gebeld), mo = mediaan(gelukt);
+    if(groep.length) redenFeit = `<span class="meta" title="Tijd tussen aanmelding en eerste belpoging (mediaan). Ter vergelijking: sollicitanten die wél tot een intake kwamen, met dezelfde filters.${
+        groep.length - gebeld.length ? ` ${groep.length - gebeld.length} van deze groep ${groep.length - gebeld.length === 1 ? 'is' : 'zijn'} nooit gebeld.` : ''}"
+      >⏱ 1e belpoging na <b class="num">${mg == null ? '—' : dagTekst(mg)}</b>${
+        mo != null ? ` · bij intake <b class="num">${dagTekst(mo)}</b>` : ''}</span>`;
+  }
+
+  /* Geen-gehoor-mail: hoeveel gingen er vandaag mee, en wie viel ertussendoor. */
+  let mailFeit = '';
+  if(GG_MAIL_AAN && CRM.RECRUIT_V2){
+    const gemist = ggMailGemist().length, verstuurd = ggMailVerstuurdVandaag();
+    if(gemist) mailFeit = `<button class="rc-doenfeit" id="rc_ggmail"
+        aria-label="${gemist} vandaag vergeefs gebeld zonder mail — stuur ze alsnog"
+        title="Vandaag vergeefs gebeld, wel een e-mailadres, maar nog geen geen-gehoor-mail (Outlook stond uit of het adres kwam later). Klik om ze alsnog vanuit je Outlook te sturen.${verstuurd ? ` Vandaag al ${verstuurd} verstuurd.` : ''}"
+        >✉️ <b class="num">${gemist}</b> nog mailen</button>`;
+    else if(verstuurd) mailFeit = `<span class="meta" title="Geen-gehoor-mails die vandaag vanzelf vanuit je Outlook meegingen"
+        >✉️ <b class="num">${verstuurd}</b> gemaild vandaag</span>`;
+  }
+
   el.innerHTML = `${belregel}
     <div class="rc-doen${streep ? ' let' : ''}">
       ${links}
@@ -1426,7 +1505,9 @@ function tekenDoenregel(basis){
         ${/* Valkuil dicht (motorkap-punt 8): de knop blijft ook staan als het
              filter aanstaat terwijl er 0 blijven liggen — anders is er geen
              uitknop meer en lijkt het scherm onverklaarbaar leeg. */''}
+        ${redenFeit}
         ${pog2Knop}
+        ${mailFeit}
         ${vervolgFeit}
         ${stilTot || S.l.stil ? `<button class="rc-doenfeit ${S.l.stil ? 'on' : ''}" id="rc_stil"
             aria-label="${stilTot} ${stilTot===1?'blijft':'blijven'} liggen — toon alleen die"
@@ -1451,6 +1532,8 @@ function tekenDoenregel(basis){
      elke afgehandelde kaart krijgt daar vanzelf zijn cadansdatum. */
   const p2k = el.querySelector('#rc_pog2');
   if(p2k) p2k.onclick = () => wegwerkModus('__pog2');
+  const ggm = el.querySelector('#rc_ggmail');
+  if(ggm) ggm.onclick = () => { ggm.disabled = true; ggMailInhalen(); };
   const vv = el.querySelector('#rc_vervolg');
   if(vv) vv.onclick = () => wegwerkModus('Geen gehoor');
   const wis = el.querySelector('#rc_filterweg');
@@ -1657,6 +1740,7 @@ function rijHtml(l){
     <td>
       <div class="rc-naam">${h(leadNaam(l))}</div>
       <div class="rowsub">${h(l.woonplaats||'—')}${S.l.plaats ? (km => km != null ? ` · <b class="num">${km} km</b>` : '')(CRM.afstandKm(l.woonplaats, S.l.plaats)) : ''}${l.bron?' · '+h(l.bron):''}${(l.cv||l.cv_url)?' · cv':''}${
+        S.l.reden ? (d => d == null ? ' · nooit gebeld' : ` · 1e belpoging na <b class="num">${dagTekst(d)}</b>`)(eersteBelDagen(l)) : ''}${
         dub > 1 ? ` <span class="chip purple num" title="Deze persoon staat ${dub}× in de sollicitantenlijst — mogelijk twee keer gesolliciteerd">×${dub}</span>` : ''}${
         ken.kands.length ? ` · <span class="rc-dub" title="${h('Al bekend als kandidaat: ' + ken.kands.map(eerderTekst).join(' · '))}">al kandidaat</span>` : ''}</div>
       ${waarom ? `<div style="margin-top:5px">${waarom}</div>` : ''}
@@ -1913,6 +1997,8 @@ function actieveFilters(){
   if(f.status) uit.push({lbl:'status: ' + f.status,          wis(){ S.l.status = ''; }});
   if(f.pog)    uit.push({lbl:+f.pog >= POG_MAX ? POG_MAX + '× of vaker geen gehoor' : f.pog + '× geen gehoor',
                          wis(){ S.l.pog = ''; const s = document.getElementById('rc_pog'); if(s) s.value = ''; }});
+  if(f.reden)  uit.push({lbl:'reden: ' + (f.reden === REDEN_ONB ? 'Onbereikbaar' : f.reden),
+                         wis(){ S.l.reden = ''; const s = document.getElementById('rc_reden'); if(s) s.value = ''; }});
   if(f.plaats) uit.push({lbl:`binnen ${f.km} km van ${f.plaats}`, wis(){ S.l.plaats = ''; const i = document.getElementById('rc_plaats'); if(i) i.value = ''; }});
   if(f.bot)    uit.push({lbl:'bot: ' + f.bot,                wis(){ S.l.bot = ''; }});
   if(f.bron)   uit.push({lbl:'bron: ' + f.bron,              wis(){ S.l.bron = ''; }});
@@ -2352,6 +2438,97 @@ function geenGehoorAppje(l, taal, opts = {}){
   })();
 }
 
+/* Geen-gehoor-mail (Tjeerd, 19 nov 2026: "hoe meer kanalen, hoe meer
+   slagingskans"). Gaat vanzelf mee met het appje: noteer je een vergeefse
+   belpoging, dan verstuurt het CRM vanuit je eigen Outlook een korte mail.
+   Geen knop, geen concept. Eén mail per sollicitant per dag; reageren komt
+   in de eigen inbox van de AM terecht. Zonder e-mailadres gebeurt er niets,
+   zonder Outlook-koppeling pakt de dagcheck in de doen-regel hem later op.
+   Tekst = het goedgekeurde appje, omgezet naar mail. */
+const GG_MAIL = 'mail:geen-gehoor';
+/* Uit tot Tjeerd de tekst heeft goedgekeurd (20 nov 2026). */
+const GG_MAIL_AAN = false;
+const geldigMail = s => /^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/i.test(String(s || '').trim());
+const lokaleDag = op => { const d = new Date(op); if(isNaN(d)) return '';
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const _ggBezig = new Set();
+let _ggOutlookGemeld = false;
+const ggMailVandaag = id => (CRM.state.activiteiten || []).some(a =>
+  a.entiteit === 'lead' && String(a.ref) === String(id) && a.extra && a.extra.opvolging === GG_MAIL
+  && lokaleDag(a.op) === CRM.todayISO());
+const ggOutlook = () => {
+  try{ return !!(CRM.outlook && CRM.outlook.beschikbaar() && CRM.outlook.verbonden()); }
+  catch(e){ return false; }
+};
+function geenGehoorMailTekst(l){
+  const vn = String(leadNaam(l) || '').trim().split(/\s+/)[0] || '';
+  let am = (CRM.profile && CRM.profile.naam) || CRM.me() || '';
+  if(CRM.naamNorm(am) === CRM.naamNorm('Rajesh')) am = 'Bryan';
+  const v = vacVan(l);
+  const vac = (v && v.functie) || losFunctie(l) || '';
+  const heeftCv = !!l.cv || /^https?:/i.test(String(l.cv_url || '').trim());
+  return {
+    onderwerp: 'Ik probeerde je te bellen over je sollicitatie',
+    tekst: `Hoi${vn ? ' ' + vn : ''},\n\n`
+      + `Je hebt gesolliciteerd op ${vac ? `de vacature "${vac}"` : 'een van onze vacatures'}. `
+      + `Ik ben ${am} van Ploeggenoten en ik ga over deze vacature. Ik probeerde je net te bellen, maar kreeg je helaas niet te pakken.\n\n`
+      + `Wanneer kan ik je het beste even bellen? Reageer gerust op deze mail met een moment dat jou uitkomt, dan bel ik je dan.`
+      + (heeftCv ? '' : ' En zou je alvast je cv kunnen meesturen?')
+      + `\n\nGroet,\n${am}`
+  };
+}
+async function geenGehoorMail(l){
+  if(!GG_MAIL_AAN || !CRM.RECRUIT_V2 || !l || !geldigMail(l.email)) return false;
+  const id = String(l.id);
+  if(_ggBezig.has(id) || ggMailVandaag(id)) return false;
+  if(!CRM.demo && !ggOutlook()){
+    if(!_ggOutlookGemeld){ _ggOutlookGemeld = true;
+      CRM.toast('Verbind Outlook, dan gaat er bij geen gehoor vanzelf ook een mail uit', 'err'); }
+    return false;
+  }
+  _ggBezig.add(id);
+  try{
+    const m = geenGehoorMailTekst(l);
+    if(!CRM.demo) await CRM.outlook.stuurMail({aan:[String(l.email).trim()], onderwerp:m.onderwerp, tekst:m.tekst, stil:true});
+    await CRM.logActiviteit('lead', l.id, 'mail',
+      `Geen-gehoor-mail verstuurd${CRM.demo ? ' (demo, niet echt verstuurd)' : ''}: ${m.onderwerp}`, {opvolging:GG_MAIL});
+    return true;
+  }catch(e){ console.warn('geen-gehoor-mail', e); return false; }
+  finally{ _ggBezig.delete(id); }
+}
+/* Dagcheck: wie heb ik vandaag vergeefs gebeld en kreeg nog geen mail?
+   (Outlook stond even uit, of het adres kwam pas later binnen.) */
+function ggMailGemist(){
+  const mij = CRM.naamNorm(CRM.me()), vandaag = CRM.todayISO();
+  const ids = new Set();
+  for(const a of (CRM.state.activiteiten || [])){
+    if(a.entiteit !== 'lead' || a.soort !== 'bel' || CRM.naamNorm(a.door) !== mij) continue;
+    if(!/geen gehoor/i.test(String(a.tekst || '')) || lokaleDag(a.op) !== vandaag) continue;
+    ids.add(String(a.ref));
+  }
+  return leads().filter(l => ids.has(String(l.id)) && geldigMail(l.email) && !ggMailVandaag(l.id));
+}
+function ggMailVerstuurdVandaag(){
+  const mij = CRM.naamNorm(CRM.me()), vandaag = CRM.todayISO();
+  return (CRM.state.activiteiten || []).filter(a => a.entiteit === 'lead' && a.extra
+    && a.extra.opvolging === GG_MAIL && CRM.naamNorm(a.door) === mij && lokaleDag(a.op) === vandaag).length;
+}
+async function ggMailInhalen(){
+  const lijst = ggMailGemist();
+  if(!lijst.length) return;
+  if(!CRM.demo && !ggOutlook()){
+    _ggOutlookGemeld = false;
+    return CRM.toast('Verbind eerst Outlook, dan stuur ik ze alsnog', 'err');
+  }
+  let ok = 0;
+  for(const l of lijst){
+    if(await geenGehoorMail(l)) ok++;
+    await new Promise(r => setTimeout(r, 400));   /* Graph: max ~30 per minuut */
+  }
+  CRM.toast(`${ok} geen-gehoor-mail${ok === 1 ? '' : 's'} alsnog verstuurd${ok < lijst.length ? `, ${lijst.length - ok} mislukt` : ''}`, ok ? 'ok' : 'err');
+  tekenWerk();
+}
+
 /* Nog een poging noteren zonder de status te veranderen. */
 async function noteerPoging(lead, sleutel, notitie){
   const w = WW_BLIJF[sleutel]; if(!w) return false;
@@ -2539,6 +2716,7 @@ function wegwerkModus(status){
     if(CRM.RECRUIT_V2 && l.telefoon
        && (keuze.blijf === 'bel' || CRM.leadIs(keuze.s || '', 'Geen gehoor')))
       geenGehoorAppje(l, undefined, {stil:true});
+    if(keuze.blijf === 'bel' || CRM.leadIs(keuze.s || '', 'Geen gehoor')) geenGehoorMail(l);
     const ok = keuze.blijf ? await noteerPoging(l, keuze.blijf, notitie)
                            : await pasStatusToe(l, keuze.s, notitie);
     if(ok){ gedaan++; log.push({type:keuze.blijf ? 'blijf' : 'status', l, oud}); }
@@ -2859,6 +3037,7 @@ async function zetStatus(lead, nieuw){
      de awaits, anders blokkeert de browser de popup. */
   if(CRM.RECRUIT_V2 && lead && lead.telefoon && CRM.leadIs(nieuw, 'Geen gehoor'))
     geenGehoorAppje(lead, undefined, {stil:true});
+  if(lead && CRM.leadIs(nieuw, 'Geen gehoor')) geenGehoorMail(lead);
   /* Nogmaals 'Geen gehoor' kiezen bij iemand die er al op staat was een
      stille no-op — terwijl de AM net wél gebeld heeft. Dat is nu een
      genoteerde poging (audit 4 sep 2026): teller omhoog, regel in de

@@ -239,7 +239,7 @@ CRM.STOP_CATS = {
    verder in het proces zat); hier zijn het vooral de harde bot-criteria die
    niet matchten. */
 CRM.LEAD_NIET_GESCHIKT_CATS = ['Taal','Geen vervoer','Te ver / verkeerde regio','Rooster/ploegen past niet',
-  'Salarisverwachting te hoog','Onvoldoende ervaring','Geen motivatie','Onbereikbaar / reageert niet','Anders'];
+  'Salarisverwachting te hoog','Onvoldoende ervaring','Geen motivatie','Al een baan gevonden','Onbereikbaar / reageert niet','Anders'];
 /* Optionele reden bij 'Potentieel' — geen verplichting (Tjeerd, 6 sep 2026:
    "optioneel veld, geen verplichting"), dus geen eigen modal: dit vult
    alleen de categorielijst boven de algemene notitie in het leadvenster. */

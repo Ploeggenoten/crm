@@ -749,10 +749,13 @@ CRM.outlook = {
     }catch(e){ console.warn('mailInbox', e); return null; }
   },
 
-  /* Mail versturen. WORDT NOOIT AUTOMATISCH AANGEROEPEN: alleen vanuit
-     een scherm waarin de gebruiker de tekst ziet en zelf op Versturen
-     klikt. Geen bulk, geen achtergrondverzending. */
-  async stuurMail({aan, cc, onderwerp, tekst}){
+  /* Mail versturen. Normaal alleen vanuit een scherm waarin de gebruiker
+     de tekst ziet en zelf op Versturen klikt. Eén bewuste uitzondering
+     (Tjeerd, 19 nov 2026): de vaste geen-gehoor-mail in recruitment.js, die
+     meegaat zodra de AM een vergeefse belpoging noteert. stil:true = nooit
+     een inlogvenster openen (midden in een belronde blokkeert de browser
+     dat toch); lukt het stil niet, dan een fout in plaats van stil "ok". */
+  async stuurMail({aan, cc, onderwerp, tekst, stil}){
     if(!CRM.outlook.beschikbaar() || !_account) throw new Error('Outlook niet verbonden');
     const lijst = a => (Array.isArray(a)?a:[a]).filter(Boolean)
       .map(x => ({emailAddress:{address:String(x).trim()}}));
@@ -762,7 +765,7 @@ CRM.outlook = {
        Outlook erbij"). De GIF gaat als inline-bijlage mee, niet als link:
        een extern plaatje blokkeert Outlook bij de ontvanger standaard. */
     const hk = await handtekening();
-    await graph('/me/sendMail', {method:'POST', body:{
+    const r = await graph('/me/sendMail', {method:'POST', body:{
       message: {
         subject: onderwerp || '',
         body: { contentType:'html', content: tekstNaarHtml(hk ? zonderTekstHandtekening(tekst) : tekst) + (hk ? '<br>' + hk.html : '') },
@@ -772,7 +775,8 @@ CRM.outlook = {
           contentType:'image/gif', contentBytes:hk.gif, isInline:true, contentId:'pg-handtekening'}] : []
       },
       saveToSentItems: true
-    }});
+    }}, !stil);
+    if(r == null) throw new Error('Geen toegang tot Outlook — opnieuw verbinden');
     return {ok:true};
   },
   /* Heeft deze afzender een handtekening? Voor het opstelvenster. */
